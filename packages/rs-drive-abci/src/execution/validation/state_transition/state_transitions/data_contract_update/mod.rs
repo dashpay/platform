@@ -3,10 +3,14 @@ mod identity_contract_nonce;
 mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use std::collections::BTreeMap;
 
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -15,12 +19,12 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -53,11 +57,14 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
     }
 }
 
-impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
+impl StateTransitionActionTransformer for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -247,7 +254,7 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
-        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+        use crate::execution::validation::state_transition::processor::traits::state::StateTransitionStateValidation;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 

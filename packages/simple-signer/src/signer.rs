@@ -1,5 +1,6 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use dpp::address_funds::AddressWitness;
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::dashcore::signer;
@@ -62,7 +63,7 @@ impl SimpleSigner {
     }
 }
 
-impl Signer for SimpleSigner {
+impl Signer<IdentityPublicKey> for SimpleSigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
@@ -107,6 +108,42 @@ impl Signer for SimpleSigner {
             KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                 InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type()),
             )),
+        }
+    }
+
+    fn sign_create_witness(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        // First, sign the data to get the signature
+        let signature = self.sign(key, data)?;
+
+        // Create the appropriate AddressWitness based on the key type
+        match key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                // P2PKH witness only needs the signature - the public key is recovered
+                // during verification, saving 33 bytes per witness
+                Ok(AddressWitness::P2pkh { signature })
+            }
+            KeyType::EDDSA_25519_HASH160 => {
+                // Ed25519 keys are not supported for address witnesses (P2PKH requires ECDSA)
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key.key_type()),
+                ))
+            }
+            KeyType::BIP13_SCRIPT_HASH => {
+                // For script hash, we would need the redeem script which isn't available from just the key
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key.key_type()),
+                ))
+            }
+            KeyType::BLS12_381 => {
+                // BLS keys are not supported for address witnesses
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key.key_type()),
+                ))
+            }
         }
     }
 

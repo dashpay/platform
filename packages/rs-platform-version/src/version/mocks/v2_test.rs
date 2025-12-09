@@ -16,15 +16,17 @@ use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
-    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
-    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
+    DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions, DriveAbciQueryVersions,
+    DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v1::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1;
 use crate::version::drive_abci_versions::DriveAbciVersion;
+use crate::version::drive_versions::drive_address_funds_method_versions::v1::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
@@ -136,6 +138,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 empty_prefunded_specialized_balance: 0,
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+            address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -380,6 +383,18 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 group_action_signers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            address_funds_queries: DriveAbciQueryAddressFundsVersions {
+                addresses_infos: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                address_info: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

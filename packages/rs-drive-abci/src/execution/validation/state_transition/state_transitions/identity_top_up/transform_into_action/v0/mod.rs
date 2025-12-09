@@ -15,8 +15,7 @@ use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
-use dpp::state_transition::StateTransitionLike;
-
+use dpp::state_transition::StateTransitionSingleSigned;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use drive::state_transition_action::StateTransitionAction;

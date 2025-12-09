@@ -16,7 +16,7 @@ use rs_dapi_client::{DapiRequest, IntoInner};
 
 #[async_trait::async_trait]
 /// A trait for transferring a document on Platform
-pub trait TransferDocument<S: Signer>: Waitable {
+pub trait TransferDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Transfers a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +46,7 @@ pub trait TransferDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> TransferDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
     async fn transfer_document_to_identity(
         &self,
         recipient_id: Identifier,

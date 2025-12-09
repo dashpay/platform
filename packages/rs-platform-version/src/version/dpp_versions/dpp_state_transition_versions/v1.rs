@@ -1,8 +1,8 @@
 use crate::version::dpp_versions::dpp_state_transition_versions::{
-    DPPStateTransitionVersions, DocumentTransitionVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityCreditWithdrawalTransitionVersions, IdentityTransitionAssetLockVersions,
-    IdentityTransitionVersions,
+    AddressFundsTransitionVersions, ContractTransitionVersions, DPPStateTransitionVersions,
+    DocumentTransitionVersions, DocumentsBatchTransitionValidationVersions,
+    DocumentsBatchTransitionVersions, IdentityCreditWithdrawalTransitionVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
 };
 
 pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTransitionVersions {
@@ -19,6 +19,7 @@ pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTra
         asset_locks: IdentityTransitionAssetLockVersions {
             required_asset_lock_duff_balance_for_processing_start_for_identity_create: 200000,
             required_asset_lock_duff_balance_for_processing_start_for_identity_top_up: 50000,
+            required_asset_lock_duff_balance_for_processing_start_for_address_funding: 50000,
             validate_asset_lock_transaction_structure: 0,
             validate_instant_asset_lock_proof_structure: 0,
         },
@@ -26,4 +27,18 @@ pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTra
             default_constructor: 0,
         },
     },
+    contract: ContractTransitionVersions {
+        contract_create_transition_default_version: 0,
+        contract_update_transition_default_version: 0,
+    },
+    address_funds: AddressFundsTransitionVersions {
+        address_funds_transition_default_version: 0,
+        credit_withdrawal: 0,
+        min_output_amount: 500_000,
+        min_input_amount: 100_000,
+        min_identity_funding_amount: 200_000,
+    },
+    max_address_inputs: 0,
+    max_address_outputs: 0,
+    max_address_fee_strategies: 4,
 };

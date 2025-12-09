@@ -11,6 +11,18 @@ pub struct DriveGroupMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveAddressFundsMethodVersions {
+    pub set_balance_to_address: FeatureVersion,
+    pub add_balance_to_address: FeatureVersion,
+    pub remove_balance_from_address: FeatureVersion,
+    pub fetch_balance_and_nonce: FeatureVersion,
+    pub fetch_balances_with_nonces: FeatureVersion,
+    pub prove_balance_and_nonce: FeatureVersion,
+    pub prove_balances_with_nonces: FeatureVersion,
+    pub cost_estimation: DriveAddressFundsCostEstimationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveGroupFetchMethodVersions {
     pub fetch_action_id_signers_power: FeatureVersion,
     pub fetch_active_action_info: FeatureVersion,
@@ -41,4 +53,9 @@ pub struct DriveGroupInsertMethodVersions {
 pub struct DriveGroupCostEstimationMethodVersions {
     pub for_add_group_action: FeatureVersion,
     pub for_add_group: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAddressFundsCostEstimationMethodVersions {
+    pub for_address_balance_update: FeatureVersion,
 }

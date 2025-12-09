@@ -9,6 +9,7 @@ use crate::verify::state_transition::state_transition_execution_path_queries::Tr
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
@@ -18,12 +19,16 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+use dpp::state_transition::StateTransitionWitnessSigned;
+use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
@@ -198,6 +203,38 @@ impl Drive {
                         path_query
                     }
                 }
+            }
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
+                Drive::balances_for_clear_addresses_query(st.recipient_addresses().keys())
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                let identity_id = st.identity_id_from_inputs().map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "Failed to calculate identity_id from inputs: {}",
+                        e
+                    )))
+                })?;
+                Drive::full_identity_query(
+                    &identity_id.into_buffer(),
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::IdentityTopUpFromAddresses(st) => {
+                // we expect to get a new balance and revision
+                Drive::revision_and_balance_path_query(
+                    st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::AddressFundsTransfer(st) => Drive::balances_for_clear_addresses_query(
+                st.inputs().keys().chain(st.outputs().keys()),
+            ),
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
+                Drive::balances_for_clear_addresses_query(st.outputs().keys())
+            }
+            StateTransition::AddressCreditWithdrawal(st) => {
+                Drive::balances_for_clear_addresses_query(st.inputs().keys())
             }
         };
 

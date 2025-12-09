@@ -12,6 +12,7 @@ pub struct DriveVerifyMethodVersions {
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
     pub voting: DriveVerifyVoteMethodVersions,
+    pub address_funds: DriveVerifyAddressFundsMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
 }
 
@@ -105,4 +106,10 @@ pub struct DriveVerifySingleDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyStateTransitionMethodVersions {
     pub verify_state_transition_was_executed_with_proof: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyAddressFundsMethodVersions {
+    pub verify_address_info: FeatureVersion,
+    pub verify_addresses_infos: FeatureVersion,
 }

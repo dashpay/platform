@@ -59,7 +59,7 @@ impl std::fmt::Debug for VTableSigner {
     }
 }
 
-impl Signer for VTableSigner {
+impl Signer<IdentityPublicKey> for VTableSigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
@@ -93,6 +93,17 @@ impl Signer for VTableSigner {
 
             Ok(BinaryData::from(signature))
         }
+    }
+
+    fn sign_create_witness(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<dash_sdk::dpp::address_funds::AddressWitness, ProtocolError> {
+        // Sign the data first
+        let signature = self.sign(identity_public_key, data)?;
+        // Create P2PKH witness from signature (the most common case for single key signers)
+        Ok(dash_sdk::dpp::address_funds::AddressWitness::P2pkh { signature })
     }
 
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {

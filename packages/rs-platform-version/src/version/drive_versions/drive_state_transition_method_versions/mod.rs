@@ -1,4 +1,5 @@
 pub mod v1;
+pub mod v2;
 
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
 use versioned_feature_core::FeatureVersion;
@@ -25,9 +26,11 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_transfer_transition: FeatureVersion,
     pub documents_batch_transition: FeatureVersion,
     pub identity_create_transition: FeatureVersion,
+    pub identity_create_from_addresses_transition: FeatureVersion,
     pub identity_credit_transfer_transition: FeatureVersion,
     pub identity_credit_withdrawal_transition: FeatureVersion,
     pub identity_top_up_transition: FeatureVersion,
+    pub identity_top_up_from_addresses_transition: FeatureVersion,
     pub identity_update_transition: FeatureVersion,
     pub masternode_vote_transition: FeatureVersion,
     pub bump_identity_data_contract_nonce: FeatureVersion,
@@ -41,6 +44,10 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_claim_transition: FeatureVersion,
     pub token_direct_purchase_transition: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition: FeatureVersion,
+    pub identity_credit_transfer_to_addresses_transition: FeatureVersion,
+    pub address_funds_transfer_transition: FeatureVersion,
+    pub address_credit_withdrawal_transition: FeatureVersion,
+    pub address_funding_from_asset_lock_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

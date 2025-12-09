@@ -207,6 +207,25 @@ impl ErrorWithCode for BasicError {
             Self::InvalidStateTransitionTypeError { .. } => 10600,
             Self::MissingStateTransitionTypeError { .. } => 10601,
             Self::StateTransitionMaxSizeExceededError { .. } => 10602,
+            Self::StateTransitionNotActiveError(_) => 10603,
+            Self::TransitionOverMaxInputsError(_) => 10604,
+            Self::TransitionOverMaxOutputsError(_) => 10605,
+            Self::InputWitnessCountMismatchError(_) => 10606,
+            Self::TransitionNoInputsError(_) => 10607,
+            Self::TransitionNoOutputsError(_) => 10608,
+            Self::FeeStrategyEmptyError(_) => 10609,
+            Self::FeeStrategyDuplicateError(_) => 10610,
+            Self::FeeStrategyIndexOutOfBoundsError(_) => 10611,
+            Self::FeeStrategyTooManyStepsError(_) => 10612,
+            Self::InputBelowMinimumError(_) => 10613,
+            Self::OutputBelowMinimumError(_) => 10614,
+            Self::InputOutputBalanceMismatchError(_) => 10615,
+            Self::OutputsNotGreaterThanInputsError(_) => 10616,
+            Self::WithdrawalBalanceMismatchError(_) => 10617,
+            Self::InsufficientFundingAmountError(_) => 10618,
+            Self::InputsNotLessThanOutputsError(_) => 10619,
+            Self::OutputAddressAlsoInputError(_) => 10620,
+            Self::InvalidRemainderOutputCountError(_) => 10621,
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
@@ -229,6 +248,7 @@ impl ErrorWithCode for SignatureError {
             Self::BasicECDSAError(_) => 20009,
             Self::BasicBLSError(_) => 20010,
             Self::InvalidSignaturePublicKeyPurposeError(_) => 20011,
+            Self::UncompressedPublicKeyNotAllowedError(_) => 20012,
         }
     }
 }
@@ -310,6 +330,12 @@ impl ErrorWithCode for StateError {
 
             // Data trigger errors: 40500-40699
             Self::DataTriggerError(ref e) => e.code(),
+
+            // Address errors
+            Self::AddressDoesNotExistError(_) => 40600,
+            Self::AddressNotEnoughFundsError(_) => 40601,
+            Self::AddressesNotEnoughFundsError(_) => 40602,
+            Self::AddressInvalidNonceError(_) => 40603,
 
             // Token errors: 40700-40799
             Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40700,

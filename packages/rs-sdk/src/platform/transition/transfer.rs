@@ -24,7 +24,7 @@ pub trait TransferToIdentity: Waitable {
     /// ## Returns
     ///
     /// Final balance of the identity after the transfer.
-    async fn transfer_credits<S: Signer + Send>(
+    async fn transfer_credits<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
         to_identity_id: Identifier,
@@ -37,7 +37,7 @@ pub trait TransferToIdentity: Waitable {
 
 #[async_trait::async_trait]
 impl TransferToIdentity for Identity {
-    async fn transfer_credits<S: Signer + Send>(
+    async fn transfer_credits<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
         to_identity_id: Identifier,

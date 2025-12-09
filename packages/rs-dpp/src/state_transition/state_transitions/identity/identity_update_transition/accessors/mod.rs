@@ -77,10 +77,4 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransition {
             IdentityUpdateTransition::V0(transition) => transition.public_key_ids_to_disable(),
         }
     }
-
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityUpdateTransition::V0(transition) => transition.owner_id(),
-        }
-    }
 }

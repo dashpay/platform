@@ -10,7 +10,6 @@ use crate::error::execution::ExecutionError;
 
 use crate::execution::validation::state_transition::identity_create::basic_structure::v0::IdentityCreateStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;
 
 use crate::rpc::core::CoreRPCLike;
@@ -23,6 +22,7 @@ use dpp::version::PlatformVersion;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;

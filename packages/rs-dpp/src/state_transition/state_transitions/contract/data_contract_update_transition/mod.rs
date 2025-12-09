@@ -116,7 +116,7 @@ mod test {
 
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::state_transition::{StateTransitionLike, StateTransitionType};
+    use crate::state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType};
 
     struct TestData {
         state_transition: DataContractUpdateTransition,

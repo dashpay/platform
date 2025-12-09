@@ -1,3 +1,4 @@
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
@@ -11,7 +12,8 @@ use drive::drive::Drive;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use drive_abci::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
@@ -68,9 +70,46 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("expected to get an execution context");
 
+            // Start by validating addresses if the transition has input addresses
+            let remaining_address_balances =
+                if state_transition.has_addresses_balances_and_nonces_validation() {
+                    // Here we validate that all input addresses have enough balance
+                    // We also validate that nonces are bumped
+                    let validation_result = state_transition
+                        .validate_address_balances_and_nonces(
+                            platform.drive,
+                            &mut execution_context,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to validate address balances and nonces");
+                    if !validation_result.is_valid() {
+                        // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                        // isn't enough balance, either way the transaction should be rejected.
+                        if expected_validation_errors
+                            .contains(&validation_result.first_error().unwrap().code())
+                        {
+                            return (state_transition.clone(), None, false);
+                        } else {
+                            panic!(
+                                "unexpected address validation errors: {:?}",
+                                validation_result.errors
+                            )
+                        }
+                    }
+                    Some(
+                        validation_result
+                            .into_data()
+                            .expect("expected to have data"),
+                    )
+                } else {
+                    None
+                };
+
             let consensus_validation_result = match state_transition.transform_into_action(
                 &platform,
                 abci_app.platform.state.load().last_block_info(),
+                &remaining_address_balances,
                 ValidationMode::NoValidation, //using check_tx so we don't validate state
                 &mut execution_context,
                 None,
@@ -677,6 +716,81 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}
                 StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
                 StateTransitionAction::PartiallyUseAssetLockAction(_) => {}
+                StateTransitionAction::IdentityCreateFromAddressesAction(
+                    identity_create_from_addresses_action,
+                ) => {
+                    // Verify identity was created from addresses
+                    let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
+                        &response_proof.grovedb_proof,
+                        false,
+                        identity_create_from_addresses_action
+                            .identity_id()
+                            .into_buffer(),
+                        platform_version,
+                    )
+                    .expect("expected to verify full identity");
+                    assert_eq!(
+                        &root_hash,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+                    if *was_executed {
+                        let proved_identity = identity
+                            .expect("expected an identity")
+                            .into_partial_identity_info_no_balance();
+                        assert_eq!(
+                            proved_identity.id,
+                            identity_create_from_addresses_action.identity_id()
+                        );
+                    } else {
+                        assert!(identity.is_none());
+                    }
+                }
+                StateTransitionAction::IdentityTopUpFromAddressesAction(
+                    identity_top_up_from_addresses_action,
+                ) => {
+                    // Verify identity balance was topped up from addresses
+                    let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                        &response_proof.grovedb_proof,
+                        identity_top_up_from_addresses_action
+                            .identity_id()
+                            .into_buffer(),
+                        false,
+                        platform_version,
+                    )
+                    .expect("expected to verify balance identity for top up from addresses");
+                    let _balance = balance.expect("expected a balance");
+                    assert_eq!(
+                        &root_hash,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+                }
+                StateTransitionAction::IdentityCreditTransferToAddressesAction(
+                    _identity_credit_transfer_to_addresses_action,
+                ) => {
+                    // TODO: Add verification for credit transfer to addresses
+                    // This should verify the address balances were updated
+                }
+                StateTransitionAction::AddressFundsTransfer(_address_funds_transfer_action) => {
+                    // TODO: Add verification for address funds transfer
+                    // This should verify the address balances were updated
+                }
+                StateTransitionAction::AddressFundingFromAssetLock(
+                    _address_funding_from_asset_lock_action,
+                ) => {
+                    // TODO: Add verification for address funding from asset lock
+                    // This should verify the address was funded from the asset lock
+                }
+                StateTransitionAction::AddressCreditWithdrawal(
+                    _address_credit_withdrawal_action,
+                ) => {
+                    // TODO: Add verification for address credit withdrawal
+                    // This should verify the withdrawal document was created
+                }
+                StateTransitionAction::BumpAddressInputNoncesAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

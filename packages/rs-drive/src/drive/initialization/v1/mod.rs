@@ -20,7 +20,7 @@ use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub(super) fn create_initial_state_structure_1(
+    pub(super) fn create_initial_state_structure_v1(
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

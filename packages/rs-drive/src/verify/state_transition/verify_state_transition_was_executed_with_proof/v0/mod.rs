@@ -26,7 +26,7 @@ use dpp::state_transition::identity_credit_transfer_transition::accessors::Ident
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::{StateTransition, StateTransitionOwned};
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::DocumentFromReplaceTransition;
@@ -948,6 +948,141 @@ impl Drive {
                 )?;
                 let vote = vote.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain actual vote for masternode {} expected to exist because of state transition (masternode vote)", masternode_vote.pro_tx_hash()))))?;
                 Ok((root_hash, VerifiedMasternodeVote(vote)))
+            }
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
+                // Verify balances for recipient addresses
+                use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
+                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
+                    Drive::verify_addresses_infos(
+                        proof,
+                        st.recipient_addresses().keys(),
+                        false,
+                        platform_version,
+                    )?;
+                // Return the verified balances
+                // For now, we'll return a simple verification result
+                // TODO: Define proper StateTransitionProofResult variant for address transfers
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: st.identity_id(),
+                        loaded_public_keys: Default::default(),
+                        balance: None,
+                        revision: None,
+                        not_found_public_keys: Default::default(),
+                    }),
+                ))
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                // Verify full identity was created
+                use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+                let identity_id = st.identity_id_from_inputs().map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "Failed to calculate identity id from inputs: {}",
+                        e
+                    )))
+                })?;
+                let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
+                    proof,
+                    false,
+                    identity_id.into_buffer(),
+                    platform_version,
+                )?;
+                let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain identity {} expected to exist because of state transition (create from addresses)", identity_id))))?;
+                Ok((root_hash, VerifiedIdentity(identity)))
+            }
+            StateTransition::IdentityTopUpFromAddresses(st) => {
+                // Verify revision and balance for the identity
+                use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
+                let identity_id = st.identity_id();
+                let (root_hash, Some((balance, revision))) =
+                    Drive::verify_identity_balance_and_revision_for_identity_id(
+                        proof,
+                        identity_id.to_buffer(),
+                        false,
+                        platform_version,
+                    )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        format!("proof did not contain balance for identity {} expected to exist because of state transition (top up from addresses)", identity_id))));
+                };
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: *identity_id,
+                        loaded_public_keys: Default::default(),
+                        balance: Some(balance),
+                        revision: Some(revision),
+                        not_found_public_keys: Default::default(),
+                    }),
+                ))
+            }
+            StateTransition::AddressFundsTransfer(st) => {
+                // Verify balances for both input and output addresses
+                use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
+                use dpp::state_transition::StateTransitionWitnessSigned;
+                let all_keys: Vec<_> = st.inputs().keys().chain(st.outputs().keys()).collect();
+                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
+                    Drive::verify_addresses_infos(proof, all_keys, false, platform_version)?;
+                // Return the verified balances
+                // TODO: Define proper StateTransitionProofResult variant for address funds transfer
+                // For now, using a placeholder return
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: Identifier::default(),
+                        loaded_public_keys: Default::default(),
+                        balance: None,
+                        revision: None,
+                        not_found_public_keys: Default::default(),
+                    }),
+                ))
+            }
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                // Verify balances for output addresses after funding
+                use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
+                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
+                    Drive::verify_addresses_infos(
+                        proof,
+                        st.outputs().keys(),
+                        false,
+                        platform_version,
+                    )?;
+                // Return the verified balances
+                // TODO: Define proper StateTransitionProofResult variant for address funding
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: Identifier::default(),
+                        loaded_public_keys: Default::default(),
+                        balance: None,
+                        revision: None,
+                        not_found_public_keys: Default::default(),
+                    }),
+                ))
+            }
+            StateTransition::AddressCreditWithdrawal(st) => {
+                // Verify balances for input addresses after withdrawal
+                use dpp::state_transition::StateTransitionWitnessSigned;
+                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
+                    Drive::verify_addresses_infos(
+                        proof,
+                        st.inputs().keys(),
+                        false,
+                        platform_version,
+                    )?;
+                // Return the verified balances
+                // TODO: Define proper StateTransitionProofResult variant for address withdrawal
+                Ok((
+                    root_hash,
+                    VerifiedPartialIdentity(PartialIdentity {
+                        id: Identifier::default(),
+                        loaded_public_keys: Default::default(),
+                        balance: None,
+                        revision: None,
+                        not_found_public_keys: Default::default(),
+                    }),
+                ))
             }
         }
     }

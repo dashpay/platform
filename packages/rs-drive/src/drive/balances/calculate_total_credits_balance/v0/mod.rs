@@ -65,6 +65,7 @@ impl Drive {
             total_in_pools,
             total_identity_balances,
             total_specialized_balances,
+            total_in_addresses: 0,
         })
     }
 }

@@ -3,11 +3,11 @@ use platform_value::BinaryData;
 use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
 
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-
+use crate::state_transition::StateTransitionSingleSigned;
 use crate::state_transition::StateTransitionType::DataContractCreate;
 use crate::version::FeatureVersion;
 
@@ -24,23 +24,6 @@ impl StateTransitionLike for DataContractCreateTransitionV0 {
     fn state_transition_type(&self) -> StateTransitionType {
         DataContractCreate
     }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.data_contract.owner_id()
-    }
 
     fn unique_identifiers(&self) -> Vec<String> {
         vec![format!(
@@ -56,5 +39,27 @@ impl StateTransitionLike for DataContractCreateTransitionV0 {
 
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         self.user_fee_increase = user_fee_increase
+    }
+}
+
+impl StateTransitionSingleSigned for DataContractCreateTransitionV0 {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        &self.signature
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for DataContractCreateTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.data_contract.owner_id()
     }
 }

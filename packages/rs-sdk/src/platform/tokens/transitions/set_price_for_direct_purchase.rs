@@ -60,7 +60,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_set_price_for_direct_purchase<S: Signer>(
+    pub async fn token_set_price_for_direct_purchase<S: Signer<IdentityPublicKey>>(
         &self,
         set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder,
         signing_key: &IdentityPublicKey,

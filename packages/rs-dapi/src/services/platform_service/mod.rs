@@ -519,4 +519,16 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetGroupActionSignersRequest,
         dapi_grpc::platform::v0::GetGroupActionSignersResponse
     );
+
+    drive_method!(
+        get_address_info,
+        dapi_grpc::platform::v0::GetAddressInfoRequest,
+        dapi_grpc::platform::v0::GetAddressInfoResponse
+    );
+
+    drive_method!(
+        get_addresses_infos,
+        dapi_grpc::platform::v0::GetAddressesInfosRequest,
+        dapi_grpc::platform::v0::GetAddressesInfosResponse
+    );
 }

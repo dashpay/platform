@@ -16,7 +16,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
-pub trait PutDocument<S: Signer>: Waitable {
+pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +46,7 @@ pub trait PutDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PutDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

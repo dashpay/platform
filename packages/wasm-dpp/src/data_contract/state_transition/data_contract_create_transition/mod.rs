@@ -10,7 +10,9 @@ use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{
+    StateTransitionIdentitySigned, StateTransitionOwned, StateTransitionSingleSigned,
+};
 
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::PlatformVersion;
@@ -212,7 +214,7 @@ impl DataContractCreateTransitionWasm {
             )
             .with_js_error()?;
 
-        let signature = state_transition.signature().to_owned();
+        let signature = state_transition.signature().unwrap().to_owned();
         let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
 
         self.0.set_signature(signature);
@@ -230,7 +232,7 @@ impl DataContractCreateTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         let verification_result = StateTransition::DataContractCreate(self.0.clone())
-            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+            .verify_identity_signed_signature(&identity_public_key.to_owned().into(), &bls_adapter);
 
         match verification_result {
             Ok(()) => Ok(true),

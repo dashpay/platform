@@ -18,7 +18,7 @@ use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
-pub trait PutVote<S: Signer>: Waitable {
+pub trait PutVote<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts an identity on platform
     async fn put_to_platform(
         &self,
@@ -40,7 +40,7 @@ pub trait PutVote<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PutVote<S> for Vote {
+impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
     async fn put_to_platform(
         &self,
         voter_pro_tx_hash: Identifier,
