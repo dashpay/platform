@@ -28,7 +28,7 @@ use crate::execution::validation::state_transition::processor::basic_structure::
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformer for IdentityCreditTransferTransition {
     fn transform_into_action<C: CoreRPCLike>(
