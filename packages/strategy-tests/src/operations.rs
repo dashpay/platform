@@ -602,6 +602,8 @@ pub type AmountRange = RangeInclusive<Credits>;
 
 pub type OutputCountRange = RangeInclusive<u8>;
 
+pub type MaybeOutputAmount = Option<AmountRange>;
+
 pub type UseExistingAddressesAsOutputChance = Option<f64>; //between 0 and 1.
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
@@ -630,6 +632,11 @@ pub enum OperationType {
         UseExistingAddressesAsOutputChance,
         Option<AddressFundsFeeStrategy>,
     ),
+    AddressWithdrawal(
+        AmountRange,
+        MaybeOutputAmount,
+        Option<AddressFundsFeeStrategy>,
+    ),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -650,6 +657,11 @@ enum OperationTypeInSerializationFormat {
         AmountRange,
         OutputCountRange,
         UseExistingAddressesAsOutputChance,
+        Option<AddressFundsFeeStrategy>,
+    ),
+    AddressWithdrawal(
+        AmountRange,
+        MaybeOutputAmount,
         Option<AddressFundsFeeStrategy>,
     ),
 }
@@ -726,6 +738,13 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 use_existing,
                 fee_strategy,
             ),
+            OperationType::AddressWithdrawal(amount_range, maybe_output_amount, fee_strategy) => {
+                OperationTypeInSerializationFormat::AddressWithdrawal(
+                    amount_range,
+                    maybe_output_amount,
+                    fee_strategy,
+                )
+            }
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -815,6 +834,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 use_existing,
                 fee_strategy,
             ),
+            OperationTypeInSerializationFormat::AddressWithdrawal(
+                amount_range,
+                maybe_output_amount,
+                fee_strategy,
+            ) => OperationType::AddressWithdrawal(amount_range, maybe_output_amount, fee_strategy),
         })
     }
 }

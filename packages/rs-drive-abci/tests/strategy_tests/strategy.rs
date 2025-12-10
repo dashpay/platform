@@ -15,7 +15,8 @@ use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
     AmountRange, DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp,
-    OperationType, OutputCountRange, TokenOp, UseExistingAddressesAsOutputChance,
+    MaybeOutputAmount, OperationType, OutputCountRange, TokenOp,
+    UseExistingAddressesAsOutputChance,
 };
 
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
@@ -41,12 +42,15 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
+use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
+use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
@@ -82,6 +86,7 @@ use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
+use dpp::withdrawal::Pooling;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::DriveDocumentQuery;
 use drive_abci::abci::app::FullAbciApplication;
@@ -1252,6 +1257,27 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
+                    OperationType::AddressWithdrawal(
+                        amount_range,
+                        maybe_output_range,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_address_withdrawal_transition(
+                                current_addresses_with_balance,
+                                amount_range,
+                                maybe_output_range,
+                                fee_strategy,
+                                signer,
+                                rng,
+                                platform_version,
+                            ) else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -2091,6 +2117,64 @@ impl NetworkStrategy {
         );
 
         Some(transfer_transition)
+    }
+
+    fn create_address_withdrawal_transition(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        maybe_output_amount: &MaybeOutputAmount,
+        fee_strategy: &Option<AddressFundsFeeStrategy>,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+
+        let fee_strategy = fee_strategy
+            .clone()
+            .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+        tracing::debug!(?inputs, "Preparing address credit withdrawal transition");
+
+        // Determine if we have an output (change address) and its amount
+        let output = if let Some(output_amount_range) = maybe_output_amount {
+            let output_amount = rng.gen_range(output_amount_range.clone());
+            let output_address = signer.add_random_address_key(rng);
+            current_addresses_with_balance
+                .addresses_in_block_with_new_balance
+                .insert(output_address.clone(), (0, output_amount));
+            Some((output_address, output_amount))
+        } else {
+            None
+        };
+
+        // Generate a random output script for the withdrawal
+        let output_script = if rng.gen_bool(0.5) {
+            CoreScript::random_p2pkh(rng)
+        } else {
+            CoreScript::random_p2sh(rng)
+        };
+
+        let withdrawal_transition = AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+            inputs,
+            output,
+            fee_strategy,
+            1, // core_fee_per_byte
+            Pooling::Never,
+            output_script,
+            signer,
+            0,
+            platform_version,
+        )
+        .expect("expected to create address credit withdrawal transition");
+
+        tracing::debug!(
+            ?withdrawal_transition,
+            "Address credit withdrawal transition successfully signed"
+        );
+
+        Some(withdrawal_transition)
     }
 
     fn create_address_funding_from_asset_lock_transitions(
