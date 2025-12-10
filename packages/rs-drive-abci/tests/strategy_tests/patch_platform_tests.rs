@@ -4,6 +4,7 @@ mod tests {
     use drive::config::DriveConfig;
     use std::collections::{BTreeMap, HashMap};
 
+    use crate::addresses_with_balance::AddressesWithBalance;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
@@ -190,6 +191,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -251,6 +253,7 @@ mod tests {
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -316,6 +319,7 @@ mod tests {
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     strategy.clone(),
                     config.clone(),
@@ -377,6 +381,7 @@ mod tests {
                         current_time_ms: end_time_ms,
                         instant_lock_quorums,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     strategy,
                     config,

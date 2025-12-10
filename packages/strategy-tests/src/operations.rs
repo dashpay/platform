@@ -610,7 +610,6 @@ pub struct IdentityTransferInfo {
 pub enum OperationType {
     Document(DocumentOp),
     IdentityTopUp(AmountRange),
-    IdentityTopUpFromAddresses(AmountRange),
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
@@ -618,6 +617,8 @@ pub enum OperationType {
     IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOp),
     Token(TokenOp),
+    IdentityTopUpFromAddresses(AmountRange),
+    AddressFundingFromCoreAssetLock(AmountRange),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -625,7 +626,6 @@ pub enum OperationType {
 enum OperationTypeInSerializationFormat {
     Document(Vec<u8>),
     IdentityTopUp(AmountRange),
-    IdentityTopUpFromAddresses(AmountRange),
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
@@ -633,6 +633,8 @@ enum OperationTypeInSerializationFormat {
     IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOpSerializable),
     Token(Vec<u8>),
+    IdentityTopUpFromAddresses(AmountRange),
+    AddressFundingFromCoreAssetLock(AmountRange),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -692,6 +694,9 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 let token_op_in_serialization_format =
                     token_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
                 OperationTypeInSerializationFormat::Token(token_op_in_serialization_format)
+            }
+            OperationType::AddressFundingFromCoreAssetLock(amount_range) => {
+                OperationTypeInSerializationFormat::AddressFundingFromCoreAssetLock(amount_range)
             }
         };
         let config = bincode::config::standard()
@@ -767,6 +772,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                     platform_version,
                 )?;
                 OperationType::Token(token_op)
+            }
+            OperationTypeInSerializationFormat::AddressFundingFromCoreAssetLock(amount_range) => {
+                OperationType::AddressFundingFromCoreAssetLock(amount_range)
             }
         })
     }

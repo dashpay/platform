@@ -11,7 +11,6 @@ use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use strategy_tests::address_signer::StrategyAddressSigner;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
@@ -34,6 +33,7 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::util::storage_flags::StorageFlags::SingleEpoch;
 
+use crate::addresses_with_balance::AddressesWithBalance;
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use dpp::dashcore::hashes::Hash;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -42,10 +42,11 @@ use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
-use dpp::prelude::{AddressNonce, AssetLockProof, Identifier, IdentityNonce};
+use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
 use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
@@ -293,7 +294,6 @@ pub struct NetworkStrategy {
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
     pub sign_instant_locks: bool,
-    pub address_signer: StrategyAddressSigner,
 }
 
 impl Default for NetworkStrategy {
@@ -317,7 +317,6 @@ impl Default for NetworkStrategy {
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
             sign_instant_locks: false,
-            address_signer: StrategyAddressSigner::new(),
         }
     }
 }
@@ -592,6 +591,7 @@ impl NetworkStrategy {
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
@@ -1184,28 +1184,47 @@ impl NetworkStrategy {
                     OperationType::IdentityTopUpFromAddresses(amount_range)
                         if !current_identities.is_empty() =>
                     {
-                        let cyclic_identities = current_identities.iter().cycle();
-                        for identity in cyclic_identities.take(count.into()) {
-                            match self.create_identity_top_up_from_addresses_transitions(
-                                identity,
-                                amount_range,
-                                rng,
-                                instant_lock_quorums,
-                                &platform.config,
-                                platform_version,
-                            ) {
-                                Ok((funding_transition, top_up_transition)) => {
-                                    operations.push(funding_transition);
-                                    operations.push(top_up_transition);
-                                }
-                                Err(error) => {
-                                    tracing::warn!(
-                                        "error creating identity top up from addresses transition: {}",
-                                        error
-                                    );
-                                    continue;
-                                }
-                            }
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        let random_identities: Vec<&Identity> = indices
+                            .into_iter()
+                            .map(|index| &current_identities[index])
+                            .collect();
+
+                        for random_identity in random_identities {
+                            let Some(state_transition) = self
+                                .create_identity_top_up_from_addresses_transitions(
+                                    current_addresses_with_balance,
+                                    random_identity,
+                                    amount_range,
+                                    signer,
+                                    rng,
+                                    platform_version,
+                                )
+                            else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::AddressFundingFromCoreAssetLock(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self
+                                .create_address_funding_from_asset_lock_transitions(
+                                    current_addresses_with_balance,
+                                    amount_range,
+                                    rng,
+                                    signer,
+                                    instant_lock_quorums,
+                                    &platform.config,
+                                    platform_version,
+                                )
+                            else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
@@ -1636,6 +1655,7 @@ impl NetworkStrategy {
         start_block_height: BlockHeight,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         current_votes: &mut BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
@@ -1683,11 +1703,12 @@ impl NetworkStrategy {
             };
         if should_do_operation_transitions {
             // Don't do any state transitions on block 1
-            let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
-                .operations_based_transitions(
+            let (mut operation_based_state_transitions, mut add_to_finalize_block_operations) =
+                self.operations_based_transitions(
                     platform,
                     block_info,
                     current_identities,
+                    current_addresses_with_balance,
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
@@ -1697,7 +1718,7 @@ impl NetworkStrategy {
                     platform_version,
                 );
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
-            state_transitions.append(&mut document_state_transitions);
+            state_transitions.append(&mut operation_based_state_transitions);
 
             // There can also be contract updates
 
@@ -1756,7 +1777,7 @@ impl NetworkStrategy {
             }
         }
 
-        signer.add_keys(keys);
+        signer.add_identity_public_keys(keys);
 
         if self.sign_instant_locks {
             let identities_with_proofs = create_signed_instant_asset_lock_proofs_for_identities(
@@ -1921,15 +1942,51 @@ impl NetworkStrategy {
         )
     }
 
-    fn create_identity_top_up_from_addresses_transitions(
+    fn create_identity_top_up_from_addresses_transitions<S: Signer<PlatformAddress>>(
         &mut self,
-        identity: &Identity,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        recipient: &Identity,
+        amount_range: &AmountRange,
+        signer: &S,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        tracing::warn!(
+            ?inputs,
+            "Preparing identity top-up transition with addresses"
+        );
+
+        let top_up_transition =
+            IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+                recipient,
+                inputs,
+                signer,
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected to create top up from addresses transition"); // if you need to upcast to StateTransition
+
+        tracing::debug!(
+            ?top_up_transition,
+            "Top up from addresses transition successfully signed"
+        );
+
+        Some(top_up_transition)
+    }
+
+    fn create_address_funding_from_asset_lock_transitions(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         amount_range: &AmountRange,
         rng: &mut StdRng,
+        signer: &mut SimpleSigner,
         instant_lock_quorums: &Quorums<SigningQuorum>,
         platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
-    ) -> Result<(StateTransition, StateTransition), ProtocolError> {
+    ) -> Option<StateTransition> {
         let (asset_lock_proof, asset_lock_private_key, funded_amount) = self
             .create_asset_lock_proof_with_amount(
                 rng,
@@ -1939,7 +1996,10 @@ impl NetworkStrategy {
                 platform_version,
             );
 
-        let address = self.address_signer.generate_p2pkh(rng);
+        let address = signer.add_random_address_key(rng);
+        current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .insert(address, (0, funded_amount));
         let mut outputs = BTreeMap::new();
         outputs.insert(address.clone(), None);
 
@@ -1951,30 +2011,13 @@ impl NetworkStrategy {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-                &self.address_signer,
+                signer,
                 0,
                 platform_version,
-            )?;
+            )
+            .ok()?;
 
-        let spend_amount = std::cmp::max(funded_amount / 10, 1);
-        let mut inputs = BTreeMap::new();
-        // Funding tx should bump nonce to 1, so we provide 1 (from funding) plus 1 here.
-        // FIXME: this is unreliable, fails after a few runs
-        let nonce_to_provide = 1 + 1;
-
-        inputs.insert(address.clone(), (nonce_to_provide, spend_amount));
-        tracing::warn!(?inputs, "Preparing identity top-up transition with address");
-        let top_up_transition =
-            IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
-                identity,
-                inputs,
-                &self.address_signer,
-                0,
-                platform_version,
-                None,
-            )?;
-
-        Ok((funding_transition, top_up_transition))
+        Some(funding_transition)
     }
 }
 
@@ -1995,6 +2038,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub abci_app: FullAbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
+    pub addresses_with_balance: AddressesWithBalance,
     pub proposers: Vec<MasternodeListItemWithUpdates>,
     pub validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_validator_quorum_hash: QuorumHash,
@@ -2039,6 +2083,7 @@ pub struct ChainExecutionParameters {
     pub start_time_ms: u64,
     pub current_time_ms: u64,
     pub current_identities: Vec<Identity>,
+    pub current_addresses_with_balance: AddressesWithBalance,
 }
 
 fn create_signed_instant_asset_lock_proofs_for_identities(

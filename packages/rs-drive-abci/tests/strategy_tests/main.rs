@@ -18,6 +18,7 @@ use strategy::{
 };
 use strategy_tests::Strategy;
 
+mod addresses_with_balance;
 mod chain_lock_update;
 mod core_update_tests;
 mod execution;
@@ -81,12 +82,13 @@ mod tests {
     use rand::SeedableRng;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
-    use dpp::dash_to_duffs;
+    use crate::addresses_with_balance::AddressesWithBalance;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use dpp::{dash_to_credits, dash_to_duffs};
     use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
@@ -329,6 +331,7 @@ mod tests {
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
             config,
@@ -473,6 +476,7 @@ mod tests {
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
             config,
@@ -1085,7 +1089,7 @@ mod tests {
             &mut None,
         );
 
-        // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
+        // With these params if we add new mns the hpmn masternode list would be randomly different from 100.
 
         let platform = abci_app.platform;
         let platform_state = platform.state.load();
@@ -1174,7 +1178,7 @@ mod tests {
             &mut None,
         );
 
-        // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
+        // With these params if we add new mns the hpmn masternode list would be randomly different from 100.
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
@@ -2852,14 +2856,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities = create_state_transitions_for_identities(
             vec![&mut identity1, &mut identity2],
@@ -3404,15 +3408,26 @@ mod tests {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![Operation {
-                    op_type: OperationType::IdentityTopUpFromAddresses(
-                        dash_to_duffs!(5)..=dash_to_duffs!(5),
-                    ),
-                    frequency: Frequency {
-                        times_per_block_range: 1..3,
-                        chance_per_block: None,
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::IdentityTopUpFromAddresses(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
                     },
-                }],
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
@@ -3421,7 +3436,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3465,6 +3479,8 @@ mod tests {
             &mut None,
             &mut None,
         );
+
+        println!("{:#?}", outcome.state_transition_results_per_block);
 
         let executed = outcome
             .state_transition_results_per_block
@@ -3521,7 +3537,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and add keys to it in the same block
-            // the result would be different then expected
+            // the result would be different from expected
             verify_state_transition_results: false,
             ..Default::default()
         };
@@ -3614,7 +3630,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and remove keys to it in the same block
-            // the result would be different then expected
+            // the result would be different from expected
             verify_state_transition_results: false,
             ..Default::default()
         };
@@ -4353,6 +4369,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
             config,

@@ -70,8 +70,8 @@ mod tests {
             )
             .expect("should create transfer key");
 
-        signer.add_key(auth_key.clone(), auth_private_key);
-        signer.add_key(transfer_key.clone(), transfer_private_key);
+        signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+        signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
         let mut public_keys = BTreeMap::new();
         public_keys.insert(auth_key.id(), auth_key);
@@ -1326,7 +1326,7 @@ mod tests {
                 )
                 .expect("should create auth key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -2155,7 +2155,7 @@ mod tests {
                 )
                 .expect("should create auth key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -2218,8 +2218,8 @@ mod tests {
                 )
                 .expect("should create transfer key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key.clone(), transfer_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -2924,9 +2924,9 @@ mod tests {
                 )
                 .expect("should create transfer key 2");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key1.clone(), transfer_private_key1);
-            signer.add_key(transfer_key2.clone(), transfer_private_key2);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key1.clone(), transfer_private_key1);
+            signer.add_identity_public_key(transfer_key2.clone(), transfer_private_key2);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -3011,9 +3011,9 @@ mod tests {
                 )
                 .expect("should create transfer key 2");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key1.clone(), transfer_private_key1);
-            signer.add_key(transfer_key2.clone(), transfer_private_key2);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key1.clone(), transfer_private_key1);
+            signer.add_identity_public_key(transfer_key2.clone(), transfer_private_key2);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -3099,8 +3099,8 @@ mod tests {
                 )
                 .expect("should create transfer key 2");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key1.clone(), transfer_private_key1);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key1.clone(), transfer_private_key1);
             // Note: transfer_key2's private key is NOT added to signer
 
             let mut public_keys = BTreeMap::new();
@@ -4007,8 +4007,8 @@ mod tests {
                 }
             };
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key.clone(), transfer_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -5256,8 +5256,8 @@ mod tests {
                 )
                 .expect("should create transfer key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key.clone(), transfer_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);

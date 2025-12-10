@@ -75,45 +75,28 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to get an execution context");
 
             // Start by validating addresses if the transition has input addresses
-            let remaining_address_balances =
-                if state_transition.has_addresses_balances_and_nonces_validation() {
-                    // Here we validate that all input addresses have enough balance
-                    // We also validate that nonces are bumped
-                    let validation_result = state_transition
-                        .validate_address_balances_and_nonces(
-                            platform.drive,
-                            &mut execution_context,
-                            None,
-                            platform_version,
-                        )
-                        .expect("expected to validate address balances and nonces");
-                    if !validation_result.is_valid() {
-                        // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
-                        // isn't enough balance, either way the transaction should be rejected.
-                        if expected_validation_errors
-                            .contains(&validation_result.first_error().unwrap().code())
-                        {
-                            return (state_transition.clone(), None, false);
-                        } else {
-                            panic!(
-                                "unexpected address validation errors: {:?}",
-                                validation_result.errors
-                            )
-                        }
-                    }
-                    Some(
-                        validation_result
-                            .into_data()
-                            .expect("expected to have data"),
-                    )
-                } else {
-                    None
-                };
+            let remaining_address_input_balances = if let Some(inputs) = state_transition.inputs() {
+                let fetched_balances = platform
+                    .drive
+                    .fetch_balances_with_nonces(inputs.keys(), None, platform_version)
+                    .expect("expected to fetch current balances with current nonces");
+                let balances = fetched_balances
+                    .into_iter()
+                    .map(|(address, maybe_found)| {
+                        let (nonce, balance) =
+                            maybe_found.expect("expected address to have balance");
+                        (address, (nonce, balance))
+                    })
+                    .collect();
+                Some(balances)
+            } else {
+                None
+            };
 
             let consensus_validation_result = match state_transition.transform_into_action(
                 &platform,
                 abci_app.platform.state.load().last_block_info(),
-                &remaining_address_balances,
+                &remaining_address_input_balances,
                 ValidationMode::NoValidation, //using check_tx so we don't validate state
                 &mut execution_context,
                 None,

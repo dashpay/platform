@@ -193,7 +193,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -203,7 +203,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key);
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -250,7 +250,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -260,7 +260,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key);
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -294,7 +294,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -304,7 +304,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key);
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -361,7 +361,7 @@ pub(in crate::execution) mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         identity.add_public_key(key.clone());
 
@@ -403,7 +403,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -413,7 +413,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key);
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
 
         let (withdrawal_public_key, withdrawal_private_key) =
             IdentityPublicKey::random_key_with_known_attributes(
@@ -427,7 +427,7 @@ pub(in crate::execution) mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(withdrawal_public_key.clone(), withdrawal_private_key);
+        signer.add_identity_public_key(withdrawal_public_key.clone(), withdrawal_private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -617,8 +617,8 @@ pub(in crate::execution) mod tests {
             .public_key_hash()
             .expect("expected a public key hash");
 
-        signer.add_key(transfer_key.clone(), transfer_private_key);
-        signer.add_key(owner_key.clone(), owner_private_key);
+        signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
+        signer.add_identity_public_key(owner_key.clone(), owner_private_key);
 
         let pro_tx_hash_bytes: [u8; 32] = rng.gen();
 
@@ -700,7 +700,7 @@ pub(in crate::execution) mod tests {
             IdentityPublicKey::random_voting_key_with_rng(0, &mut rng, platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(voting_key.clone(), voting_private_key);
+        signer.add_identity_public_key(voting_key.clone(), voting_private_key);
 
         let pro_tx_hash_bytes: [u8; 32] = rng.gen();
 

@@ -38,7 +38,12 @@ impl Drive {
         let (root_hash_addresses, address_balances): (
             RootHash,
             BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-        ) = Self::verify_addresses_infos(proof, addresses, verify_subset_of_proof, platform_version)?;
+        ) = Self::verify_addresses_infos(
+            proof,
+            addresses,
+            verify_subset_of_proof,
+            platform_version,
+        )?;
 
         if root_hash_identity != root_hash_addresses {
             return Err(Error::Proof(ProofError::CorruptedProof(

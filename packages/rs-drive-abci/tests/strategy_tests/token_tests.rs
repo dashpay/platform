@@ -48,6 +48,7 @@ mod tests {
     use strategy_tests::operations::{Operation, OperationType, TokenOp};
     use strategy_tests::transitions::create_state_transitions_for_identities;
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use crate::addresses_with_balance::AddressesWithBalance;
 
     #[test]
     fn run_chain_insert_one_token_mint_per_block() {
@@ -74,8 +75,8 @@ mod tests {
         >(3, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys1);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -231,8 +232,8 @@ mod tests {
         >(3, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys1);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -387,7 +388,7 @@ mod tests {
         >(3, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -653,7 +654,7 @@ mod tests {
         >(3, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -970,6 +971,7 @@ mod tests {
                 start_time_ms: GENESIS_TIME_MS,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -1144,7 +1146,7 @@ mod tests {
         >(3, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -1246,6 +1248,7 @@ mod tests {
             identity_contract_nonce_counter,
             state_transition_results_per_block,
             instant_lock_quorums,
+            addresses_with_balance,
             ..
         } = run_chain_for_strategy(
             &mut platform,
@@ -1326,7 +1329,6 @@ mod tests {
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
-            state_transition_results_per_block,
             instant_lock_quorums,
             ..
         } = continue_chain_for_strategy(
@@ -1346,6 +1348,7 @@ mod tests {
                 start_time_ms: GENESIS_TIME_MS,
                 current_time_ms: end_time_ms,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -1564,6 +1567,7 @@ mod tests {
                 start_time_ms: GENESIS_TIME_MS,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -1739,7 +1743,7 @@ mod tests {
         >(3, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -1833,6 +1837,7 @@ mod tests {
             abci_app,
             proposers,
             identities,
+            addresses_with_balance,
             validator_quorums,
             current_validator_quorum_hash,
             current_proposer_versions,
@@ -1921,7 +1926,6 @@ mod tests {
             end_time_ms,
             identity_nonce_counter,
             identity_contract_nonce_counter,
-            state_transition_results_per_block,
             instant_lock_quorums,
             ..
         } = continue_chain_for_strategy(
@@ -1941,6 +1945,7 @@ mod tests {
                 start_time_ms: GENESIS_TIME_MS,
                 current_time_ms: end_time_ms,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -2159,6 +2164,7 @@ mod tests {
                 start_time_ms: GENESIS_TIME_MS,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             NetworkStrategy {
                 strategy: Strategy {

@@ -36,6 +36,7 @@ mod tests {
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, ResourceVoteOp, VoteAction};
     use strategy_tests::transitions::create_state_transitions_for_identities;
     use strategy_tests::{StartIdentities, Strategy};
+    use crate::addresses_with_balance::AddressesWithBalance;
 
     #[test]
     fn run_chain_with_temporarily_disabled_contested_documents() {
@@ -75,7 +76,7 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -168,6 +169,7 @@ mod tests {
             identity_contract_nonce_counter,
             state_transition_results_per_block,
             identities,
+            addresses_with_balance,
             ..
         } = run_chain_for_strategy(
             &mut platform,
@@ -231,6 +233,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             NetworkStrategy::default(),
             config.clone(),
@@ -297,6 +300,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             strategy,
             config.clone(),
@@ -353,14 +357,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -624,14 +628,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -816,6 +820,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -976,14 +981,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities: Vec<(Identity, Option<StateTransition>)> =
             create_state_transitions_for_identities(
@@ -1168,6 +1173,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             NetworkStrategy {
                 strategy: Strategy {
@@ -1353,7 +1359,7 @@ mod tests {
                     )
                     .unwrap();
 
-                simple_signer.add_keys(keys1);
+                simple_signer.add_identity_public_keys(keys1);
 
                 let (mut identity2, keys2) =
                     Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
@@ -1363,7 +1369,7 @@ mod tests {
                     )
                     .unwrap();
 
-                simple_signer.add_keys(keys2);
+                simple_signer.add_identity_public_keys(keys2);
 
                 let start_identities: Vec<(Identity, Option<StateTransition>)> =
                     create_state_transitions_for_identities(
@@ -1562,6 +1568,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     NetworkStrategy {
                         strategy: Strategy {
@@ -1778,7 +1785,7 @@ mod tests {
                     )
                     .unwrap();
 
-                simple_signer.add_keys(keys1);
+                simple_signer.add_identity_public_keys(keys1);
 
                 let (mut identity2, keys2) =
                     Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
@@ -1788,7 +1795,7 @@ mod tests {
                     )
                     .unwrap();
 
-                simple_signer.add_keys(keys2);
+                simple_signer.add_identity_public_keys(keys2);
 
                 let start_identities: Vec<(Identity, Option<StateTransition>)> =
                     create_state_transitions_for_identities(
@@ -1987,6 +1994,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     NetworkStrategy {
                         strategy: Strategy {
@@ -2212,7 +2220,7 @@ mod tests {
                     )
                     .unwrap();
 
-                simple_signer.add_keys(keys1);
+                simple_signer.add_identity_public_keys(keys1);
 
                 let (mut identity2, keys2) =
                     Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
@@ -2222,7 +2230,7 @@ mod tests {
                     )
                     .unwrap();
 
-                simple_signer.add_keys(keys2);
+                simple_signer.add_identity_public_keys(keys2);
 
                 let start_identities: Vec<(Identity, Option<StateTransition>)> =
                     create_state_transitions_for_identities(
@@ -2345,6 +2353,7 @@ mod tests {
                 let ChainExecutionOutcome {
                     abci_app,
                     identities,
+                    addresses_with_balance,
                     proposers,
                     validator_quorums,
                     current_validator_quorum_hash,
@@ -2437,6 +2446,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     NetworkStrategy {
                         strategy: Strategy {
@@ -2665,6 +2675,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     NetworkStrategy {
                         strategy: Strategy {
@@ -2778,6 +2789,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: identities,
+                        current_addresses_with_balance: addresses_with_balance,
                     },
                     NetworkStrategy {
                         strategy: Strategy {
@@ -2845,6 +2857,7 @@ mod tests {
                         start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                         current_identities: Vec::new(),
+                        current_addresses_with_balance: AddressesWithBalance::default(),
                     },
                     NetworkStrategy {
                         strategy: Strategy {

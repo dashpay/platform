@@ -342,7 +342,7 @@ impl WasmSdk {
 
             // Add the public key and its private key to the signer (only for signing key types)
             if key_type != KeyType::ECDSA_HASH160 {
-                signer.add_key(public_key.clone(), private_key_bytes);
+                signer.add_identity_public_key(public_key.clone(), private_key_bytes);
             }
 
             identity_public_keys.insert(key_id, public_key);

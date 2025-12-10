@@ -25,7 +25,7 @@ pub enum StateTransitionProofResult {
     VerifiedTokenStatus(TokenStatus),
     VerifiedTokenIdentitiesBalances(BTreeMap<Identifier, TokenAmount>),
     VerifiedPartialIdentity(PartialIdentity),
-       VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
+    VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
     VerifiedDocuments(BTreeMap<Identifier, Option<Document>>),
     VerifiedTokenActionWithDocument(Document),
     VerifiedTokenGroupActionWithDocument(GroupSumPower, Option<Document>),
@@ -43,7 +43,7 @@ pub enum StateTransitionProofResult {
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
     VerifiedAddressInfos(BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>),
-     VerifiedIdentityWithAddressInfos(
+    VerifiedIdentityWithAddressInfos(
         PartialIdentity,
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
