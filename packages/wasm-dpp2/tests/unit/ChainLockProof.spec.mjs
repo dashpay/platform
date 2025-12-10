@@ -39,7 +39,7 @@ describe('InstantLock', () => {
 
       const json = chainlock.toJSON();
       expect(json.coreChainLockedHeight).to.equal(11);
-      expect(json.outPoint).to.be.an('string').or.to.be.an('array'); // serde-wasm-bindgen emits base64 strings for bytes in json_compatible
+      expect(json.outPoint).to.be.a('string'); // serde_json human-readable outputs base64
 
       const fromJson = wasm.ChainAssetLockProof.fromJSON(json);
       expect(fromJson.coreChainLockedHeight).to.equal(11);

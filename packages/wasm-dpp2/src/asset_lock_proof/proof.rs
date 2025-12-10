@@ -200,7 +200,40 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
-        AssetLockProofWasm::from_object(js_value)
+        // Check if it's already a wasm object
+        if let Ok(existing) = js_value.to_wasm::<AssetLockProofWasm>("AssetLockProof") {
+            return Ok(existing.clone());
+        }
+
+        if let Ok(chain) = js_value.to_wasm::<ChainAssetLockProofWasm>("ChainAssetLockProof") {
+            return Ok(AssetLockProofWasm::from(chain.clone()));
+        }
+
+        if let Ok(instant) = js_value.to_wasm::<InstantAssetLockProofWasm>("InstantAssetLockProof") {
+            return Ok(AssetLockProofWasm::from(instant.clone()));
+        }
+
+        // Parse JSON object (with base64 string fields)
+        if js_value.is_object() {
+            let object = Object::from(js_value.clone());
+            if Reflect::has(&object, &JsValue::from_str("instantLock"))
+                .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?
+            {
+                return InstantAssetLockProofWasm::from_json(js_value)
+                    .map(AssetLockProofWasm::from);
+            }
+
+            if Reflect::has(&object, &JsValue::from_str("outPoint"))
+                .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?
+            {
+                return ChainAssetLockProofWasm::from_json(js_value)
+                    .map(AssetLockProofWasm::from);
+            }
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "Unsupported AssetLockProof JSON".to_string(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "toHex")]

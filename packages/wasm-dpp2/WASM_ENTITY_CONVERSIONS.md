@@ -20,6 +20,133 @@ We should go one by one and report current status and what we have in rs-dpp for
 
 BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no signature args) and exposes object/JSON converters alongside bytes/base64/hex helpers. As we normalize entities, remove duplicate/legacy conversion helpers (`fromRawObject`, `from_value`, `to_value`, etc.) in favor of the standard `fromObject`/`fromJSON`/`fromBytes` surface.
 
+## Implementation patterns
+
+### toJSON / fromJSON (human-readable serialization)
+
+Use serde's human-readable mode via `serde_json`. This leverages `is_human_readable()` checks in rs-dpp types (e.g., `Identifier` serializes as base58, `BinaryData` as base64).
+
+```rust
+#[wasm_bindgen(js_name = "toJSON")]
+pub fn to_json(&self) -> WasmDppResult<JsValue> {
+    // Step 1: Serialize to serde_json::Value (human-readable)
+    let json_value = serde_json::to_value(&self.0)
+        .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+    // Step 2: Convert to JS using json_compatible serializer
+    json_value
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .map_err(|e| WasmDppError::serialization(e.to_string()))
+}
+
+#[wasm_bindgen(js_name = "fromJSON")]
+pub fn from_json(js_value: JsValue) -> WasmDppResult<Self> {
+    // Step 1: Convert JS to serde_json::Value
+    let json_value: serde_json::Value = serde_wasm_bindgen::from_value(js_value)
+        .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+    // Step 2: Deserialize using human-readable mode
+    let inner: InnerType = serde_json::from_value(json_value)
+        .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+    Ok(Self(inner))
+}
+```
+
+### toObject / fromObject (binary-preserving serialization)
+
+Use `serde_wasm_bindgen` directly (non-human-readable). Binary fields become `Uint8Array`.
+
+```rust
+#[wasm_bindgen(js_name = "toObject")]
+pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    // Use default serializer - bytes stay as Uint8Array
+    serde_wasm_bindgen::to_value(&self.0)
+        .map_err(|e| WasmDppError::serialization(e.to_string()))
+}
+
+#[wasm_bindgen(js_name = "fromObject")]
+pub fn from_object(js_value: JsValue) -> WasmDppResult<Self> {
+    let inner: InnerType = serde_wasm_bindgen::from_value(js_value)
+        .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+    Ok(Self(inner))
+}
+```
+
+### Special case: toObject with WASM class instances
+
+When `toObject` needs to expose fields as WASM class instances (e.g., `id` as `Identifier` instead of `Uint8Array`), use `Reflect::set` to replace fields after serialization:
+
+```rust
+#[wasm_bindgen(js_name = "toObject")]
+pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    let serializer = serde_wasm_bindgen::Serializer::new()
+        .serialize_maps_as_objects(true)
+        .serialize_bytes_as_arrays(true);
+    let js_value = self.0.to_object()?.serialize(&serializer)?;
+
+    // Replace id with Identifier instance
+    let object = Object::from(js_value);
+    Reflect::set(&object, &JsValue::from_str("id"), &JsValue::from(self.get_id()))?;
+    Ok(object.into())
+}
+```
+
+When parsing such objects in `fromObject`, check for WASM instances **before** trying serde conversion:
+
+```rust
+fn from_js_value(js_value: JsValue) -> WasmDppResult<Self> {
+    // Check if it's already a wasm instance
+    if let Ok(existing) = js_value.to_wasm::<Self>("TypeName") {
+        return Ok(existing.clone());
+    }
+
+    // Check for object with WASM class instances as fields (from toObject())
+    if js_value.is_object() {
+        let object = Object::from(js_value.clone());
+        let id_js = Reflect::get(&object, &JsValue::from_str("id"))?;
+        if id_js.to_wasm::<IdentifierWasm>("Identifier").is_ok() {
+            // Parse manually - serde can't handle WASM instances
+            let identifier: Identifier = IdentifierWasm::try_from(&id_js)?.into();
+            // ... build struct manually
+            return Ok(Self(inner));
+        }
+    }
+
+    // Fallback: try serde conversion for plain objects
+    let inner: InnerType = serde_wasm_bindgen::from_value(js_value)?;
+    Ok(Self(inner))
+}
+```
+
+### Custom field serialization in rs-dpp
+
+For types that need custom serialization (e.g., `OutPoint` in `ChainAssetLockProof`), add a `#[serde(with = "module")]` attribute in rs-dpp:
+
+```rust
+mod outpoint_serde {
+    pub fn serialize<S>(out_point: &OutPoint, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes: [u8; 36] = (*out_point).into();
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&BASE64_STANDARD.encode(bytes))
+        } else {
+            serializer.serialize_bytes(&bytes)
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<OutPoint, D::Error> {
+        if deserializer.is_human_readable() {
+            // Parse base64 string
+        } else {
+            // Parse bytes
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChainAssetLockProof {
+    #[serde(with = "outpoint_serde")]
+    pub out_point: OutPoint,
+}
+```
+
 | Entity | Source file | `to*` methods | `from*` methods |
 | --- | --- | --- | --- |
 | ✅ `AssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/proof.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
@@ -27,7 +154,7 @@ BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no 
 | `BatchTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batch_transition.rs` | toBase64, toBytes, toHex, toObject, toJSON, toStateTransition | fromBase64, fromBatchedTransitions, fromBytes, fromHex, fromJSON, fromObject, fromStateTransition |
 | 🔸 `BatchedTransitionWasm` (skipped) | `packages/wasm-dpp2/src/state_transitions/batch/batched_transition.rs` | toTransition | — |
 | 🔸 `BlockBasedDistributionWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
-| 🔸 `BlockInfoWasm` (skipped) | `packages/wasm-dpp2/src/block.rs` | — | — |
+| ✅ `BlockInfoWasm` | `packages/wasm-dpp2/src/block.rs` | toJSON, toObject | fromJSON, fromObject |
 | `ChainAssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/chain.rs` | toBytes, toJSON, toObject | fromBytes, fromJSON, fromObject, fromRawObject |
 | `ChangeControlRulesWasm` | `packages/wasm-dpp2/src/tokens/configuration/change_control_rules.rs` | — | — |
 | `ConsensusErrorWasm` | `packages/wasm-dpp2/src/consensus_error.rs` | — | — |
@@ -72,7 +199,7 @@ BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no 
 | `IdentityTokenInfoWasm` | `packages/wasm-dpp2/src/tokens/info.rs` | — | — |
 | `IdentityTopUpTransitionWasm` | `packages/wasm-dpp2/src/identity/transitions/top_up_transition.rs` | toBase64, toBytes, toHex, toStateTransition | fromBase64, fromBytes, fromHex, fromStateTransition |
 | `IdentityUpdateTransitionWasm` | `packages/wasm-dpp2/src/identity/transitions/update_transition.rs` | toBase64, toBytes, toHex, toStateTransition | fromBase64, fromBytes, fromHex, fromStateTransition |
-| `IdentityWasm` | `packages/wasm-dpp2/src/identity/model.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
+| ✅ `IdentityWasm` | `packages/wasm-dpp2/src/identity/model.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
 | `InstantAssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/instant/instant_asset_lock_proof.rs` | toObject | fromObject |
 | `InstantLockWasm` | `packages/wasm-dpp2/src/asset_lock_proof/instant/instant_lock.rs` | — | — |
 | `MasternodeVoteTransitionWasm` | `packages/wasm-dpp2/src/identity/transitions/masternode_vote_transition.rs` | toBytes, toStateTransition | fromBase64, fromBytes, fromHex, fromStateTransition |

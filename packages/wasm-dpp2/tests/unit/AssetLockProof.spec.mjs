@@ -130,8 +130,8 @@ describe('AssetLockProof', () => {
 
       expect(objectRepresentation.instantLock).to.be.instanceOf(Uint8Array);
       expect(objectRepresentation.transaction).to.be.instanceOf(Uint8Array);
-      expect(Array.from(objectRepresentation.instantLock)).to.deep.equal(instantLockBytes);
-      expect(Array.from(objectRepresentation.transaction)).to.deep.equal(transactionBytes);
+      expect(objectRepresentation.instantLock).to.deep.equal(instantLockBytes);
+      expect(objectRepresentation.transaction).to.deep.equal(transactionBytes);
     });
   });
 

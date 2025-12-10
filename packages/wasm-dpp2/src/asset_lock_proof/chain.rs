@@ -2,8 +2,6 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::utils::{JsValueExt, js_value_to_vec_u8};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use js_sys::{Object, Reflect};
@@ -62,12 +60,12 @@ impl ChainAssetLockProofWasm {
     }
 
     #[wasm_bindgen(getter = "coreChainLockedHeight")]
-    pub fn get_core_chain_locked_height(self) -> u32 {
+    pub fn get_core_chain_locked_height(&self) -> u32 {
         self.0.core_chain_locked_height
     }
 
     #[wasm_bindgen(getter = "outPoint")]
-    pub fn get_out_point(self) -> OutPointWasm {
+    pub fn get_out_point(&self) -> OutPointWasm {
         self.0.out_point.into()
     }
 
@@ -80,33 +78,20 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let out_point_bytes: [u8; 36] = self.0.out_point.clone().into();
-        let obj = Object::new();
-        Reflect::set(
-            &obj,
-            &JsValue::from_str("coreChainLockedHeight"),
-            &JsValue::from(self.0.core_chain_locked_height),
-        )
-        .map_err(|e| WasmDppError::serialization(e.error_message()))?;
-        Reflect::set(
-            &obj,
-            &JsValue::from_str("outPoint"),
-            &JsValue::from(js_sys::Uint8Array::from(out_point_bytes.as_slice())),
-        )
-        .map_err(|e| WasmDppError::serialization(e.error_message()))?;
-
-        Ok(obj.into())
+        // Use default serializer (non-human-readable) - bytes stay as Uint8Array
+        serde_wasm_bindgen::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let out_point_bytes: [u8; 36] = self.0.out_point.clone().into();
-        let json = serde_json::json!({
-            "coreChainLockedHeight": self.0.core_chain_locked_height,
-            "outPoint": BASE64_ENGINE.encode(out_point_bytes)
-        });
-
-        serde_wasm_bindgen::to_value(&json).map_err(|e| WasmDppError::serialization(e.to_string()))
+        // Serialize to serde_json::Value first (human-readable, so outPoint becomes base64)
+        // then convert to JS value
+        let json_value = serde_json::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
@@ -121,7 +106,12 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<ChainAssetLockProofWasm> {
-        ChainAssetLockProofWasm::from_object(js_value)
+        // Convert JS value to serde_json::Value, then deserialize (human-readable)
+        let json_value: serde_json::Value = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let proof: ChainAssetLockProof = serde_json::from_value(json_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(ChainAssetLockProofWasm(proof))
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
