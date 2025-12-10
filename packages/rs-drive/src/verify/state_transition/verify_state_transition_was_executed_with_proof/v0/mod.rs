@@ -1066,25 +1066,19 @@ impl Drive {
                 ))
             }
             StateTransition::AddressFundsTransfer(st) => {
-                // Verify balances for both input and output addresses
                 use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
                 use dpp::state_transition::StateTransitionWitnessSigned;
-                let all_keys: Vec<_> = st.inputs().keys().chain(st.outputs().keys()).collect();
-                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(proof, all_keys, false, platform_version)?;
-                // Return the verified balances
-                // TODO: Define proper StateTransitionProofResult variant for address funds transfer
-                // For now, using a placeholder return
-                Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: Identifier::default(),
-                        loaded_public_keys: Default::default(),
-                        balance: None,
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
-                ))
+                let (root_hash, address_balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.inputs().keys().chain(st.outputs().keys()),
+                    false,
+                    platform_version,
+                )?;
+
+                Ok((root_hash, VerifiedAddressInfos(address_balances)))
             }
             StateTransition::AddressFundingFromAssetLock(st) => {
                 // Verify balances for output addresses after funding
