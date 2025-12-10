@@ -124,6 +124,7 @@ jobs:
             git clone --filter=blob:none https://github.com/dashpay/rust-dashcore.git rust-dashcore
             cd rust-dashcore
           fi
+          git reset --hard
           git checkout "${{ steps.dashcore_rev.outputs.rev }}"
 
       - name: Determine rust-dashcore toolchain channel

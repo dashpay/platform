@@ -1,6 +1,7 @@
 use super::MockDashPlatformSdk;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::bincode::config::standard;
+use dpp::address_funds::PlatformAddress;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::data_contract::group::Group;
 use dpp::group::group_action::GroupAction;
@@ -32,7 +33,7 @@ use drive_proof_verifier::types::identity_token_balance::{
 use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
+    AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
     ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
     Voters,
@@ -500,3 +501,5 @@ impl_mock_response!(CurrentQuorumsInfo);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
+impl_mock_response!(PlatformAddress);
+impl_mock_response!(AddressInfo);

@@ -610,6 +610,7 @@ pub struct IdentityTransferInfo {
 pub enum OperationType {
     Document(DocumentOp),
     IdentityTopUp(AmountRange),
+    IdentityTopUpFromAddresses(AmountRange),
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
@@ -624,6 +625,7 @@ pub enum OperationType {
 enum OperationTypeInSerializationFormat {
     Document(Vec<u8>),
     IdentityTopUp(AmountRange),
+    IdentityTopUpFromAddresses(AmountRange),
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal(AmountRange),
     ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
@@ -657,6 +659,9 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
             }
             OperationType::IdentityTopUp(amount_range) => {
                 OperationTypeInSerializationFormat::IdentityTopUp(amount_range)
+            }
+            OperationType::IdentityTopUpFromAddresses(amount_range) => {
+                OperationTypeInSerializationFormat::IdentityTopUpFromAddresses(amount_range)
             }
             OperationType::IdentityUpdate(identity_update_op) => {
                 OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op)
@@ -727,6 +732,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             }
             OperationTypeInSerializationFormat::IdentityTopUp(amount_range) => {
                 OperationType::IdentityTopUp(amount_range)
+            }
+            OperationTypeInSerializationFormat::IdentityTopUpFromAddresses(amount_range) => {
+                OperationType::IdentityTopUpFromAddresses(amount_range)
             }
             OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op) => {
                 OperationType::IdentityUpdate(identity_update_op)

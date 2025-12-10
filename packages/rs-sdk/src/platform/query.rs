@@ -16,20 +16,23 @@ use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::{
-    self as proto, get_current_quorums_info_request, get_identity_keys_request,
+    self as proto, get_address_info_request, get_addresses_infos_request,
+    get_current_quorums_info_request, get_identity_keys_request,
     get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request,
-    get_total_credits_in_platform_request, AllKeys, GetContestedResourceVoteStateRequest,
+    get_total_credits_in_platform_request, AllKeys, GetAddressInfoRequest,
+    GetAddressesInfosRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     GetCurrentQuorumsInfoRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest,
     GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetTotalCreditsInPlatformRequest, KeyRequestType, SpecificKeys,
+    GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
     get_status_request, GetContestedResourceIdentityVotesRequest,
     GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
-    GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest,
+    GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
+use dpp::address_funds::PlatformAddress;
 use dpp::dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::identity::KeyID;
 use dpp::version::PlatformVersionError;
@@ -42,6 +45,7 @@ use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
 use rs_dapi_client::transport::TransportRequest;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 /// Default limit of epoch records returned by Platform.
@@ -258,6 +262,39 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
                         )),
                     }),
                 },
+            )),
+        })
+    }
+}
+
+impl Query<GetAddressInfoRequest> for PlatformAddress {
+    fn query(self, prove: bool) -> Result<GetAddressInfoRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetAddressInfoRequest {
+            version: Some(get_address_info_request::Version::V0(
+                get_address_info_request::GetAddressInfoRequestV0 {
+                    address: self.to_bytes(),
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
+    fn query(self, prove: bool) -> Result<GetAddressesInfosRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        let addresses = self.into_iter().map(|address| address.to_bytes()).collect();
+
+        Ok(GetAddressesInfosRequest {
+            version: Some(get_addresses_infos_request::Version::V0(
+                get_addresses_infos_request::GetAddressesInfosRequestV0 { addresses, prove },
             )),
         })
     }

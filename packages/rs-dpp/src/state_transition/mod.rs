@@ -1160,3 +1160,58 @@ impl StateTransition {
             })
     }
 }
+
+impl StateTransitionStructureValidation for StateTransition {
+    fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> crate::validation::SimpleConsensusValidationResult {
+        match self {
+            StateTransition::DataContractCreate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::DataContractUpdate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::Batch(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityTopUp(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreditWithdrawal(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityUpdate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreditTransfer(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::MasternodeVote(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreditTransferToAddresses(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::IdentityCreateFromAddresses(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::IdentityTopUpFromAddresses(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::AddressFundsTransfer(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::AddressFundingFromAssetLock(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::AddressCreditWithdrawal(transition) => {
+                transition.validate_structure(platform_version)
+            }
+        }
+    }
+}

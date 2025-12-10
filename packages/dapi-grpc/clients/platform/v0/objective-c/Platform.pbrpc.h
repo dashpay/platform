@@ -16,6 +16,10 @@
 
 @class BroadcastStateTransitionRequest;
 @class BroadcastStateTransitionResponse;
+@class GetAddressInfoRequest;
+@class GetAddressInfoResponse;
+@class GetAddressesInfosRequest;
+@class GetAddressesInfosResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
 @class GetContestedResourceIdentityVotesRequest;
@@ -339,6 +343,14 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse)
 
 - (GRPCUnaryProtoCall *)getGroupActionSignersWithMessage:(GetGroupActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse)
+
+- (GRPCUnaryProtoCall *)getAddressInfoWithMessage:(GetAddressInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse)
+
+- (GRPCUnaryProtoCall *)getAddressesInfosWithMessage:(GetAddressesInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -725,6 +737,20 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse)
+
+- (void)getAddressInfoWithRequest:(GetAddressInfoRequest *)request handler:(void(^)(GetAddressInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAddressInfoWithRequest:(GetAddressInfoRequest *)request handler:(void(^)(GetAddressInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse)
+
+- (void)getAddressesInfosWithRequest:(GetAddressesInfosRequest *)request handler:(void(^)(GetAddressesInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAddressesInfosWithRequest:(GetAddressesInfosRequest *)request handler:(void(^)(GetAddressesInfosResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

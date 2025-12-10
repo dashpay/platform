@@ -249,6 +249,16 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetGroupActionSignersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetGroupActionSignersResponse.FromString,
                 )
+        self.getAddressInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAddressInfo',
+                request_serializer=platform__pb2.GetAddressInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAddressInfoResponse.FromString,
+                )
+        self.getAddressesInfos = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAddressesInfos',
+                request_serializer=platform__pb2.GetAddressesInfosRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAddressesInfosResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -541,6 +551,18 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getAddressInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getAddressesInfos(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -778,6 +800,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getGroupActionSigners,
                     request_deserializer=platform__pb2.GetGroupActionSignersRequest.FromString,
                     response_serializer=platform__pb2.GetGroupActionSignersResponse.SerializeToString,
+            ),
+            'getAddressInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddressInfo,
+                    request_deserializer=platform__pb2.GetAddressInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetAddressInfoResponse.SerializeToString,
+            ),
+            'getAddressesInfos': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddressesInfos,
+                    request_deserializer=platform__pb2.GetAddressesInfosRequest.FromString,
+                    response_serializer=platform__pb2.GetAddressesInfosResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1585,5 +1617,39 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupActionSigners',
             platform__pb2.GetGroupActionSignersRequest.SerializeToString,
             platform__pb2.GetGroupActionSignersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAddressInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressInfo',
+            platform__pb2.GetAddressInfoRequest.SerializeToString,
+            platform__pb2.GetAddressInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAddressesInfos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressesInfos',
+            platform__pb2.GetAddressesInfosRequest.SerializeToString,
+            platform__pb2.GetAddressesInfosResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
