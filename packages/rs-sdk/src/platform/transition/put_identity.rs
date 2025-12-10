@@ -7,22 +7,16 @@ use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use dpp::address_funds::{
-    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
-};
-use dpp::dashcore::hashes::{hash160, Hash};
-use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
-use dpp::dashcore::signer;
+use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::platform_value::BinaryData;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
-use dpp::ProtocolError;
+use simple_signer::SimpleAddressSigner;
 use std::collections::BTreeMap;
 
 /// Funding sources supported when creating an identity.
@@ -44,7 +38,9 @@ pub enum IdentityFunding {
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
 pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
-    /// Sends a new identity to Platform using the provided funding source.
+    /// Puts an identity on platform.
+    ///
+    /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
     async fn send_to_platform(
         &self,
         sdk: &Sdk,
@@ -307,7 +303,8 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
 
     // Create address signer from inputs and private keys
     let addresses: Vec<PlatformAddress> = inputs.keys().cloned().collect();
-    let address_signer = SimpleAddressSigner::new(&addresses, input_private_keys)?;
+    let address_signer =
+        SimpleAddressSigner::from_addresses_and_keys(&addresses, input_private_keys)?;
 
     // Default fee strategy: deduct from first input
     let fee_strategy: AddressFundsFeeStrategy =

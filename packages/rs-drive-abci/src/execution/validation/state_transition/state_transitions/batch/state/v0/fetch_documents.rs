@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};

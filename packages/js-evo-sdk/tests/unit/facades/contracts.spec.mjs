@@ -36,24 +36,26 @@ describe('ContractsFacade', () => {
     expect(wasmSdk.getDataContractWithProofInfo).to.be.calledOnceWithExactly('c2');
   });
 
-  it('getHistory() converts startAtMs to BigInt and forwards', async () => {
+  it('getHistory() forwards query object', async () => {
     await client.contracts.getHistory({
-      contractId: 'c',
+      dataContractId: 'c',
       limit: 3,
       startAtMs: 5,
     });
-    expect(wasmSdk.getDataContractHistory).to.be.calledOnce();
-    const { args } = wasmSdk.getDataContractHistory.firstCall;
-    expect(args[0]).to.equal('c');
-    expect(args[1]).to.equal(3);
-    expect(args[2]).to.equal(null);
-    expect(typeof args[3]).to.equal('bigint');
-    expect(args[3]).to.equal(BigInt(5));
+    expect(wasmSdk.getDataContractHistory).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      limit: 3,
+      startAtMs: 5,
+    });
   });
 
-  it('getHistoryWithProof() forwards similarly', async () => {
-    await client.contracts.getHistoryWithProof({ contractId: 'c' });
-    expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly('c', null, null, null);
+  it('getHistoryWithProof() forwards query object', async () => {
+    await client.contracts.getHistoryWithProof({
+      dataContractId: 'c',
+    });
+    expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+    });
   });
 
   it('getMany() and getManyWithProof() forward arrays', async () => {

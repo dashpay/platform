@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::dashcore_rpc::json::{ExtendedQuorumListResult, QuorumType};
 use std::collections::BTreeMap;
 use std::fmt::Display;

@@ -41,10 +41,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
         dockerComposeFiles.push('docker-compose.build.drive_abci.yml');
       }
 
-      if (config.get('platform.dapi.api.docker.build.enabled')) {
-        dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
-        dockerComposeFiles.push('docker-compose.build.dapi_core_streams.yml');
-      }
       if (config.get('platform.dapi.rsDapi.docker.build.enabled')) {
         dockerComposeFiles.push('docker-compose.build.rs-dapi.yml');
       }
@@ -133,6 +129,13 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = containerAccessLogPath;
     } else {
       envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = '';
+    }
+
+    if (
+      config.has('platform.dapi.rsDapi.metrics.enabled')
+      && !config.get('platform.dapi.rsDapi.metrics.enabled')
+    ) {
+      envs.PLATFORM_DAPI_RS_DAPI_METRICS_PORT = '0';
     }
 
     return envs;

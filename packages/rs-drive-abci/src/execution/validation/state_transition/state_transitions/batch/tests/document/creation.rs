@@ -28,7 +28,7 @@ mod creation_tests {
     use drive::query::vote_poll_vote_state_query::ResolvedContestedDocumentVotePollDriveQuery;
     use drive::util::test_helpers::setup_contract;
     use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, perform_votes_multi};
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::PaidConsensusError;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::consensus::state::state_error::StateError;

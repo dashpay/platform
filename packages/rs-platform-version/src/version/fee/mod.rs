@@ -2,7 +2,8 @@ use crate::error::PlatformVersionError;
 use crate::version::fee::data_contract_registration::v1::FEE_DATA_CONTRACT_REGISTRATION_VERSION1;
 use crate::version::fee::data_contract_registration::FeeDataContractRegistrationVersion;
 use crate::version::fee::data_contract_validation::FeeDataContractValidationVersion;
-use crate::version::fee::hashing::FeeHashingVersion;
+use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
+use crate::version::fee::hashing::{FeeHashingVersion, FeeHashingVersionBeforeVersion11};
 use crate::version::fee::processing::{
     FeeProcessingVersion, FeeProcessingVersionFieldsBeforeVersion1Point4,
 };
@@ -90,7 +91,7 @@ pub struct FeeVersionFieldsBeforeVersion4 {
     pub uses_version_fee_multiplier_permille: Option<u64>,
     pub storage: FeeStorageVersion,
     pub signature: FeeSignatureVersion,
-    pub hashing: FeeHashingVersion,
+    pub hashing: FeeHashingVersionBeforeVersion11,
     pub processing: FeeProcessingVersionFieldsBeforeVersion1Point4,
     pub data_contract: FeeDataContractValidationVersion,
     pub state_transition_min_fees: StateTransitionMinFeesBeforeProtocolVersion11,
@@ -104,7 +105,7 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             uses_version_fee_multiplier_permille: value.uses_version_fee_multiplier_permille,
             storage: value.storage,
             signature: value.signature,
-            hashing: value.hashing,
+            hashing: FEE_HASHING_VERSION1,
             processing: FeeProcessingVersion::from(value.processing),
             data_contract_validation: value.data_contract,
             data_contract_registration: FEE_DATA_CONTRACT_REGISTRATION_VERSION1,

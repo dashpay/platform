@@ -4755,9 +4755,7 @@ mod tests {
             // Create the transition once - we'll reuse it for both runs
             let transition =
                 create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
-            let transition_bytes = transition
-                .serialize_to_bytes()
-                .expect("should serialize");
+            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             // First run in a transaction to measure actual fee (then rollback)
             let platform_state = platform.state.load();
@@ -4901,9 +4899,7 @@ mod tests {
             // Create the transition once - we'll reuse it for both runs
             let transition =
                 create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
-            let transition_bytes = transition
-                .serialize_to_bytes()
-                .expect("should serialize");
+            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             // First run in a transaction to measure actual fee (then rollback)
             let platform_state = platform.state.load();
@@ -5036,9 +5032,7 @@ mod tests {
 
             let transition =
                 create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
-            let transition_bytes = transition
-                .serialize_to_bytes()
-                .expect("should serialize");
+            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();

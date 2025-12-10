@@ -56,8 +56,6 @@ impl FromProof<GetIdentityTokenInfosRequest> for IdentityTokenInfos {
 
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
-        println!("{:?}", hex::encode(&proof.grovedb_proof));
-
         let (root_hash, result) = Drive::verify_token_infos_for_identity_id(
             &proof.grovedb_proof,
             &token_ids,
