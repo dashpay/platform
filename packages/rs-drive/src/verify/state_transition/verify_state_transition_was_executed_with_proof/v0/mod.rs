@@ -1007,7 +1007,10 @@ impl Drive {
                     )));
                 }
 
-                Ok((root_hash_identity, VerifiedIdentityFullWithAddressInfos(identity, address_balances)))
+                Ok((
+                    root_hash_identity,
+                    VerifiedIdentityFullWithAddressInfos(identity, address_balances),
+                ))
             }
             StateTransition::IdentityTopUpFromAddresses(st) => {
                 // Verify revision and balance for the identity
