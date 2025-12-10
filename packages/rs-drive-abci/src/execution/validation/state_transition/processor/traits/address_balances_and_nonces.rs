@@ -21,6 +21,7 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     StateTransitionWitnessSigned
 {
+    // TODO: why this fn is named Identity? Why no output validation?
     fn validate_identity_balances_and_nonces_validation(
         &self,
         drive: &Drive,
@@ -30,6 +31,11 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     ) -> Result<ConsensusValidationResult<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>, Error>
     {
         let inputs = self.inputs();
+        // TODO change to trace!
+        tracing::info!(
+            inputs = ?inputs,
+            "Validating input address balances and nonces for state transition"
+        );
 
         // Validate maximum inputs, we need to do this here so we don't go and check too much data
         // in the state.
@@ -80,6 +86,15 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
             // Check that the nonce is exactly state_nonce + 1
             let expected_next_nonce = state_nonce.saturating_add(1);
             if *expected_nonce != expected_next_nonce {
+                tracing::debug!(
+                    ?address,
+                    expected_nonce = expected_next_nonce,
+                    provided_nonce = *expected_nonce,
+                    "Invalid nonce for address {:?}: expected {}, got {}",
+                    address,
+                    expected_next_nonce,
+                    *expected_nonce
+                );
                 return Ok(ConsensusValidationResult::new_with_error(
                     AddressInvalidNonceError::new(
                         address.clone(),

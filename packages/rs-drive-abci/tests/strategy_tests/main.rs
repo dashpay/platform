@@ -3397,6 +3397,94 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_top_up_identities_from_addresses() {
+        let platform_version = PlatformVersion::latest();
+        drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityTopUpFromAddresses(
+                        dash_to_duffs!(5)..=dash_to_duffs!(5),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        let executed = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && matches!(
+                        state_transition,
+                        StateTransition::IdentityTopUpFromAddresses(_)
+                    )
+            })
+            .count();
+        assert!(
+            executed > 0,
+            "expected at least one identity top up from addresses"
+        );
+    }
+
+    #[test]
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
             strategy: Strategy {

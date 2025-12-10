@@ -39,6 +39,56 @@ pub(crate) fn nonce_inc(
         .collect()
 }
 
+/// Validates that the provided `address_infos_map` contains exactly the set of `expected_addresses`
+/// and converts it into [`AddressInfos`].
+pub(crate) fn collect_address_infos_from_proof(
+    address_infos_map: BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+    expected_addresses: &BTreeSet<PlatformAddress>,
+) -> Result<AddressInfos, Error> {
+    let returned_addresses: BTreeSet<PlatformAddress> = address_infos_map.keys().copied().collect();
+
+    if expected_addresses.len() != returned_addresses.len() {
+        tracing::debug!(
+            ?expected_addresses,
+            ?returned_addresses,
+            "address proof length mismatch",
+        );
+        return Err(Error::InvalidProvedResponse(format!(
+            "proof returned different number of addresses. expected {}, received {}",
+            expected_addresses.len(),
+            address_infos_map.len()
+        )));
+    }
+
+    let address_infos_keys: BTreeSet<&PlatformAddress> = address_infos_map.keys().collect();
+    let expected_addresses_ref: BTreeSet<&PlatformAddress> =
+        expected_addresses.iter().by_ref().collect();
+
+    if address_infos_keys != expected_addresses_ref {
+        tracing::debug!(
+            ?expected_addresses_ref,
+            ?address_infos_keys,
+            "address proof mismatch",
+        );
+        return Err(Error::InvalidProvedResponse(format!(
+            "proof returned different addresses",
+        )));
+    }
+    let infos: AddressInfos = address_infos_map
+        .into_iter()
+        .map(|(address, maybe_info)| {
+            let info = maybe_info.map(|(nonce, balance)| AddressInfo {
+                address,
+                nonce,
+                balance,
+            });
+            (address, info)
+        })
+        .collect();
+
+    Ok(infos)
+}
+
 fn ensure_address_exists<'a>(
     infos: &'a AddressInfos,
     address: PlatformAddress,

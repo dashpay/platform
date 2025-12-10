@@ -1,7 +1,9 @@
+use dpp::address_funds::PlatformAddress;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
@@ -21,6 +23,7 @@ use dapi_grpc::drive::v0::GetProofsRequest;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::data_contracts::SystemDataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::prelude::AddressNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::voting::votes::Vote;
 use drive::drive::votes::resolved::vote_polls::ResolvedVotePoll;
@@ -39,6 +42,7 @@ use drive_abci::execution::types::state_transition_execution_context::StateTrans
 use drive_abci::execution::validation::state_transition::ValidationMode;
 use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
 use platform_version::DefaultForPlatformVersion;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &FullAbciApplication<MockCoreRPCLike>,
@@ -751,21 +755,45 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     identity_top_up_from_addresses_action,
                 ) => {
                     // Verify identity balance was topped up from addresses
-                    let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
-                        &response_proof.grovedb_proof,
-                        identity_top_up_from_addresses_action
-                            .identity_id()
-                            .into_buffer(),
-                        false,
-                        platform_version,
-                    )
-                    .expect("expected to verify balance identity for top up from addresses");
-                    let _balance = balance.expect("expected a balance");
+                    let (root_hash_identity, balance_revision, address_infos) =
+                        Drive::verify_identity_balance_revision_and_addresses_from_inputs(
+                            &response_proof.grovedb_proof,
+                            identity_top_up_from_addresses_action
+                                .identity_id()
+                                .into_buffer(),
+                            identity_top_up_from_addresses_action
+                                .inputs_with_remaining_balance()
+                                .keys(),
+                            false,
+                            platform_version,
+                        )
+                        .expect("expected to verify balance identity for top up from addresses");
+                    let _balance_revision = balance_revision.expect("expected a balance");
+
                     assert_eq!(
-                        &root_hash,
+                        &root_hash_identity,
                         expected_root_hash,
                         "state last block info {:?}",
                         platform.state.last_committed_block_info()
+                    );
+                    let proved_addresses: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
+                        address_infos
+                            .into_iter()
+                            .map(|(address, maybe_info)| {
+                                (
+                                    address,
+                                    maybe_info.expect(
+                                        "expected proved address info to be present for input",
+                                    ),
+                                )
+                            })
+                            .collect();
+
+                    assert_eq!(
+                        proved_addresses,
+                        identity_top_up_from_addresses_action
+                            .inputs_with_remaining_balance()
+                            .clone()
                     );
                 }
                 StateTransitionAction::IdentityCreditTransferToAddressesAction(
@@ -785,10 +813,77 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     // This should verify the address was funded from the asset lock
                 }
                 StateTransitionAction::AddressCreditWithdrawal(
-                    _address_credit_withdrawal_action,
+                    address_credit_withdrawal_action,
                 ) => {
-                    // TODO: Add verification for address credit withdrawal
-                    // This should verify the withdrawal document was created
+                    let mut expected_addresses: BTreeSet<PlatformAddress> =
+                        address_credit_withdrawal_action
+                            .inputs_with_remaining_balance()
+                            .keys()
+                            .copied()
+                            .collect();
+                    if let Some((change_address, _)) = address_credit_withdrawal_action.output() {
+                        expected_addresses.insert(change_address);
+                    }
+
+                    let (root_hash_addresses, address_infos): (
+                        _,
+                        BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                    ) = Drive::verify_addresses_infos(
+                        &response_proof.grovedb_proof,
+                        expected_addresses.iter(),
+                        false,
+                        platform_version,
+                    )
+                    .expect("expected to verify addresses for withdrawal");
+
+                    assert_eq!(
+                        &root_hash_addresses,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+
+                    let proved_addresses: BTreeSet<PlatformAddress> =
+                        address_infos.keys().copied().collect();
+                    assert_eq!(
+                        proved_addresses, expected_addresses,
+                        "proved addresses should match expected inputs and change"
+                    );
+
+                    for (address, (expected_nonce, expected_balance)) in
+                        address_credit_withdrawal_action.inputs_with_remaining_balance()
+                    {
+                        let Some(Some((returned_nonce, returned_balance))) =
+                            address_infos.get(address)
+                        else {
+                            panic!("expected address info for {:?}", address);
+                        };
+                        // TODO: put correct nonce assertion (nonce or nonce + 1?)
+                        assert_eq!(
+                            returned_nonce, expected_nonce,
+                            "nonce mismatch for withdrawal input {:?}",
+                            address
+                        );
+                        assert_eq!(
+                            returned_balance, expected_balance,
+                            "balance mismatch for withdrawal input {:?}",
+                            address
+                        );
+                    }
+                    if let Some((change_address, change_amount)) =
+                        address_credit_withdrawal_action.output()
+                    {
+                        let Some(Some((_, returned_balance))) = address_infos.get(&change_address)
+                        else {
+                            panic!("expected change address info for {:?}", change_address);
+                        };
+                        assert_eq!(
+                            *returned_balance, change_amount,
+                            "change balance mismatch for address {:?}",
+                            change_address
+                        );
+                    }
+                    // TODO: This should verify the withdrawal document was created
                 }
                 StateTransitionAction::BumpAddressInputNoncesAction(_) => {}
             }

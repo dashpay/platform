@@ -1,9 +1,12 @@
+use crate::address_funds::PlatformAddress;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
+use crate::fee::Credits;
 use crate::group::group_action_status::GroupActionStatus;
 use crate::identity::{Identity, PartialIdentity};
+use crate::prelude::AddressNonce;
 use crate::tokens::info::IdentityTokenInfo;
 use crate::tokens::status::TokenStatus;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -22,7 +25,7 @@ pub enum StateTransitionProofResult {
     VerifiedTokenStatus(TokenStatus),
     VerifiedTokenIdentitiesBalances(BTreeMap<Identifier, TokenAmount>),
     VerifiedPartialIdentity(PartialIdentity),
-    VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
+       VerifiedBalanceTransfer(PartialIdentity, PartialIdentity), //from/to
     VerifiedDocuments(BTreeMap<Identifier, Option<Document>>),
     VerifiedTokenActionWithDocument(Document),
     VerifiedTokenGroupActionWithDocument(GroupSumPower, Option<Document>),
@@ -39,4 +42,9 @@ pub enum StateTransitionProofResult {
     ),
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
+    VerifiedAddressInfos(BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>),
+     VerifiedIdentityWithAddressInfos(
+        PartialIdentity,
+        BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+    ),
 }

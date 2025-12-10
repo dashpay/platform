@@ -11,6 +11,7 @@ use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use strategy_tests::address_signer::StrategyAddressSigner;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
@@ -18,6 +19,8 @@ use strategy_tests::operations::{
     OperationType, TokenOp,
 };
 
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+use dpp::address_funds::PlatformAddress;
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -42,7 +45,9 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
-use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
+use dpp::prelude::{AddressNonce, AssetLockProof, Identifier, IdentityNonce};
+use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
@@ -63,6 +68,8 @@ use dpp::state_transition::batch_transition::{
 };
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::tokens::calculate_token_id;
@@ -286,6 +293,7 @@ pub struct NetworkStrategy {
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
     pub sign_instant_locks: bool,
+    pub address_signer: StrategyAddressSigner,
 }
 
 impl Default for NetworkStrategy {
@@ -309,6 +317,7 @@ impl Default for NetworkStrategy {
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
             sign_instant_locks: false,
+            address_signer: StrategyAddressSigner::new(),
         }
     }
 }
@@ -376,7 +385,8 @@ impl NetworkStrategy {
         drive: &Drive,
         platform_version: &PlatformVersion,
     ) {
-        for op in &self.strategy.operations {
+        let operations_to_execute = self.strategy.operations.clone();
+        for op in operations_to_execute.iter() {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
@@ -578,7 +588,7 @@ impl NetworkStrategy {
     // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
     // and could be moved out of here
     pub fn operations_based_transitions(
-        &self,
+        &mut self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
@@ -600,7 +610,8 @@ impl NetworkStrategy {
         let mut deleted = vec![];
         let max_document_operation_count_without_inserts =
             self.strategy.max_document_operation_count_without_inserts();
-        for op in &self.strategy.operations {
+        let operations_to_execute = self.strategy.operations.clone();
+        for op in operations_to_execute.iter() {
             if op.frequency.check_hit(rng) {
                 let mut count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
@@ -1168,6 +1179,33 @@ impl NetworkStrategy {
                                 &platform.config,
                                 platform_version,
                             ));
+                        }
+                    }
+                    OperationType::IdentityTopUpFromAddresses(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        let cyclic_identities = current_identities.iter().cycle();
+                        for identity in cyclic_identities.take(count.into()) {
+                            match self.create_identity_top_up_from_addresses_transitions(
+                                identity,
+                                amount_range,
+                                rng,
+                                instant_lock_quorums,
+                                &platform.config,
+                                platform_version,
+                            ) {
+                                Ok((funding_transition, top_up_transition)) => {
+                                    operations.push(funding_transition);
+                                    operations.push(top_up_transition);
+                                }
+                                Err(error) => {
+                                    tracing::warn!(
+                                        "error creating identity top up from addresses transition: {}",
+                                        error
+                                    );
+                                    continue;
+                                }
+                            }
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
@@ -1810,6 +1848,133 @@ impl NetworkStrategy {
             None,
         )
         .expect("expected to create top up transition")
+    }
+
+    fn create_asset_lock_proof_with_amount(
+        &self,
+        rng: &mut StdRng,
+        amount_range: &AmountRange,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
+        platform_version: &PlatformVersion,
+    ) -> (AssetLockProof, Vec<u8>, Credits) {
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+        let sk_bytes: [u8; 32] = pk.try_into().unwrap();
+        let secret_key = SecretKey::from_str(hex::encode(sk_bytes).as_str()).unwrap();
+        let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+            PrivateKey::new(secret_key, Network::Dash),
+            amount_range,
+            rng,
+        );
+
+        if self.sign_instant_locks {
+            let quorum_config = QuorumConfig {
+                quorum_type: platform_config.instant_lock.quorum_type,
+                active_signers: platform_config.instant_lock.quorum_active_signers,
+                rotation: platform_config.instant_lock.quorum_rotation,
+                window: platform_config.instant_lock.quorum_window,
+            };
+
+            let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =
+                &mut asset_lock_proof
+            else {
+                panic!("must be instant lock proof");
+            };
+
+            let request_id = instant_lock
+                .request_id()
+                .expect("failed to build request id");
+
+            let (quorum_hash, quorum) = instant_lock_quorums
+                .choose_quorum(&quorum_config, request_id.as_ref())
+                .expect("failed to choose quorum for instant lock transaction signing");
+
+            instant_lock.signature = quorum
+                .sign_for_instant_lock(
+                    &quorum_config,
+                    &quorum_hash,
+                    request_id.as_ref(),
+                    &instant_lock.txid,
+                )
+                .expect("failed to sign transaction for instant lock");
+        }
+
+        let funded_amount = match &asset_lock_proof {
+            AssetLockProof::Instant(proof) => {
+                let output_index = proof.output_index() as usize;
+                proof
+                    .transaction()
+                    .output
+                    .get(output_index)
+                    .map(|output| output.value)
+                    .unwrap_or_default()
+            }
+            AssetLockProof::Chain(_chain) => 0,
+        };
+
+        (
+            asset_lock_proof,
+            secret_key.secret_bytes().to_vec(),
+            funded_amount,
+        )
+    }
+
+    fn create_identity_top_up_from_addresses_transitions(
+        &mut self,
+        identity: &Identity,
+        amount_range: &AmountRange,
+        rng: &mut StdRng,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
+        platform_version: &PlatformVersion,
+    ) -> Result<(StateTransition, StateTransition), ProtocolError> {
+        let (asset_lock_proof, asset_lock_private_key, funded_amount) = self
+            .create_asset_lock_proof_with_amount(
+                rng,
+                amount_range,
+                instant_lock_quorums,
+                platform_config,
+                platform_version,
+            );
+
+        let address = self.address_signer.generate_p2pkh(rng);
+        let mut outputs = BTreeMap::new();
+        outputs.insert(address.clone(), None);
+
+        tracing::debug!(?outputs, "Preparing funding transition");
+        let funding_transition =
+            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                asset_lock_proof,
+                asset_lock_private_key.as_slice(),
+                BTreeMap::new(),
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                &self.address_signer,
+                0,
+                platform_version,
+            )?;
+
+        let spend_amount = std::cmp::max(funded_amount / 10, 1);
+        let mut inputs = BTreeMap::new();
+        // Funding tx should bump nonce to 1, so we provide 1 (from funding) plus 1 here.
+        // FIXME: this is unreliable, fails after a few runs
+        let nonce_to_provide = 1 + 1;
+
+        inputs.insert(address.clone(), (nonce_to_provide, spend_amount));
+        tracing::warn!(?inputs, "Preparing identity top-up transition with address");
+        let top_up_transition =
+            IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+                identity,
+                inputs,
+                &self.address_signer,
+                0,
+                platform_version,
+                None,
+            )?;
+
+        Ok((funding_transition, top_up_transition))
     }
 }
 
