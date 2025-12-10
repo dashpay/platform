@@ -23,6 +23,7 @@ use dpp::state_transition::batch_transition::document_base_transition::v0::v0_me
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
@@ -986,7 +987,7 @@ impl Drive {
                     root_hash_identity,
                     VerifiedIdentityWithAddressInfos(
                         PartialIdentity {
-                            id: *identity_id,
+                            id: identity_id,
                             loaded_public_keys: Default::default(),
                             balance: Some(balance),
                             revision: Some(revision),

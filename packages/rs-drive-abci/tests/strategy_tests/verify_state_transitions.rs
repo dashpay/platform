@@ -1,5 +1,5 @@
 use dpp::address_funds::PlatformAddress;
-use dpp::consensus::codes::ErrorWithCode;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
@@ -7,6 +7,7 @@ use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
@@ -15,7 +16,6 @@ use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedSt
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
-use drive_abci::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
@@ -780,14 +780,117 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     );
                 }
                 StateTransitionAction::IdentityCreditTransferToAddressesAction(
-                    _identity_credit_transfer_to_addresses_action,
+                    identity_credit_transfer_to_addresses_action,
                 ) => {
-                    // TODO: Add verification for credit transfer to addresses
-                    // This should verify the address balances were updated
+                    if let StateTransition::IdentityCreditTransferToAddresses(_) = state_transition
+                    {
+                        let block_info = platform
+                            .state
+                            .last_committed_block_info()
+                            .as_ref()
+                            .map(|info| info.basic_info().clone())
+                            .unwrap_or_else(BlockInfo::default);
+
+                        let (root_hash, proof_result) =
+                            Drive::verify_state_transition_was_executed_with_proof(
+                                state_transition,
+                                &block_info,
+                                &response_proof.grovedb_proof,
+                                &|_| Ok(None),
+                                platform_version,
+                            )
+                            .expect("expected to verify identity credit transfer proof");
+
+                        assert_eq!(
+                            &root_hash,
+                            expected_root_hash,
+                            "state last block info {:?}",
+                            platform.state.last_committed_block_info()
+                        );
+
+                        if *was_executed {
+                            let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                                proved_identity,
+                                address_infos_map,
+                            ) = proof_result
+                            else {
+                                panic!("expected identity/address infos for credit transfer proof");
+                            };
+
+                            assert_eq!(
+                                proved_identity.id,
+                                identity_credit_transfer_to_addresses_action.identity_id()
+                            );
+
+                            let expected_addresses: BTreeSet<PlatformAddress> =
+                                identity_credit_transfer_to_addresses_action
+                                    .recipient_addresses()
+                                    .keys()
+                                    .copied()
+                                    .collect();
+
+                            let proved_addresses: BTreeSet<PlatformAddress> =
+                                address_infos_map.keys().copied().collect();
+                            assert_eq!(
+                                proved_addresses, expected_addresses,
+                                "proved addresses should match recipients"
+                            );
+                        }
+                    } else {
+                        panic!("expected identity credit transfer state transition");
+                    }
                 }
-                StateTransitionAction::AddressFundsTransfer(_address_funds_transfer_action) => {
-                    // TODO: Add verification for address funds transfer
-                    // This should verify the address balances were updated
+                StateTransitionAction::AddressFundsTransfer(address_funds_transfer_action) => {
+                    if let StateTransition::AddressFundsTransfer(_) = state_transition {
+                        let block_info = platform
+                            .state
+                            .last_committed_block_info()
+                            .as_ref()
+                            .map(|info| info.basic_info().clone())
+                            .unwrap_or_else(BlockInfo::default);
+
+                        let (root_hash, proof_result) =
+                            Drive::verify_state_transition_was_executed_with_proof(
+                                state_transition,
+                                &block_info,
+                                &response_proof.grovedb_proof,
+                                &|_| Ok(None),
+                                platform_version,
+                            )
+                            .expect("expected to verify address funds transfer proof");
+
+                        assert_eq!(
+                            &root_hash,
+                            expected_root_hash,
+                            "state last block info {:?}",
+                            platform.state.last_committed_block_info()
+                        );
+
+                        let StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) =
+                            proof_result
+                        else {
+                            panic!(
+                                "expected address infos for address funds transfer proof but got {:?}",
+                                proof_result
+                            );
+                        };
+
+                        let expected_addresses: BTreeSet<PlatformAddress> =
+                            address_funds_transfer_action
+                                .inputs_with_remaining_balance()
+                                .keys()
+                                .chain(address_funds_transfer_action.outputs().keys())
+                                .copied()
+                                .collect();
+                        let proved_addresses: BTreeSet<PlatformAddress> =
+                            address_infos_map.keys().copied().collect();
+                        assert_eq!(
+                            proved_addresses, expected_addresses,
+                            "proved addresses should match transfer inputs/outputs"
+                        );
+                    } else {
+                        panic!("expected address funds transfer state transition");
+                    }
                 }
                 StateTransitionAction::AddressFundingFromAssetLock(
                     _address_funding_from_asset_lock_action,

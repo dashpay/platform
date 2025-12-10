@@ -1921,7 +1921,11 @@ mod tests {
 
             // Structure validation should pass (individual amounts are valid)
             let struct_result = transition_v0.validate_structure(platform_version);
-            assert!(struct_result.is_valid(), "Structure should be valid");
+            assert!(
+                struct_result.is_valid(),
+                "Structure should be valid, got {:?}",
+                struct_result
+            );
 
             // But the balance validation will catch the overflow when processing
             // This is tested via processing which will fail with overflow
