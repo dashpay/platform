@@ -57,7 +57,7 @@ where
                 let previous_balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution("partial identity info with no balance in paid from asset lock execution event"),
                 ))?;
-                let previous_balance_with_top_up = previous_balance + added_balance;
+                let previous_balance_with_top_up = previous_balance.saturating_add(*added_balance);
                 let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
@@ -137,7 +137,7 @@ where
                 let mut required_balance = estimated_fee_result.total_base_fee();
 
                 if let Some(additional_fee_cost) = additional_fee_cost {
-                    required_balance += *additional_fee_cost;
+                    required_balance = required_balance.saturating_add(*additional_fee_cost);
                 }
 
                 if balance_after_principal_operation >= required_balance {
@@ -191,7 +191,7 @@ where
                 let mut required_balance = estimated_fee_result.total_base_fee();
 
                 if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
-                    required_balance += *additional_fixed_fee_cost;
+                    required_balance = required_balance.saturating_add(*additional_fixed_fee_cost);
                 }
 
                 let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(

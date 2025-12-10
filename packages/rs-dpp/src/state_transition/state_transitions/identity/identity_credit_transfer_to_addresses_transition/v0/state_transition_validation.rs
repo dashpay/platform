@@ -1,3 +1,4 @@
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     OutputBelowMinimumError, TransitionNoOutputsError, TransitionOverMaxOutputsError,
 };
@@ -51,6 +52,51 @@ impl StateTransitionStructureValidation for IdentityCreditTransferToAddressesTra
             }
         }
 
+        // Validate recipient sum doesn't overflow
+        let recipient_sum = self
+            .recipient_addresses
+            .values()
+            .try_fold(0u64, |acc, amount| acc.checked_add(*amount));
+        if recipient_sum.is_none() {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::OverflowError(OverflowError::new(
+                    "Recipient addresses sum overflow".to_string(),
+                ))
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address_funds::PlatformAddress;
+    use assert_matches::assert_matches;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_return_invalid_result_if_recipient_sum_overflows() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([1u8; 20]), u64::MAX);
+        recipient_addresses.insert(PlatformAddress::P2pkh([2u8; 20]), u64::MAX);
+
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses,
+            ..Default::default()
+        };
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::OverflowError(err)
+            )] if err.message() == "Recipient addresses sum overflow"
+        );
     }
 }
