@@ -15,7 +15,7 @@ use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use drive::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;

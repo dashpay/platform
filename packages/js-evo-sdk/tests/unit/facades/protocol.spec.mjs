@@ -24,10 +24,18 @@ describe('ProtocolFacade', () => {
     expect(wasmSdk.getProtocolVersionUpgradeStateWithProofInfo).to.be.calledOnce();
   });
 
-  it('versionUpgradeVoteStatus and withProof forward with args', async () => {
-    await client.protocol.versionUpgradeVoteStatus({ startProTxHash: 'h', count: 5 });
-    await client.protocol.versionUpgradeVoteStatusWithProof({ startProTxHash: 'g', count: 3 });
+  it('versionUpgradeVoteStatus and withProof forward with positional args', async () => {
+    await client.protocol.versionUpgradeVoteStatus('h', 5);
+    await client.protocol.versionUpgradeVoteStatusWithProof('g', 3);
     expect(wasmSdk.getProtocolVersionUpgradeVoteStatus).to.be.calledOnceWithExactly('h', 5);
     expect(wasmSdk.getProtocolVersionUpgradeVoteStatusWithProofInfo).to.be.calledOnceWithExactly('g', 3);
+  });
+
+  it('versionUpgradeVoteStatus accepts Uint8Array and positional args', async () => {
+    const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+    await client.protocol.versionUpgradeVoteStatus(bytes, 2);
+    await client.protocol.versionUpgradeVoteStatusWithProof(bytes, 4);
+    expect(wasmSdk.getProtocolVersionUpgradeVoteStatus).to.be.calledWith(bytes, 2);
+    expect(wasmSdk.getProtocolVersionUpgradeVoteStatusWithProofInfo).to.be.calledWith(bytes, 4);
   });
 });

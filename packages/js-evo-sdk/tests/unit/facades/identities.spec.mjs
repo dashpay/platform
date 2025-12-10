@@ -53,40 +53,27 @@ describe('IdentitiesFacade', () => {
     expect(wasmSdk.getIdentityUnproved).to.be.calledOnceWithExactly('id');
   });
 
-  it('getKeys() forwards with Uint32Array and JSON mapping', async () => {
-    await client.identities.getKeys({
+  it('getKeys() forwards IdentityKeysQuery', async () => {
+    const query = {
       identityId: 'id',
-      keyRequestType: 'specific',
-      specificKeyIds: [1, 2],
-      searchPurposeMap: { a: 1 },
+      request: {
+        type: 'specific',
+        specificKeyIds: [1, 2],
+      },
       limit: 10,
       offset: 2,
-    });
-    const { args } = wasmSdk.getIdentityKeys.firstCall;
-    expect(args[0]).to.equal('id');
-    expect(args[1]).to.equal('specific');
-    expect(args[2]).to.be.instanceOf(Uint32Array);
-    expect(Array.from(args[2])).to.deep.equal([1, 2]);
-    expect(args[3]).to.equal(JSON.stringify({ a: 1 }));
-    expect(args[4]).to.equal(10);
-    expect(args[5]).to.equal(2);
+    };
+    await client.identities.getKeys(query);
+    expect(wasmSdk.getIdentityKeys).to.be.calledOnceWithExactly(query);
   });
 
-  it('getKeysWithProof() forwards with Uint32Array', async () => {
-    await client.identities.getKeysWithProof({
+  it('getKeysWithProof() forwards IdentityKeysQuery', async () => {
+    const query = {
       identityId: 'id',
-      keyRequestType: 'specific',
-      specificKeyIds: [5],
-      limit: 1,
-      offset: 0,
-    });
-    const { args } = wasmSdk.getIdentityKeysWithProofInfo.firstCall;
-    expect(args[0]).to.equal('id');
-    expect(args[1]).to.equal('specific');
-    expect(args[2]).to.be.instanceOf(Uint32Array);
-    expect(Array.from(args[2])).to.deep.equal([5]);
-    expect(args[3]).to.equal(1);
-    expect(args[4]).to.equal(0);
+      request: { type: 'all' },
+    };
+    await client.identities.getKeysWithProof(query);
+    expect(wasmSdk.getIdentityKeysWithProofInfo).to.be.calledOnceWithExactly(query);
   });
 
   it('nonce helpers forward to wasm', async () => {
@@ -124,23 +111,21 @@ describe('IdentitiesFacade', () => {
   it('public key hash lookups forward to wasm', async () => {
     await client.identities.byPublicKeyHash('hash');
     await client.identities.byPublicKeyHashWithProof('hash');
-    await client.identities.byNonUniquePublicKeyHash('hash', { startAfter: 'cursor' });
+    await client.identities.byNonUniquePublicKeyHash('hash', 'cursor');
     await client.identities.byNonUniquePublicKeyHashWithProof('hash');
     expect(wasmSdk.getIdentityByPublicKeyHash).to.be.calledOnceWithExactly('hash');
     expect(wasmSdk.getIdentityByPublicKeyHashWithProofInfo).to.be.calledOnceWithExactly('hash');
     expect(wasmSdk.getIdentityByNonUniquePublicKeyHash).to.be.calledOnceWithExactly('hash', 'cursor');
-    expect(wasmSdk.getIdentityByNonUniquePublicKeyHashWithProofInfo).to.be.calledOnceWithExactly('hash', null);
+    expect(wasmSdk.getIdentityByNonUniquePublicKeyHashWithProofInfo).to.be.calledOnceWithExactly('hash', undefined);
   });
 
-  it('contractKeys helpers convert purposes to Uint32Array and forward', async () => {
-    await client.identities.contractKeys({ identityIds: ['a'], contractId: 'c', purposes: [1, 2] });
-    await client.identities.contractKeysWithProof({ identityIds: ['b'], contractId: 'c' });
-    const arrayCall = wasmSdk.getIdentitiesContractKeys.firstCall.args;
-    expect(arrayCall[0]).to.deep.equal(['a']);
-    expect(arrayCall[1]).to.equal('c');
-    expect(arrayCall[2]).to.be.instanceOf(Uint32Array);
-    expect(Array.from(arrayCall[2])).to.deep.equal([1, 2]);
-    expect(wasmSdk.getIdentitiesContractKeysWithProofInfo).to.be.calledOnceWithExactly(['b'], 'c', null);
+  it('contractKeys helpers forward query object', async () => {
+    const query = { identityIds: ['a'], contractId: 'c', purposes: [1, 2] };
+    await client.identities.contractKeys(query);
+    const proofQuery = { identityIds: ['b'], contractId: 'c' };
+    await client.identities.contractKeysWithProof(proofQuery);
+    expect(wasmSdk.getIdentitiesContractKeys).to.be.calledOnceWithExactly(query);
+    expect(wasmSdk.getIdentitiesContractKeysWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('tokenBalances helpers forward to wasm', async () => {
