@@ -23,15 +23,20 @@ describe('EpochFacade', () => {
     this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRangeWithProofInfo').resolves('ok');
   });
 
-  it('epochsInfo and finalizedInfos forward with null handling', async () => {
-    await client.epoch.epochsInfo({ startEpoch: 1, count: 2, ascending: true });
-    await client.epoch.epochsInfoWithProof({});
-    await client.epoch.finalizedInfos({ startEpoch: 3 });
-    await client.epoch.finalizedInfosWithProof({ count: 4 });
-    expect(wasmSdk.getEpochsInfo).to.be.calledOnceWithExactly(1, 2, true);
-    expect(wasmSdk.getEpochsInfoWithProofInfo).to.be.calledOnceWithExactly(null, null, null);
-    expect(wasmSdk.getFinalizedEpochInfos).to.be.calledOnceWithExactly(3, null, null);
-    expect(wasmSdk.getFinalizedEpochInfosWithProofInfo).to.be.calledOnceWithExactly(null, 4, null);
+  it('epochsInfo and finalizedInfos forward queries untouched', async () => {
+    const epochsQuery = { startEpoch: 1, count: 2, ascending: true };
+    await client.epoch.epochsInfo(epochsQuery);
+    await client.epoch.epochsInfoWithProof();
+    const finalizedQuery = { startEpoch: 3 };
+    await client.epoch.finalizedInfos(finalizedQuery);
+    const finalizedProofQuery = { startEpoch: 4, count: 5 };
+    await client.epoch.finalizedInfosWithProof(finalizedProofQuery);
+    expect(wasmSdk.getEpochsInfo).to.be.calledOnceWithExactly(epochsQuery);
+    expect(wasmSdk.getEpochsInfoWithProofInfo).to.be.calledOnce();
+    expect(wasmSdk.getEpochsInfoWithProofInfo.firstCall.args[0]).to.deep.equal({});
+    expect(wasmSdk.getFinalizedEpochInfos).to.be.calledOnceWithExactly(finalizedQuery);
+    expect(wasmSdk.getFinalizedEpochInfosWithProofInfo)
+      .to.be.calledOnceWithExactly(finalizedProofQuery);
   });
 
   it('current and currentWithProof forward', async () => {
@@ -44,12 +49,16 @@ describe('EpochFacade', () => {
   it('evonodesProposedBlocks* forward with args', async () => {
     await client.epoch.evonodesProposedBlocksByIds(10, ['a', 'b']);
     await client.epoch.evonodesProposedBlocksByIdsWithProof(11, ['x']);
-    await client.epoch.evonodesProposedBlocksByRange(12, { limit: 2, startAfter: 's', orderAscending: false });
-    await client.epoch.evonodesProposedBlocksByRangeWithProof(13, {});
+    const rangeQuery = {
+      epoch: 12, limit: 2, startAfter: 's', orderAscending: false,
+    };
+    await client.epoch.evonodesProposedBlocksByRange(rangeQuery);
+    const rangeProofQuery = { epoch: 13 };
+    await client.epoch.evonodesProposedBlocksByRangeWithProof(rangeProofQuery);
     expect(wasmSdk.getEvonodesProposedEpochBlocksByIds).to.be.calledOnceWithExactly(10, ['a', 'b']);
     expect(wasmSdk.getEvonodesProposedEpochBlocksByIdsWithProofInfo).to.be.calledOnceWithExactly(11, ['x']);
-    expect(wasmSdk.getEvonodesProposedEpochBlocksByRange).to.be.calledOnceWithExactly(12, 2, 's', false);
+    expect(wasmSdk.getEvonodesProposedEpochBlocksByRange).to.be.calledOnceWithExactly(rangeQuery);
     expect(wasmSdk.getEvonodesProposedEpochBlocksByRangeWithProofInfo)
-      .to.be.calledOnceWithExactly(13, null, null, null);
+      .to.be.calledOnceWithExactly(rangeProofQuery);
   });
 });

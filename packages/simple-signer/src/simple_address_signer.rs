@@ -3,6 +3,8 @@
 //! This module provides a simple implementation of the `Signer<PlatformAddress>` trait
 //! for signing with P2PKH addresses. It maps address hashes to their corresponding private keys.
 
+// TODO: Looks like we have duplicate address signer implementations.
+// Discuss and remove one of them.
 use bincode::Encode;
 use dpp::address_funds::AddressWitness;
 use dpp::address_funds::PlatformAddress;

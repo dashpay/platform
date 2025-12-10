@@ -76,7 +76,7 @@ mod tests {
     };
 
     use drive_abci::logging::LogLevel;
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;

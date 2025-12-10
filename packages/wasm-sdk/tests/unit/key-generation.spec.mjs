@@ -9,11 +9,11 @@ describe('Keys and mnemonics', () => {
 
   describe('mnemonic', () => {
     it('generates 12 and 24 words and validates', () => {
-      const m12 = sdk.WasmSdk.generateMnemonic(12);
+      const m12 = sdk.WasmSdk.generateMnemonic({ wordCount: 12 });
       expect(m12.split(' ').length).to.equal(12);
       expect(sdk.WasmSdk.validateMnemonic(m12)).to.equal(true);
 
-      const m24 = sdk.WasmSdk.generateMnemonic(24);
+      const m24 = sdk.WasmSdk.generateMnemonic({ wordCount: 24 });
       expect(m24.split(' ').length).to.equal(24);
       expect(sdk.WasmSdk.validateMnemonic(m24)).to.equal(true);
     });
@@ -21,7 +21,7 @@ describe('Keys and mnemonics', () => {
     it('supports language wordlists', () => {
       const langs = ['en', 'es', 'fr', 'it', 'ja', 'ko', 'pt', 'cs'];
       for (const lang of langs) {
-        const m = sdk.WasmSdk.generateMnemonic(12, lang);
+        const m = sdk.WasmSdk.generateMnemonic({ wordCount: 12, languageCode: lang });
         expect(sdk.WasmSdk.validateMnemonic(m, lang)).to.equal(true);
       }
     });
@@ -46,15 +46,15 @@ describe('Keys and mnemonics', () => {
 
     it('derives address from pubkey equals generated address', () => {
       const kp = sdk.WasmSdk.generateKeyPair('mainnet');
-      const addr = sdk.WasmSdk.pubkeyToAddress(kp.public_key, 'mainnet');
+      const addr = sdk.WasmSdk.pubkeyToAddress(kp.publicKey, 'mainnet');
       expect(addr).to.equal(kp.address);
     });
 
     it('signs messages deterministically for same inputs', () => {
       const kp = sdk.WasmSdk.generateKeyPair('mainnet');
       const msg = 'Hello, Dash!';
-      const s1 = sdk.WasmSdk.signMessage(msg, kp.private_key_wif);
-      const s2 = sdk.WasmSdk.signMessage(msg, kp.private_key_wif);
+      const s1 = sdk.WasmSdk.signMessage(msg, kp.privateKeyWif);
+      const s2 = sdk.WasmSdk.signMessage(msg, kp.privateKeyWif);
       expect(s1).to.be.a('string');
       expect(s1).to.equal(s2);
     });

@@ -1,7 +1,7 @@
 use crate::abci::app::PlatformApplication;
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::Network;
 use dpp::version::DESIRED_PLATFORM_VERSION;

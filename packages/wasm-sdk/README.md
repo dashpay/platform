@@ -59,7 +59,11 @@ builder = builder.withSettings(5000, 10000, 3, true);
 const client = await builder.withLogs('warn').build();
 
 const DPNS = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
-const docs = await client.getDocuments(DPNS, 'domain', null, null, 5, null, null);
+const docs = await client.getDocuments({
+  dataContractId: DPNS,
+  documentTypeName: 'domain',
+  limit: 5,
+});
 console.log('Docs:', docs.length);
 
 client.free();

@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "2.1.0-rc.1"
+version.workspace = true
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",

@@ -61,6 +61,28 @@ impl MockDapiClient {
         Ok(self)
     }
 
+    /// Remove an existing expectation for a request.
+    ///
+    /// Returns `true` if the expectation was present.
+    pub fn remove<R>(&mut self, request: &R) -> bool
+    where
+        R: TransportRequest + Mockable,
+        R::Response: Mockable,
+    {
+        let key = Key::new(request);
+        let removed = self.expectations.remove(&key);
+
+        if removed {
+            tracing::trace!(
+                %key,
+                request_type = std::any::type_name::<R>(),
+                "mock removed expectation"
+            );
+        }
+
+        removed
+    }
+
     /// Load expectation from file.
     ///
     /// The file must contain JSON structure.
@@ -252,6 +274,11 @@ impl Expectations {
         let response = self.expectations.get(&key).and_then(|v| v.deserialize());
 
         (key, response)
+    }
+
+    /// Remove expectation associated with the given key.
+    pub fn remove(&mut self, key: &Key) -> bool {
+        self.expectations.remove(key).is_some()
     }
 }
 

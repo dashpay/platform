@@ -6,6 +6,7 @@ use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
+use crate::platform::query::Query;
 use crate::platform::Identifier;
 use crate::Error;
 
@@ -58,6 +59,26 @@ impl TryFrom<IdentitiesContractKeysQuery> for GetIdentitiesContractKeysRequest {
                 document_type_name,
                 purposes: purposes.into_iter().map(|purpose| purpose as i32).collect(),
                 prove: true,
+            })),
+        })
+    }
+}
+
+impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
+    fn query(self, prove: bool) -> Result<GetIdentitiesContractKeysRequest, Error> {
+        let IdentitiesContractKeysQuery {
+            identities_ids,
+            contract_id,
+            document_type_name,
+            purposes,
+        } = self;
+        Ok(GetIdentitiesContractKeysRequest {
+            version: Some(V0(GetIdentitiesContractKeysRequestV0 {
+                identities_ids: identities_ids.into_iter().map(|a| a.to_vec()).collect(),
+                contract_id: contract_id.to_vec(),
+                document_type_name,
+                purposes: purposes.into_iter().map(|purpose| purpose as i32).collect(),
+                prove,
             })),
         })
     }

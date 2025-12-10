@@ -12,8 +12,8 @@ describe('Documents', function documentsSuite() {
 
   it('query() returns documents by type', async () => {
     const res = await sdk.documents.query({
-      contractId: TEST_IDS.dataContractId,
-      type: TEST_IDS.documentType,
+      dataContractId: TEST_IDS.dataContractId,
+      documentTypeName: TEST_IDS.documentType,
       limit: 5,
       orderBy: [['normalizedLabel', 'desc']],
     });

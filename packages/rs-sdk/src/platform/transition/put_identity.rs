@@ -38,7 +38,9 @@ pub enum IdentityFunding {
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
 pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
-    /// Sends a new identity to Platform using the provided funding source.
+    /// Puts an identity on platform.
+    ///
+    /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
     async fn send_to_platform(
         &self,
         sdk: &Sdk,
@@ -105,6 +107,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         .await
     }
 }
+// TODO: This should require addresses + identity, not only identity
 #[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
     async fn send_to_platform(

@@ -2,15 +2,12 @@ use crate::context_provider::WasmContext;
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::{Sdk, SdkBuilder};
+use once_cell::sync::Lazy;
 use rs_dapi_client::RequestSettings;
 use std::ops::{Deref, DerefMut};
+use std::sync::Mutex;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
-
-// Store shared trusted contexts
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
-
 pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
     Mutex<Option<crate::context_provider::WasmTrustedContext>>,
 > = Lazy::new(|| Mutex::new(None));
@@ -175,7 +172,7 @@ impl WasmSdkBuilder {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid network '{}'. Expected: mainnet or testnet",
                     network
-                )))
+                )));
             }
         };
 
@@ -682,7 +679,7 @@ impl WasmSdkBuilder {
             "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.164.23.245:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://34.214.48.68:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
@@ -718,7 +715,7 @@ impl WasmSdkBuilder {
             "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.164.23.245:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://34.214.48.68:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
@@ -736,7 +733,10 @@ impl WasmSdkBuilder {
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]
-    pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
+    pub fn with_context_provider(
+        self,
+        #[wasm_bindgen(js_name = "contextProvider")] context_provider: WasmContext,
+    ) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
 
@@ -749,7 +749,10 @@ impl WasmSdkBuilder {
     ///
     /// Defaults to latest version if not specified.
     #[wasm_bindgen(js_name = "withVersion")]
-    pub fn with_version(self, version_number: u32) -> Result<Self, WasmSdkError> {
+    pub fn with_version(
+        self,
+        #[wasm_bindgen(js_name = "versionNumber")] version_number: u32,
+    ) -> Result<Self, WasmSdkError> {
         let version = PlatformVersion::get(version_number).map_err(|e| {
             WasmSdkError::invalid_argument(format!(
                 "Invalid platform version {}: {}",
@@ -770,10 +773,10 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name = "withSettings")]
     pub fn with_settings(
         self,
-        connect_timeout_ms: Option<u32>,
-        timeout_ms: Option<u32>,
+        #[wasm_bindgen(js_name = "connectTimeoutMs")] connect_timeout_ms: Option<u32>,
+        #[wasm_bindgen(js_name = "timeoutMs")] timeout_ms: Option<u32>,
         retries: Option<u32>,
-        ban_failed_address: Option<bool>,
+        #[wasm_bindgen(js_name = "banFailedAddress")] ban_failed_address: Option<bool>,
     ) -> Self {
         let mut settings = RequestSettings::default();
 
@@ -797,7 +800,10 @@ impl WasmSdkBuilder {
     }
 
     #[wasm_bindgen(js_name = "withProofs")]
-    pub fn with_proofs(self, enable_proofs: bool) -> Self {
+    pub fn with_proofs(
+        self,
+        #[wasm_bindgen(js_name = "enableProofs")] enable_proofs: bool,
+    ) -> Self {
         WasmSdkBuilder(self.0.with_proofs(enable_proofs))
     }
 }
@@ -809,7 +815,9 @@ impl WasmSdk {
     /// Accepts simple levels: "off", "error", "warn", "info", "debug", "trace"
     /// or a full EnvFilter string like: "wasm_sdk=debug,rs_dapi_client=warn"
     #[wasm_bindgen(js_name = "setLogLevel")]
-    pub fn set_log_level(level_or_filter: &str) -> Result<(), WasmSdkError> {
+    pub fn set_log_level(
+        #[wasm_bindgen(js_name = "levelOrFilter")] level_or_filter: &str,
+    ) -> Result<(), WasmSdkError> {
         crate::logging::set_log_level(level_or_filter)
     }
 }
@@ -819,7 +827,10 @@ impl WasmSdkBuilder {
     /// Configure tracing/logging via the builder
     /// Returns a new builder with logging configured
     #[wasm_bindgen(js_name = "withLogs")]
-    pub fn with_logs(self, level_or_filter: &str) -> Result<Self, WasmSdkError> {
+    pub fn with_logs(
+        self,
+        #[wasm_bindgen(js_name = "levelOrFilter")] level_or_filter: &str,
+    ) -> Result<Self, WasmSdkError> {
         crate::logging::set_log_level(level_or_filter)?;
         Ok(self)
     }

@@ -23,24 +23,26 @@ describe('DocumentsFacade', () => {
     this.sinon.stub(wasmSdk, 'documentSetPrice').resolves('ok');
   });
 
-  it('query() forwards to wasm.getDocuments with JSON and null handling', async () => {
-    const where = { a: 1 };
-    const order = { b: 'asc' };
-    await client.documents.query({
-      contractId: 'c',
-      type: 't',
-      where,
-      orderBy: order,
+  it('query() forwards DocumentsQuery', async () => {
+    const query = {
+      dataContractId: 'c',
+      documentTypeName: 't',
+      where: [['field', '==', 'value']],
+      orderBy: [['field', 'asc']],
       limit: 5,
       startAfter: 'x',
-      startAt: 'y',
-    });
-    expect(wasmSdk.getDocuments).to.be.calledOnceWithExactly('c', 't', JSON.stringify(where), JSON.stringify(order), 5, 'x', 'y');
+    };
+    await client.documents.query(query);
+    expect(wasmSdk.getDocuments).to.be.calledOnceWithExactly(query);
   });
 
-  it('queryWithProof() forwards to wasm.getDocumentsWithProofInfo', async () => {
-    await client.documents.queryWithProof({ contractId: 'c', type: 't' });
-    expect(wasmSdk.getDocumentsWithProofInfo).to.be.calledOnceWithExactly('c', 't', null, null, null, null, null);
+  it('queryWithProof() forwards DocumentsQuery', async () => {
+    const query = {
+      dataContractId: 'c',
+      documentTypeName: 't',
+    };
+    await client.documents.queryWithProof(query);
+    expect(wasmSdk.getDocumentsWithProofInfo).to.be.calledOnceWithExactly(query);
   });
 
   it('get() forwards to wasm.getDocument', async () => {

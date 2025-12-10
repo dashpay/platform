@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::queries::utils::identifier_from_js;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -45,21 +46,26 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityCreate)]
     pub async fn identity_create(
         &self,
-        asset_lock_proof: String,
-        asset_lock_proof_private_key: String,
-        public_keys: String,
+        #[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: String,
+        #[wasm_bindgen(js_name = "assetLockProofPrivateKey")] asset_lock_proof_private_key: String,
+        #[wasm_bindgen(js_name = "publicKeys")] public_keys: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Debug log parameters (truncated/sanitized)
         debug!(
-            target: "wasm_sdk",
-            len = asset_lock_proof.len(),
-            preview = %if asset_lock_proof.len() > 100 { format!("{}...", &asset_lock_proof[..100]) } else { asset_lock_proof.clone() },
-            "identityCreate called"
+            target : "wasm_sdk", len = asset_lock_proof.len(), preview = % if
+            asset_lock_proof.len() > 100 { format!("{}...", & asset_lock_proof[..100]) }
+            else { asset_lock_proof.clone() }, "identityCreate called"
         );
-        debug!(target: "wasm_sdk", pk_len = asset_lock_proof_private_key.len(), "identityCreate private key length");
-        debug!(target: "wasm_sdk", public_keys = %public_keys, "identityCreate public keys JSON");
+        debug!(
+            target : "wasm_sdk", pk_len = asset_lock_proof_private_key.len(),
+            "identityCreate private key length"
+        );
+        debug!(
+            target : "wasm_sdk", public_keys = % public_keys,
+            "identityCreate public keys JSON"
+        );
 
         // Parse asset lock proof - try hex first, then JSON
         let asset_lock_proof: AssetLockProof = if asset_lock_proof
@@ -90,8 +96,10 @@ impl WasmSdk {
         };
 
         // Parse private key - WIF format
-        debug!(target: "wasm_sdk", pk_len = asset_lock_proof_private_key.len(), "Private key format validation");
-
+        debug!(
+            target : "wasm_sdk", pk_len = asset_lock_proof_private_key.len(),
+            "Private key format validation"
+        );
         let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
 
@@ -132,7 +140,7 @@ impl WasmSdk {
                     return Err(WasmSdkError::invalid_argument(format!(
                         "Unknown key type: {}",
                         key_type_str
-                    )))
+                    )));
                 }
             };
 
@@ -148,7 +156,7 @@ impl WasmSdk {
                     return Err(WasmSdkError::invalid_argument(format!(
                         "Unknown purpose: {}",
                         purpose_str
-                    )))
+                    )));
                 }
             };
 
@@ -218,9 +226,11 @@ impl WasmSdk {
 
                         (key_data_bytes, [0u8; 32])
                     } else {
-                        return Err(WasmSdkError::invalid_argument(
-                            "ECDSA_HASH160 requires either 'privateKeyHex' to derive from or 'data' (base64-encoded 20-byte hash)",
-                        ));
+                        return Err(
+                            WasmSdkError::invalid_argument(
+                                "ECDSA_HASH160 requires either 'privateKeyHex' to derive from or 'data' (base64-encoded 20-byte hash)",
+                            ),
+                        );
                     }
                 }
                 KeyType::ECDSA_SECP256K1 => {
@@ -375,8 +385,9 @@ impl WasmSdk {
             Err(e) => {
                 // Extract more detailed error information
                 let error_msg = format!("Failed to create identity: {}", e);
-
-                error!(target: "wasm_sdk", msg = %error_msg, "Identity creation failed");
+                error!(
+                    target : "wasm_sdk", msg = % error_msg, "Identity creation failed"
+                );
                 return Err(WasmSdkError::generic(error_msg));
             }
         };
@@ -438,15 +449,17 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityTopUp)]
     pub async fn identity_top_up(
         &self,
-        identity_id: String,
-        asset_lock_proof: String,
-        asset_lock_proof_private_key: String,
+        #[wasm_bindgen(js_name = "identityId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: String,
+        #[wasm_bindgen(js_name = "assetLockProofPrivateKey")] asset_lock_proof_private_key: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse identity identifier
-        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_base58 = identifier.to_string(Encoding::Base58);
 
         // Parse asset lock proof - try hex first, then JSON
         let asset_lock_proof: AssetLockProof = if asset_lock_proof
@@ -475,10 +488,10 @@ impl WasmSdk {
                 WasmSdkError::invalid_argument(format!("Invalid asset lock proof JSON: {}", e))
             })?
         };
-
-        // Parse private key - WIF format
-        debug!(target: "wasm_sdk", pk_len = asset_lock_proof_private_key.len(), "Private key format validation");
-
+        debug!(
+            target : "wasm_sdk", pk_len = asset_lock_proof_private_key.len(),
+            "Private key format validation"
+        );
         let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
 
@@ -487,12 +500,12 @@ impl WasmSdk {
             Ok(Some(identity)) => identity,
             Ok(None) => {
                 let error_msg = format!("Identity not found: {}", identifier);
-                error!(target: "wasm_sdk", %error_msg);
+                error!(target : "wasm_sdk", % error_msg);
                 return Err(WasmSdkError::not_found(error_msg));
             }
             Err(e) => {
                 let error_msg = format!("Failed to fetch identity: {}", e);
-                error!(target: "wasm_sdk", %error_msg);
+                error!(target : "wasm_sdk", % error_msg);
                 return Err(WasmSdkError::from(e));
             }
         };
@@ -508,7 +521,7 @@ impl WasmSdk {
             Ok(balance) => balance,
             Err(e) => {
                 let error_msg = format!("Failed to top up identity: {}", e);
-                error!(target: "wasm_sdk", %error_msg);
+                error!(target : "wasm_sdk", % error_msg);
                 return Err(WasmSdkError::from(e));
             }
         };
@@ -527,7 +540,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
-            &JsValue::from_str(&identity_id),
+            &JsValue::from_str(&identity_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set identityId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -568,20 +581,25 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityCreditTransfer)]
     pub async fn identity_credit_transfer(
         &self,
-        sender_id: String,
-        recipient_id: String,
+        #[wasm_bindgen(js_name = "senderId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        sender_id: JsValue,
+        #[wasm_bindgen(js_name = "recipientId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        recipient_id: JsValue,
         amount: u64,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let sender_identifier = Identifier::from_string(&sender_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid sender ID: {}", e)))?;
+        let sender_identifier = identifier_from_js(&sender_id, "sender ID")?;
 
-        let recipient_identifier = Identifier::from_string(&recipient_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid recipient ID: {}", e)))?;
+        let recipient_identifier = identifier_from_js(&recipient_id, "recipient ID")?;
+
+        let sender_base58 = sender_identifier.to_string(Encoding::Base58);
+        let recipient_base58 = recipient_identifier.to_string(Encoding::Base58);
 
         // Validate not sending to self
         if sender_identifier == recipient_identifier {
@@ -680,7 +698,7 @@ impl WasmSdk {
             Some(matching_key),
             identity_nonce,
             sdk.version(),
-            None, // No version override
+            None,
         )
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create transfer transition: {}", e))
@@ -705,13 +723,13 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("senderId"),
-            &JsValue::from_str(&sender_id),
+            &JsValue::from_str(&sender_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set senderId: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("recipientId"),
-            &JsValue::from_str(&recipient_id),
+            &JsValue::from_str(&recipient_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set recipientId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -747,18 +765,20 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityCreditWithdrawal)]
     pub async fn identity_credit_withdrawal(
         &self,
-        identity_id: String,
-        to_address: String,
+        #[wasm_bindgen(js_name = "identityId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "toAddress")] to_address: String,
         amount: u64,
-        core_fee_per_byte: Option<u32>,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "coreFeePerByte")] core_fee_per_byte: Option<u32>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse identity identifier
-        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_base58 = identifier.to_string(Encoding::Base58);
 
         // Parse the Dash address
         use dash_sdk::dpp::dashcore::Address;
@@ -861,7 +881,7 @@ impl WasmSdk {
                 core_fee_per_byte,
                 Some(matching_key),
                 signer,
-                None, // No special settings
+                None,
             )
             .await
             .map_err(|e| WasmSdkError::generic(format!("Withdrawal failed: {}", e)))?;
@@ -878,7 +898,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
-            &JsValue::from_str(&identity_id),
+            &JsValue::from_str(&identity_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set identityId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -924,16 +944,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityUpdate)]
     pub async fn identity_update(
         &self,
-        identity_id: String,
-        add_public_keys: Option<String>,
-        disable_public_keys: Option<Vec<u32>>,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "identityId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "addPublicKeys")] add_public_keys: Option<String>,
+        #[wasm_bindgen(js_name = "disablePublicKeys")] disable_public_keys: Option<Vec<u32>>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse identity identifier
-        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_base58 = identifier.to_string(Encoding::Base58);
 
         // Fetch the identity
         let identity = dash_sdk::platform::Identity::fetch(&sdk, identifier)
@@ -1137,7 +1159,7 @@ impl WasmSdk {
             UserFeeIncrease::default(),
             &signer,
             sdk.version(),
-            None, // No version override
+            None,
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
@@ -1171,7 +1193,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
-            &JsValue::from_str(&identity_id),
+            &JsValue::from_str(&identity_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set identityId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -1221,36 +1243,27 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = masternodeVote)]
     pub async fn masternode_vote(
         &self,
-        masternode_pro_tx_hash: String,
-        contract_id: String,
-        document_type_name: String,
-        index_name: String,
-        index_values: String,
-        vote_choice: String,
-        voting_key_wif: String,
+        #[wasm_bindgen(js_name = "masternodeProTxHash")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        masternode_pro_tx_hash: JsValue,
+        #[wasm_bindgen(js_name = "contractId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract_id: JsValue,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+        #[wasm_bindgen(js_name = "indexName")] index_name: String,
+        #[wasm_bindgen(js_name = "indexValues")] index_values: String,
+        #[wasm_bindgen(js_name = "voteChoice")] vote_choice: String,
+        #[wasm_bindgen(js_name = "votingKeyWif")] voting_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
-        // Parse ProTxHash (try hex first, then base58)
-        let pro_tx_hash = if masternode_pro_tx_hash.len() == 64
-            && masternode_pro_tx_hash
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
-        {
-            // Looks like hex
-            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Hex).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid ProTxHash (hex): {}", e))
-            })?
-        } else {
-            // Try base58
-            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Base58).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid ProTxHash (base58): {}", e))
-            })?
-        };
+        // Parse ProTxHash
+        let pro_tx_hash = identifier_from_js(&masternode_pro_tx_hash, "ProTxHash")?;
+        let pro_tx_hash_base58 = pro_tx_hash.to_string(Encoding::Base58);
 
         // Parse contract ID
-        let data_contract_id = Identifier::from_string(&contract_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let data_contract_id = identifier_from_js(&contract_id, "contract ID")?;
+        let contract_id_base58 = data_contract_id.to_string(Encoding::Base58);
 
         // Parse index values from JSON
         let index_values_json: serde_json::Value =
@@ -1305,7 +1318,11 @@ impl WasmSdk {
                 })?;
             ResourceVoteChoice::TowardsIdentity(identity_id)
         } else {
-            return Err(WasmSdkError::invalid_argument("Invalid vote choice. Must be 'abstain', 'lock', or 'towardsIdentity:<identity_id>'"));
+            return Err(
+                WasmSdkError::invalid_argument(
+                    "Invalid vote choice. Must be 'abstain', 'lock', or 'towardsIdentity:<identity_id>'",
+                ),
+            );
         };
 
         // Parse private key (try WIF first, then hex)
@@ -1356,10 +1373,10 @@ impl WasmSdk {
         // Create the voting identity public key
         use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         let voting_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: 0, // The ID doesn't matter for voting keys
+            id: 0,
             key_type: KeyType::ECDSA_HASH160,
             purpose: Purpose::VOTING,
-            security_level: SecurityLevel::HIGH, // Voting keys should be HIGH, not MASTER
+            security_level: SecurityLevel::HIGH,
             contract_bounds: None,
             read_only: false,
             data: BinaryData::new(voting_key_hash),
@@ -1412,13 +1429,13 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("proTxHash"),
-            &JsValue::from_str(&masternode_pro_tx_hash),
+            &JsValue::from_str(&pro_tx_hash_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set proTxHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("contractId"),
-            &JsValue::from_str(&contract_id),
+            &JsValue::from_str(&contract_id_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set contractId: {:?}", e)))?;
         js_sys::Reflect::set(
