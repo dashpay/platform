@@ -25,6 +25,7 @@ pub enum WasmSdkErrorKind {
     TimeoutReached,
     AlreadyExists,
     InvalidCreditTransfer,
+    MissingSigner,
     Generic,
     ContextProviderError,
     Cancelled,
@@ -144,6 +145,9 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            MissingSigner(msg) => {
+                Self::new(WasmSdkErrorKind::MissingSigner, msg, None, retriable)
+            }
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),
@@ -226,6 +230,7 @@ impl WasmSdkError {
             K::TimeoutReached => "TimeoutReached",
             K::AlreadyExists => "AlreadyExists",
             K::InvalidCreditTransfer => "InvalidCreditTransfer",
+            K::MissingSigner => "MissingSigner",
             K::Generic => "Generic",
             K::ContextProviderError => "ContextProviderError",
             K::Cancelled => "Cancelled",

@@ -77,7 +77,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> +
                 asset_lock_private_key: *asset_lock_proof_private_key,
             },
             signer,
-            None,
+            None::<&A>,
             settings,
         )
         .await
@@ -103,7 +103,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> +
                 asset_lock_private_key: *asset_lock_proof_private_key,
             },
             signer,
-            None,
+            None::<&A>,
             settings,
         )
         .await

@@ -2,6 +2,7 @@
 
 use dash_sdk::dpp::prelude::Identity;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
+use simple_signer::SimpleAddressSigner;
 
 use crate::identity::helpers::{
     convert_put_settings, create_chain_asset_lock_proof, create_instant_asset_lock_proof,
@@ -73,8 +74,9 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
         let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform
-        let state_transition = identity
-            .put_to_platform(
+        let state_transition =
+            <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform(
+                identity,
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
@@ -163,8 +165,9 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
         let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform and wait for response
-        let confirmed_identity = identity
-            .put_to_platform_and_wait_for_response(
+        let confirmed_identity =
+            <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform_and_wait_for_response(
+                identity,
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
@@ -245,8 +248,9 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
         let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform
-        let state_transition = identity
-            .put_to_platform(
+        let state_transition =
+            <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform(
+                identity,
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
@@ -324,8 +328,9 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock_and_w
         let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform and wait for response
-        let confirmed_identity = identity
-            .put_to_platform_and_wait_for_response(
+        let confirmed_identity =
+            <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform_and_wait_for_response(
+                identity,
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,

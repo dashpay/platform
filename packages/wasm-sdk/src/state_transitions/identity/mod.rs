@@ -15,7 +15,7 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::Fetch;
 use js_sys;
-use simple_signer::{signer::SimpleSigner, SingleKeySigner};
+use simple_signer::{signer::SimpleSigner, SimpleAddressSigner, SingleKeySigner};
 use tracing::{debug, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -371,8 +371,8 @@ impl WasmSdk {
         // The signer now contains all private keys for signing each public key individually
 
         // Put identity to platform and wait
-        let created_identity = match identity
-            .put_to_platform_and_wait_for_response(
+        let created_identity = match <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform_and_wait_for_response(
+                &identity,
                 &sdk,
                 asset_lock_proof,
                 &private_key,
