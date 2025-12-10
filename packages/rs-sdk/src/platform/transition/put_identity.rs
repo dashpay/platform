@@ -56,7 +56,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         input_private_keys: Vec<Vec<u8>>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error>;
+    ) -> Result<(Identity, AddressInfos), Error>;
 
     /// Creates an identity funded by Platform addresses using explicit nonces.
     async fn put_with_address_funding_with_nonce(
@@ -66,7 +66,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         input_private_keys: Vec<Vec<u8>>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error>;
+    ) -> Result<(Identity, AddressInfos), Error>;
 }
 
 #[async_trait::async_trait]
@@ -118,7 +118,7 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         input_private_keys: Vec<Vec<u8>>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error> {
+    ) -> Result<(Identity, AddressInfos), Error> {
         let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
         self.put_with_address_funding_with_nonce(
             sdk,
@@ -137,7 +137,7 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         input_private_keys: Vec<Vec<u8>>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error> {
+    ) -> Result<(Identity, AddressInfos), Error> {
         put_identity_with_address_funding(self, sdk, inputs, input_private_keys, signer, settings)
             .await
     }
@@ -169,7 +169,7 @@ async fn put_identity_with_address_funding<S: Signer<IdentityPublicKey>>(
     input_private_keys: Vec<Vec<u8>>,
     signer: &S,
     settings: Option<PutSettings>,
-) -> Result<(AddressInfos, Credits), Error> {
+) -> Result<(Identity, AddressInfos), Error> {
     if input_private_keys.is_empty() {
         return Err(Error::InvalidCreditTransfer(
             "input_private_keys must contain at least one key".to_string(),
@@ -205,14 +205,15 @@ async fn put_identity_with_address_funding<S: Signer<IdentityPublicKey>>(
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
         .await?
     {
-        StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-            partial_identity,
+        StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
+            proved_identity,
             address_infos_map,
         ) => {
-            if partial_identity.id != identity.id() {
+            let proved_identity_id = proved_identity.id();
+            if proved_identity_id != identity.id() {
                 return Err(Error::InvalidProvedResponse(format!(
                     "proof returned identity {} but {} was created",
-                    partial_identity.id,
+                    proved_identity_id,
                     identity.id()
                 )));
             }
@@ -220,13 +221,7 @@ async fn put_identity_with_address_funding<S: Signer<IdentityPublicKey>>(
             let address_infos =
                 collect_address_infos_from_proof(address_infos_map, &expected_addresses)?;
 
-            let balance = partial_identity.balance.ok_or_else(|| {
-                Error::InvalidProvedResponse(
-                    "identity proof did not include updated balance".to_string(),
-                )
-            })?;
-
-            Ok((address_infos, balance))
+            Ok((proved_identity, address_infos))
         }
         other => Err(Error::InvalidProvedResponse(format!(
             "identity proof was expected but not returned: {:?}",

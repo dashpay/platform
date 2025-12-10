@@ -43,6 +43,10 @@ pub enum StateTransitionProofResult {
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
     VerifiedAddressInfos(BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>),
+    VerifiedIdentityFullWithAddressInfos(
+        Identity,
+        BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+    ),
     VerifiedIdentityWithAddressInfos(
         PartialIdentity,
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
