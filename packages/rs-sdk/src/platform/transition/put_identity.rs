@@ -1,12 +1,11 @@
-use crate::platform::transition::address_inputs::nonce_inc;
-use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
-use crate::{Error, Sdk};
-
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
+use crate::platform::transition::address_inputs::nonce_inc;
+use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
+use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
@@ -19,9 +18,6 @@ use dpp::state_transition::StateTransition;
 use std::collections::BTreeMap;
 
 /// Funding sources supported when creating an identity.
-///
-/// For address-based funding, the caller must provide a signer that implements
-/// `Signer<PlatformAddress>` separately via the trait methods.
 pub enum IdentityFunding {
     AssetLock {
         asset_lock_proof: AssetLockProof,
@@ -42,9 +38,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> +
 {
     /// Sends a new identity to Platform using the provided funding source.
     ///
-    /// For `IdentityFunding::Addresses` or `IdentityFunding::AddressesWithNonce`,
-    /// an `address_signer` implementing `Signer<PlatformAddress>` must be provided.
-    /// For `IdentityFunding::AssetLock`, `address_signer` can be `None`.
+    /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
     async fn send_to_platform(
         &self,
         sdk: &Sdk,
@@ -115,6 +109,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> +
         .await
     }
 }
+
 #[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey> + Send + Sync, A: Signer<PlatformAddress> + Send + Sync>
     PutIdentity<S, A> for Identity
