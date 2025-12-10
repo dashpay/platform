@@ -166,7 +166,9 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>, A: Signer<Pl
         }
         IdentityFunding::Addresses { inputs } => {
             let address_signer = address_signer.ok_or_else(|| {
-                Error::MissingSigner("address_signer is required for address-based funding".to_string())
+                Error::MissingSigner(
+                    "address_signer is required for address-based funding".to_string(),
+                )
             })?;
             let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, inputs).await?);
             send_identity_with_addresses(
@@ -181,7 +183,9 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>, A: Signer<Pl
         }
         IdentityFunding::AddressesWithNonce { inputs } => {
             let address_signer = address_signer.ok_or_else(|| {
-                Error::MissingSigner("address_signer is required for address-based funding".to_string())
+                Error::MissingSigner(
+                    "address_signer is required for address-based funding".to_string(),
+                )
             })?;
             send_identity_with_addresses(
                 identity,
