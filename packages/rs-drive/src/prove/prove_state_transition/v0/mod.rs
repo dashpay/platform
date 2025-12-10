@@ -224,15 +224,29 @@ impl Drive {
                         e
                     )))
                 })?;
-                Drive::full_identity_query(
+                let identity_query = Drive::full_identity_query(
                     &identity_id.into_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                let addresses_query =
+                    Drive::balances_for_clear_addresses_query(st.inputs().keys());
+
+                PathQuery::merge(
+                    vec![&identity_query, &addresses_query],
                     &platform_version.drive.grove_version,
                 )?
             }
             StateTransition::IdentityTopUpFromAddresses(st) => {
                 // we expect to get a new balance and revision
-                Drive::revision_and_balance_path_query(
+                let identity_query = Drive::revision_and_balance_path_query(
                     st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                let addresses_query =
+                    Drive::balances_for_clear_addresses_query(st.inputs().keys());
+
+                PathQuery::merge(
+                    vec![&identity_query, &addresses_query],
                     &platform_version.drive.grove_version,
                 )?
             }
