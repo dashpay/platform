@@ -75,6 +75,10 @@ pub enum Error {
     /// Invalid credit transfer configuration
     #[error("Invalid credit transfer: {0}")]
     InvalidCreditTransfer(String),
+    /// Required signer not provided
+    #[error("Missing required signer: {0}")]
+    MissingSigner(String),
+
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
