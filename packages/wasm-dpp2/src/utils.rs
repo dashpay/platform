@@ -12,6 +12,10 @@ use std::convert::TryInto;
 use wasm_bindgen::convert::RefFromWasmAbi;
 use wasm_bindgen::{JsCast, JsValue};
 
+#[deprecated(
+    since = "0.1.0",
+    note = "Use serde_format::normalize_js_value_for_serde with serde_wasm_bindgen instead"
+)]
 pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
     // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
     // so subsequent serde_json parsing can treat them as byte sequences.
@@ -67,12 +71,8 @@ impl JsValueExt for JsValue {
 }
 
 pub fn with_serde_to_json_value_wasm(data: JsValue) -> WasmDppResult<JsonValue> {
-    let data = stringify_wasm(&data)?;
-    serde_json::from_str(&data).map_err(|e| {
-        WasmDppError::serialization(format!(
-            "unable to convert value to serde_json::Value: {e:#}"
-        ))
-    })
+    // Use direct serde_wasm_bindgen conversion with normalization for BigInt, Buffer, etc.
+    crate::serde_format::js_value_to_json(&data)
 }
 
 pub fn with_serde_to_platform_value_wasm(data: &JsValue) -> WasmDppResult<Value> {
@@ -138,11 +138,8 @@ pub fn to_vec_of_platform_values(
 }
 
 pub fn with_serde_to_json_value(data: JsValue) -> WasmDppResult<JsonValue> {
-    let data = stringify(&data)?;
-    let value: JsonValue = serde_json::from_str(&data)
-        .with_context(|| format!("cant convert {data:#?} to serde json value"))
-        .map_err(|e| WasmDppError::serialization(format!("{e:#}")))?;
-    Ok(value)
+    // Use direct serde_wasm_bindgen conversion with normalization for BigInt, Buffer, etc.
+    crate::serde_format::js_value_to_json(&data)
 }
 
 pub fn with_serde_to_platform_value(data: &JsValue) -> WasmDppResult<Value> {
@@ -172,10 +169,15 @@ pub fn normalize_json_bytes_to_strings(value: JsValue) -> WasmDppResult<JsonValu
         }
     }
 
-    let json = with_serde_to_json_value(value)?;
+    // Use direct serde_wasm_bindgen conversion with normalization
+    let json = crate::serde_format::js_value_to_json(&value)?;
     Ok(normalize(json))
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "Use serde_format::normalize_js_value_for_serde with serde_wasm_bindgen instead"
+)]
 pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
     // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
     // so subsequent serde_json parsing can treat them as byte sequences.

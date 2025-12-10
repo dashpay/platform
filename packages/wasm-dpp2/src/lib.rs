@@ -11,7 +11,7 @@
 
 pub mod asset_lock_proof;
 pub mod block;
-mod bytes_b64;
+pub mod bytes_b64;
 pub mod consensus_error;
 pub mod core_script;
 pub mod data_contract;

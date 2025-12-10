@@ -5,7 +5,6 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
 
-use crate::serialization::convert_bigints_to_strings;
 use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
 
@@ -24,9 +23,7 @@ where
         return Err(WasmSdkError::invalid_argument(missing_error.to_string()));
     }
 
-    // Convert BigInts to strings first to avoid conversion errors
-    let converted = convert_bigints_to_strings(&value)?;
-    serde_wasm_bindgen::from_value(converted)
+    serde_wasm_bindgen::from_value(value)
         .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
 }
 
@@ -44,9 +41,7 @@ where
         return Ok(T::default());
     }
 
-    // Convert BigInts to strings first to avoid conversion errors
-    let converted = convert_bigints_to_strings(&value)?;
-    serde_wasm_bindgen::from_value(converted)
+    serde_wasm_bindgen::from_value(value)
         .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
 }
 

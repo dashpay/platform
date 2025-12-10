@@ -12,13 +12,13 @@ pub mod voting;
 // Re-export all query functions for easy access
 pub use group::*;
 
-use crate::bytes_b64;
 use crate::impl_wasm_object_json;
 use crate::serialization::{
     from_json_value, from_object, js_to_json_value, json_value_to_js, to_json_value,
-    to_object_bytes,
+    to_object as to_object_bytes,
 };
 use crate::WasmSdkError;
+use wasm_dpp2::bytes_b64;
 use js_sys::Uint8Array;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
