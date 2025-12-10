@@ -951,27 +951,49 @@ impl Drive {
                 Ok((root_hash, VerifiedMasternodeVote(vote)))
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
-                // Verify balances for recipient addresses
-                use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
-                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(
+                let identity_id = st.identity_id();
+                let (root_hash_identity, Some((balance, revision))) =
+                    Drive::verify_identity_balance_and_revision_for_identity_id(
                         proof,
-                        st.recipient_addresses().keys(),
+                        identity_id.to_buffer(),
                         false,
                         platform_version,
-                    )?;
-                // Return the verified balances
-                // For now, we'll return a simple verification result
-                // TODO: Define proper StateTransitionProofResult variant for address transfers
+                    )?
+                else {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        format!("proof did not contain balance for identity {} expected to exist because of state transition (identity credit transfer to addresses)", identity_id)
+                    )));
+                };
+
+                let (root_hash_addresses, address_balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.recipient_addresses().keys(),
+                    false,
+                    platform_version,
+                )?;
+
+                if root_hash_identity != root_hash_addresses {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "proof is expected to have same root hash for identity and address infos"
+                            .to_string(),
+                    )));
+                }
+
                 Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: st.identity_id(),
-                        loaded_public_keys: Default::default(),
-                        balance: None,
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
+                    root_hash_identity,
+                    VerifiedIdentityWithAddressInfos(
+                        PartialIdentity {
+                            id: *identity_id,
+                            loaded_public_keys: Default::default(),
+                            balance: Some(balance),
+                            revision: Some(revision),
+                            not_found_public_keys: Default::default(),
+                        },
+                        address_balances,
+                    ),
                 ))
             }
             StateTransition::IdentityCreateFromAddresses(st) => {

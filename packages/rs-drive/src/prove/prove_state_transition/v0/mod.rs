@@ -205,7 +205,17 @@ impl Drive {
                 }
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
-                Drive::balances_for_clear_addresses_query(st.recipient_addresses().keys())
+                let identity_query = Drive::revision_and_balance_path_query(
+                    st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                let addresses_query =
+                    Drive::balances_for_clear_addresses_query(st.recipient_addresses().keys());
+
+                PathQuery::merge(
+                    vec![&identity_query, &addresses_query],
+                    &platform_version.drive.grove_version,
+                )?
             }
             StateTransition::IdentityCreateFromAddresses(st) => {
                 let identity_id = st.identity_id_from_inputs().map_err(|e| {
