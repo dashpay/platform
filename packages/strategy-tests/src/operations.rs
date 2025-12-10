@@ -1,5 +1,6 @@
 use crate::frequency::Frequency;
 use bincode::{Decode, Encode};
+use dpp::address_funds::AddressFundsFeeStrategy;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -599,6 +600,10 @@ impl VoteAction {
 
 pub type AmountRange = RangeInclusive<Credits>;
 
+pub type OutputCountRange = RangeInclusive<u8>;
+
+pub type UseExistingAddressesAsOutputChance = Option<f64>; //between 0 and 1.
+
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct IdentityTransferInfo {
     pub from: Identifier,
@@ -619,6 +624,12 @@ pub enum OperationType {
     Token(TokenOp),
     IdentityTopUpFromAddresses(AmountRange),
     AddressFundingFromCoreAssetLock(AmountRange),
+    AddressTransfer(
+        AmountRange,
+        OutputCountRange,
+        UseExistingAddressesAsOutputChance,
+        Option<AddressFundsFeeStrategy>,
+    ),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -635,6 +646,12 @@ enum OperationTypeInSerializationFormat {
     Token(Vec<u8>),
     IdentityTopUpFromAddresses(AmountRange),
     AddressFundingFromCoreAssetLock(AmountRange),
+    AddressTransfer(
+        AmountRange,
+        OutputCountRange,
+        UseExistingAddressesAsOutputChance,
+        Option<AddressFundsFeeStrategy>,
+    ),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -698,6 +715,17 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
             OperationType::AddressFundingFromCoreAssetLock(amount_range) => {
                 OperationTypeInSerializationFormat::AddressFundingFromCoreAssetLock(amount_range)
             }
+            OperationType::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ) => OperationTypeInSerializationFormat::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ),
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -776,6 +804,17 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             OperationTypeInSerializationFormat::AddressFundingFromCoreAssetLock(amount_range) => {
                 OperationType::AddressFundingFromCoreAssetLock(amount_range)
             }
+            OperationTypeInSerializationFormat::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ) => OperationType::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ),
         })
     }
 }
