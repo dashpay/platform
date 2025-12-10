@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::{ScriptBuf, TxOut};
-use js_sys::Uint8Array;
+use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -95,5 +95,81 @@ impl TxOutWasm {
     #[wasm_bindgen(js_name = "getScriptPubKeyASM")]
     pub fn get_script_pubkey_asm(&self) -> String {
         self.0.script_pubkey.to_asm_string()
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let obj = Object::new();
+        Reflect::set(&obj, &"value".into(), &JsValue::from(self.0.value))
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(
+            &obj,
+            &"scriptPubKey".into(),
+            &self.0.script_pubkey.to_hex_string().into(),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<TxOutWasm> {
+        let value = Reflect::get(&js_value, &"value".into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?
+            .as_f64()
+            .ok_or_else(|| WasmDppError::invalid_argument("value must be a number"))?
+            as u64;
+
+        let script_hex = Reflect::get(&js_value, &"scriptPubKey".into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("scriptPubKey must be a string"))?;
+
+        let script_pubkey = ScriptBuf::from_hex(&script_hex)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
+        Ok(TxOutWasm(TxOut {
+            value,
+            script_pubkey,
+        }))
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let obj = Object::new();
+        Reflect::set(&obj, &"value".into(), &JsValue::from(self.0.value))
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(
+            &obj,
+            &"scriptPubKey".into(),
+            &Uint8Array::from(self.0.script_pubkey.as_bytes()).into(),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<TxOutWasm> {
+        let value = Reflect::get(&js_value, &"value".into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?
+            .as_f64()
+            .ok_or_else(|| WasmDppError::invalid_argument("value must be a number"))?
+            as u64;
+
+        let script_js = Reflect::get(&js_value, &"scriptPubKey".into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        let script_pubkey = if script_js.is_string() {
+            let hex = script_js
+                .as_string()
+                .ok_or_else(|| WasmDppError::invalid_argument("scriptPubKey must be a string"))?;
+            ScriptBuf::from_hex(&hex).map_err(|e| WasmDppError::serialization(e.to_string()))?
+        } else {
+            ScriptBuf::from_bytes(Uint8Array::from(script_js).to_vec())
+        };
+
+        Ok(TxOutWasm(TxOut {
+            value,
+            script_pubkey,
+        }))
     }
 }

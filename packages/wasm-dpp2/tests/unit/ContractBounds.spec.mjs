@@ -1,0 +1,110 @@
+import getWasm from './helpers/wasm.js';
+
+let wasm;
+
+before(async () => {
+  wasm = await getWasm();
+});
+
+describe('ContractBounds', () => {
+  const contractIdHex = '1111111111111111111111111111111111111111111111111111111111111111';
+
+  describe('constructor', () => {
+    it('should create SingleContract bounds without document type', () => {
+      const bounds = new wasm.ContractBounds(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+
+      // contractBoundsType returns the serde string representation from rs-dpp
+      expect(bounds.contractBoundsType).to.equal('singleContract');
+      expect(bounds.documentTypeName).to.be.null;
+    });
+
+    it('should create SingleContractDocumentType bounds with document type', () => {
+      const bounds = new wasm.ContractBounds(
+        Buffer.from(contractIdHex, 'hex'),
+        'note',
+      );
+
+      // contractBoundsType returns the serde string representation from rs-dpp
+      expect(bounds.contractBoundsType).to.equal('documentType');
+      expect(bounds.documentTypeName).to.equal('note');
+    });
+  });
+
+  describe('static constructors', () => {
+    it('should create SingleContract via static method', () => {
+      const bounds = wasm.ContractBounds.SingleContract(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+
+      expect(bounds.contractBoundsType).to.equal('singleContract');
+    });
+
+    it('should create SingleContractDocumentType via static method', () => {
+      const bounds = wasm.ContractBounds.SingleContractDocumentType(
+        Buffer.from(contractIdHex, 'hex'),
+        'profile',
+      );
+
+      expect(bounds.contractBoundsType).to.equal('documentType');
+      expect(bounds.documentTypeName).to.equal('profile');
+    });
+  });
+
+  describe('conversion methods', () => {
+    it('should round-trip SingleContract via toJSON/fromJSON', () => {
+      const bounds = wasm.ContractBounds.SingleContract(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+
+      const json = bounds.toJSON();
+      expect(json).to.be.an('object');
+      expect(json.type).to.equal('singleContract');
+
+      const restored = wasm.ContractBounds.fromJSON(json);
+      expect(restored.contractBoundsType).to.equal(bounds.contractBoundsType);
+      expect(restored.identifier.toBase58()).to.equal(bounds.identifier.toBase58());
+    });
+
+    it('should round-trip SingleContractDocumentType via toJSON/fromJSON', () => {
+      const bounds = wasm.ContractBounds.SingleContractDocumentType(
+        Buffer.from(contractIdHex, 'hex'),
+        'profile',
+      );
+
+      const json = bounds.toJSON();
+      expect(json).to.be.an('object');
+      expect(json.type).to.equal('documentType');
+
+      const restored = wasm.ContractBounds.fromJSON(json);
+      expect(restored.contractBoundsType).to.equal(bounds.contractBoundsType);
+      expect(restored.documentTypeName).to.equal(bounds.documentTypeName);
+      expect(restored.identifier.toBase58()).to.equal(bounds.identifier.toBase58());
+    });
+  });
+
+  describe('getters', () => {
+    it('should return identifier', () => {
+      const bounds = new wasm.ContractBounds(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+
+      expect(bounds.identifier).to.be.an('object');
+      expect(bounds.identifier.__type).to.equal('Identifier');
+    });
+
+    it('should return contractBoundsTypeNumber', () => {
+      const singleContract = wasm.ContractBounds.SingleContract(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+      expect(singleContract.contractBoundsTypeNumber).to.equal(0);
+
+      const documentType = wasm.ContractBounds.SingleContractDocumentType(
+        Buffer.from(contractIdHex, 'hex'),
+        'note',
+      );
+      expect(documentType.contractBoundsTypeNumber).to.equal(1);
+    });
+  });
+});

@@ -15,9 +15,13 @@ use wasm_bindgen::{JsCast, JsValue};
 pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
     // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
     // so subsequent serde_json parsing can treat them as byte sequences.
+    // Also convert BigInt to strings since JSON.stringify doesn't support BigInt natively.
     let replacer_func = Function::new_with_args(
         "key, value",
         r#"
+        if (typeof value === 'bigint') {
+            return value.toString();
+        }
         if (value != undefined && value.type === 'Buffer') {
             return value.data;
         }
@@ -173,9 +177,15 @@ pub fn normalize_json_bytes_to_strings(value: JsValue) -> WasmDppResult<JsonValu
 }
 
 pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
+    // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
+    // so subsequent serde_json parsing can treat them as byte sequences.
+    // Also convert BigInt to strings since JSON.stringify doesn't support BigInt natively.
     let replacer_func = Function::new_with_args(
         "key, value",
         r#"
+        if (typeof value === 'bigint') {
+            return value.toString();
+        }
         if (value != undefined && value.type === 'Buffer') {
             return value.data;
         }

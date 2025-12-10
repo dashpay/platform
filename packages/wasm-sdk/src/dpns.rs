@@ -259,6 +259,7 @@ impl WasmSdk {
 
         let callback_box = if preorder_callback.is_some() {
             Some(Box::new(move |doc: &Document| {
+                // TODO: Pass document instead of JSON
                 PREORDER_CALLBACK.with(|cb| {
                     if let Some(js_callback) = cb.borrow().as_ref() {
                         let preorder_info = serde_json::json!(
@@ -270,7 +271,9 @@ impl WasmSdk {
                             .created_at_core_block_height(), "message" :
                             "Preorder document submitted successfully", }
                         );
-                        if let Ok(js_value) = serde_wasm_bindgen::to_value(&preorder_info) {
+                        // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+                        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                        if let Ok(js_value) = preorder_info.serialize(&serializer) {
                             let _ = js_callback.call1(&JsValue::NULL, &js_value);
                         }
                     }
@@ -427,7 +430,9 @@ impl WasmSdk {
                 document_id: IdentifierWasm::from(document.id()),
             };
 
-            let data = serde_wasm_bindgen::to_value(&result).map_err(|e| {
+            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            let data = result.serialize(&serializer).map_err(|e| {
                 WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
             })?;
 

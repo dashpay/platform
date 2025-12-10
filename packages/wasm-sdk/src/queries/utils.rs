@@ -1,9 +1,11 @@
 use dash_sdk::dpp::platform_value::{Identifier, Value as PlatformValue};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
 
+use crate::serialization::convert_bigints_to_strings;
 use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
 
@@ -22,7 +24,9 @@ where
         return Err(WasmSdkError::invalid_argument(missing_error.to_string()));
     }
 
-    serde_wasm_bindgen::from_value(value)
+    // Convert BigInts to strings first to avoid conversion errors
+    let converted = convert_bigints_to_strings(&value)?;
+    serde_wasm_bindgen::from_value(converted)
         .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
 }
 
@@ -40,7 +44,9 @@ where
         return Ok(T::default());
     }
 
-    serde_wasm_bindgen::from_value(value)
+    // Convert BigInts to strings first to avoid conversion errors
+    let converted = convert_bigints_to_strings(&value)?;
+    serde_wasm_bindgen::from_value(converted)
         .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
 }
 
@@ -74,7 +80,9 @@ pub(crate) fn convert_json_values_to_platform_values(
         .unwrap_or_default()
         .into_iter()
         .map(|value| {
-            serde_wasm_bindgen::to_value(&value).map_err(|err| {
+            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            value.serialize(&serializer).map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
             })
         })

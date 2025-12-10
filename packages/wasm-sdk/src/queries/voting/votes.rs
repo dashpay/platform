@@ -12,7 +12,7 @@ use drive::query::contested_resource_votes_given_by_identity_query::ContestedRes
 use drive_proof_verifier::types::ResourceVotesByIdentity;
 use js_sys::Array;
 use platform_value::string_encoding::Encoding;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_dpp2::identifier::IdentifierWasm;
 
@@ -207,7 +207,9 @@ impl WasmSdk {
         let votes_json = resource_votes_to_json(votes)?;
         let array = Array::new();
         for vote in votes_json {
-            let js_value = serde_wasm_bindgen::to_value(&vote).map_err(|e| {
+            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            let js_value = vote.serialize(&serializer).map_err(|e| {
                 WasmSdkError::serialization(format!(
                     "Failed to serialize contested resource identity vote: {}",
                     e
@@ -234,9 +236,12 @@ impl WasmSdk {
 
         let votes_json = resource_votes_to_json(votes)?;
 
-        let data = serde_wasm_bindgen::to_value(&serde_json::json!({
+        // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let data = serde_json::json!({
             "votes": votes_json
-        }))
+        })
+        .serialize(&serializer)
         .map_err(|e| {
             WasmSdkError::serialization(format!(
                 "Failed to serialize contested resource identity votes response: {}",

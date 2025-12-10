@@ -7,6 +7,8 @@ use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
 use js_sys::{BigInt, Object, Reflect};
+use serde::Serialize;
+use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -286,5 +288,36 @@ impl FinalizedEpochInfoWasm {
     #[wasm_bindgen(setter = "protocolVersion")]
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.v0_mut().protocol_version = protocol_version;
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let json_value = serde_json::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<FinalizedEpochInfoWasm> {
+        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let info: FinalizedEpochInfo = serde_json::from_value(json_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(FinalizedEpochInfoWasm(info))
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        serde_wasm_bindgen::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<FinalizedEpochInfoWasm> {
+        let info: FinalizedEpochInfo = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(FinalizedEpochInfoWasm(info))
     }
 }

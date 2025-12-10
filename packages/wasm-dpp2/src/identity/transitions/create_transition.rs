@@ -7,7 +7,7 @@ use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
-use dpp::platform_value::string_encoding::decode;
+use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -15,6 +15,8 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use serde::Serialize;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -167,6 +169,51 @@ impl IdentityCreateTransitionWasm {
     pub fn set_asset_lock_proof(&mut self, proof: AssetLockProofWasm) -> WasmDppResult<()> {
         self.0.set_asset_lock_proof(proof.into())?;
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "toHex")]
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes()?.as_slice(), Hex))
+    }
+
+    #[wasm_bindgen(js_name = "toBase64")]
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes()?.as_slice(), Base64))
+    }
+
+    /// Serialize to JSON (human-readable format)
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let json_value = serde_json::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    /// Deserialize from JSON
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let transition: IdentityCreateTransition = serde_json::from_value(json_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(IdentityCreateTransitionWasm(transition))
+    }
+
+    /// Serialize to JS object (binary-preserving format)
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        serde_wasm_bindgen::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    /// Deserialize from JS object
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let transition: IdentityCreateTransition = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(IdentityCreateTransitionWasm(transition))
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]

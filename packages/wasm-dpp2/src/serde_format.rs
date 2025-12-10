@@ -11,10 +11,13 @@
 //! JS→WASM call executes at a time, so there's no risk of concurrent format
 //! context corruption.
 
+use crate::error::{WasmDppError, WasmDppResult};
+use js_sys::Object;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::cell::Cell;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
 /// Serialization format context.
@@ -109,6 +112,64 @@ pub fn to_wasm_value<T: Serialize>(value: &T) -> Result<JsValue, serde_wasm_bind
 pub fn from_wasm_value<T: DeserializeOwned>(js: JsValue) -> Result<T, serde_wasm_bindgen::Error> {
     let _guard = FormatGuard::new(SerdeFormat::Wasm);
     serde_wasm_bindgen::from_value(js)
+}
+
+/// Serialize a value to `JsValue` using JSON-compatible serializer.
+///
+/// This ensures objects become plain JS objects (not Maps) which is important
+/// for JSON serialization compatibility.
+pub fn to_js_value_json_compatible<T: Serialize>(
+    value: &T,
+) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    value.serialize(&serializer)
+}
+
+/// Recursively converts BigInt values to strings in a JsValue.
+///
+/// This is necessary because serde_wasm_bindgen cannot convert BigInt values larger than
+/// Number.MAX_SAFE_INTEGER to JSON numbers.
+pub fn convert_bigints_to_strings(value: &JsValue) -> WasmDppResult<JsValue> {
+    if value.is_bigint() {
+        // Convert BigInt to string using js_sys::BigInt
+        let bigint: js_sys::BigInt = value.clone().unchecked_into();
+        let bigint_str = bigint
+            .to_string(10)
+            .map(|s| s.into())
+            .unwrap_or_else(|_| "0".to_string());
+        Ok(JsValue::from_str(&bigint_str))
+    } else if js_sys::Array::is_array(value) {
+        // Handle arrays recursively
+        let arr = js_sys::Array::from(value);
+        let new_arr = js_sys::Array::new();
+        for i in 0..arr.length() {
+            let elem = arr.get(i);
+            let converted = convert_bigints_to_strings(&elem)?;
+            new_arr.push(&converted);
+        }
+        Ok(new_arr.into())
+    } else if value.is_object() && !value.is_null() {
+        // Handle objects recursively
+        let obj = Object::from(value.clone());
+        let new_obj = Object::new();
+        let keys = Object::keys(&obj);
+        for i in 0..keys.length() {
+            let key = keys.get(i);
+            if key.as_string().is_some() {
+                let prop_value = js_sys::Reflect::get(value, &key).map_err(|e| {
+                    WasmDppError::serialization(format!("Failed to get property: {:?}", e))
+                })?;
+                let converted = convert_bigints_to_strings(&prop_value)?;
+                js_sys::Reflect::set(&new_obj, &key, &converted).map_err(|e| {
+                    WasmDppError::serialization(format!("Failed to set property: {:?}", e))
+                })?;
+            }
+        }
+        Ok(new_obj.into())
+    } else {
+        // Return primitive values as-is
+        Ok(value.clone())
+    }
 }
 
 #[cfg(test)]

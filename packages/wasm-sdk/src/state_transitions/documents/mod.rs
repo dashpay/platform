@@ -25,6 +25,7 @@ use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
 use js_sys;
+use serde::{Serialize};
 use serde_json;
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;
@@ -431,8 +432,10 @@ impl WasmSdk {
 
                         for (key, value) in properties {
                             // Convert platform Value to JSON value first, then to JsValue
+                            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
                             if let Ok(json_value) = serde_json::to_value(value) {
-                                if let Ok(js_value) = serde_wasm_bindgen::to_value(&json_value) {
+                                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                                if let Ok(js_value) = json_value.serialize(&serializer) {
                                     js_sys::Reflect::set(
                                         &data_obj,
                                         &JsValue::from_str(key),
@@ -753,8 +756,10 @@ impl WasmSdk {
 
                         for (key, value) in properties {
                             // Convert platform Value to JSON value first, then to JsValue
+                            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
                             if let Ok(json_value) = serde_json::to_value(value) {
-                                if let Ok(js_value) = serde_wasm_bindgen::to_value(&json_value) {
+                                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                                if let Ok(js_value) = json_value.serialize(&serializer) {
                                     js_sys::Reflect::set(
                                         &data_obj,
                                         &JsValue::from_str(key),

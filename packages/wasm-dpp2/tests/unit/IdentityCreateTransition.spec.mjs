@@ -28,6 +28,47 @@ describe('IdentityCreateTransition', () => {
 
       expect(transition.__wbg_ptr).to.not.equal(0);
     });
+
+    it('should serialize to JSON', () => {
+      const transition = wasm.IdentityCreateTransition.default(1);
+
+      const json = transition.toJSON();
+      // JSON uses camelCase (serde rename_all)
+      expect(json).to.have.property('publicKeys');
+      expect(json).to.have.property('assetLockProof');
+      expect(json).to.have.property('userFeeIncrease');
+      expect(json).to.have.property('signature');
+      expect(json.userFeeIncrease).to.equal(0);
+    });
+
+    it('should serialize to object', () => {
+      const transition = wasm.IdentityCreateTransition.default(1);
+
+      const obj = transition.toObject();
+      expect(obj).to.have.property('publicKeys');
+      expect(obj).to.have.property('assetLockProof');
+      expect(obj).to.have.property('userFeeIncrease');
+      expect(obj).to.have.property('signature');
+    });
+
+    it('should serialize to hex and base64', () => {
+      const transition = wasm.IdentityCreateTransition.default(1);
+
+      const hex = transition.toHex();
+      expect(hex).to.be.a('string');
+      expect(hex.length).to.be.greaterThan(0);
+
+      const base64 = transition.toBase64();
+      expect(base64).to.be.a('string');
+      expect(base64.length).to.be.greaterThan(0);
+
+      // Verify they can be deserialized back
+      const fromHex = wasm.IdentityCreateTransition.fromHex(hex);
+      expect(fromHex.getIdentifier().toBase58()).to.equal(transition.getIdentifier().toBase58());
+
+      const fromBase64 = wasm.IdentityCreateTransition.fromBase64(base64);
+      expect(fromBase64.getIdentifier().toBase58()).to.equal(transition.getIdentifier().toBase58());
+    });
   });
 
   describe('getters', () => {

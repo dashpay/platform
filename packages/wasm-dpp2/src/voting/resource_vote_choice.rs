@@ -1,6 +1,9 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+use js_sys::{Object, Reflect};
+use serde::Serialize;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -68,6 +71,61 @@ impl ResourceVoteChoiceWasm {
             ResourceVoteChoice::TowardsIdentity(_) => "TowardsIdentity".to_string(),
             ResourceVoteChoice::Abstain => "Abstain".to_string(),
             ResourceVoteChoice::Lock => "Lock".to_string(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let json_value = serde_json::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<ResourceVoteChoiceWasm> {
+        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let choice: ResourceVoteChoice = serde_json::from_value(json_value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(ResourceVoteChoiceWasm(choice))
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        // Custom object format: { type: string, identityId?: Identifier }
+        let obj = Object::new();
+        let type_str = self.get_type();
+        Reflect::set(&obj, &"type".into(), &type_str.into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        if let ResourceVoteChoice::TowardsIdentity(id) = &self.0 {
+            Reflect::set(&obj, &"identityId".into(), &JsValue::from(IdentifierWasm::from(*id)))
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        }
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<ResourceVoteChoiceWasm> {
+        let type_str = Reflect::get(&js_value, &"type".into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("type must be a string"))?;
+
+        match type_str.as_str() {
+            "TowardsIdentity" => {
+                let id_js = Reflect::get(&js_value, &"identityId".into())
+                    .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+                let id = IdentifierWasm::try_from(&id_js)?;
+                Ok(ResourceVoteChoiceWasm(ResourceVoteChoice::TowardsIdentity(id.into())))
+            }
+            "Abstain" => Ok(ResourceVoteChoiceWasm(ResourceVoteChoice::Abstain)),
+            "Lock" => Ok(ResourceVoteChoiceWasm(ResourceVoteChoice::Lock)),
+            other => Err(WasmDppError::invalid_argument(format!(
+                "Unknown ResourceVoteChoice type: {}",
+                other
+            ))),
         }
     }
 }

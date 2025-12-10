@@ -10,7 +10,7 @@ use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVot
 use drive_proof_verifier::types::Voter;
 use js_sys::Array;
 use platform_value::{string_encoding::Encoding, Identifier};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -203,7 +203,9 @@ impl WasmSdk {
             .map(|voter| voter.0.to_string(Encoding::Base58))
             .collect();
 
-        let data = serde_wasm_bindgen::to_value(&voters_list).map_err(|e| {
+        // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let data = voters_list.serialize(&serializer).map_err(|e| {
             WasmSdkError::serialization(format!(
                 "Failed to serialize contested resource voters: {}",
                 e

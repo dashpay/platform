@@ -1,7 +1,10 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::group::action_event::GroupActionEventWasm;
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::TokenContractPosition;
 use dpp::group::group_action::{GroupAction, GroupActionAccessors};
+use js_sys::{Object, Reflect};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -50,5 +53,57 @@ impl GroupActionWasm {
     #[wasm_bindgen(getter = "event")]
     pub fn event(&self) -> GroupActionEventWasm {
         GroupActionEventWasm::from(self.0.event().clone())
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let obj = Object::new();
+        Reflect::set(
+            &obj,
+            &"contractId".into(),
+            &self.contract_id().to_base58().into(),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(
+            &obj,
+            &"proposerId".into(),
+            &self.proposer_id().to_base58().into(),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(
+            &obj,
+            &"tokenContractPosition".into(),
+            &JsValue::from(self.token_contract_position()),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(&obj, &"event".into(), &self.event().to_json()?)
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let obj = Object::new();
+        Reflect::set(
+            &obj,
+            &"contractId".into(),
+            &JsValue::from(self.contract_id()),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(
+            &obj,
+            &"proposerId".into(),
+            &JsValue::from(self.proposer_id()),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(
+            &obj,
+            &"tokenContractPosition".into(),
+            &JsValue::from(self.token_contract_position()),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(&obj, &"event".into(), &self.event().to_object()?)
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Ok(obj.into())
     }
 }
