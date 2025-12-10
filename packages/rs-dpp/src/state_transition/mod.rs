@@ -44,6 +44,8 @@ mod traits;
 
 // pub mod state_transition_fee;
 
+#[cfg(feature = "state-transition-validation")]
+use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 #[cfg(feature = "state-transition-validation")]
@@ -1167,32 +1169,22 @@ impl StateTransitionStructureValidation for StateTransition {
         platform_version: &PlatformVersion,
     ) -> crate::validation::SimpleConsensusValidationResult {
         match self {
-            StateTransition::DataContractCreate(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::DataContractUpdate(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::Batch(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::IdentityCreate(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::IdentityTopUp(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::IdentityCreditWithdrawal(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::IdentityUpdate(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::IdentityCreditTransfer(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
-            }
-            StateTransition::MasternodeVote(_) => {
-                crate::validation::SimpleConsensusValidationResult::default()
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::Batch(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_) => {
+                crate::validation::SimpleConsensusValidationResult::new_with_error(
+                    UnsupportedFeatureError::new(
+                        "structure validation for identity-based state transitions".to_string(),
+                        platform_version.protocol_version,
+                    )
+                    .into(),
+                )
             }
             StateTransition::IdentityCreditTransferToAddresses(transition) => {
                 transition.validate_structure(platform_version)
