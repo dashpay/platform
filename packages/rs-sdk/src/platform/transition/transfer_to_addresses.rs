@@ -72,6 +72,7 @@ impl TransferToAddresses for Identity {
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
             .await?
         {
+            // TODO: Return correct data from the proof result and avoid extra fetches.
             StateTransitionProofResult::VerifiedPartialIdentity(_) => {}
             other => {
                 return Err(Error::Generic(format!(
