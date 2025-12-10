@@ -145,9 +145,7 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            MissingSigner(msg) => {
-                Self::new(WasmSdkErrorKind::MissingSigner, msg, None, retriable)
-            }
+            MissingSigner(msg) => Self::new(WasmSdkErrorKind::MissingSigner, msg, None, retriable),
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),

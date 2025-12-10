@@ -74,19 +74,18 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
         let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform
-        let state_transition =
-            <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform(
-                identity,
-                &wrapper.sdk,
-                asset_lock_proof,
-                &private_key,
-                signer,
-                settings,
-            )
-            .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
-            })?;
+        let state_transition = <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform(
+            identity,
+            &wrapper.sdk,
+            asset_lock_proof,
+            &private_key,
+            signer,
+            settings,
+        )
+        .await
+        .map_err(|e| {
+            FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
+        })?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -248,19 +247,18 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
         let settings = convert_put_settings(put_settings);
 
         // Use PutIdentity trait to put identity to platform
-        let state_transition =
-            <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform(
-                identity,
-                &wrapper.sdk,
-                asset_lock_proof,
-                &private_key,
-                signer,
-                settings,
-            )
-            .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
-            })?;
+        let state_transition = <Identity as PutIdentity<_, SimpleAddressSigner>>::put_to_platform(
+            identity,
+            &wrapper.sdk,
+            asset_lock_proof,
+            &private_key,
+            signer,
+            settings,
+        )
+        .await
+        .map_err(|e| {
+            FFIError::InternalError(format!("Failed to put identity to platform: {}", e))
+        })?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
