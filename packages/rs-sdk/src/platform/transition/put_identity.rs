@@ -1,67 +1,32 @@
-use crate::platform::transition::address_inputs::nonce_inc;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
+use crate::platform::transition::{
+    address_inputs::{collect_address_infos_from_proof, fetch_inputs_with_nonce, nonce_inc},
+    broadcast::BroadcastStateTransition,
+};
 use crate::{Error, Sdk};
 
-use super::address_inputs::fetch_inputs_with_nonce;
-use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use drive_proof_verifier::types::AddressInfos;
 use simple_signer::SimpleAddressSigner;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// Funding sources supported when creating an identity.
-pub enum IdentityFunding {
-    AssetLock {
-        asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: PrivateKey,
-    },
-    Addresses {
-        inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
-    },
-    AddressesWithNonce {
-        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
-    },
-}
-
-/// A trait for putting an identity to platform
+/// Trait for creating identities on the platform.
 #[async_trait::async_trait]
 pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
-    /// Puts an identity on platform.
-    ///
-    /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
-    async fn send_to_platform(
-        &self,
-        sdk: &Sdk,
-        funding: IdentityFunding,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>;
-
-    /// Sends the identity and waits for confirmation proof.
-    async fn send_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
-        funding: IdentityFunding,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<Self, Error>
-    where
-        Self: Sized;
-
-    /// Deprecated alias for [`send_to_platform`].
-    #[deprecated(note = "use send_to_platform instead")]
+    /// Creates an identity using an asset lock proof.
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -69,21 +34,9 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error> {
-        self.send_to_platform(
-            sdk,
-            IdentityFunding::AssetLock {
-                asset_lock_proof,
-                asset_lock_private_key: *asset_lock_proof_private_key,
-            },
-            signer,
-            settings,
-        )
-        .await
-    }
+    ) -> Result<StateTransition, Error>;
 
-    /// Deprecated alias for [`send_to_platform_and_wait_for_response`].
-    #[deprecated(note = "use send_to_platform_and_wait_for_response instead")]
+    /// Creates an identity using an asset lock and waits for confirmation.
     async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
@@ -93,121 +46,142 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<Self, Error>
     where
-        Self: Sized,
-    {
-        self.send_to_platform_and_wait_for_response(
+        Self: Sized;
+
+    /// Creates an identity funded by Platform addresses (nonces fetched automatically).
+    async fn put_with_address_funding(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits), Error>;
+
+    /// Creates an identity funded by Platform addresses using explicit nonces.
+    async fn put_with_address_funding_with_nonce(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits), Error>;
+}
+
+#[async_trait::async_trait]
+impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
+    async fn put_to_platform(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error> {
+        put_identity_with_asset_lock(
+            self,
             sdk,
-            IdentityFunding::AssetLock {
-                asset_lock_proof,
-                asset_lock_private_key: *asset_lock_proof_private_key,
-            },
+            asset_lock_proof,
+            asset_lock_proof_private_key,
             signer,
             settings,
         )
         .await
     }
-}
-// TODO: This should require addresses + identity, not only identity
-#[async_trait::async_trait]
-impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
-    async fn send_to_platform(
-        &self,
-        sdk: &Sdk,
-        funding: IdentityFunding,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error> {
-        send_to_identity_with_source(self, sdk, funding, signer, settings).await
-    }
 
-    async fn send_to_platform_and_wait_for_response(
+    async fn put_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
-        funding: IdentityFunding,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error> {
-        let state_transition =
-            send_to_identity_with_source(self, sdk, funding, signer, settings).await?;
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                asset_lock_proof,
+                asset_lock_proof_private_key,
+                signer,
+                settings.clone(),
+            )
+            .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
     }
-}
 
-async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
-    identity: &Identity,
-    sdk: &Sdk,
-    funding: IdentityFunding,
-    signer: &S,
-    settings: Option<PutSettings>,
-) -> Result<StateTransition, Error> {
-    match &funding {
-        IdentityFunding::AssetLock {
-            asset_lock_proof,
-            asset_lock_private_key,
-        } => {
-            let (state_transition, _) = identity.broadcast_request_for_new_identity(
-                asset_lock_proof.to_owned(),
-                asset_lock_private_key,
-                signer,
-                sdk.version(),
-            )?;
-            ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-            state_transition.broadcast(sdk, settings).await?;
-            Ok(state_transition)
-        }
-        IdentityFunding::Addresses {
-            inputs,
+    async fn put_with_address_funding(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits), Error> {
+        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
+        self.put_with_address_funding_with_nonce(
+            sdk,
+            inputs_with_nonce,
             input_private_keys,
-        } => {
-            let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
-            send_identity_with_addresses(
-                identity,
-                sdk,
-                inputs_with_nonce,
-                input_private_keys,
-                signer,
-                settings,
-            )
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    async fn put_with_address_funding_with_nonce(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits), Error> {
+        put_identity_with_address_funding(self, sdk, inputs, input_private_keys, signer, settings)
             .await
-        }
-        IdentityFunding::AddressesWithNonce {
-            inputs,
-            input_private_keys,
-        } => {
-            send_identity_with_addresses(
-                identity,
-                sdk,
-                inputs.clone(),
-                input_private_keys,
-                signer,
-                settings,
-            )
-            .await
-        }
     }
 }
 
-async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
+async fn put_identity_with_asset_lock<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
-    inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    input_private_keys: &Vec<Vec<u8>>,
+    asset_lock_proof: AssetLockProof,
+    asset_lock_proof_private_key: &PrivateKey,
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
+    let (state_transition, _) = identity.broadcast_request_for_new_identity(
+        asset_lock_proof,
+        asset_lock_proof_private_key,
+        signer,
+        sdk.version(),
+    )?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+    state_transition.broadcast(sdk, settings).await?;
+    Ok(state_transition)
+}
+
+async fn put_identity_with_address_funding<S: Signer<IdentityPublicKey>>(
+    identity: &Identity,
+    sdk: &Sdk,
+    inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    input_private_keys: Vec<Vec<u8>>,
+    signer: &S,
+    settings: Option<PutSettings>,
+) -> Result<(AddressInfos, Credits), Error> {
     if input_private_keys.is_empty() {
-        return Err(Error::Generic(
+        return Err(Error::InvalidCreditTransfer(
             "input_private_keys must contain at least one key".to_string(),
         ));
     }
 
-    // Create address signer from inputs and private keys
-    let addresses: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+    let expected_addresses: BTreeSet<PlatformAddress> =
+        inputs.keys().copied().collect::<BTreeSet<_>>();
+    let signer_addresses: Vec<PlatformAddress> = expected_addresses.iter().copied().collect();
     let address_signer =
-        SimpleAddressSigner::from_addresses_and_keys(&addresses, input_private_keys)?;
+        SimpleAddressSigner::from_addresses_and_keys(&signer_addresses, &input_private_keys)?;
 
-    // Default fee strategy: deduct from first input
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
@@ -227,6 +201,36 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
     )?;
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-    state_transition.broadcast(sdk, settings).await?;
-    Ok(state_transition)
+    match state_transition
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
+        .await?
+    {
+        StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+            partial_identity,
+            address_infos_map,
+        ) => {
+            if partial_identity.id != identity.id() {
+                return Err(Error::InvalidProvedResponse(format!(
+                    "proof returned identity {} but {} was created",
+                    partial_identity.id,
+                    identity.id()
+                )));
+            }
+
+            let address_infos =
+                collect_address_infos_from_proof(address_infos_map, &expected_addresses)?;
+
+            let balance = partial_identity.balance.ok_or_else(|| {
+                Error::InvalidProvedResponse(
+                    "identity proof did not include updated balance".to_string(),
+                )
+            })?;
+
+            Ok((address_infos, balance))
+        }
+        other => Err(Error::InvalidProvedResponse(format!(
+            "identity proof was expected but not returned: {:?}",
+            other
+        ))),
+    }
 }

@@ -975,7 +975,6 @@ impl Drive {
                 ))
             }
             StateTransition::IdentityCreateFromAddresses(st) => {
-                // Verify full identity was created
                 use dpp::state_transition::StateTransitionIdentityIdFromInputs;
                 let identity_id = st.identity_id_from_inputs().map_err(|e| {
                     Error::Proof(ProofError::CorruptedProof(format!(
@@ -983,14 +982,38 @@ impl Drive {
                         e
                     )))
                 })?;
-                let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
+                let (root_hash_identity, identity) = Drive::verify_full_identity_by_identity_id(
                     proof,
                     false,
                     identity_id.into_buffer(),
                     platform_version,
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain identity {} expected to exist because of state transition (create from addresses)", identity_id))))?;
-                Ok((root_hash, VerifiedIdentity(identity)))
+
+                let (root_hash_addresses, address_balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.inputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+
+                if root_hash_identity != root_hash_addresses {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "proof is expected to have same root hash for identity and address infos"
+                            .to_string(),
+                    )));
+                }
+
+                Ok((
+                    root_hash_identity,
+                    VerifiedIdentityWithAddressInfos(
+                        identity.into_partial_identity_info(),
+                        address_balances,
+                    ),
+                ))
             }
             StateTransition::IdentityTopUpFromAddresses(st) => {
                 // Verify revision and balance for the identity
