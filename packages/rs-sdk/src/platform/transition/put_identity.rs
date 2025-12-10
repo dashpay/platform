@@ -12,15 +12,16 @@ use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::native_bls::NativeBlsModule;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
-use simple_signer::SimpleAddressSigner;
 use std::collections::BTreeMap;
 
 /// Funding sources supported when creating an identity.
+///
+/// For address-based funding, the caller must provide a signer that implements
+/// `Signer<PlatformAddress>` separately via the trait methods.
 pub enum IdentityFunding {
     AssetLock {
         asset_lock_proof: AssetLockProof,
@@ -28,23 +29,28 @@ pub enum IdentityFunding {
     },
     Addresses {
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
     },
     AddressesWithNonce {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
     },
 }
 
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
-pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
+pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> + Send + Sync>:
+    Waitable
+{
     /// Sends a new identity to Platform using the provided funding source.
+    ///
+    /// For `IdentityFunding::Addresses` or `IdentityFunding::AddressesWithNonce`,
+    /// an `address_signer` implementing `Signer<PlatformAddress>` must be provided.
+    /// For `IdentityFunding::AssetLock`, `address_signer` can be `None`.
     async fn send_to_platform(
         &self,
         sdk: &Sdk,
         funding: IdentityFunding,
         signer: &S,
+        address_signer: Option<&A>,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
@@ -54,6 +60,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         sdk: &Sdk,
         funding: IdentityFunding,
         signer: &S,
+        address_signer: Option<&A>,
         settings: Option<PutSettings>,
     ) -> Result<Self, Error>
     where
@@ -76,6 +83,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
                 asset_lock_private_key: *asset_lock_proof_private_key,
             },
             signer,
+            None,
             settings,
         )
         .await
@@ -101,21 +109,25 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
                 asset_lock_private_key: *asset_lock_proof_private_key,
             },
             signer,
+            None,
             settings,
         )
         .await
     }
 }
 #[async_trait::async_trait]
-impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
+impl<S: Signer<IdentityPublicKey> + Send + Sync, A: Signer<PlatformAddress> + Send + Sync>
+    PutIdentity<S, A> for Identity
+{
     async fn send_to_platform(
         &self,
         sdk: &Sdk,
         funding: IdentityFunding,
         signer: &S,
+        address_signer: Option<&A>,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        send_to_identity_with_source(self, sdk, funding, signer, settings).await
+        send_to_identity_with_source(self, sdk, funding, signer, address_signer, settings).await
     }
 
     async fn send_to_platform_and_wait_for_response(
@@ -123,20 +135,23 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         sdk: &Sdk,
         funding: IdentityFunding,
         signer: &S,
+        address_signer: Option<&A>,
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error> {
         let state_transition =
-            send_to_identity_with_source(self, sdk, funding, signer, settings).await?;
+            send_to_identity_with_source(self, sdk, funding, signer, address_signer, settings)
+                .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 }
 
-async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
+async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress>>(
     identity: &Identity,
     sdk: &Sdk,
     funding: IdentityFunding,
     signer: &S,
+    address_signer: Option<&A>,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
     match &funding {
@@ -154,31 +169,31 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
             state_transition.broadcast(sdk, settings).await?;
             Ok(state_transition)
         }
-        IdentityFunding::Addresses {
-            inputs,
-            input_private_keys,
-        } => {
-            let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
+        IdentityFunding::Addresses { inputs } => {
+            let address_signer = address_signer.ok_or_else(|| {
+                Error::Generic("address_signer is required for address-based funding".to_string())
+            })?;
+            let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, inputs).await?);
             send_identity_with_addresses(
                 identity,
                 sdk,
                 inputs_with_nonce,
-                input_private_keys,
                 signer,
+                address_signer,
                 settings,
             )
             .await
         }
-        IdentityFunding::AddressesWithNonce {
-            inputs,
-            input_private_keys,
-        } => {
+        IdentityFunding::AddressesWithNonce { inputs } => {
+            let address_signer = address_signer.ok_or_else(|| {
+                Error::Generic("address_signer is required for address-based funding".to_string())
+            })?;
             send_identity_with_addresses(
                 identity,
                 sdk,
                 inputs.clone(),
-                input_private_keys,
                 signer,
+                address_signer,
                 settings,
             )
             .await
@@ -186,25 +201,14 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
     }
 }
 
-async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
+async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress>>(
     identity: &Identity,
     sdk: &Sdk,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    input_private_keys: &Vec<Vec<u8>>,
     signer: &S,
+    address_signer: &A,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
-    if input_private_keys.is_empty() {
-        return Err(Error::Generic(
-            "input_private_keys must contain at least one key".to_string(),
-        ));
-    }
-
-    // Create address signer from inputs and private keys
-    let addresses: Vec<PlatformAddress> = inputs.keys().cloned().collect();
-    let address_signer =
-        SimpleAddressSigner::from_addresses_and_keys(&addresses, input_private_keys)?;
-
     // Default fee strategy: deduct from first input
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
@@ -217,9 +221,9 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
     let state_transition = IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
         identity,
         inputs,
-        input_private_keys,
+        fee_strategy,
         signer,
-        &NativeBlsModule,
+        address_signer,
         user_fee_increase,
         sdk.version(),
     )?;

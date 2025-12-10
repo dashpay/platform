@@ -1,4 +1,5 @@
 use derive_more::From;
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategy;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use std::collections::BTreeMap;
@@ -35,6 +36,12 @@ impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNoncesAction {
             BumpAddressInputNoncesAction::V0(v0) => {
                 (v0.inputs_with_remaining_balance, BTreeMap::new())
             }
+        }
+    }
+
+    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        match self {
+            BumpAddressInputNoncesAction::V0(v0) => &v0.fee_strategy,
         }
     }
 

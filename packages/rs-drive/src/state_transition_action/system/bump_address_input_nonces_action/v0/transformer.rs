@@ -72,6 +72,7 @@ impl BumpAddressInputNoncesActionV0 {
                 fee_strategy,
                 penalty_credits,
             ),
+            fee_strategy: fee_strategy.clone(),
             user_fee_increase,
         }
     }

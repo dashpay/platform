@@ -21,7 +21,7 @@ describe('Epoch', function epochSuite() {
   });
 
   it('evonodesProposedBlocksByRange() returns results', async () => {
-    const res = await sdk.epoch.evonodesProposedBlocksByRange(TEST_IDS.epoch, { limit: 5 });
+    const res = await sdk.epoch.evonodesProposedBlocksByRange({ epoch: TEST_IDS.epoch, limit: 5 });
     expect(res).to.exist();
   });
 });

@@ -5,6 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
 use derive_more::From;
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategy;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
@@ -67,6 +68,13 @@ impl IdentityTopUpFromAddressesTransitionAction {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
                 transition.user_fee_increase
             }
+        }
+    }
+
+    /// fee strategy
+    pub fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => &transition.fee_strategy,
         }
     }
 }

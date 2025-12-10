@@ -40,7 +40,7 @@ use crate::execution::validation::state_transition::processor::identity_nonces::
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 impl ValidationMode {
     /// Returns a bool on whether we should validate that batched transitions are valid against the state

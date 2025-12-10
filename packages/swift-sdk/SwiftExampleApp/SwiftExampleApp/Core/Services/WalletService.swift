@@ -309,7 +309,8 @@ public class WalletService: ObservableObject {
                 network: dashNetwork,
                 mnemonic: mnemonic,
                 pin: pin,
-                networks: networks
+                networks: networks,
+                isImport: isImport
             )
             
             print("Wallet created by WalletManager, ID: \(wallet.id)")
@@ -854,20 +855,52 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
         SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
+
+        // Sync wallet state after processing a block (which may contain relevant transactions)
+        Task { @MainActor in
+            if let wm = walletManager {
+                for wallet in wm.wallets {
+                    await wm.syncWalletStateFromRust(for: wallet)
+                }
+            }
+            updateBalance()
+        }
     }
     
     public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
-        SDKLogger.log("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)", minimumLevel: .high)
-        
-        // Update transactions and balance
+        // Sync wallet state from Rust to SwiftData, then update UI
         Task { @MainActor in
-            await loadTransactions()
-            updateBalance()
+            // Sync ALL wallets from Rust to SwiftData (transaction could belong to any wallet)
+            if let wm = walletManager {
+                for wallet in wm.wallets {
+                    await wm.syncWalletStateFromRust(for: wallet)
+                }
+            }
+
+            // Then update UI from the now-synchronized SwiftData (if viewing a wallet)
+            if currentWallet != nil {
+                await loadTransactions()
+                updateBalance()
+            }
         }
     }
     
     public func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int) {
         blocksHit = count
+
+        // Sync wallet state periodically during sync (every 50 blocks processed)
+        if count > 0 && count % 50 == 0 {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Sync ALL wallets
+                if let wm = self.walletManager {
+                    for wallet in wm.wallets {
+                        await wm.syncWalletStateFromRust(for: wallet)
+                    }
+                }
+                self.updateBalance()
+            }
+        }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -920,9 +953,17 @@ extension WalletService: SPVClientDelegate {
     public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
         Task { @MainActor in
             isSyncing = false
-            
+
             if success {
                 SDKLogger.log("✅ Sync completed successfully", minimumLevel: .medium)
+
+                // Final sync from Rust to SwiftData after sync completes
+                if let wm = walletManager {
+                    for wallet in wm.wallets {
+                        await wm.syncWalletStateFromRust(for: wallet)
+                    }
+                }
+                updateBalance()
             } else {
                 SDKLogger.error("❌ Sync failed: \(error ?? "Unknown error")")
                 lastSyncError = SPVError.syncFailed(error ?? "Unknown error")

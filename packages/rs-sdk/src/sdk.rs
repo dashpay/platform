@@ -334,7 +334,9 @@ impl Sdk {
             }
         }?;
 
+        // TODO: We should verify freshness (light check) before we validate proofs (heavy check)
         self.verify_response_metadata(&metadata)?;
+
         Ok((object, metadata, proof))
     }
 
@@ -399,7 +401,7 @@ impl Sdk {
             }
         };
 
-        if should_query_platform {
+        let nonce = if should_query_platform {
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
                 self,
                 identity_id,
@@ -451,7 +453,16 @@ impl Sdk {
                     }
                 }
             }
-        }
+        };
+
+        tracing::trace!(
+            identity_id = %identity_id,
+            bump_first,
+            nonce = ?nonce,
+            "Fetched identity nonce"
+        );
+
+        nonce
     }
 
     // TODO: Move to a separate struct
@@ -541,6 +552,24 @@ impl Sdk {
                     }
                 }
             }
+        }
+    }
+
+    /// Forces reload of the identity nonce from Platform on the next call to `get_identity_nonce`.
+    pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
+        {
+            let mut identity_nonce_counter =
+                self.internal_cache.identity_nonce_counter.lock().await;
+            identity_nonce_counter.remove(identity_id);
+        }
+        {
+            let mut identity_contract_nonce_counter = self
+                .internal_cache
+                .identity_contract_nonce_counter
+                .lock()
+                .await;
+            identity_contract_nonce_counter
+                .retain(|(cached_identity_id, _), _| cached_identity_id != identity_id);
         }
     }
 

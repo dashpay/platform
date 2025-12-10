@@ -14,6 +14,7 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
  * @param {HomeDir} homeDir
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {startNodeTask}
  */
 export default function startNodeTaskFactory(
@@ -25,7 +26,13 @@ export default function startNodeTaskFactory(
   getConnectionHost,
   ensureFileMountExists,
   homeDir,
+  getConfigProfiles,
 ) {
+  function selectPlatformProfiles(config, options) {
+    return getConfigProfiles(config, options)
+      .filter((profile) => profile.startsWith('platform'));
+  }
+
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
@@ -84,10 +91,7 @@ export default function startNodeTaskFactory(
         title: 'Check node is not started',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? selectPlatformProfiles(config) : [];
 
           if (await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -109,6 +113,26 @@ export default function startNodeTaskFactory(
         task: () => buildServicesTask(config),
       },
       {
+        title: 'Remove legacy DAPI stack',
+        enabled: () => config.get('platform.enable'),
+        task: async () => {
+          const legacyServiceNames = ['dapi_api', 'dapi_core_streams'];
+
+          for (const serviceName of legacyServiceNames) {
+            try {
+              await dockerCompose.rm(config, {
+                serviceNames: [serviceName],
+                force: true,
+              });
+            } catch (e) {
+              if (!/No such service/i.test(e.message)) {
+                throw e;
+              }
+            }
+          }
+        },
+      },
+      {
         title: 'Start services',
         task: async (ctx) => {
           const isMasternode = config.get('core.masternode.enable');
@@ -117,10 +141,7 @@ export default function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? selectPlatformProfiles(config) : [];
 
           await dockerCompose.up(config, { profiles });
         },

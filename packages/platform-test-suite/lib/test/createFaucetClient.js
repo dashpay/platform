@@ -21,10 +21,15 @@ const getDAPISeeds = require('./getDAPISeeds');
 let faucetClient;
 
 function createFaucetClient() {
-  const seeds = getDAPISeeds();
+  const dapiAddresses = (process.env.DAPI_ADDRESSES || '')
+    .split(',')
+    .map((address) => address.trim())
+    .filter(Boolean);
 
   const clientOpts = {
-    seeds,
+    ...(dapiAddresses.length > 0
+      ? { dapiAddresses }
+      : { seeds: getDAPISeeds() }),
     network: process.env.NETWORK,
     apps: {
       dpns: {

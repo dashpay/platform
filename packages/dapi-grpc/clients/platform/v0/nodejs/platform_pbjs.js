@@ -44870,6 +44870,7 @@ $root.org = (function() {
                                          * @interface IDrive
                                          * @property {number|null} [latest] Drive latest
                                          * @property {number|null} [current] Drive current
+                                         * @property {number|null} [nextEpoch] Drive nextEpoch
                                          */
 
                                         /**
@@ -44904,6 +44905,14 @@ $root.org = (function() {
                                         Drive.prototype.current = 0;
 
                                         /**
+                                         * Drive nextEpoch.
+                                         * @member {number} nextEpoch
+                                         * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
+                                         * @instance
+                                         */
+                                        Drive.prototype.nextEpoch = 0;
+
+                                        /**
                                          * Creates a new Drive instance using the specified properties.
                                          * @function create
                                          * @memberof org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive
@@ -44931,6 +44940,8 @@ $root.org = (function() {
                                                 writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.latest);
                                             if (message.current != null && Object.hasOwnProperty.call(message, "current"))
                                                 writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.current);
+                                            if (message.nextEpoch != null && Object.hasOwnProperty.call(message, "nextEpoch"))
+                                                writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.nextEpoch);
                                             return writer;
                                         };
 
@@ -44970,6 +44981,9 @@ $root.org = (function() {
                                                     break;
                                                 case 4:
                                                     message.current = reader.uint32();
+                                                    break;
+                                                case 5:
+                                                    message.nextEpoch = reader.uint32();
                                                     break;
                                                 default:
                                                     reader.skipType(tag & 7);
@@ -45012,6 +45026,9 @@ $root.org = (function() {
                                             if (message.current != null && message.hasOwnProperty("current"))
                                                 if (!$util.isInteger(message.current))
                                                     return "current: integer expected";
+                                            if (message.nextEpoch != null && message.hasOwnProperty("nextEpoch"))
+                                                if (!$util.isInteger(message.nextEpoch))
+                                                    return "nextEpoch: integer expected";
                                             return null;
                                         };
 
@@ -45031,6 +45048,8 @@ $root.org = (function() {
                                                 message.latest = object.latest >>> 0;
                                             if (object.current != null)
                                                 message.current = object.current >>> 0;
+                                            if (object.nextEpoch != null)
+                                                message.nextEpoch = object.nextEpoch >>> 0;
                                             return message;
                                         };
 
@@ -45050,11 +45069,14 @@ $root.org = (function() {
                                             if (options.defaults) {
                                                 object.latest = 0;
                                                 object.current = 0;
+                                                object.nextEpoch = 0;
                                             }
                                             if (message.latest != null && message.hasOwnProperty("latest"))
                                                 object.latest = message.latest;
                                             if (message.current != null && message.hasOwnProperty("current"))
                                                 object.current = message.current;
+                                            if (message.nextEpoch != null && message.hasOwnProperty("nextEpoch"))
+                                                object.nextEpoch = message.nextEpoch;
                                             return object;
                                         };
 

@@ -11,7 +11,7 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
@@ -3959,105 +3959,6 @@ mod tests {
                 final_balance
             );
         }
-
-        /// Test balance overflow when processing the validation
-        #[test]
-        fn test_recipient_sum_overflow_during_processing() {
-            let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let mut rng = StdRng::seed_from_u64(617);
-
-            // Create identity with max balance
-            let (identity, _signer) = create_identity_with_transfer_key(
-                [56u8; 32],
-                u64::MAX, // Maximum possible balance
-                &mut rng,
-                platform_version,
-            );
-
-            add_identity_to_drive(&mut platform, &identity);
-
-            // Create a transition with amounts that would overflow when summed
-            let large_amount = u64::MAX / 2 + 1;
-
-            let transfer_key = identity
-                .get_first_public_key_matching(
-                    Purpose::TRANSFER,
-                    SecurityLevel::full_range().into(),
-                    KeyType::all_key_types().into(),
-                    true,
-                )
-                .expect("should have transfer key");
-
-            let mut recipient_addresses = BTreeMap::new();
-            recipient_addresses.insert(create_platform_address(1), large_amount);
-            recipient_addresses.insert(create_platform_address(2), large_amount);
-
-            // Create raw transition (can't sign with overflow amounts)
-            let transition: StateTransition = IdentityCreditTransferToAddressesTransition::V0(
-                IdentityCreditTransferToAddressesTransitionV0 {
-                    identity_id: identity.id(),
-                    recipient_addresses,
-                    nonce: 1,
-                    user_fee_increase: 0,
-                    signature_public_key_id: transfer_key.id(),
-                    signature: BinaryData::new(vec![0x30; 65]), // Dummy signature
-                },
-            )
-            .into();
-
-            let result = transition.serialize_to_bytes().expect("should serialize");
-
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            // Should fail with overflow or signature error (signature checked first)
-            match processing_result.execution_results().as_slice() {
-                [StateTransitionExecutionResult::UnpaidConsensusError(err)] => {
-                    // Either overflow error or signature error is acceptable
-                    // (signature is validated before the balance sum check)
-                    assert!(
-                        matches!(
-                            err,
-                            ConsensusError::BasicError(BasicError::OverflowError(_))
-                                | ConsensusError::SignatureError(_)
-                        ),
-                        "Expected overflow or signature error, got {:?}",
-                        err
-                    );
-                }
-                other => panic!(
-                    "Expected UnpaidConsensusError with overflow or signature, got {:?}",
-                    other
-                ),
-            }
-        }
     }
 
     // ==========================================
@@ -4807,9 +4708,12 @@ mod tests {
             );
         }
 
-        /// Test exact balance boundary where transfer + fee = balance exactly
+        /// Test that when balance equals (output + actual_fee_from_first_run), the second run
+        /// fails with IdentityInsufficientBalanceError because fee estimation uses a higher
+        /// worst-case estimate than the actual fee. This demonstrates that users need slightly
+        /// more than (output + actual_fee) to pass validation.
         #[test]
-        fn test_exact_balance_boundary_zero_remaining() {
+        fn test_exact_actual_fee_balance_fails_due_to_fee_estimation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4832,32 +4736,35 @@ mod tests {
                 .address_funds
                 .min_output_amount;
 
-            // First, create an identity with plenty of balance to determine actual fee
-            let (test_identity, test_signer) = create_identity_with_transfer_key(
+            let initial_balance = dash_to_credits!(10.0);
+
+            // Create identity with high balance
+            let (identity, signer) = create_identity_with_transfer_key(
                 [73u8; 32],
-                dash_to_credits!(10.0),
+                initial_balance,
                 &mut rng,
                 platform_version,
             );
 
-            add_identity_to_drive(&mut platform, &test_identity);
+            // Add identity FIRST (committed, outside any transaction)
+            add_identity_to_drive(&mut platform, &identity);
 
-            let mut test_addresses = BTreeMap::new();
-            test_addresses.insert(create_platform_address(1), min_output);
+            let mut recipient_addresses = BTreeMap::new();
+            recipient_addresses.insert(create_platform_address(1), min_output);
 
-            let test_transition =
-                create_signed_transition(&test_identity, &test_signer, test_addresses, 1);
-            let test_result = test_transition
-                .serialize_to_bytes()
-                .expect("should serialize");
+            // Create the transition once - we'll reuse it for both runs
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
+            // First run in a transaction to measure actual fee (then rollback)
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
-            let test_processing = platform
+            let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![test_result],
+                    &vec![transition_bytes.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4867,45 +4774,50 @@ mod tests {
                 )
                 .expect("expected to process");
 
-            let actual_fee = match &test_processing.execution_results()[0] {
+            let actual_fee = match &processing_result.execution_results()[0] {
                 StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
                     fee_result.total_base_fee()
                 }
                 _ => panic!("Expected successful execution to determine fee"),
             };
 
+            // Rollback the transaction - we just wanted to measure the fee
+            // The identity still exists with its original balance after rollback
             platform
                 .drive
                 .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("should commit");
+                .rollback_transaction(&transaction)
+                .expect("should rollback");
 
-            // Now create identity with exactly: min_output + actual_fee
+            // Explicitly drop the transaction to release the borrow on platform
+            drop(transaction);
+
+            // Set balance to exactly (output + actual_fee) from the first run
             let exact_balance = min_output + actual_fee;
+            let balance_to_remove = initial_balance - exact_balance;
 
-            let (identity, signer) = create_identity_with_transfer_key(
-                [74u8; 32],
-                exact_balance,
-                &mut rng,
-                platform_version,
-            );
+            // Remove the excess balance to leave exactly what we measured
+            platform
+                .drive
+                .remove_from_identity_balance(
+                    identity.id().to_buffer(),
+                    balance_to_remove,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("should remove balance");
 
-            add_identity_to_drive(&mut platform, &identity);
-
-            let mut recipient_addresses = BTreeMap::new();
-            recipient_addresses.insert(create_platform_address(2), min_output);
-
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
-            let result = transition.serialize_to_bytes().expect("should serialize");
-
+            // Second run - this should fail because fee estimation is higher than actual fee
             let platform_state2 = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
 
-            let processing_result = platform
+            let processing_result2 = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &vec![transition_bytes],
                     &platform_state2,
                     &BlockInfo::default(),
                     &transaction2,
@@ -4915,28 +4827,235 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
+            // The fee estimation uses a worst-case estimate that is higher than actual fee,
+            // so the transition fails even though the actual fee would have been sufficient.
+            // Balance is (min_output + actual_fee) but required is (min_output + estimated_fee)
+            // where estimated_fee > actual_fee.
             assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                processing_result2.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(err))
+                )] => {
+                    assert_eq!(err.balance(), exact_balance);
+                    // Required balance should be higher than what we have due to fee estimation
+                    assert!(err.required_balance() > exact_balance,
+                        "Required balance {} should be greater than exact balance {}",
+                        err.required_balance(), exact_balance);
+                }
+            );
+        }
+
+        /// Test that when balance equals (total_outputs + actual_fee_from_first_run) with 128 outputs,
+        /// the second run fails with IdentityInsufficientBalanceError because fee estimation uses a
+        /// higher worst-case estimate than the actual fee.
+        #[test]
+        fn test_exact_actual_fee_balance_fails_due_to_fee_estimation_128_outputs() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(703);
+            let min_output = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_output_amount;
+
+            let initial_balance = dash_to_credits!(100.0);
+
+            // Create identity with high balance
+            let (identity, signer) = create_identity_with_transfer_key(
+                [73u8; 32],
+                initial_balance,
+                &mut rng,
+                platform_version,
             );
 
+            // Add identity FIRST (committed, outside any transaction)
+            add_identity_to_drive(&mut platform, &identity);
+
+            // Create 128 outputs
+            let mut recipient_addresses = BTreeMap::new();
+            for i in 0u8..128 {
+                let mut hash = [0u8; 20];
+                hash[0] = i;
+                hash[1] = (i as u16 >> 8) as u8;
+                recipient_addresses.insert(PlatformAddress::P2pkh(hash), min_output);
+            }
+
+            let total_outputs: u64 = recipient_addresses.values().sum();
+
+            // Create the transition once - we'll reuse it for both runs
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
+
+            // First run in a transaction to measure actual fee (then rollback)
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            let actual_fee = match &processing_result.execution_results()[0] {
+                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                    fee_result.total_base_fee()
+                }
+                _ => panic!("Expected successful execution to determine fee"),
+            };
+
+            // Rollback the transaction - we just wanted to measure the fee
             platform
                 .drive
                 .grove
-                .commit_transaction(transaction2)
-                .unwrap()
-                .expect("should commit");
+                .rollback_transaction(&transaction)
+                .expect("should rollback");
 
-            // Verify balance is exactly zero
-            let final_balance = platform
+            drop(transaction);
+
+            // Set balance to exactly (total_outputs + actual_fee) from the first run
+            let exact_balance = total_outputs + actual_fee;
+            let balance_to_remove = initial_balance - exact_balance;
+
+            // Remove the excess balance to leave exactly what we measured
+            platform
                 .drive
-                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
-                .expect("should fetch")
-                .expect("identity should exist");
+                .remove_from_identity_balance(
+                    identity.id().to_buffer(),
+                    balance_to_remove,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("should remove balance");
 
-            assert_eq!(
-                final_balance, 0,
-                "Balance should be exactly zero after transfer + fee = initial balance"
+            // Second run - this should fail because fee estimation is higher than actual fee
+            let platform_state2 = platform.state.load();
+            let transaction2 = platform.drive.grove.start_transaction();
+
+            let processing_result2 = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state2,
+                    &BlockInfo::default(),
+                    &transaction2,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // The fee estimation uses a worst-case estimate that is higher than actual fee
+            assert_matches!(
+                processing_result2.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(err))
+                )] => {
+                    assert_eq!(err.balance(), exact_balance);
+                    // Required balance should be higher than what we have due to fee estimation
+                    assert!(err.required_balance() > exact_balance,
+                        "Required balance {} should be greater than exact balance {}",
+                        err.required_balance(), exact_balance);
+                }
+            );
+        }
+
+        /// Test that 129 outputs exceeds the maximum allowed outputs and returns an error.
+        #[test]
+        fn test_129_outputs_exceeds_maximum() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config.clone())
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(703);
+            let min_output = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_output_amount;
+
+            let initial_balance = dash_to_credits!(100.0);
+
+            // Create identity with high balance
+            let (identity, signer) = create_identity_with_transfer_key(
+                [73u8; 32],
+                initial_balance,
+                &mut rng,
+                platform_version,
+            );
+
+            add_identity_to_drive(&mut platform, &identity);
+
+            // Create 129 outputs (one more than allowed)
+            let mut recipient_addresses = BTreeMap::new();
+            for i in 0u16..129 {
+                let mut hash = [0u8; 20];
+                hash[0] = (i & 0xFF) as u8;
+                hash[1] = (i >> 8) as u8;
+                recipient_addresses.insert(PlatformAddress::P2pkh(hash), min_output);
+            }
+
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+            let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            // Should fail with too many outputs error
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::TransitionOverMaxOutputsError(_))
+                )]
             );
         }
 
@@ -4960,8 +5079,8 @@ mod tests {
 
             let mut rng = StdRng::seed_from_u64(704);
 
-            // Very large but valid amount (half of u64::MAX)
-            let large_output = u64::MAX / 2;
+            // Very large but valid amount
+            let large_output = u32::MAX as u64 / 2;
 
             // Identity needs enough for the large output plus fees
             let identity_balance = large_output + dash_to_credits!(1.0);

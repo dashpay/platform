@@ -26,7 +26,7 @@ use crate::execution::validation::state_transition::masternode_vote::transform_i
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformer for MasternodeVoteTransition {
     fn transform_into_action<C: CoreRPCLike>(
@@ -119,7 +119,7 @@ mod tests {
     use crate::test::helpers::setup::TempPlatform;
     use dpp::serialization::PlatformDeserializable;
     use drive::query::VotePollsByEndDateDriveQuery;
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
     use dpp::platform_value::IdentifierBytes32;
     use dpp::platform_value::Value::Text;
