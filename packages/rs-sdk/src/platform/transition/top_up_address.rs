@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::address_inputs::collect_address_infos_from_proof;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
-use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::dashcore::PrivateKey;
@@ -16,7 +16,7 @@ use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFu
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
-use drive_proof_verifier::types::{AddressInfo, AddressInfos};
+use drive_proof_verifier::types::AddressInfos;
 
 /// Trait for topping up Platform addresses using various funding sources.
 #[async_trait::async_trait]
@@ -35,8 +35,38 @@ pub trait TopUpAddress<S: Signer<PlatformAddress>> {
     ) -> Result<AddressInfos, Error>;
 }
 
+pub type AddressWithBalance = (PlatformAddress, Option<Credits>);
+pub type AddressesWithBalances = BTreeMap<PlatformAddress, Option<Credits>>;
+
 #[async_trait::async_trait]
-impl<S: Signer<PlatformAddress>> TopUpAddress<S> for BTreeMap<PlatformAddress, Option<Credits>> {
+impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressWithBalance
+where
+    BTreeMap<PlatformAddress, Option<Credits>>: TopUpAddress<S>,
+{
+    async fn top_up(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_private_key: PrivateKey,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<AddressInfos, Error> {
+        BTreeMap::from([(self.0, self.1)])
+            .top_up(
+                sdk,
+                asset_lock_proof,
+                asset_lock_private_key,
+                fee_strategy,
+                signer,
+                settings,
+            )
+            .await
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
     async fn top_up(
         &self,
         sdk: &Sdk,
@@ -67,13 +97,20 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for BTreeMap<PlatformAddress, O
         )?;
 
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        state_transition
+        let st_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
             .await?;
-
-        let addresses_to_refresh: BTreeSet<PlatformAddress> =
-            self.keys().copied().collect::<BTreeSet<_>>();
-        AddressInfo::fetch_many(sdk, addresses_to_refresh).await
+        match st_result {
+            StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
+                let expected_addresses =
+                    self.keys().copied().collect::<BTreeSet<PlatformAddress>>();
+                collect_address_infos_from_proof(address_infos, &expected_addresses)
+            }
+            other => Err(Error::InvalidProvedResponse(format!(
+                "address info proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
+        }
     }
 }
 

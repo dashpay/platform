@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,7 +15,7 @@ use dpp::fee::Credits;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::PartialIdentity;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AddressNonce, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -26,7 +27,7 @@ use dpp::state_transition::identity_credit_transfer_transition::accessors::Ident
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::{StateTransition, StateTransitionOwned};
+use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::DocumentFromReplaceTransition;
@@ -41,7 +42,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -995,10 +996,11 @@ impl Drive {
                 // Verify revision and balance for the identity
                 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
                 let identity_id = st.identity_id();
-                let (root_hash, Some((balance, revision))) =
-                    Drive::verify_identity_balance_and_revision_for_identity_id(
+                let (root_hash_identity, Some((balance, revision)), address_balances) =
+                    Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
+                        st.inputs().keys(),
                         false,
                         platform_version,
                     )?
@@ -1006,15 +1008,19 @@ impl Drive {
                     return Err(Error::Proof(ProofError::IncorrectProof(
                         format!("proof did not contain balance for identity {} expected to exist because of state transition (top up from addresses)", identity_id))));
                 };
+
                 Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: *identity_id,
-                        loaded_public_keys: Default::default(),
-                        balance: Some(balance),
-                        revision: Some(revision),
-                        not_found_public_keys: Default::default(),
-                    }),
+                    root_hash_identity,
+                    VerifiedIdentityWithAddressInfos(
+                        PartialIdentity {
+                            id: *identity_id,
+                            loaded_public_keys: Default::default(),
+                            balance: Some(balance),
+                            revision: Some(revision),
+                            not_found_public_keys: Default::default(),
+                        },
+                        address_balances,
+                    ),
                 ))
             }
             StateTransition::AddressFundsTransfer(st) => {
@@ -1041,48 +1047,32 @@ impl Drive {
             StateTransition::AddressFundingFromAssetLock(st) => {
                 // Verify balances for output addresses after funding
                 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
-                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(
-                        proof,
-                        st.outputs().keys(),
-                        false,
-                        platform_version,
-                    )?;
-                // Return the verified balances
-                // TODO: Define proper StateTransitionProofResult variant for address funding
-                Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: Identifier::default(),
-                        loaded_public_keys: Default::default(),
-                        balance: None,
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
-                ))
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.outputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+
+                Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::AddressCreditWithdrawal(st) => {
                 // Verify balances for input addresses after withdrawal
                 use dpp::state_transition::StateTransitionWitnessSigned;
-                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(
-                        proof,
-                        st.inputs().keys(),
-                        false,
-                        platform_version,
-                    )?;
-                // Return the verified balances
-                // TODO: Define proper StateTransitionProofResult variant for address withdrawal
-                Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: Identifier::default(),
-                        loaded_public_keys: Default::default(),
-                        balance: None,
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
-                ))
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.inputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+
+                Ok((root_hash, VerifiedAddressInfos(balances)))
             }
         }
     }

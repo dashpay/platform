@@ -107,6 +107,8 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         .await
     }
 }
+
+// TODO: This should require addresses + identity, not only identity
 #[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
     async fn send_to_platform(

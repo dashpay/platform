@@ -2284,7 +2284,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -2293,7 +2293,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -2479,7 +2479,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -2488,7 +2488,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -2628,7 +2628,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -2637,7 +2637,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -2812,7 +2812,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -2913,7 +2913,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -2922,7 +2922,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -3037,7 +3037,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(4), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -3046,7 +3046,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let identifier = asset_lock_proof_top_up
             .create_identifier()
@@ -3141,7 +3141,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(3), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -3150,7 +3150,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -3339,7 +3339,7 @@ mod tests {
             IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(4), platform_version)
                 .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -3348,7 +3348,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let identifier = asset_lock_proof_top_up
             .create_identifier()

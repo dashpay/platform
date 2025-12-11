@@ -1,5 +1,6 @@
 use crate::frequency::Frequency;
 use bincode::{Decode, Encode};
+use dpp::address_funds::AddressFundsFeeStrategy;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -599,6 +600,12 @@ impl VoteAction {
 
 pub type AmountRange = RangeInclusive<Credits>;
 
+pub type OutputCountRange = RangeInclusive<u8>;
+
+pub type MaybeOutputAmount = Option<AmountRange>;
+
+pub type UseExistingAddressesAsOutputChance = Option<f64>; //between 0 and 1.
+
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct IdentityTransferInfo {
     pub from: Identifier,
@@ -617,6 +624,19 @@ pub enum OperationType {
     IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOp),
     Token(TokenOp),
+    IdentityTopUpFromAddresses(AmountRange),
+    AddressFundingFromCoreAssetLock(AmountRange),
+    AddressTransfer(
+        AmountRange,
+        OutputCountRange,
+        UseExistingAddressesAsOutputChance,
+        Option<AddressFundsFeeStrategy>,
+    ),
+    AddressWithdrawal(
+        AmountRange,
+        MaybeOutputAmount,
+        Option<AddressFundsFeeStrategy>,
+    ),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -631,6 +651,19 @@ enum OperationTypeInSerializationFormat {
     IdentityTransfer(Option<IdentityTransferInfo>),
     ResourceVote(ResourceVoteOpSerializable),
     Token(Vec<u8>),
+    IdentityTopUpFromAddresses(AmountRange),
+    AddressFundingFromCoreAssetLock(AmountRange),
+    AddressTransfer(
+        AmountRange,
+        OutputCountRange,
+        UseExistingAddressesAsOutputChance,
+        Option<AddressFundsFeeStrategy>,
+    ),
+    AddressWithdrawal(
+        AmountRange,
+        MaybeOutputAmount,
+        Option<AddressFundsFeeStrategy>,
+    ),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -657,6 +690,9 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
             }
             OperationType::IdentityTopUp(amount_range) => {
                 OperationTypeInSerializationFormat::IdentityTopUp(amount_range)
+            }
+            OperationType::IdentityTopUpFromAddresses(amount_range) => {
+                OperationTypeInSerializationFormat::IdentityTopUpFromAddresses(amount_range)
             }
             OperationType::IdentityUpdate(identity_update_op) => {
                 OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op)
@@ -687,6 +723,27 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 let token_op_in_serialization_format =
                     token_op.serialize_consume_to_bytes_with_platform_version(platform_version)?;
                 OperationTypeInSerializationFormat::Token(token_op_in_serialization_format)
+            }
+            OperationType::AddressFundingFromCoreAssetLock(amount_range) => {
+                OperationTypeInSerializationFormat::AddressFundingFromCoreAssetLock(amount_range)
+            }
+            OperationType::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ) => OperationTypeInSerializationFormat::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ),
+            OperationType::AddressWithdrawal(amount_range, maybe_output_amount, fee_strategy) => {
+                OperationTypeInSerializationFormat::AddressWithdrawal(
+                    amount_range,
+                    maybe_output_amount,
+                    fee_strategy,
+                )
             }
         };
         let config = bincode::config::standard()
@@ -728,6 +785,9 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
             OperationTypeInSerializationFormat::IdentityTopUp(amount_range) => {
                 OperationType::IdentityTopUp(amount_range)
             }
+            OperationTypeInSerializationFormat::IdentityTopUpFromAddresses(amount_range) => {
+                OperationType::IdentityTopUpFromAddresses(amount_range)
+            }
             OperationTypeInSerializationFormat::IdentityUpdate(identity_update_op) => {
                 OperationType::IdentityUpdate(identity_update_op)
             }
@@ -760,6 +820,25 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 )?;
                 OperationType::Token(token_op)
             }
+            OperationTypeInSerializationFormat::AddressFundingFromCoreAssetLock(amount_range) => {
+                OperationType::AddressFundingFromCoreAssetLock(amount_range)
+            }
+            OperationTypeInSerializationFormat::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ) => OperationType::AddressTransfer(
+                amount_range,
+                output_count_range,
+                use_existing,
+                fee_strategy,
+            ),
+            OperationTypeInSerializationFormat::AddressWithdrawal(
+                amount_range,
+                maybe_output_amount,
+                fee_strategy,
+            ) => OperationType::AddressWithdrawal(amount_range, maybe_output_amount, fee_strategy),
         })
     }
 }
