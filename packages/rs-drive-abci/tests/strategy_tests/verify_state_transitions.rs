@@ -9,6 +9,7 @@ use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionType;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
@@ -43,6 +44,38 @@ use drive_abci::execution::validation::state_transition::ValidationMode;
 use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
 use platform_version::DefaultForPlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Mutex, OnceLock};
+
+static STATE_TRANSITION_TYPE_COUNTER: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
+
+fn state_transition_counter() -> &'static Mutex<BTreeMap<String, usize>> {
+    STATE_TRANSITION_TYPE_COUNTER.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn track_state_transition_type(transition_type: StateTransitionType) {
+    let counter = state_transition_counter();
+    let mut guard = counter
+        .lock()
+        .expect("state transition counter lock should not be poisoned");
+    *guard.entry(transition_type.to_string()).or_insert(0) += 1;
+}
+
+fn log_state_transition_type_statistics() {
+    let counter = state_transition_counter();
+    let guard = counter
+        .lock()
+        .expect("state transition counter lock should not be poisoned");
+
+    if guard.is_empty() {
+        println!("state transition type stats: no state transitions tracked");
+    } else {
+        println!("state transition type stats: ");
+        for (transition_type, count) in guard.iter() {
+            println!("STATE_TRANSITION:  {transition_type}:{count}");
+        }
+        println!();
+    }
+}
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &FullAbciApplication<MockCoreRPCLike>,
@@ -128,6 +161,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         .collect::<Vec<_>>();
 
     for (state_transition, action, was_executed) in &actions {
+        let transition_type = state_transition.state_transition_type();
+        track_state_transition_type(transition_type);
+
         let state_transition_bytes = state_transition
             .serialize_to_bytes()
             .expect("serialize state transition");
@@ -141,7 +177,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             .query_proofs(request, &state, platform_version)
             .expect(&format!(
                 "proof query for {} should succeed",
-                state_transition.state_transition_type()
+                transition_type
             ));
 
         if !result.is_valid() {
@@ -741,20 +777,54 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     identity_top_up_from_addresses_action,
                 ) => {
                     // Verify identity balance was topped up from addresses
-                    let (root_hash_identity, balance_revision, address_infos) =
-                        Drive::verify_identity_balance_revision_and_addresses_from_inputs(
-                            &response_proof.grovedb_proof,
-                            identity_top_up_from_addresses_action
-                                .identity_id()
-                                .into_buffer(),
-                            identity_top_up_from_addresses_action
-                                .inputs_with_remaining_balance()
-                                .keys(),
-                            false,
+                    let block_info = abci_app.platform.state.load().last_block_info().clone();
+                    let (root_hash_identity, data) =
+                        Drive::verify_state_transition_was_executed_with_proof(
+                            state_transition,
+                            &block_info,
+                            response_proof.grovedb_proof.as_ref(),
+                            &|_| Ok(None),
                             platform_version,
                         )
-                        .expect("expected to verify balance identity for top up from addresses");
-                    let _balance_revision = balance_revision.expect("expected a balance");
+                        .expect("IdentityTopUpFromAddressesAction proof should verify");
+
+                    let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                        identity,
+                        address_infos,
+                    ) = data
+                    else {
+                        panic!("expected identity/address infos for top up from addresses proof, got {}",
+                    std::any::type_name_of_val(&data));
+                    };
+
+                    assert!(
+                        address_infos.is_empty() == false,
+                        "expected some address infos"
+                    );
+                    assert_eq!(
+                        identity_top_up_from_addresses_action.identity_id(),
+                        identity.id,
+                        "expected identity ids to match"
+                    );
+
+                    // ensure all addresses used in the top-up are proved
+                    let mut expected_addresses: BTreeSet<PlatformAddress> =
+                        identity_top_up_from_addresses_action
+                            .inputs_with_remaining_balance()
+                            .keys()
+                            .copied()
+                            .collect();
+                    if let Some((change_address, _)) =
+                        identity_top_up_from_addresses_action.output()
+                    {
+                        expected_addresses.insert(change_address);
+                    }
+                    let proved_addresses: BTreeSet<PlatformAddress> =
+                        address_infos.keys().copied().collect();
+                    assert_eq!(
+                        proved_addresses, expected_addresses,
+                        "proved addresses should match expected inputs and change"
+                    );
 
                     assert_eq!(
                         &root_hash_identity,
@@ -980,6 +1050,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             // if we don't have an action this means there was a problem in the validation of the state transition
         }
     }
+
+    log_state_transition_type_statistics();
 
     true
 }
