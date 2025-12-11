@@ -228,8 +228,7 @@ impl Drive {
                     &identity_id.into_buffer(),
                     &platform_version.drive.grove_version,
                 )?;
-                let addresses_query =
-                    Drive::balances_for_clear_addresses_query(st.inputs().keys());
+                let addresses_query = Drive::balances_for_clear_addresses_query(st.inputs().keys());
 
                 PathQuery::merge(
                     vec![&identity_query, &addresses_query],
@@ -242,8 +241,7 @@ impl Drive {
                     st.identity_id().to_buffer(),
                     &platform_version.drive.grove_version,
                 )?;
-                let addresses_query =
-                    Drive::balances_for_clear_addresses_query(st.inputs().keys());
+                let addresses_query = Drive::balances_for_clear_addresses_query(st.inputs().keys());
 
                 PathQuery::merge(
                     vec![&identity_query, &addresses_query],

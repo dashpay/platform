@@ -102,6 +102,8 @@ assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
 mockall = { version = "0.13" }
+dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
+libc = "0.2"
 
 # For tests of grovedb verify
 rocksdb = { version = "0.23.0" }
