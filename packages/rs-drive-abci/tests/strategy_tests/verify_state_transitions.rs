@@ -932,12 +932,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 ) => {
                     if let StateTransition::IdentityCreditTransferToAddresses(_) = state_transition
                     {
-                        let block_info = platform
-                            .state
-                            .last_committed_block_info()
-                            .as_ref()
-                            .map(|info| info.basic_info().clone())
-                            .unwrap_or_else(BlockInfo::default);
+                        let block_info = latest_block_info(&platform);
 
                         let (root_hash, proof_result) =
                             Drive::verify_state_transition_was_executed_with_proof(
@@ -969,6 +964,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 proved_identity.id,
                                 identity_credit_transfer_to_addresses_action.identity_id()
                             );
+                            assert!(
+                                proved_identity.balance.is_some(),
+                                "credit transfer proof should include updated identity balance"
+                            );
 
                             let expected_addresses: BTreeSet<PlatformAddress> =
                                 identity_credit_transfer_to_addresses_action
@@ -982,6 +981,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             assert_eq!(
                                 proved_addresses, expected_addresses,
                                 "proved addresses should match recipients"
+                            );
+                            assert!(
+                                address_infos_map
+                                    .values()
+                                    .all(|maybe_info| maybe_info.is_some()),
+                                "all recipient addresses should return balance info"
                             );
                         }
                     } else {
