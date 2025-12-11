@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 
 struct CoreContentView: View {

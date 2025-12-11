@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
 
@@ -449,10 +450,10 @@ struct WalletInfoView: View {
         }
     }
     
-    private func enableNetwork(_ network: Network) async {
+    private func enableNetwork(_ network: AppNetwork) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
-        
+
         do {
             // Add the network to the wallet
             let networkBit: UInt32

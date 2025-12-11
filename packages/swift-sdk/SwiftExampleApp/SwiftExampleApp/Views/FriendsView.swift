@@ -4,7 +4,7 @@ import SwiftDashSDK
 
 struct FriendsView: View {
     @EnvironmentObject var appState: UnifiedAppState
-    @StateObject private var dashPayService = DashPayService()
+    @StateObject private var dashPayService = ObservableDashPayService()
     @State private var selectedIdentityId: String = ""
     @State private var contacts: [DashPayContact] = []
     @State private var incomingRequests: [DashPayContactRequest] = []
