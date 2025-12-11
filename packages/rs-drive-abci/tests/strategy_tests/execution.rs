@@ -909,6 +909,7 @@ pub(crate) fn start_chain_for_strategy(
             start_time_ms: GENESIS_TIME_MS,
             current_time_ms: GENESIS_TIME_MS,
             current_identities: Vec::new(),
+            current_addresses_with_balance: Default::default(),
         },
         strategy,
         config,
@@ -939,6 +940,7 @@ pub(crate) fn continue_chain_for_strategy(
         mut current_time_ms,
         instant_lock_quorums,
         mut current_identities,
+        mut current_addresses_with_balance,
     } = chain_execution_parameters;
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
@@ -1014,6 +1016,7 @@ pub(crate) fn continue_chain_for_strategy(
             block_start,
             &block_info,
             &mut current_identities,
+            &mut current_addresses_with_balance,
             &mut current_identity_nonce_counter,
             &mut current_identity_contract_nonce_counter,
             &mut current_votes,
@@ -1136,6 +1139,7 @@ pub(crate) fn continue_chain_for_strategy(
             }
         }
         signer.commit_block_keys();
+        current_addresses_with_balance.commit();
 
         current_time_ms += config.block_spacing_ms;
 
@@ -1221,6 +1225,7 @@ pub(crate) fn continue_chain_for_strategy(
         abci_app,
         masternode_identity_balances,
         identities: current_identities,
+        addresses_with_balance: current_addresses_with_balance,
         proposers: proposers_with_updates,
         validator_quorums: quorums,
         current_validator_quorum_hash: current_quorum_hash,

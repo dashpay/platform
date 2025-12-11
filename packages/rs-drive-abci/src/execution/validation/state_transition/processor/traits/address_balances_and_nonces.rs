@@ -21,8 +21,7 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     StateTransitionWitnessSigned
 {
-    // TODO: why this fn is named Identity? Why no output validation?
-    fn validate_identity_balances_and_nonces_validation(
+    fn validate_address_balances_and_nonces_internal_validation(
         &self,
         drive: &Drive,
         execution_context: &mut StateTransitionExecutionContext,
@@ -31,6 +30,9 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     ) -> Result<ConsensusValidationResult<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>, Error>
     {
         let inputs = self.inputs();
+        if inputs.is_empty() {
+            return Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()));
+        }
         tracing::trace!(
             inputs = ?inputs,
             "Validating input address balances and nonces for state transition"
@@ -179,35 +181,35 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
     {
         match self {
             StateTransition::IdentityCreateFromAddresses(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::IdentityTopUpFromAddresses(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::AddressFundsTransfer(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::AddressFundingFromAssetLock(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::AddressCreditWithdrawal(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// The input witness data required to spend from a PlatformAddress.
 ///
 /// This enum captures the different spending patterns for P2PKH and P2SH addresses.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq)]
 pub enum AddressWitness {
     /// P2PKH witness: recoverable signature only
     ///
