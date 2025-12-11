@@ -30,12 +30,10 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     ) -> Result<ConsensusValidationResult<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>, Error>
     {
         let inputs = self.inputs();
-
         if inputs.is_empty() {
             return Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()));
         }
-        // TODO change to trace!
-        tracing::info!(
+        tracing::trace!(
             inputs = ?inputs,
             "Validating input address balances and nonces for state transition"
         );
@@ -69,7 +67,7 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
                 Some(None) | None => {
                     // Address does not exist in state
                     return Ok(ConsensusValidationResult::new_with_error(
-                        AddressDoesNotExistError::new(address.clone()).into(),
+                        AddressDoesNotExistError::new(*address).into(),
                     ));
                 }
             };
@@ -78,7 +76,7 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
             if state_nonce == u32::MAX as AddressNonce {
                 return Ok(ConsensusValidationResult::new_with_error(
                     AddressInvalidNonceError::new(
-                        address.clone(),
+                        *address,
                         *expected_nonce,
                         state_nonce, // Can't increment past max
                     )
@@ -99,12 +97,8 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
                     *expected_nonce
                 );
                 return Ok(ConsensusValidationResult::new_with_error(
-                    AddressInvalidNonceError::new(
-                        address.clone(),
-                        *expected_nonce,
-                        expected_next_nonce,
-                    )
-                    .into(),
+                    AddressInvalidNonceError::new(*address, *expected_nonce, expected_next_nonce)
+                        .into(),
                 ));
             }
 

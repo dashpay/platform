@@ -7,7 +7,7 @@ use crate::platform_types::event_execution_result::EventExecutionResult;
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult::UnpaidConsensusExecutionError;
 use crate::platform_types::platform::{Platform, PlatformRef};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::ConsensusError;
@@ -204,7 +204,7 @@ mod tests {
     use crate::platform_types::event_execution_result::EventExecutionResult::{
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
@@ -239,7 +239,7 @@ mod tests {
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-    use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
+    use dpp::state_transition::{StateTransition, StateTransitionOwned};
     use dpp::tests::fixtures::{
         get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
         instant_asset_lock_proof_fixture,

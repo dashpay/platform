@@ -1,5 +1,5 @@
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 pub use dpp::core_types::validator::v0::*;
 use dpp::dashcore::hashes::Hash;

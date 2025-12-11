@@ -1,3 +1,47 @@
+//! Token payment metadata and helpers.
+//!
+//! This module defines the versioned `TokenPaymentInfo` wrapper used to describe how a
+//! client intends to pay with tokens for an operation (for example, creating,
+//! transferring, purchasing, or updating the price of a document/NFT).
+//! It captures which token to use, optional price bounds, and who covers gas fees.
+//!
+//! The enum is versioned to allow future evolution without breaking callers. The
+//! current implementation is [`v0::TokenPaymentInfoV0`]. Accessors are provided via
+//! [`v0::v0_accessors::TokenPaymentInfoAccessorsV0`], and convenience methods (such
+//! as `token_id()` and `is_valid_for_required_cost()`) are available through
+//! [`methods::v0::TokenPaymentInfoMethodsV0`].
+//!
+//! Typical usage:
+//!
+//! ```ignore
+//! use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+//! use dpp::data_contract::TokenContractPosition;
+//! use dpp::tokens::token_payment_info::{TokenPaymentInfo, v0::TokenPaymentInfoV0};
+//!
+//! // Client indicates payment preferences for a transition
+//! let info: TokenPaymentInfo = TokenPaymentInfoV0 {
+//!     // `None` => use a token defined on the current contract
+//!     payment_token_contract_id: None,
+//!     // Which token (by position/index) on the contract to use
+//!     token_contract_position: 0u16,
+//!     // Optional bounds to guard against unexpected price changes
+//!     minimum_token_cost: None,
+//!     maximum_token_cost: Some(1_000u64.into()),
+//!     // Who pays gas: user, contract owner, or prefer contract owner
+//!     gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
+//! }.into();
+//! ```
+//!
+//! Deserialization from a platform `BTreeMap<String, Value>` requires a
+//! `$format_version` key. For V0 the map may contain:
+//! - `paymentTokenContractId` (`Identifier` as bytes)
+//! - `tokenContractPosition` (`u16`)
+//! - `minimumTokenCost` (`u64`)
+//! - `maximumTokenCost` (`u64`)
+//! - `gasFeesPaidBy` (one of: `"DocumentOwner"`, `"ContractOwner"`, `"PreferContractOwner"`)
+//!
+//! Unknown `$format_version` values yield an `UnknownVersionMismatch` error.
+//!
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -47,6 +91,15 @@ pub mod v0;
     ),
     derive(Serialize, Deserialize)
 )]
+/// Versioned container describing how a client intends to pay with tokens.
+///
+/// The `TokenPaymentInfo` enum allows the protocol to evolve the underlying structure
+/// across versions while keeping a stable API for callers. Use the accessor trait
+/// [`v0::v0_accessors::TokenPaymentInfoAccessorsV0`] to read or update fields, and
+/// [`methods::v0::TokenPaymentInfoMethodsV0`] for helpers like `token_id()` and
+/// `is_valid_for_required_cost()`.
+///
+/// See [`v0::TokenPaymentInfoV0`] for the current set of fields and semantics.
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
     V0(TokenPaymentInfoV0),
@@ -128,6 +181,9 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
     type Error = ProtocolError;
 
     fn try_from(map: BTreeMap<String, Value>) -> Result<Self, Self::Error> {
+        // Expect a `$format_version` discriminator and dispatch to the
+        // corresponding versioned structure. This allows backward-compatible
+        // support for older serialized payloads.
         let format_version = map.get_str("$format_version")?;
         match format_version {
             "0" => {
@@ -149,6 +205,10 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
 #[cfg(feature = "state-transition-value-conversion")]
 impl TryFrom<TokenPaymentInfo> for Value {
     type Error = Error;
+    /// Serialize the versioned token payment info into a platform `Value`.
+    ///
+    /// This mirrors the map format accepted by `TryFrom<BTreeMap<String, Value>>`,
+    /// including the `$format_version` discriminator.
     fn try_from(value: TokenPaymentInfo) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }

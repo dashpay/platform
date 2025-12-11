@@ -612,7 +612,7 @@ final class StateTransitionTests: XCTestCase {
         SDK.initialize()
         
         // Create SDK instance for testnet
-        let testnetNetwork = DashSDKNetwork(rawValue: 1) // Testnet
+        let testnetNetwork = DashSDKNetwork(rawValue: 1)
         return try SDK(network: testnetNetwork)
     }
     

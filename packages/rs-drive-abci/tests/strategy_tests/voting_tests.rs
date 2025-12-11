@@ -31,7 +31,7 @@ mod tests {
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use drive::util::object_size_info::DataContractOwnedResolvedInfo;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, ResourceVoteOp, VoteAction};
     use strategy_tests::transitions::create_state_transitions_for_identities;

@@ -21,7 +21,7 @@ describe('DPNS', function dpnsSuite() {
   });
 
   it('usernames() returns usernames for identity', async () => {
-    const res = await sdk.dpns.usernames(TEST_IDS.identityId, { limit: 5 });
+    const res = await sdk.dpns.usernames({ identityId: TEST_IDS.identityId, limit: 5 });
     expect(res).to.exist();
   });
 

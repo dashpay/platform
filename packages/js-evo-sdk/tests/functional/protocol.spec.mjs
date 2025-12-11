@@ -16,10 +16,7 @@ describe('Protocol', function protocolSuite() {
   });
 
   it('versionUpgradeVoteStatus() returns vote window status', async () => {
-    const res = await sdk.protocol.versionUpgradeVoteStatus({
-      startProTxHash: TEST_IDS.proTxHash,
-      count: 1,
-    });
+    const res = await sdk.protocol.versionUpgradeVoteStatus(TEST_IDS.proTxHash, 1);
     expect(res).to.exist();
   });
 });

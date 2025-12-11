@@ -50,7 +50,56 @@ struct WalletDetailView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal)
-            
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Transactions Section
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Transactions")
+                        .font(.headline)
+                    Spacer()
+                }
+                .padding(.horizontal)
+
+                NavigationLink {
+                    TransactionListView(wallet: wallet)
+                        .environmentObject(walletService)
+                        .environmentObject(unifiedAppState)
+                } label: {
+                    HStack {
+                        Label("View All Transactions", systemImage: "list.bullet.rectangle")
+                            .font(.subheadline)
+
+                        Spacer()
+
+                        if wallet.transactionCount > 0 {
+                            Text("\(wallet.transactionCount)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color(UIColor.secondarySystemBackground))
+                                .cornerRadius(8)
+                        }
+
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Section header
             HStack {
                 Text("Accounts")
@@ -59,7 +108,7 @@ struct WalletDetailView: View {
                 Spacer()
             }
             .padding(.top)
-            
+
             // Account List
             AccountListView(wallet: wallet)
                 .environmentObject(walletService)

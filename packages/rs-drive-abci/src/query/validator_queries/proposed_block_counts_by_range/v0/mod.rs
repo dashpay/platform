@@ -14,7 +14,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::error::query::QuerySyntaxError;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 impl<C> Platform<C> {
     pub(super) fn query_proposed_block_counts_by_range_v0(

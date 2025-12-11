@@ -57,7 +57,7 @@ class WalletManager: ObservableObject {
     
     // MARK: - Wallet Management
     
-    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String, networks: [Network]? = nil) async throws -> HDWallet {
+    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String, networks: [Network]? = nil, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
@@ -89,19 +89,33 @@ class WalletManager: ObservableObject {
             let selectedNetworks = networks ?? [network]
             let keyWalletNetworks = selectedNetworks.map { $0.toKeyWalletNetwork() }
 
+            // Calculate birthHeight based on wallet type
+            // For imported wallets: use 730k for mainnet, 0 for test/devnets (need to sync from genesis)
+            // For new wallets: use 0 to signal "use latest checkpoint" (FFI interprets 0 as None)
+            let birthHeight: UInt32
+            if isImport {
+                // Imported wallet should sync from a reasonable historical point
+                birthHeight = network == .mainnet ? 730_000 : 1 // Use 1 instead of 0 to avoid "latest checkpoint" interpretation
+            } else {
+                // New wallet: pass 0 to use latest checkpoint (FFI converts 0 -> None -> latest)
+                birthHeight = 0
+            }
+
+            print("Creating wallet with birthHeight: \(birthHeight) (isImport: \(isImport), network: \(network))")
+
             // Add wallet using SDK's WalletManager with combined network bitfield and serialize
             let result = try sdkWalletManager.addWalletAndSerialize(
                 mnemonic: finalMnemonic,
                 passphrase: nil,
                 networks: keyWalletNetworks,
-                birthHeight: 0,
+                birthHeight: birthHeight,
                 accountOptions: .default,
                 downgradeToPublicKeyWallet: false,
                 allowExternalSigning: false
             )
             walletId = result.walletId
             serializedBytes = result.serializedWallet
-            
+
             print("Wallet added with ID: \(walletId.hexString)")
         } catch {
             print("Failed to add wallet: \(error)")
@@ -109,7 +123,7 @@ class WalletManager: ObservableObject {
         }
         
         // Create HDWallet model for SwiftUI
-        let wallet = HDWallet(label: label, network: network, isImported: false)
+        let wallet = HDWallet(label: label, network: network, isImported: isImport)
         wallet.walletId = walletId
         
         // Persist serialized wallet bytes for restoration on next launch
@@ -145,6 +159,35 @@ class WalletManager: ObservableObject {
                 }
             }
             wallet.networks = bitfield
+        }
+
+        // Set per-network sync-from heights
+        // These are used by WalletService.computeNetworkBaselineSyncFromHeight()
+        // to determine the SPV sync starting point across all wallets
+        if isImport {
+            // Imported wallet: use fixed per-network baselines
+            wallet.syncFromMainnet = 730_000
+            wallet.syncFromTestnet = 1  // Use 1 instead of 0 to avoid conflicts
+            wallet.syncFromDevnet = 1
+        } else {
+            // New wallet: use the latest checkpoint height for each enabled network
+            let nets = networks ?? [network]
+            for n in nets {
+                switch n {
+                case .mainnet:
+                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) {
+                        wallet.syncFromMainnet = Int(cp)
+                    }
+                case .testnet:
+                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) {
+                        wallet.syncFromTestnet = Int(cp)
+                    }
+                case .devnet:
+                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) {
+                        wallet.syncFromDevnet = Int(cp)
+                    }
+                }
+            }
         }
 
         // Save to database
@@ -278,8 +321,36 @@ class WalletManager: ObservableObject {
         await loadWallets()
     }
     
+    // MARK: - Transaction Management
+
+    /// Get transactions for a wallet
+    /// - Parameters:
+    ///   - wallet: The wallet to get transactions for
+    ///   - accountIndex: The account index (default 0)
+    /// - Returns: Array of wallet transactions
+    func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) async throws -> [WalletTransaction] {
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        // Get managed account
+        let managedAccount = try sdkWalletManager.getManagedAccount(
+            walletId: walletId,
+            network: network,
+            accountIndex: accountIndex,
+            accountType: .standardBIP44
+        )
+
+        // Get current height (TODO: get from SPV client when available)
+        let currentHeight: UInt32 = 0
+
+        return try managedAccount.getTransactions(currentHeight: currentHeight)
+    }
+
     // MARK: - Account Management
-    
+
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
@@ -323,18 +394,19 @@ class WalletManager: ObservableObject {
         var ffiType = FFIAccountType(rawValue: 0)
         if let m = managed {
             ffiType = FFIAccountType(rawValue: m.accountType?.rawValue ?? 0)
-            if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            // Query all generated addresses (0 to 0 means "all addresses" in FFI)
+            if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 0) {
                 externalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
-            if let pool = m.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            if let pool = m.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 0) {
                 internalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
             // Single pool fallback
-            if externalDetails.isEmpty && internalDetails.isEmpty, let pool = m.getAddressPool(type: .single), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            if externalDetails.isEmpty && internalDetails.isEmpty, let pool = m.getAddressPool(type: .single), let infos = try? pool.getAddresses(from: 0, to: 0) {
                 externalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
@@ -612,7 +684,7 @@ class WalletManager: ObservableObject {
               let walletId = wallet.walletId else {
             return
         }
-        
+
         // Get balance via SDK wrappers
         do {
             let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: wallet.dashNetwork.toKeyWalletNetwork())
@@ -627,7 +699,69 @@ class WalletManager: ObservableObject {
             print("Failed to update balance: \(error)")
         }
     }
-    
+
+    /// Sync all wallet state from Rust WalletManager to SwiftData
+    /// This should be called whenever the Rust wallet state changes (e.g., after processing a transaction)
+    func syncWalletStateFromRust(for wallet: HDWallet) async {
+        guard let walletId = wallet.walletId else { return }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        do {
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+
+            // Sync all accounts
+            for account in wallet.accounts {
+                if let managed = collection.getBIP44Account(at: account.accountNumber) {
+                    // Sync balance from account
+                    if let bal = try? managed.getBalance() {
+                        account.confirmedBalance = bal.confirmed
+                        account.unconfirmedBalance = bal.unconfirmed
+                    }
+
+                    // Sync addresses (update isUsed flags and add new addresses)
+                    // Use 0 to 0 to get all addresses from the pool
+                    if let externalPool = managed.getExternalAddressPool() {
+                        if let infos = try? externalPool.getAddresses(from: 0, to: 0) {
+                            // Update existing addresses and add new ones if needed
+                            for info in infos {
+                                if let existingAddr = account.externalAddresses.first(where: { $0.address == info.address }) {
+                                    existingAddr.isUsed = info.used
+                                } else {
+                                    // New address discovered - add it
+                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .external, account: account)
+                                    hd.isUsed = info.used
+                                    modelContainer.mainContext.insert(hd)
+                                    account.externalAddresses.append(hd)
+                                }
+                            }
+                        }
+                    }
+
+                    if let internalPool = managed.getInternalAddressPool() {
+                        if let infos = try? internalPool.getAddresses(from: 0, to: 0) {
+                            for info in infos {
+                                if let existingAddr = account.internalAddresses.first(where: { $0.address == info.address }) {
+                                    existingAddr.isUsed = info.used
+                                } else {
+                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .internal, account: account)
+                                    hd.isUsed = info.used
+                                    modelContainer.mainContext.insert(hd)
+                                    account.internalAddresses.append(hd)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save all changes to SwiftData
+            try modelContainer.mainContext.save()
+        } catch {
+            print("❌ [WalletManager] Failed to sync wallet state: \(error)")
+        }
+    }
+
     // MARK: - Public Utility Methods
     
     func reloadWallets() async {

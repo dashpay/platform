@@ -15,7 +15,7 @@ use crate::execution::validation::state_transition::address_funds_transfer::tran
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 /// A trait to transform into an action for address funds transfer
 pub trait StateTransitionAddressFundsTransferTransitionActionTransformer {

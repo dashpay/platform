@@ -13,6 +13,7 @@ use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::voting::votes::Vote;
 use dpp::{
     block::extended_epoch_info::ExtendedEpochInfo, document::Document, platform_value::Identifier,
@@ -305,6 +306,11 @@ impl Fetch for Vote {
 
 impl Fetch for RewardDistributionMoment {
     type Request = platform_proto::GetTokenPerpetualDistributionLastClaimRequest;
+}
+
+/// Fetch contract-scoped keys for multiple identities.
+impl Fetch for IdentitiesContractKeys {
+    type Request = platform_proto::GetIdentitiesContractKeysRequest;
 }
 
 impl Fetch for dpp::tokens::contract_info::TokenContractInfo {

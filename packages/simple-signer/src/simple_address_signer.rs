@@ -3,14 +3,13 @@
 //! This module provides a simple implementation of the `Signer<PlatformAddress>` trait
 //! for signing with P2PKH addresses. It maps address hashes to their corresponding private keys.
 
-use bincode::Encode;
+use bincode::{Decode, Encode};
 use dpp::address_funds::AddressWitness;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::hashes::{hash160, Hash};
 use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
 use dpp::dashcore::signer;
 use dpp::identity::signer::Signer;
-use dpp::platform_serialization::de::Decode;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
 use std::collections::BTreeMap;

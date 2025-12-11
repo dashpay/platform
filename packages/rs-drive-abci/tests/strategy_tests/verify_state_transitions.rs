@@ -40,7 +40,7 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use drive_abci::execution::validation::state_transition::ValidationMode;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
 use platform_version::DefaultForPlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
