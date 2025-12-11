@@ -3,9 +3,9 @@ use crate::state_transitions::batch::document_transition::DocumentTransitionWasm
 use crate::state_transitions::batch::generators::generate_replace_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::data_contract::document::DocumentWasm;
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
+use crate::serde_format;
 use crate::utils::{IntoWasm, ToSerdeJSONExt};
-use dpp::dashcore::hashes::serde::Serialize;
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -69,12 +69,7 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(getter = "data")]
     pub fn get_data(&self) -> WasmDppResult<JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-        self.0
-            .data()
-            .serialize(&serializer)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))
+        serde_format::to_json(self.0.data())
     }
 
     #[wasm_bindgen(getter = "base")]

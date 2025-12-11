@@ -1,6 +1,7 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identifier::Identifier;
 use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
@@ -12,8 +13,6 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
-use serde::Serialize;
-use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -185,32 +184,23 @@ impl IdentityTopUpTransitionWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let transition: IdentityTopUpTransition = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let transition: IdentityTopUpTransition = serde_format::from_json(js_value)?;
         Ok(IdentityTopUpTransitionWasm(transition))
     }
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_object(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let transition: IdentityTopUpTransition = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let transition: IdentityTopUpTransition = serde_format::from_object(js_value)?;
         Ok(IdentityTopUpTransitionWasm(transition))
     }
 }

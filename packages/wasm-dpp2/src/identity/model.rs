@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::serde_format;
 use crate::utils::{IntoWasm, JsValueExt};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::fields::IDENTIFIER_FIELDS_RAW_OBJECT;
@@ -16,9 +17,8 @@ use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, RangeError, Reflect};
-use serde::Serialize;
 use serde_json::Value as JsonValue;
-use serde_wasm_bindgen::{from_value, to_value};
+use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use wasm_bindgen::JsCast;
@@ -152,16 +152,12 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::new()
-            .serialize_maps_as_objects(true)
-            .serialize_bytes_as_arrays(true);
-        let mut js_value = self
-            .0
-            .to_object()?
-            .serialize(&serializer)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        // Use platform_value conversion which handles BigInt for balance/revision
+        let value = self.0.to_object()?;
+        let js_value = serde_format::platform_value_to_object(&value)?;
 
-        // Align with JS expectations: expose `id` as an Identifier instance
+        // Replace `id` with IdentifierWasm instance for JS API compatibility
+        // (allows identity.id.toBase58() etc.)
         if js_value.is_object() {
             let object = Object::from(js_value.clone());
             let id_js = JsValue::from(self.get_id());
@@ -171,26 +167,7 @@ impl IdentityWasm {
                     err.error_message()
                 ))
             })?;
-            // balance/revision should be BigInt
-            let balance_bigint = js_sys::BigInt::from(self.get_balance() as u64);
-            let revision_bigint = js_sys::BigInt::from(self.get_revision() as u64);
-            Reflect::set(&object, &JsValue::from_str("balance"), &balance_bigint).map_err(
-                |err| {
-                    WasmDppError::serialization(format!(
-                        "unable to set balance on Identity object: {}",
-                        err.error_message()
-                    ))
-                },
-            )?;
-            Reflect::set(&object, &JsValue::from_str("revision"), &revision_bigint).map_err(
-                |err| {
-                    WasmDppError::serialization(format!(
-                        "unable to set revision on Identity object: {}",
-                        err.error_message()
-                    ))
-                },
-            )?;
-            js_value = object.into();
+            return Ok(object.into());
         }
 
         Ok(js_value)
@@ -198,23 +175,12 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Serialize to serde_json::Value first (human-readable, so Identifier becomes base58)
-        // then convert to JS value using json_compatible serializer
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        // Convert JS value to serde_json::Value, then deserialize (human-readable)
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let identity: Identity = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(IdentityWasm(identity))
+        serde_format::from_json(js_value).map(IdentityWasm)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]

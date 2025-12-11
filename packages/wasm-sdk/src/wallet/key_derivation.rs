@@ -3,7 +3,7 @@
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::{deserialize_query_with_default, deserialize_required_query};
 use crate::sdk::WasmSdk;
 use bip39::{Language, Mnemonic};
@@ -265,10 +265,10 @@ pub struct PathDerivedKeyInfoWasm {
     pub network: String,
 }
 
-impl_wasm_object_json!(DerivationPathWasm);
-impl_wasm_object_json!(Dip13DerivationPathWasm);
-impl_wasm_object_json!(SeedPhraseKeyInfoWasm);
-impl_wasm_object_json!(PathDerivedKeyInfoWasm);
+impl_wasm_serde_conversions!(DerivationPathWasm);
+impl_wasm_serde_conversions!(Dip13DerivationPathWasm);
+impl_wasm_serde_conversions!(SeedPhraseKeyInfoWasm);
+impl_wasm_serde_conversions!(PathDerivedKeyInfoWasm);
 
 /// HD Key information
 #[derive(Debug, Clone, Serialize, Deserialize)]

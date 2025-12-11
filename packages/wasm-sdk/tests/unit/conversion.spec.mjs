@@ -125,4 +125,5 @@ describe('serde conversions (unit)', () => {
     expect(roundtrip.identityId.toBase58()).to.equal(expectedBase58);
     expect(roundtrip.documentId.toBase58()).to.equal(expectedBase58);
   });
+
 });

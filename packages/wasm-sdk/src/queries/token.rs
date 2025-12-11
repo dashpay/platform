@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::{identifier_from_js, identifiers_from_js};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -82,7 +82,7 @@ impl TokenLastClaimWasm {
         self.last_claim_block_height
     }
 }
-impl_wasm_object_json!(TokenLastClaimWasm);
+impl_wasm_serde_conversions!(TokenLastClaimWasm);
 
 #[wasm_bindgen(js_name = "TokenTotalSupply")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -105,8 +105,8 @@ impl TokenTotalSupplyWasm {
     }
 }
 
-impl_wasm_object_json!(TokenTotalSupplyWasm);
-impl_wasm_object_json!(TokenPriceInfoWasm);
+impl_wasm_serde_conversions!(TokenTotalSupplyWasm);
+impl_wasm_serde_conversions!(TokenPriceInfoWasm);
 
 #[wasm_bindgen]
 impl WasmSdk {

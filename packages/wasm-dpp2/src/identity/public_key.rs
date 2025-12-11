@@ -4,6 +4,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::serde_format;
 use crate::utils::IntoWasm;
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -17,14 +18,12 @@ use dpp::identity::identity_public_key::conversion::platform_value::IdentityPubl
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::platform_value::BinaryData;
-use dpp::platform_value::Value;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::version::PlatformVersion;
-use serde::Serialize;
 use serde_json::Value as JsonValue;
-use serde_wasm_bindgen::{Serializer, from_value as serde_from_value, to_value};
+use serde_wasm_bindgen::from_value as serde_from_value;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -296,38 +295,42 @@ impl IdentityPublicKeyWasm {
         Ok(IdentityPublicKeyWasm(public_key))
     }
 
+    /// Serialize to JS object (non-human-readable).
+    ///
+    /// Uses platform_value conversion which properly handles the tagged enum
+    /// and removes None fields like disabledAt.
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let serializer = Serializer::new().serialize_maps_as_objects(true);
-        self.0
-            .to_cleaned_object()
-            .map_err(WasmDppError::from)?
-            .serialize(&serializer)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))
+        let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
+        serde_format::platform_value_to_object(&value)
     }
 
+    /// Deserialize from JS object (non-human-readable).
+    ///
+    /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_value: Value = serde_from_value(js_value).map_err(|err| {
-            WasmDppError::serialization(format!(
-                "IdentityPublicKey.fromObject: unable to parse object: {}",
-                err
-            ))
-        })?;
-
+        let platform_value = serde_format::platform_value_from_object(js_value)?;
         let platform_version = PlatformVersion::latest();
         let key = IdentityPublicKey::from_object(platform_value, platform_version)
             .map_err(WasmDppError::from)?;
-
         Ok(IdentityPublicKeyWasm(key))
     }
 
+    /// Serialize to JSON-compatible JS object (human-readable).
+    ///
+    /// Uses serde_json conversion which properly handles the tagged enum
+    /// and serializes binary data as base64 strings.
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
         let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
-        to_value(&json_value).map_err(|err| WasmDppError::serialization(err.to_string()))
+        serde_format::to_json(&json_value)
     }
 
+    /// Deserialize from JSON-compatible JS object (human-readable).
+    ///
+    /// Uses serde_json conversion which properly handles the tagged enum
+    /// and deserializes base64 strings to binary data.
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
         let json_value: JsonValue = serde_from_value(js_value).map_err(|err| {

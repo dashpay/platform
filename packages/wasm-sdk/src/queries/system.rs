@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::identifier_from_js;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -275,22 +275,22 @@ impl StatusResponseWasm {
     }
 }
 
-impl_wasm_object_json!(StatusSoftwareWasm);
-impl_wasm_object_json!(StatusTenderdashProtocolWasm);
-impl_wasm_object_json!(StatusDriveProtocolWasm);
-impl_wasm_object_json!(StatusProtocolWasm);
-impl_wasm_object_json!(StatusVersionWasm);
-impl_wasm_object_json!(StatusNodeWasm);
-impl_wasm_object_json!(StatusChainWasm);
-impl_wasm_object_json!(StatusNetworkWasm);
-impl_wasm_object_json!(StatusStateSyncWasm);
-impl_wasm_object_json!(StatusTimeWasm);
-impl_wasm_object_json!(StatusResponseWasm);
-impl_wasm_object_json!(QuorumInfoWasm);
-impl_wasm_object_json!(CurrentQuorumsInfoWasm);
-impl_wasm_object_json!(PrefundedSpecializedBalanceWasm);
-impl_wasm_object_json!(PathElementWasm);
-impl_wasm_object_json!(StateTransitionResultWasm);
+impl_wasm_serde_conversions!(StatusSoftwareWasm);
+impl_wasm_serde_conversions!(StatusTenderdashProtocolWasm);
+impl_wasm_serde_conversions!(StatusDriveProtocolWasm);
+impl_wasm_serde_conversions!(StatusProtocolWasm);
+impl_wasm_serde_conversions!(StatusVersionWasm);
+impl_wasm_serde_conversions!(StatusNodeWasm);
+impl_wasm_serde_conversions!(StatusChainWasm);
+impl_wasm_serde_conversions!(StatusNetworkWasm);
+impl_wasm_serde_conversions!(StatusStateSyncWasm);
+impl_wasm_serde_conversions!(StatusTimeWasm);
+impl_wasm_serde_conversions!(StatusResponseWasm);
+impl_wasm_serde_conversions!(QuorumInfoWasm);
+impl_wasm_serde_conversions!(CurrentQuorumsInfoWasm);
+impl_wasm_serde_conversions!(PrefundedSpecializedBalanceWasm);
+impl_wasm_serde_conversions!(PathElementWasm);
+impl_wasm_serde_conversions!(StateTransitionResultWasm);
 
 #[wasm_bindgen(js_name = "QuorumInfo")]
 #[derive(Clone, Serialize, Deserialize)]

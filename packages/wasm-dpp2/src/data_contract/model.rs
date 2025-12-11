@@ -1,6 +1,7 @@
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{IntoWasm, JsValueExt, ToSerdeJSONExt};
@@ -228,10 +229,10 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let json_value: JsonValue = js_value.with_serde_to_json_value()?;
+        let platform_value: Value = serde_format::platform_value_from_object(js_value)?;
 
         let contract =
-            DataContract::from_json(json_value, full_validation, &platform_version.into())
+            DataContract::from_value(platform_value, full_validation, &platform_version.into())
                 .map_err(WasmDppError::from)?;
 
         Ok(DataContractWasm(contract))
@@ -313,23 +314,13 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
-
-        self.0
-            .clone()
-            .to_value(&platform_version.into())?
-            .serialize(&serializer)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        let value = self.0.clone().to_value(&platform_version.into())?;
+        serde_format::platform_value_to_object(&value)
     }
 
     #[wasm_bindgen(js_name = "getSchemas")]
     pub fn get_schemas(&self) -> WasmDppResult<JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-        self.0
-            .document_schemas()
-            .serialize(&serializer)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0.document_schemas())
     }
 
     #[wasm_bindgen(getter = "version")]
@@ -349,10 +340,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "getConfig")]
     pub fn get_config(&self) -> WasmDppResult<JsValue> {
-        self.0
-            .config()
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(self.0.config())
     }
 
     #[wasm_bindgen(getter = "tokens")]
@@ -532,9 +520,7 @@ impl DataContractWasm {
         };
 
         let json = self.0.to_json(&platform_version.into())?;
-
-        json.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&json)
     }
 
     #[wasm_bindgen(js_name = "generateId")]

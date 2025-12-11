@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -203,10 +203,10 @@ impl IdentityNonceWasm {
     }
 }
 
-impl_wasm_object_json!(IdentityBalanceWasm);
-impl_wasm_object_json!(IdentityBalanceEntryWasm);
-impl_wasm_object_json!(IdentityBalanceAndRevisionWasm);
-impl_wasm_object_json!(IdentityNonceWasm);
+impl_wasm_serde_conversions!(IdentityBalanceWasm);
+impl_wasm_serde_conversions!(IdentityBalanceEntryWasm);
+impl_wasm_serde_conversions!(IdentityBalanceAndRevisionWasm);
+impl_wasm_serde_conversions!(IdentityNonceWasm);
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
 /**

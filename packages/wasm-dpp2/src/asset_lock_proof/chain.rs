@@ -1,12 +1,10 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{JsValueExt, js_value_to_vec_u8};
+use crate::serde_format;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-use js_sys::{Object, Reflect};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -78,39 +76,27 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        // Use default serializer (non-human-readable) - bytes stay as Uint8Array
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        // Non-human-readable: OutPoint serializes as 36 bytes (Uint8Array)
+        serde_format::to_object(&self.0)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Serialize to serde_json::Value first (human-readable, so outPoint becomes base64)
-        // then convert to JS value
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        // Human-readable: OutPoint serializes as "txid:vout" string
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<ChainAssetLockProofWasm> {
-        let (core_chain_locked_height, out_point) = parse_chain_asset_lock_proof_fields(js_value)?;
-        let out_point_wasm = OutPointWasm::from_bytes(out_point);
-        Ok(ChainAssetLockProofWasm(ChainAssetLockProof {
-            core_chain_locked_height,
-            out_point: out_point_wasm.into(),
-        }))
+        // Non-human-readable: OutPoint expects 36 bytes (Uint8Array)
+        let proof: ChainAssetLockProof = serde_format::from_object(js_value)?;
+        Ok(ChainAssetLockProofWasm(proof))
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<ChainAssetLockProofWasm> {
-        // Convert JS value to serde_json::Value, then deserialize (human-readable)
-        let json_value: serde_json::Value = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let proof: ChainAssetLockProof = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        // Human-readable: OutPoint expects "txid:vout" string
+        let proof: ChainAssetLockProof = serde_format::from_json(js_value)?;
         Ok(ChainAssetLockProofWasm(proof))
     }
 
@@ -127,34 +113,4 @@ impl ChainAssetLockProofWasm {
             .0;
         Ok(ChainAssetLockProofWasm(proof))
     }
-}
-
-fn parse_chain_asset_lock_proof_fields(js_value: JsValue) -> WasmDppResult<(u32, Vec<u8>)> {
-    let object = js_value.dyn_into::<Object>().map_err(|_| {
-        WasmDppError::invalid_argument("ChainAssetLockProof expects an object".to_string())
-    })?;
-
-    let height_js =
-        Reflect::get(&object, &JsValue::from_str("coreChainLockedHeight")).map_err(|err| {
-            WasmDppError::invalid_argument(format!(
-                "unable to read coreChainLockedHeight: {}",
-                err.error_message()
-            ))
-        })?;
-    let out_point_js = Reflect::get(&object, &JsValue::from_str("outPoint")).map_err(|err| {
-        WasmDppError::invalid_argument(format!("unable to read outPoint: {}", err.error_message()))
-    })?;
-
-    let core_chain_locked_height = height_js.as_f64().ok_or_else(|| {
-        WasmDppError::invalid_argument("coreChainLockedHeight must be a number".to_string())
-    })? as u32;
-
-    let out_point = js_value_to_vec_u8(&out_point_js)?;
-    if out_point.len() != 36 {
-        return Err(WasmDppError::invalid_argument(
-            "outPoint must contain exactly 36 bytes".to_string(),
-        ));
-    }
-
-    Ok((core_chain_locked_height, out_point))
 }

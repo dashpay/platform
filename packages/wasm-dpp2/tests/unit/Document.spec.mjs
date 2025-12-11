@@ -55,7 +55,8 @@ describe('Document', () => {
       expect(obj.$ownerId).to.be.instanceOf(Uint8Array);
       expect(obj.$dataContractId).to.be.instanceOf(Uint8Array);
       expect(obj.$type).to.equal(documentTypeName);
-      expect(obj.$revision).to.equal(Number(revision));
+      // toObject uses BigInt for u64 values like revision to preserve precision
+      expect(BigInt(obj.$revision)).to.equal(revision);
     });
 
     it('should roundtrip through toObject / fromObject', () => {

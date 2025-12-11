@@ -3,6 +3,7 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::asset_lock_proof::tx_out::TxOutWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use crate::utils::{JsValueExt, js_value_to_vec_u8};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
@@ -10,7 +11,6 @@ use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use js_sys::{Object, Reflect};
-use serde::Serialize;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -70,9 +70,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        // Use default serializer (non-human-readable) - bytes stay as Uint8Array
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_object(&self.0)
     }
 
     #[wasm_bindgen(js_name = "getOutput")]
@@ -126,13 +124,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Serialize to serde_json::Value first (human-readable, so BinaryData becomes base64)
-        // then convert to JS value
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]

@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256d, Hash as _};
@@ -95,8 +95,8 @@ impl ProtocolVersionUpgradeVoteStatusWasm {
     }
 }
 
-impl_wasm_object_json!(ProtocolVersionUpgradeStateWasm);
-impl_wasm_object_json!(ProtocolVersionUpgradeVoteStatusWasm);
+impl_wasm_serde_conversions!(ProtocolVersionUpgradeStateWasm);
+impl_wasm_serde_conversions!(ProtocolVersionUpgradeVoteStatusWasm);
 
 #[wasm_bindgen]
 impl WasmSdk {

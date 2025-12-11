@@ -6,22 +6,25 @@ use crate::util::hash::hash_double;
 use crate::{identifier::Identifier, ProtocolError};
 use dashcore::OutPoint;
 
-/// Serde module for OutPoint that serializes to base64 when human-readable
+/// Serde module for OutPoint:
+/// - Human-readable (JSON): serializes as "txid:vout" string
+/// - Non-human-readable (binary/platform_value): serializes as 36 bytes
 mod outpoint_serde {
-    use base64::prelude::BASE64_STANDARD;
-    use base64::Engine;
     use dashcore::OutPoint;
-    use serde::de::Error as DeError;
+    use serde::de::{Error, Visitor};
     use serde::{Deserialize, Deserializer, Serializer};
+    use std::str::FromStr;
 
     pub fn serialize<S>(out_point: &OutPoint, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let bytes: [u8; 36] = (*out_point).into();
         if serializer.is_human_readable() {
-            serializer.serialize_str(&BASE64_STANDARD.encode(bytes))
+            // JSON: serialize as "txid:vout" string
+            serializer.serialize_str(&out_point.to_string())
         } else {
+            // Binary: serialize as 36 bytes
+            let bytes: [u8; 36] = (*out_point).into();
             serializer.serialize_bytes(&bytes)
         }
     }
@@ -31,24 +34,45 @@ mod outpoint_serde {
         D: Deserializer<'de>,
     {
         if deserializer.is_human_readable() {
+            // JSON: deserialize from "txid:vout" string
             let s = String::deserialize(deserializer)?;
-            let bytes = BASE64_STANDARD
-                .decode(&s)
-                .map_err(|e| D::Error::custom(format!("invalid base64: {}", e)))?;
-            if bytes.len() != 36 {
-                return Err(D::Error::custom("outPoint must be 36 bytes"));
-            }
-            let mut arr = [0u8; 36];
-            arr.copy_from_slice(&bytes);
-            Ok(OutPoint::from(arr))
+            OutPoint::from_str(&s)
+                .map_err(|e| D::Error::custom(format!("invalid outpoint: {}", e)))
         } else {
-            let bytes = <Vec<u8>>::deserialize(deserializer)?;
-            if bytes.len() != 36 {
-                return Err(D::Error::custom("outPoint must be 36 bytes"));
+            // Binary: deserialize from 36 bytes
+            struct OutPointVisitor;
+
+            impl<'de> Visitor<'de> for OutPointVisitor {
+                type Value = OutPoint;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("36 bytes for OutPoint")
+                }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: Error,
+                {
+                    if v.len() != 36 {
+                        return Err(E::custom(format!(
+                            "invalid outpoint length: expected 36, got {}",
+                            v.len()
+                        )));
+                    }
+                    let mut arr = [0u8; 36];
+                    arr.copy_from_slice(v);
+                    Ok(OutPoint::from(arr))
+                }
+
+                fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+                where
+                    E: Error,
+                {
+                    self.visit_bytes(&v)
+                }
             }
-            let mut arr = [0u8; 36];
-            arr.copy_from_slice(&bytes);
-            Ok(OutPoint::from(arr))
+
+            deserializer.deserialize_bytes(OutPointVisitor)
         }
     }
 }

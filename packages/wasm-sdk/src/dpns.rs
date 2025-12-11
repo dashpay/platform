@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::{deserialize_required_query, identifier_from_js};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -56,8 +56,8 @@ impl DpnsUsernameInfo {
     }
 }
 
-impl_wasm_object_json!(RegisterDpnsNameResult);
-impl_wasm_object_json!(DpnsUsernameInfo);
+impl_wasm_serde_conversions!(RegisterDpnsNameResult);
+impl_wasm_serde_conversions!(DpnsUsernameInfo);
 
 const DEFAULT_DPNS_USERNAMES_LIMIT: u32 = 10;
 

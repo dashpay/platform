@@ -1,6 +1,7 @@
 use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::serde_format;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -12,8 +13,6 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::{FeatureVersion, ProtocolVersion, TryFromPlatformVersioned};
-use serde::Serialize;
-use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -185,32 +184,21 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<DataContractUpdateTransitionWasm> {
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let transition: DataContractUpdateTransition = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(DataContractUpdateTransitionWasm(transition))
+        serde_format::from_json(js_value).map(DataContractUpdateTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_object(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<DataContractUpdateTransitionWasm> {
-        let transition: DataContractUpdateTransition = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(DataContractUpdateTransitionWasm(transition))
+        serde_format::from_object(js_value).map(DataContractUpdateTransitionWasm)
     }
 }

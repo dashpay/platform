@@ -3,7 +3,7 @@
 //! Implements 256-bit derivation paths for DashPay contact keys
 
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore;
@@ -171,7 +171,7 @@ impl From<CommonDerivation> for DerivedKeyInfoWasm {
 }
 
 // Field getters are generated via getter_with_clone annotations above
-impl_wasm_object_json!(DerivedKeyInfoWasm);
+impl_wasm_serde_conversions!(DerivedKeyInfoWasm);
 
 #[wasm_bindgen(js_name = "DashpayContactKeyInfo")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -237,7 +237,7 @@ impl DashpayContactKeyInfoWasm {
 }
 
 // Field getters are generated via getter_with_clone annotations above
-impl_wasm_object_json!(DashpayContactKeyInfoWasm);
+impl_wasm_serde_conversions!(DashpayContactKeyInfoWasm);
 #[wasm_bindgen]
 impl WasmSdk {
     /// Derive a key from seed phrase with extended path supporting 256-bit indices

@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use crate::utils::JsValueExt;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
@@ -8,8 +9,6 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
 use js_sys::Object;
 use js_sys::Reflect;
-use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -147,32 +146,30 @@ impl GroupWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<GroupWasm> {
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let group: Group = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(GroupWasm(group))
+        serde_format::from_json(js_value).map(GroupWasm)
     }
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        // Custom toObject because Group has BTreeMap<Identifier, u32> which can't be
+        // serialized with serialize_maps_as_objects(true) since Identifier is not a string.
+        // We convert identifiers to base58 strings for the keys.
+        let obj = Object::new();
+        let members = self.get_members()?;
+        Reflect::set(&obj, &JsValue::from_str("members"), &members)
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Reflect::set(&obj, &JsValue::from_str("requiredPower"), &JsValue::from(self.get_required_power()))
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        Ok(obj.into())
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<GroupWasm> {
-        let group: Group = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(GroupWasm(group))
+        serde_format::from_object(js_value).map(GroupWasm)
     }
 }

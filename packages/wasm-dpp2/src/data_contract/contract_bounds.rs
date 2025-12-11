@@ -1,9 +1,8 @@
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::prelude::Identifier;
-use serde::Serialize;
-use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -138,32 +137,21 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<ContractBoundsWasm> {
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let bounds: ContractBounds = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(ContractBoundsWasm(bounds))
+        serde_format::from_json(js_value).map(ContractBoundsWasm)
     }
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_object(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<ContractBoundsWasm> {
-        let bounds: ContractBounds = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(ContractBoundsWasm(bounds))
+        serde_format::from_object(js_value).map(ContractBoundsWasm)
     }
 }

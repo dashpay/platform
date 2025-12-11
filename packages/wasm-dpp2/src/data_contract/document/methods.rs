@@ -3,8 +3,8 @@ use crate::data_contract::document::DocumentWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use crate::utils::ToSerdeJSONExt;
-use dpp::dashcore::hashes::serde::Serialize;
 use dpp::data_contract::JsonValue;
 use dpp::document::Document;
 use dpp::document::serialization_traits::{
@@ -118,10 +118,7 @@ impl DocumentWasm {
             .to_json_value()
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let js_value = json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        Ok(js_value)
+        serde_format::to_json(&json_value)
     }
 
     #[wasm_bindgen(getter=revision)]
@@ -319,14 +316,12 @@ impl DocumentWasm {
             map.insert("$entropy".to_string(), Value::Bytes(entropy.to_vec()));
         }
 
-        let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
-        Value::Map(
+        let final_value = Value::Map(
             map.into_iter()
                 .map(|(k, v)| (Value::Text(k), v))
                 .collect(),
-        )
-        .serialize(&serializer)
-        .map_err(|e| WasmDppError::serialization(e.to_string()))
+        );
+        serde_format::platform_value_to_object(&final_value)
     }
 
     /// Create a Document from a JS object.
@@ -340,7 +335,7 @@ impl DocumentWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let value = js_value.with_serde_to_platform_value()?;
+        let value: Value = serde_format::platform_value_from_object(js_value)?;
         let map = value
             .clone()
             .into_btree_string_map()
@@ -408,8 +403,7 @@ impl DocumentWasm {
             }
         }
 
-        json.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&json)
     }
 
     /// Create a Document from a JSON object.

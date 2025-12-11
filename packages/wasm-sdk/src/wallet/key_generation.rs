@@ -3,7 +3,7 @@
 //! Provides key generation and address derivation without full HD wallet support
 
 use crate::error::WasmSdkError;
-use crate::impl_wasm_object_json;
+use crate::impl_wasm_serde_conversions;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
@@ -56,7 +56,7 @@ impl From<KeyPair> for KeyPairWasm {
     }
 }
 
-impl_wasm_object_json!(KeyPairWasm);
+impl_wasm_serde_conversions!(KeyPairWasm);
 
 #[wasm_bindgen]
 impl WasmSdk {

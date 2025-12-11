@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serde_format;
 use crate::state_transitions::StateTransitionWasm;
 use crate::state_transitions::batch::batched_transition::BatchedTransitionWasm;
 use crate::utils::{IntoWasm, JsValueExt, with_serde_to_platform_value_wasm};
@@ -17,7 +18,6 @@ use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransiti
 use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::version::PlatformVersion;
-use serde::Serialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Debug, Clone, PartialEq)]
@@ -181,20 +181,12 @@ impl BatchTransitionWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        // Use default serializer (non-human-readable) - bytes stay as Uint8Array
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_object(&self.0)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Serialize to serde_json::Value first (human-readable, so bytes become base64)
-        // then convert to JS value
-        let json_value = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_format::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
@@ -216,21 +208,12 @@ impl BatchTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<BatchTransitionWasm> {
-        // Use serde deserialization to handle the object format produced by toObject()
-        // which serializes enums in serde format (not platform_value format)
-        let batch: BatchTransition = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(BatchTransitionWasm(batch))
+        serde_format::from_object(js_value).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<BatchTransitionWasm> {
-        // Convert JS value to serde_json::Value, then deserialize (human-readable)
-        let json_value: serde_json::Value = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        let batch: BatchTransition = serde_json::from_value(json_value)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(BatchTransitionWasm(batch))
+        serde_format::from_json(js_value).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
