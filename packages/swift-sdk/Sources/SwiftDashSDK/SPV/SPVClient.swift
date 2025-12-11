@@ -515,9 +515,12 @@ public class SPVClient: ObservableObject {
     /// This count persists across app restarts.
     ///
     /// - Returns: Total number of transactions, or 0 if wallet is empty or not initialized
+    /// NOTE: FFI function dash_spv_ffi_client_get_transaction_count not available in current build
     public func getTransactionCount() -> UInt64 {
-        guard let client = client else { return 0 }
-        return UInt64(dash_spv_ffi_client_get_transaction_count(client))
+        guard client != nil else { return 0 }
+        // NOTE: dash_spv_ffi_client_get_transaction_count is not available in current FFI
+        // When available, use: return UInt64(dash_spv_ffi_client_get_transaction_count(client))
+        return 0
     }
 
     /// Get the count of unique blocks that contain wallet transactions.
@@ -525,9 +528,12 @@ public class SPVClient: ObservableObject {
     /// This is the persistent "blocks hit" metric that survives app restarts.
     ///
     /// - Returns: Number of blocks with wallet transactions, or 0 if wallet is empty or not initialized
+    /// NOTE: FFI function dash_spv_ffi_client_get_blocks_with_transactions_count not available in current build
     public func getBlocksWithTransactionsCount() -> UInt64 {
-        guard let client = client else { return 0 }
-        return UInt64(dash_spv_ffi_client_get_blocks_with_transactions_count(client))
+        guard client != nil else { return 0 }
+        // NOTE: dash_spv_ffi_client_get_blocks_with_transactions_count is not available in current FFI
+        // When available, use: return UInt64(dash_spv_ffi_client_get_blocks_with_transactions_count(client))
+        return 0
     }
 
     private func destroyClient() {

@@ -140,46 +140,32 @@ public class FilterMatchService: ObservableObject {
     // MARK: - Private Methods
 
     /// Load matched filter heights from FFI
+    /// NOTE: FFI functions for filter matching are not yet available in current FFI
     private func loadMatchedHeights() async {
-        guard let walletService = walletService,
-              let client = walletService.spvClientHandle,
-              let range = heightRange else {
+        guard let _ = walletService,
+              let _ = heightRange else {
             print("❌ FilterMatchService: Cannot load matched heights - client not available")
             return
         }
 
-        print("🔍 FilterMatchService: Loading matched filter heights...")
+        print("🔍 FilterMatchService: Filter matching FFI not available in current build")
 
-        // Query FFI for filter matches
-        let matchesPtr = dash_spv_ffi_client_get_filter_matched_heights(
-            client,
-            range.lowerBound,
-            range.upperBound + 1
-        )
+        // NOTE: The following FFI functions are not available in the current FFI:
+        // - dash_spv_ffi_client_get_filter_matched_heights
+        // - dash_spv_ffi_filter_matches_destroy
+        // When these become available, uncomment and use:
+        //
+        // guard let client = walletService.spvClientHandle else { return }
+        // let matchesPtr = dash_spv_ffi_client_get_filter_matched_heights(client, range.lowerBound, range.upperBound + 1)
+        // defer { if let ptr = matchesPtr { dash_spv_ffi_filter_matches_destroy(ptr) } }
+        // guard let ptr = matchesPtr else { return }
+        // let ffiMatches = ptr.pointee
+        // let filterMatches = FilterMatches(from: ffiMatches)
+        // var heights = Set<UInt32>()
+        // for entry in filterMatches.entries { heights.insert(entry.height) }
+        // matchedHeights = heights
 
-        defer {
-            if let ptr = matchesPtr {
-                dash_spv_ffi_filter_matches_destroy(ptr)
-            }
-        }
-
-        guard let ptr = matchesPtr else {
-            print("❌ FilterMatchService: Failed to load matched heights")
-            return
-        }
-
-        // Convert to Swift models
-        let ffiMatches = ptr.pointee
-        let filterMatches = FilterMatches(from: ffiMatches)
-
-        // Extract heights
-        var heights = Set<UInt32>()
-        for entry in filterMatches.entries {
-            heights.insert(entry.height)
-        }
-
-        matchedHeights = heights
-        print("🔍 FilterMatchService: Found \(matchedHeights.count) matched filter heights")
+        matchedHeights = Set<UInt32>()
     }
 
     private func loadInitialBatch() async {
@@ -195,15 +181,10 @@ public class FilterMatchService: ObservableObject {
         await loadBatch(startHeight: startHeight)
     }
 
+    /// NOTE: FFI functions for loading compact filters are not yet available in current FFI
     private func loadBatch(startHeight: UInt32) async {
-        guard let walletService = walletService else {
+        guard let _ = walletService else {
             print("❌ FilterMatchService: WalletService not available")
-            error = .clientNotAvailable
-            return
-        }
-
-        guard let client = walletService.spvClientHandle else {
-            print("❌ FilterMatchService: SPV client handle not available. Is sync running?")
             error = .clientNotAvailable
             return
         }
@@ -217,7 +198,8 @@ public class FilterMatchService: ObservableObject {
         // Calculate end height (exclusive, max batchSize)
         let endHeight = min(range.upperBound + 1, startHeight + batchSize)
 
-        print("🔍 FilterMatchService: Loading filters from \(startHeight) to \(endHeight) (client available)")
+        print("🔍 FilterMatchService: Loading filters from \(startHeight) to \(endHeight)")
+        print("🔍 FilterMatchService: Compact filter loading FFI not available in current build")
 
         // Check if this range is already loaded
         let requestedRange = startHeight...endHeight
@@ -228,56 +210,42 @@ public class FilterMatchService: ObservableObject {
         isLoading = true
         error = nil
 
-        // Query FFI for compact filters
-        let filtersPtr = dash_spv_ffi_client_load_filters(
-            client,
-            startHeight,
-            endHeight
-        )
+        // NOTE: The following FFI functions are not available in the current FFI:
+        // - dash_spv_ffi_client_load_filters
+        // - dash_spv_ffi_compact_filters_destroy
+        // When these become available, uncomment and use:
+        //
+        // guard let client = walletService.spvClientHandle else {
+        //     error = .clientNotAvailable
+        //     isLoading = false
+        //     return
+        // }
+        // let filtersPtr = dash_spv_ffi_client_load_filters(client, startHeight, endHeight)
+        // defer { if let ptr = filtersPtr { dash_spv_ffi_compact_filters_destroy(ptr) } }
+        // guard let ptr = filtersPtr else {
+        //     if let errorCStr = dash_spv_ffi_get_last_error() {
+        //         error = .ffiError(String(cString: errorCStr))
+        //     } else {
+        //         error = .unknown
+        //     }
+        //     isLoading = false
+        //     return
+        // }
+        // let ffiFilters = ptr.pointee
+        // let compactFilters = CompactFilters(from: ffiFilters)
+        // var allFilters = filters + compactFilters.filters
+        // allFilters.sort { $0.height > $1.height }
+        // var seenHeights = Set<UInt32>()
+        // allFilters = allFilters.filter { filter in
+        //     if seenHeights.contains(filter.height) { return false }
+        //     seenHeights.insert(filter.height)
+        //     return true
+        // }
+        // filters = allFilters
 
-        defer {
-            if let ptr = filtersPtr {
-                dash_spv_ffi_compact_filters_destroy(ptr)
-            }
-        }
-
-        guard let ptr = filtersPtr else {
-            // Check for FFI error
-            if let errorCStr = dash_spv_ffi_get_last_error() {
-                let errorMsg = String(cString: errorCStr)
-                error = .ffiError(errorMsg)
-            } else {
-                error = .unknown
-            }
-            isLoading = false
-            return
-        }
-
-        // Convert to Swift models
-        let ffiFilters = ptr.pointee
-        let compactFilters = CompactFilters(from: ffiFilters)
-
-        print("🔍 FilterMatchService: Received \(compactFilters.filters.count) filters from FFI")
-
-        // Merge with existing filters and sort
-        var allFilters = filters + compactFilters.filters
-        allFilters.sort { $0.height > $1.height } // Descending order
-
-        // Remove duplicates by height
-        var seenHeights = Set<UInt32>()
-        allFilters = allFilters.filter { filter in
-            if seenHeights.contains(filter.height) {
-                return false
-            } else {
-                seenHeights.insert(filter.height)
-                return true
-            }
-        }
-
-        filters = allFilters
+        // Currently return empty filters since FFI is not available
         loadedRanges.append(startHeight...(endHeight - 1))
-
-        print("🔍 FilterMatchService: Now have \(filters.count) total filters loaded")
+        print("🔍 FilterMatchService: Stubbed - no filters loaded (FFI not available)")
 
         isLoading = false
     }

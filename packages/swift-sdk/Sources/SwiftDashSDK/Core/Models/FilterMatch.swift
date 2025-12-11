@@ -23,16 +23,17 @@ public struct CompactFilter: Identifiable {
         self.data = data
     }
 
-    /// Initialize from FFI struct
-    public init(from ffiFilter: FFICompactFilter) {
-        self.height = ffiFilter.height
-
-        if let dataPtr = ffiFilter.data, ffiFilter.data_len > 0 {
-            self.data = Data(bytes: dataPtr, count: Int(ffiFilter.data_len))
-        } else {
-            self.data = Data()
-        }
-    }
+    // NOTE: FFI initializer commented out - FFICompactFilter not available in current FFI
+    // /// Initialize from FFI struct
+    // public init(from ffiFilter: FFICompactFilter) {
+    //     self.height = ffiFilter.height
+    //
+    //     if let dataPtr = ffiFilter.data, ffiFilter.data_len > 0 {
+    //         self.data = Data(bytes: dataPtr, count: Int(ffiFilter.data_len))
+    //     } else {
+    //         self.data = Data()
+    //     }
+    // }
 
     /// Get filter size in bytes
     public var sizeInBytes: Int {
@@ -48,19 +49,20 @@ public struct CompactFilters {
         self.filters = filters
     }
 
-    /// Initialize from FFI struct
-    public init(from ffiFilters: FFICompactFilters) {
-        var filters: [CompactFilter] = []
-
-        if let filtersPtr = ffiFilters.filters {
-            for i in 0..<ffiFilters.count {
-                let ffiFilter = filtersPtr.advanced(by: Int(i)).pointee
-                filters.append(CompactFilter(from: ffiFilter))
-            }
-        }
-
-        self.filters = filters
-    }
+    // NOTE: FFI initializer commented out - FFICompactFilters not available in current FFI
+    // /// Initialize from FFI struct
+    // public init(from ffiFilters: FFICompactFilters) {
+    //     var filters: [CompactFilter] = []
+    //
+    //     if let filtersPtr = ffiFilters.filters {
+    //         for i in 0..<ffiFilters.count {
+    //             let ffiFilter = filtersPtr.advanced(by: Int(i)).pointee
+    //             filters.append(CompactFilter(from: ffiFilter))
+    //         }
+    //     }
+    //
+    //     self.filters = filters
+    // }
 
     /// Check if empty
     public var isEmpty: Bool {
@@ -88,23 +90,24 @@ public struct FilterMatchEntry: Identifiable {
         self.walletIds = walletIds
     }
 
-    /// Initialize from FFI struct
-    public init(from ffiEntry: FFIFilterMatchEntry) {
-        self.height = ffiEntry.height
-
-        var walletIds: [Data] = []
-        if let ptr = ffiEntry.wallet_ids {
-            for i in 0..<ffiEntry.wallet_ids_count {
-                let walletIdPtr = ptr.advanced(by: Int(i))
-                // Convert tuple to Data by using withUnsafeBytes
-                let data = withUnsafeBytes(of: walletIdPtr.pointee) { bytes in
-                    Data(bytes)
-                }
-                walletIds.append(data)
-            }
-        }
-        self.walletIds = walletIds
-    }
+    // NOTE: FFI initializer commented out - FFIFilterMatchEntry not available in current FFI
+    // /// Initialize from FFI struct
+    // public init(from ffiEntry: FFIFilterMatchEntry) {
+    //     self.height = ffiEntry.height
+    //
+    //     var walletIds: [Data] = []
+    //     if let ptr = ffiEntry.wallet_ids {
+    //         for i in 0..<ffiEntry.wallet_ids_count {
+    //             let walletIdPtr = ptr.advanced(by: Int(i))
+    //             // Convert tuple to Data by using withUnsafeBytes
+    //             let data = withUnsafeBytes(of: walletIdPtr.pointee) { bytes in
+    //                 Data(bytes)
+    //             }
+    //             walletIds.append(data)
+    //         }
+    //     }
+    //     self.walletIds = walletIds
+    // }
 }
 
 /// Collection of filter match entries
@@ -115,19 +118,20 @@ public struct FilterMatches {
         self.entries = entries
     }
 
-    /// Initialize from FFI struct
-    public init(from ffiMatches: FFIFilterMatches) {
-        var entries: [FilterMatchEntry] = []
-
-        if let entriesPtr = ffiMatches.entries {
-            for i in 0..<ffiMatches.count {
-                let ffiEntry = entriesPtr.advanced(by: Int(i)).pointee
-                entries.append(FilterMatchEntry(from: ffiEntry))
-            }
-        }
-
-        self.entries = entries
-    }
+    // NOTE: FFI initializer commented out - FFIFilterMatches not available in current FFI
+    // /// Initialize from FFI struct
+    // public init(from ffiMatches: FFIFilterMatches) {
+    //     var entries: [FilterMatchEntry] = []
+    //
+    //     if let entriesPtr = ffiMatches.entries {
+    //         for i in 0..<ffiMatches.count {
+    //             let ffiEntry = entriesPtr.advanced(by: Int(i)).pointee
+    //             entries.append(FilterMatchEntry(from: ffiEntry))
+    //         }
+    //     }
+    //
+    //     self.entries = entries
+    // }
 
     /// Check if empty
     public var isEmpty: Bool {
