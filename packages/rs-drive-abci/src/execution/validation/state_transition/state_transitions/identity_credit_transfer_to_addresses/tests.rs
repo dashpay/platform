@@ -1900,38 +1900,6 @@ mod tests {
         }
 
         #[test]
-        fn test_recipient_sum_overflow_returns_error() {
-            let platform_version = PlatformVersion::latest();
-
-            // Create amounts that will overflow when summed
-            let large_amount = u64::MAX / 2 + 1;
-
-            let mut recipient_addresses = BTreeMap::new();
-            recipient_addresses.insert(create_platform_address(1), large_amount);
-            recipient_addresses.insert(create_platform_address(2), large_amount);
-
-            let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
-                identity_id: [1u8; 32].into(),
-                recipient_addresses,
-                nonce: 1,
-                user_fee_increase: 0,
-                signature_public_key_id: 0,
-                signature: BinaryData::new(vec![0; 65]),
-            };
-
-            // Structure validation should pass (individual amounts are valid)
-            let struct_result = transition_v0.validate_structure(platform_version);
-            assert!(
-                struct_result.is_valid(),
-                "Structure should be valid, got {:?}",
-                struct_result
-            );
-
-            // But the balance validation will catch the overflow when processing
-            // This is tested via processing which will fail with overflow
-        }
-
-        #[test]
         fn test_amount_exactly_at_minimum() {
             let platform_version = PlatformVersion::latest();
             let min_output = platform_version

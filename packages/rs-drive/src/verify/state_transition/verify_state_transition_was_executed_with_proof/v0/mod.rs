@@ -953,10 +953,11 @@ impl Drive {
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_id = st.identity_id();
-                let (root_hash_identity, Some((balance, revision))) =
-                    Drive::verify_identity_balance_and_revision_for_identity_id(
+                let (root_hash_identity, Some((balance, revision)), address_balances) =
+                    Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
+                        st.recipient_addresses().keys(),
                         false,
                         platform_version,
                     )?
@@ -965,23 +966,6 @@ impl Drive {
                         format!("proof did not contain balance for identity {} expected to exist because of state transition (identity credit transfer to addresses)", identity_id)
                     )));
                 };
-
-                let (root_hash_addresses, address_balances): (
-                    RootHash,
-                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-                ) = Drive::verify_addresses_infos(
-                    proof,
-                    st.recipient_addresses().keys(),
-                    false,
-                    platform_version,
-                )?;
-
-                if root_hash_identity != root_hash_addresses {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "proof is expected to have same root hash for identity and address infos"
-                            .to_string(),
-                    )));
-                }
 
                 Ok((
                     root_hash_identity,

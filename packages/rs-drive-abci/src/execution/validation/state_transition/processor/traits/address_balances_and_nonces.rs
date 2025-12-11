@@ -30,6 +30,13 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     ) -> Result<ConsensusValidationResult<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>, Error>
     {
         let inputs = self.inputs();
+        if inputs.is_empty() {
+            return Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()));
+        }
+        tracing::trace!(
+            inputs = ?inputs,
+            "Validating input address balances and nonces for state transition"
+        );
 
         tracing::trace!(
             inputs = ?inputs,
