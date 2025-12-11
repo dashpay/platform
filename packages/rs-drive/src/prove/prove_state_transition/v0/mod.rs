@@ -243,6 +243,10 @@ impl Drive {
                 )?;
                 let addresses_query = Drive::balances_for_clear_addresses_query(st.inputs().keys());
 
+                // TODO: not sure if just setting this to unlimited is correct
+                let mut addresses_query = addresses_query;
+                addresses_query.query.limit = None;
+
                 PathQuery::merge(
                     vec![&identity_query, &addresses_query],
                     &platform_version.drive.grove_version,

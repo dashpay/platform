@@ -139,7 +139,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         let result = abci_app
             .platform
             .query_proofs(request, &state, platform_version)
-            .expect("query proofs");
+            .expect(&format!(
+                "proof query for {} should succeed",
+                state_transition.state_transition_type()
+            ));
 
         if !result.is_valid() {
             panic!(
