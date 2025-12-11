@@ -2004,7 +2004,7 @@ impl NetworkStrategy {
     ) -> Option<StateTransition> {
         let inputs =
             current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
-        tracing::warn!(
+        tracing::trace!(
             ?inputs,
             "Preparing identity top-up transition with addresses"
         );

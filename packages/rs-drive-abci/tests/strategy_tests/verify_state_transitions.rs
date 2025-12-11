@@ -4,6 +4,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
@@ -75,6 +76,15 @@ fn log_state_transition_type_statistics() {
         }
         println!();
     }
+}
+
+fn latest_block_info<C>(platform: &PlatformRef<C>) -> BlockInfo {
+    platform
+        .state
+        .last_committed_block_info()
+        .as_ref()
+        .map(|info| info.basic_info().clone())
+        .unwrap_or_else(BlockInfo::default)
 }
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
@@ -393,6 +403,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                         }
                                     }
                                 }
+
                                 DocumentTransitionAction::DeleteAction(_) => {
                                     // we expect no document
                                     assert!(document.is_none());
@@ -745,7 +756,77 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionAction::IdentityCreateFromAddressesAction(
                     identity_create_from_addresses_action,
                 ) => {
-                    // Verify identity was created from addresses
+                    if let StateTransition::IdentityCreateFromAddresses(_) = state_transition {
+                        if *was_executed {
+                            let block_info = latest_block_info(&platform);
+                            let (root_hash, proof_result) =
+                                Drive::verify_state_transition_was_executed_with_proof(
+                                    state_transition,
+                                    &block_info,
+                                    &response_proof.grovedb_proof,
+                                    &|_| Ok(None),
+                                    platform_version,
+                                )
+                                .expect("expected to verify identity create from addresses proof");
+
+                            assert_eq!(
+                                &root_hash,
+                                expected_root_hash,
+                                "state last block info {:?}",
+                                platform.state.last_committed_block_info()
+                            );
+
+                            let StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
+                                proved_identity,
+                                address_infos_map,
+                            ) = proof_result
+                            else {
+                                panic!("expected identity/address infos for identity create from addresses proof");
+                            };
+
+                            assert_eq!(
+                                proved_identity.id(),
+                                identity_create_from_addresses_action.identity_id(),
+                                "proof identity should match created identity"
+                            );
+                            // Addresses from action should match proved addresses
+                            let expected_addresses: BTreeSet<PlatformAddress> =
+                                identity_create_from_addresses_action
+                                    .inputs_with_remaining_balance()
+                                    .keys()
+                                    .copied()
+                                    .collect();
+
+                            let proved_addresses: BTreeSet<PlatformAddress> =
+                                address_infos_map.keys().copied().collect();
+
+                            assert_eq!(
+                                proved_addresses, expected_addresses,
+                                "proved addresses should match inputs used to fund identity"
+                            );
+
+                            // addresses + balances from action should match proved addresses + balances
+                            let proved_inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
+                                address_infos_map
+                                    .into_iter()
+                                    .map(|(address, maybe_info)| {
+                                        (
+                                            address,
+                                            maybe_info.expect(
+                                                "expected proved address info to be present for input",
+                                            ),
+                                        )
+                                    })
+                                    .collect();
+
+                            assert_eq!(
+                                proved_inputs,
+                                identity_create_from_addresses_action
+                                    .inputs_with_remaining_balance()
+                                    .clone()
+                            );
+                        } else {
+                            // Verify the identity still does not exist since transition was not executed
                     let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
                         &response_proof.grovedb_proof,
                         false,
@@ -761,16 +842,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         "state last block info {:?}",
                         platform.state.last_committed_block_info()
                     );
-                    if *was_executed {
-                        let proved_identity = identity
-                            .expect("expected an identity")
-                            .into_partial_identity_info_no_balance();
-                        assert_eq!(
-                            proved_identity.id,
-                            identity_create_from_addresses_action.identity_id()
-                        );
-                    } else {
                         assert!(identity.is_none());
+                        }
+                    } else {
+                        panic!("expected identity create from addresses state transition");
                     }
                 }
                 StateTransitionAction::IdentityTopUpFromAddressesAction(
