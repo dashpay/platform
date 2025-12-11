@@ -6,7 +6,8 @@ class VersionStatus {
    * @param {number} tenderdashP2pProtocol - Tenderdash Protocol Version
    * @param {number} tenderdashBlockProtocol - Tenderdash Block Version
    * @param {number} driveCurrentProtocol - Current Dash Platform (Drive) protocol version
-   * @param {number} driveLatestProtocol - Next Dash Platform (Drive) protocol version
+   * @param {number} driveLatestProtocol - Latest Dash Platform (Drive) protocol version
+   * @param {number} driveNextEpochProtocol - Next-epoch Dash Platform (Drive) protocol version
    */
   constructor(
     dapiVersion,
@@ -16,6 +17,7 @@ class VersionStatus {
     tenderdashBlockProtocol,
     driveCurrentProtocol,
     driveLatestProtocol,
+    driveNextEpochProtocol,
   ) {
     this.dapiVersion = dapiVersion;
     this.driveVersion = driveVersion || null;
@@ -24,6 +26,7 @@ class VersionStatus {
     this.tenderdashBlockProtocol = tenderdashBlockProtocol;
     this.driveCurrentProtocol = driveCurrentProtocol;
     this.driveLatestProtocol = driveLatestProtocol;
+    this.driveNextEpochProtocol = driveNextEpochProtocol;
   }
 
   /**
@@ -73,6 +76,13 @@ class VersionStatus {
    */
   getDriveLatestProtocol() {
     return this.driveLatestProtocol;
+  }
+
+  /**
+   * @returns {number} Drive Next Epoch Protocol
+   */
+  getDriveNextEpochProtocol() {
+    return this.driveNextEpochProtocol;
   }
 }
 

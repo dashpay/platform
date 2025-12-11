@@ -9,12 +9,12 @@ describe('Extended keys', () => {
 
   describe('deriveChildPublicKey - basic functionality', () => {
     it('derives non-hardened child xpubs that differ by index', () => {
-      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath(
-        TEST_MNEMONIC,
-        null,
-        "m/44'/5'/0'",
-        'mainnet',
-      );
+      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
+        mnemonic: TEST_MNEMONIC,
+        passphrase: null,
+        path: "m/44'/5'/0'",
+        network: 'mainnet',
+      });
       const parentXpub = master.xpub;
 
       const child0 = sdk.WasmSdk.deriveChildPublicKey(parentXpub, 0, false);
@@ -29,12 +29,12 @@ describe('Extended keys', () => {
 
   describe('xprvToXpub - basic functionality', () => {
     it('converts xprv to the expected xpub', () => {
-      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath(
-        TEST_MNEMONIC,
-        null,
-        "m/44'/5'/0'",
-        'mainnet',
-      );
+      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
+        mnemonic: TEST_MNEMONIC,
+        passphrase: null,
+        path: "m/44'/5'/0'",
+        network: 'mainnet',
+      });
 
       const derivedXpub = sdk.WasmSdk.xprvToXpub(master.xprv);
       expect(derivedXpub).to.be.a('string');
@@ -44,24 +44,24 @@ describe('Extended keys', () => {
 
   describe('deriveChildPublicKey - error handling', () => {
     it('throws when hardened=true', () => {
-      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath(
-        TEST_MNEMONIC,
-        null,
-        "m/44'/5'/0'",
-        'mainnet',
-      );
+      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
+        mnemonic: TEST_MNEMONIC,
+        passphrase: null,
+        path: "m/44'/5'/0'",
+        network: 'mainnet',
+      });
       const parentXpub = master.xpub;
       expect(() => sdk.WasmSdk.deriveChildPublicKey(parentXpub, 0, true))
         .to.throw('Cannot derive hardened child from extended public key');
     });
 
     it('throws when index is in hardened range', () => {
-      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath(
-        TEST_MNEMONIC,
-        null,
-        "m/44'/5'/0'",
-        'mainnet',
-      );
+      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
+        mnemonic: TEST_MNEMONIC,
+        passphrase: null,
+        path: "m/44'/5'/0'",
+        network: 'mainnet',
+      });
       const parentXpub = master.xpub;
       // 0x80000000 == 2^31
       expect(() => sdk.WasmSdk.deriveChildPublicKey(parentXpub, 0x80000000, false))

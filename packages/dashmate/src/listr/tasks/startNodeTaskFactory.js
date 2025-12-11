@@ -4,11 +4,6 @@ import { Observable } from 'rxjs';
 import { NETWORK_LOCAL } from '../../constants.js';
 import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
-const DAPI_PROFILE_SERVICES = {
-  'platform-dapi-deprecated': ['dapi_api', 'dapi_core_streams'],
-  'platform-dapi-rs': ['rs_dapi'],
-};
-
 /**
  *
  * @param {DockerCompose} dockerCompose
@@ -33,15 +28,9 @@ export default function startNodeTaskFactory(
   homeDir,
   getConfigProfiles,
 ) {
-  function getPlatformProfiles(config) {
-    const platformProfiles = getConfigProfiles(config)
+  function selectPlatformProfiles(config, options) {
+    return getConfigProfiles(config, options)
       .filter((profile) => profile.startsWith('platform'));
-
-    if (platformProfiles.length === 0) {
-      platformProfiles.push('platform');
-    }
-
-    return Array.from(new Set(platformProfiles));
   }
 
   /**
@@ -102,7 +91,7 @@ export default function startNodeTaskFactory(
         title: 'Check node is not started',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
+          const profiles = ctx.platformOnly ? selectPlatformProfiles(config) : [];
 
           if (await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -124,28 +113,23 @@ export default function startNodeTaskFactory(
         task: () => buildServicesTask(config),
       },
       {
-        title: 'Remove inactive DAPI stack',
+        title: 'Remove legacy DAPI stack',
         enabled: () => config.get('platform.enable'),
         task: async () => {
-          const deprecatedEnabled = config.has('platform.dapi.deprecated.enabled')
-            ? config.get('platform.dapi.deprecated.enabled')
-            : false;
+          const legacyServiceNames = ['dapi_api', 'dapi_core_streams'];
 
-          const inactiveProfile = deprecatedEnabled
-            ? 'platform-dapi-rs'
-            : 'platform-dapi-deprecated';
-
-          const serviceNames = DAPI_PROFILE_SERVICES[inactiveProfile] ?? [];
-
-          if (serviceNames.length === 0) {
-            return;
+          for (const serviceName of legacyServiceNames) {
+            try {
+              await dockerCompose.rm(config, {
+                serviceNames: [serviceName],
+                force: true,
+              });
+            } catch (e) {
+              if (!/No such service/i.test(e.message)) {
+                throw e;
+              }
+            }
           }
-
-          await dockerCompose.rm(config, {
-            serviceNames,
-            profiles: [inactiveProfile],
-            force: true,
-          });
         },
       },
       {
@@ -157,7 +141,7 @@ export default function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
+          const profiles = ctx.platformOnly ? selectPlatformProfiles(config) : [];
 
           await dockerCompose.up(config, { profiles });
         },

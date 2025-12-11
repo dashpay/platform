@@ -12,6 +12,7 @@ import wait from '../../util/wait.js';
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
  * @param {generateEnvs} generateEnvs
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {resetNodeTask}
  */
 export default function resetNodeTaskFactory(
@@ -23,7 +24,13 @@ export default function resetNodeTaskFactory(
   configFile,
   homeDir,
   generateEnvs,
+  getConfigProfiles,
 ) {
+  function selectPlatformProfiles(config, options) {
+    return getConfigProfiles(config, options)
+      .filter((profile) => profile.startsWith('platform'));
+  }
+
   /**
    * Remove path but ignore permission issues to avoid failing reset on root-owned directories.
    *
@@ -70,9 +77,13 @@ export default function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
+          const profiles = ctx.isPlatformOnlyReset
+            ? selectPlatformProfiles(config, { includeAll: true })
+            : [];
+
           if (await dockerCompose.isNodeRunning(
             config,
-            { profiles: ctx.isPlatformOnlyReset ? ['platform'] : [] },
+            { profiles },
           )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
@@ -98,12 +109,14 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
+          const profiles = selectPlatformProfiles(config, { includeAll: true });
+
           if (ctx.keepData) {
             // eslint-disable-next-line no-param-reassign
             task.title = 'Remove platform services and keep associated data';
           }
 
-          await dockerCompose.rm(config, { profiles: ['platform'] });
+          await dockerCompose.rm(config, { profiles });
 
           // Remove volumes
           if (!ctx.keepData) {
@@ -111,7 +124,7 @@ export default function resetNodeTaskFactory(
 
             const projectVolumeNames = await dockerCompose.getVolumeNames(
               config,
-              { profiles: ['platform'] },
+              { profiles },
             );
 
             await Promise.all(
@@ -132,7 +145,7 @@ export default function resetNodeTaskFactory(
                         await wait(1000);
 
                         // Remove containers
-                        await dockerCompose.rm(config, { profiles: ['platform'] });
+                        await dockerCompose.rm(config, { profiles });
 
                         isRetry = true;
 

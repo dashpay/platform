@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;

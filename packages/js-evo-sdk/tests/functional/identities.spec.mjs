@@ -20,20 +20,20 @@ describe('Identities', function identitiesSuite() {
     expect(res).to.exist();
   });
 
-  it('getKeys({ keyRequestType: "all" }) returns keys', async () => {
+  it('getKeys({ request: { type: "all" } }) returns keys', async () => {
     const res = await sdk.identities.getKeys({
       identityId: TEST_IDS.identityId,
-      keyRequestType: 'all',
+      request: { type: 'all' },
       limit: 10,
       offset: 0,
     });
     expect(res).to.exist();
   });
 
-  it('getKeysWithProof({ keyRequestType: "all" }) returns proof info', async () => {
+  it('getKeysWithProof({ request: { type: "all" } }) returns proof info', async () => {
     const res = await sdk.identities.getKeysWithProof({
       identityId: TEST_IDS.identityId,
-      keyRequestType: 'all',
+      request: { type: 'all' },
     });
     expect(res).to.exist();
   });

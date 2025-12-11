@@ -14,8 +14,12 @@ describe('Address validation', () => {
 
   it('validates generated addresses for each network', () => {
     const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
-    const kM = sdk.WasmSdk.deriveKeyFromSeedWithPath(mnemonic, undefined, "m/44'/5'/0'/0/0", 'mainnet');
-    const kT = sdk.WasmSdk.deriveKeyFromSeedWithPath(mnemonic, undefined, "m/44'/1'/0'/0/0", 'testnet');
+    const kM = sdk.WasmSdk.deriveKeyFromSeedWithPath({
+      mnemonic, passphrase: null, path: "m/44'/5'/0'/0/0", network: 'mainnet',
+    });
+    const kT = sdk.WasmSdk.deriveKeyFromSeedWithPath({
+      mnemonic, passphrase: null, path: "m/44'/1'/0'/0/0", network: 'testnet',
+    });
     expect(sdk.WasmSdk.validateAddress(kM.address, 'mainnet')).to.equal(true);
     expect(sdk.WasmSdk.validateAddress(kT.address, 'testnet')).to.equal(true);
   });
