@@ -70,7 +70,6 @@ use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use transitions::create_identity_credit_transfer_transition;
-
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
@@ -1201,6 +1200,13 @@ impl Strategy {
                             }
                         }
                     }
+                    OperationType::IdentityTopUpFromAddresses(_amount_range) => {
+                        tracing::warn!(
+                            "IdentityTopUpFromAddresses operations are not supported \
+                             by the generic strategy executor"
+                        );
+                        continue;
+                    }
 
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         match update_op {
@@ -1931,14 +1937,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys);
+        simple_signer.add_identity_public_keys(keys);
 
         let (mut identity2, keys) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys);
+        simple_signer.add_identity_public_keys(keys);
 
         let start_identities = create_state_transitions_for_identities(
             vec![&mut identity1, &mut identity2],

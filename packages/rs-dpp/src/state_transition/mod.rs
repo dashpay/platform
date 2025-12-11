@@ -2,6 +2,7 @@ use derive_more::From;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
+use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
 pub use abstract_state_transition::state_transition_helpers;
@@ -54,6 +55,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 pub use traits::*;
 
+use crate::address_funds::PlatformAddress;
 use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
@@ -72,7 +74,7 @@ use crate::identity::Purpose;
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
 use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
@@ -651,6 +653,27 @@ impl StateTransition {
             StateTransition::AddressFundsTransfer(_) => None,
             StateTransition::AddressFundingFromAssetLock(_) => None,
             StateTransition::AddressCreditWithdrawal(_) => None,
+        }
+    }
+
+    /// returns the signature as a byte-array
+    pub fn inputs(&self) -> Option<&BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
+        match self {
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::Batch(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_) => None,
+            StateTransition::IdentityCreateFromAddresses(st) => Some(st.inputs()),
+            StateTransition::IdentityTopUpFromAddresses(st) => Some(st.inputs()),
+            StateTransition::AddressFundsTransfer(st) => Some(st.inputs()),
+            StateTransition::AddressFundingFromAssetLock(st) => Some(st.inputs()),
+            StateTransition::AddressCreditWithdrawal(st) => Some(st.inputs()),
         }
     }
 

@@ -98,7 +98,7 @@ mod tests {
             )
             .expect("should create master key");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         // Create a critical authentication key
         let (critical_key, critical_private_key) =
@@ -109,7 +109,7 @@ mod tests {
             )
             .expect("should create critical key");
 
-        signer.add_key(critical_key.clone(), critical_private_key);
+        signer.add_identity_public_key(critical_key.clone(), critical_private_key);
 
         let mut public_keys = BTreeMap::new();
         public_keys.insert(master_key.id(), master_key);
@@ -10084,7 +10084,8 @@ mod tests {
 
             // Create identity signer with the first key
             let mut identity_signer = SimpleSigner::default();
-            identity_signer.add_key(key1.clone(), signer1);
+
+            identity_signer.add_identity_public_key(key1.clone(), signer1);
 
             // Build identity manually with these duplicate-ID keys
             // Since both keys have the same ID (0), the BTreeMap will only keep one

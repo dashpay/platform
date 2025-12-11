@@ -96,6 +96,7 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
             .await?;
 
         // Refresh balances for all addresses involved.
+        // TODO: Read this info from the proof returned by broadcast_and_wait above to avoid extra fetch.
         let addresses: BTreeSet<PlatformAddress> =
             inputs.keys().chain(outputs.keys()).copied().collect();
         AddressInfo::fetch_many(self, addresses).await

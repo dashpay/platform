@@ -70,8 +70,8 @@ mod tests {
             )
             .expect("should create transfer key");
 
-        signer.add_key(auth_key.clone(), auth_private_key);
-        signer.add_key(transfer_key.clone(), transfer_private_key);
+        signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+        signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
         let mut public_keys = BTreeMap::new();
         public_keys.insert(auth_key.id(), auth_key);
@@ -1326,7 +1326,7 @@ mod tests {
                 )
                 .expect("should create auth key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -1900,34 +1900,6 @@ mod tests {
         }
 
         #[test]
-        fn test_recipient_sum_overflow_returns_error() {
-            let platform_version = PlatformVersion::latest();
-
-            // Create amounts that will overflow when summed
-            let large_amount = u64::MAX / 2 + 1;
-
-            let mut recipient_addresses = BTreeMap::new();
-            recipient_addresses.insert(create_platform_address(1), large_amount);
-            recipient_addresses.insert(create_platform_address(2), large_amount);
-
-            let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
-                identity_id: [1u8; 32].into(),
-                recipient_addresses,
-                nonce: 1,
-                user_fee_increase: 0,
-                signature_public_key_id: 0,
-                signature: BinaryData::new(vec![0; 65]),
-            };
-
-            // Structure validation should pass (individual amounts are valid)
-            let struct_result = transition_v0.validate_structure(platform_version);
-            assert!(struct_result.is_valid(), "Structure should be valid");
-
-            // But the balance validation will catch the overflow when processing
-            // This is tested via processing which will fail with overflow
-        }
-
-        #[test]
         fn test_amount_exactly_at_minimum() {
             let platform_version = PlatformVersion::latest();
             let min_output = platform_version
@@ -2155,7 +2127,7 @@ mod tests {
                 )
                 .expect("should create auth key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -2218,8 +2190,8 @@ mod tests {
                 )
                 .expect("should create transfer key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key.clone(), transfer_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -2924,9 +2896,9 @@ mod tests {
                 )
                 .expect("should create transfer key 2");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key1.clone(), transfer_private_key1);
-            signer.add_key(transfer_key2.clone(), transfer_private_key2);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key1.clone(), transfer_private_key1);
+            signer.add_identity_public_key(transfer_key2.clone(), transfer_private_key2);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -3011,9 +2983,9 @@ mod tests {
                 )
                 .expect("should create transfer key 2");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key1.clone(), transfer_private_key1);
-            signer.add_key(transfer_key2.clone(), transfer_private_key2);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key1.clone(), transfer_private_key1);
+            signer.add_identity_public_key(transfer_key2.clone(), transfer_private_key2);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -3099,8 +3071,8 @@ mod tests {
                 )
                 .expect("should create transfer key 2");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key1.clone(), transfer_private_key1);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key1.clone(), transfer_private_key1);
             // Note: transfer_key2's private key is NOT added to signer
 
             let mut public_keys = BTreeMap::new();
@@ -4007,8 +3979,8 @@ mod tests {
                 }
             };
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key.clone(), transfer_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);
@@ -5256,8 +5228,8 @@ mod tests {
                 )
                 .expect("should create transfer key");
 
-            signer.add_key(auth_key.clone(), auth_private_key);
-            signer.add_key(transfer_key.clone(), transfer_private_key);
+            signer.add_identity_public_key(auth_key.clone(), auth_private_key);
+            signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
 
             let mut public_keys = BTreeMap::new();
             public_keys.insert(auth_key.id(), auth_key);

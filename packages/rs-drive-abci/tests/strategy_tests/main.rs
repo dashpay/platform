@@ -18,6 +18,7 @@ use strategy::{
 };
 use strategy_tests::Strategy;
 
+mod addresses_with_balance;
 mod chain_lock_update;
 mod core_update_tests;
 mod execution;
@@ -81,12 +82,13 @@ mod tests {
     use rand::SeedableRng;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
-    use dpp::dash_to_duffs;
+    use crate::addresses_with_balance::AddressesWithBalance;
     use dpp::data_contract::document_type::v0::random_document_type::{
         FieldMinMaxBounds, FieldTypeWeights, RandomDocumentTypeParameters,
     };
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use dpp::{dash_to_credits, dash_to_duffs};
     use platform_version::version::v1::PROTOCOL_VERSION_1;
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
@@ -329,6 +331,7 @@ mod tests {
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
             config,
@@ -473,6 +476,7 @@ mod tests {
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
             config,
@@ -1085,7 +1089,7 @@ mod tests {
             &mut None,
         );
 
-        // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
+        // With these params if we add new mns the hpmn masternode list would be randomly different from 100.
 
         let platform = abci_app.platform;
         let platform_state = platform.state.load();
@@ -1174,7 +1178,7 @@ mod tests {
             &mut None,
         );
 
-        // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
+        // With these params if we add new mns the hpmn masternode list would be randomly different from 100.
 
         let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
@@ -2852,14 +2856,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys1);
+        simple_signer.add_identity_public_keys(keys1);
 
         let (mut identity2, keys2) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys2);
+        simple_signer.add_identity_public_keys(keys2);
 
         let start_identities = create_state_transitions_for_identities(
             vec![&mut identity1, &mut identity2],
@@ -3397,6 +3401,199 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_top_up_identities_from_addresses() {
+        let platform_version = PlatformVersion::latest();
+        drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::IdentityTopUpFromAddresses(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        let executed = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && matches!(
+                        state_transition,
+                        StateTransition::IdentityTopUpFromAddresses(_)
+                    )
+            })
+            .count();
+        assert!(
+            executed > 0,
+            "expected at least one identity top up from addresses"
+        );
+    }
+
+    #[test]
+    fn run_chain_address_transitions() {
+        let platform_version = PlatformVersion::latest();
+        drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::AddressTransfer(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                            1..=4,
+                            Some(0.2),
+                            None,
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                ..Default::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            10,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        let executed = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && matches!(state_transition, StateTransition::AddressFundsTransfer(_))
+            })
+            .count();
+        assert!(executed > 0, "expected at least one address transfer");
+    }
+
+    #[test]
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -3433,7 +3630,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and add keys to it in the same block
-            // the result would be different then expected
+            // the result would be different from expected
             verify_state_transition_results: false,
             ..Default::default()
         };
@@ -3526,7 +3723,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             // because we can add an identity and remove keys to it in the same block
-            // the result would be different then expected
+            // the result would be different from expected
             verify_state_transition_results: false,
             ..Default::default()
         };
@@ -4265,6 +4462,7 @@ mod tests {
                 start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
                 current_identities: Vec::new(),
+                current_addresses_with_balance: AddressesWithBalance::default(),
             },
             strategy,
             config,

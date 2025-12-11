@@ -1,11 +1,12 @@
+use crate::platform::transition::address_inputs::nonce_inc;
+use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
+use crate::{Error, Sdk};
+
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use crate::platform::transition::address_inputs::nonce_inc;
-use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
-use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
@@ -77,7 +78,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> +
                 asset_lock_private_key: *asset_lock_proof_private_key,
             },
             signer,
-            None::<&A>,
+            None::<A>.as_ref(),
             settings,
         )
         .await
@@ -103,7 +104,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, A: Signer<PlatformAddress> +
                 asset_lock_private_key: *asset_lock_proof_private_key,
             },
             signer,
-            None::<&A>,
+            None::<A>.as_ref(),
             settings,
         )
         .await

@@ -21,7 +21,7 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     StateTransitionWitnessSigned
 {
-    fn validate_identity_balances_and_nonces_validation(
+    fn validate_address_balances_and_nonces_internal_validation(
         &self,
         drive: &Drive,
         execution_context: &mut StateTransitionExecutionContext,
@@ -30,6 +30,13 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     ) -> Result<ConsensusValidationResult<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>, Error>
     {
         let inputs = self.inputs();
+        if inputs.is_empty() {
+            return Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()));
+        }
+        tracing::trace!(
+            inputs = ?inputs,
+            "Validating input address balances and nonces for state transition"
+        );
 
         // Validate maximum inputs, we need to do this here so we don't go and check too much data
         // in the state.
@@ -60,7 +67,7 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
                 Some(None) | None => {
                     // Address does not exist in state
                     return Ok(ConsensusValidationResult::new_with_error(
-                        AddressDoesNotExistError::new(address.clone()).into(),
+                        AddressDoesNotExistError::new(*address).into(),
                     ));
                 }
             };
@@ -69,7 +76,7 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
             if state_nonce == u32::MAX as AddressNonce {
                 return Ok(ConsensusValidationResult::new_with_error(
                     AddressInvalidNonceError::new(
-                        address.clone(),
+                        *address,
                         *expected_nonce,
                         state_nonce, // Can't increment past max
                     )
@@ -80,13 +87,18 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
             // Check that the nonce is exactly state_nonce + 1
             let expected_next_nonce = state_nonce.saturating_add(1);
             if *expected_nonce != expected_next_nonce {
+                tracing::debug!(
+                    ?address,
+                    expected_nonce = expected_next_nonce,
+                    provided_nonce = *expected_nonce,
+                    "Invalid nonce for address {:?}: expected {}, got {}",
+                    address,
+                    expected_next_nonce,
+                    *expected_nonce
+                );
                 return Ok(ConsensusValidationResult::new_with_error(
-                    AddressInvalidNonceError::new(
-                        address.clone(),
-                        *expected_nonce,
-                        expected_next_nonce,
-                    )
-                    .into(),
+                    AddressInvalidNonceError::new(*address, *expected_nonce, expected_next_nonce)
+                        .into(),
                 ));
             }
 
@@ -169,35 +181,35 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
     {
         match self {
             StateTransition::IdentityCreateFromAddresses(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::IdentityTopUpFromAddresses(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::AddressFundsTransfer(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::AddressFundingFromAssetLock(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,
                     platform_version,
                 ),
             StateTransition::AddressCreditWithdrawal(st) => st
-                .validate_identity_balances_and_nonces_validation(
+                .validate_address_balances_and_nonces_internal_validation(
                     drive,
                     execution_context,
                     transaction,

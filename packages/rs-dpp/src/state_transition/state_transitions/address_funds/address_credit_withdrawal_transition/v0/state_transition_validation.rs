@@ -1,4 +1,5 @@
 use crate::address_funds::AddressFundsFeeStrategyStep;
+use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
@@ -165,6 +166,59 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
         // Note: The withdrawal amount is implicitly input_sum - output_sum
         // No explicit balance check needed here as the withdrawal amount is computed, not specified
 
+        // Validate input sum doesn't overflow
+        let input_sum = self
+            .inputs
+            .values()
+            .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount));
+        if input_sum.is_none() {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::OverflowError(OverflowError::new("Input sum overflow".to_string()))
+                    .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address_funds::AddressWitness;
+    use crate::address_funds::PlatformAddress;
+    use assert_matches::assert_matches;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_return_invalid_result_if_input_sum_overflows() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0, u64::MAX));
+        inputs.insert(PlatformAddress::P2pkh([2u8; 20]), (0, u64::MAX));
+
+        let transition = AddressCreditWithdrawalTransitionV0 {
+            inputs,
+            input_witnesses: vec![
+                AddressWitness::P2pkh {
+                    signature: vec![0u8; 65].into(),
+                },
+                AddressWitness::P2pkh {
+                    signature: vec![0u8; 65].into(),
+                },
+            ],
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            ..Default::default()
+        };
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::OverflowError(err)
+            )] if err.message() == "Input sum overflow"
+        );
     }
 }

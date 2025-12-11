@@ -3,6 +3,7 @@
 //! This module provides a simple implementation of the `Signer<PlatformAddress>` trait
 //! for signing with P2PKH addresses. It maps address hashes to their corresponding private keys.
 
+use bincode::{Decode, Encode};
 use dpp::address_funds::AddressWitness;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::hashes::{hash160, Hash};
@@ -17,7 +18,7 @@ use std::collections::BTreeMap;
 ///
 /// This signer supports P2PKH addresses only. For P2SH multisig support, a more
 /// sophisticated signer implementation is required.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Encode, Decode)]
 pub struct SimpleAddressSigner {
     /// Maps address hash (20 bytes) to private key (32 bytes)
     keys: BTreeMap<[u8; 20], [u8; 32]>,
