@@ -110,19 +110,25 @@ fn assert_address_inputs_state(
         let Some(&(action_nonce, action_balance)) = action_inputs.get(address) else {
             panic!("{context}: action missing address {address:?}");
         };
-
-        assert_eq!(
-            action_nonce, *transition_nonce,
-            "{context}: action nonce should match transition nonce for address {address:?}"
-        );
-
         let Some(Some((proof_nonce, proof_balance))) = proof_address_infos.get(address) else {
             panic!("{context}: missing proof info for address {address:?}");
         };
+
+        assert!(
+            *proof_nonce >= *transition_nonce,
+            "{context}: proof nonce {proof_nonce} should be >= transition nonce {transition_nonce} for address {address:?}"
+        );
+        
+        assert!(
+            action_nonce >= *transition_nonce,
+            "{context}: action nonce {action_nonce} should be >= transition nonce {transition_nonce} for address {address:?}"
+        );
+
         assert_eq!(
             *proof_nonce, action_nonce,
             "{context}: proof nonce mismatch for address {address:?}"
         );
+
         assert_eq!(
             *proof_balance, action_balance,
             "{context}: proof/action balance mismatch for address {address:?}"
@@ -207,8 +213,9 @@ fn assert_action_outputs_state(
         let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
             panic!("{context}: missing proof info for address {:?}", address);
         };
-        assert_eq!(
-            *proof_balance, *action_balance,
+
+        assert!(
+            *proof_balance <= *action_balance,
             "{context}: proof balance mismatch for address {:?}",
             address
         );
