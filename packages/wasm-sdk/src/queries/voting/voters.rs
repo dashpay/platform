@@ -203,17 +203,8 @@ impl WasmSdk {
             .map(|voter| voter.0.to_string(Encoding::Base58))
             .collect();
 
-        // Use json_compatible() to ensure objects become plain JS objects (not Maps)
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        let data = voters_list.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!(
-                "Failed to serialize contested resource voters: {}",
-                e
-            ))
-        })?;
-
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            data, metadata, proof,
+        Ok(ProofMetadataResponseWasm::from_sdk_parts_typed(
+            voters_list, metadata, proof,
         )?)
     }
 }

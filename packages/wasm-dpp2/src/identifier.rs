@@ -1,5 +1,4 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::serde_format::{current_format, SerdeFormat};
 use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
@@ -177,16 +176,13 @@ impl<'de> Deserialize<'de> for IdentifierWasm {
     where
         D: Deserializer<'de>,
     {
-        match current_format() {
-            SerdeFormat::Json => {
-                // JSON: expect Base58 string
-                let s = String::deserialize(deserializer)?;
-                IdentifierWasm::try_from(s.as_str()).map_err(D::Error::custom)
-            }
-            SerdeFormat::Wasm => {
-                // WASM: expect bytes or any compatible representation
-                deserializer.deserialize_any(IdentifierWasmVisitor)
-            }
+        if deserializer.is_human_readable() {
+            // JSON/human-readable: expect Base58 string
+            let s = String::deserialize(deserializer)?;
+            IdentifierWasm::try_from(s.as_str()).map_err(D::Error::custom)
+        } else {
+            // Binary/WASM: expect bytes or any compatible representation
+            deserializer.deserialize_any(IdentifierWasmVisitor)
         }
     }
 }
@@ -196,15 +192,12 @@ impl Serialize for IdentifierWasm {
     where
         S: Serializer,
     {
-        match current_format() {
-            SerdeFormat::Json => {
-                // JSON: serialize as Base58 string
-                serializer.serialize_str(&self.to_base58())
-            }
-            SerdeFormat::Wasm => {
-                // WASM: serialize as bytes (becomes Uint8Array)
-                serializer.serialize_bytes(&self.0.to_vec())
-            }
+        if serializer.is_human_readable() {
+            // JSON/human-readable: serialize as Base58 string
+            serializer.serialize_str(&self.to_base58())
+        } else {
+            // Binary/WASM: serialize as bytes (becomes Uint8Array)
+            serializer.serialize_bytes(&self.0.to_vec())
         }
     }
 }

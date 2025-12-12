@@ -494,8 +494,8 @@ impl WasmSdk {
 
         identity
             .map(|identity| {
-                ProofMetadataResponseWasm::from_sdk_parts(
-                    IdentityWasm::from(identity),
+                ProofMetadataResponseWasm::from_sdk_parts_typed(
+                    identity,
                     metadata,
                     proof,
                 )

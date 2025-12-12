@@ -236,20 +236,11 @@ impl WasmSdk {
 
         let votes_json = resource_votes_to_json(votes)?;
 
-        // Use json_compatible() to ensure objects become plain JS objects (not Maps)
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let data = serde_json::json!({
             "votes": votes_json
-        })
-        .serialize(&serializer)
-        .map_err(|e| {
-            WasmSdkError::serialization(format!(
-                "Failed to serialize contested resource identity votes response: {}",
-                e
-            ))
-        })?;
+        });
 
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+        Ok(ProofMetadataResponseWasm::from_sdk_parts_typed(
             data, metadata, proof,
         )?)
     }
