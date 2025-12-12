@@ -4818,10 +4818,10 @@ mod tests {
         }
 
         /// Test that when balance equals (total_outputs + actual_fee_from_first_run) with 128 outputs,
-        /// the second run fails with IdentityInsufficientBalanceError because fee estimation uses a
-        /// higher worst-case estimate than the actual fee.
+        /// the second run succeeds because fee estimation is now accurate enough with count sum trees.
+        /// (Previously this would fail because fee estimation used a higher worst-case estimate.)
         #[test]
-        fn test_exact_actual_fee_balance_fails_due_to_fee_estimation_128_outputs() {
+        fn test_exact_actual_fee_balance_succeeds_with_128_outputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4941,17 +4941,11 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // The fee estimation uses a worst-case estimate that is higher than actual fee
+            // With count sum trees, fee estimation is now accurate enough that exact balance succeeds
             assert_matches!(
                 processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(err))
-                )] => {
-                    assert_eq!(err.balance(), exact_balance);
-                    // Required balance should be higher than what we have due to fee estimation
-                    assert!(err.required_balance() > exact_balance,
-                        "Required balance {} should be greater than exact balance {}",
-                        err.required_balance(), exact_balance);
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
+                    // Success - fee estimation is now accurate enough with count sum trees
                 }
             );
         }

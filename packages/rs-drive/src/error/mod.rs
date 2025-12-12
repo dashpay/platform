@@ -89,3 +89,9 @@ impl From<grovedb::Error> for Error {
         Self::GroveDB(Box::new(value))
     }
 }
+
+impl From<grovedb::element::error::ElementError> for Error {
+    fn from(value: grovedb::element::error::ElementError) -> Self {
+        Self::GroveDB(Box::new(grovedb::Error::ElementError(value)))
+    }
+}

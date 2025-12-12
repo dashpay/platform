@@ -33,7 +33,7 @@ use drive::drive::tokens::paths::{
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::{Drive, RootTree};
-use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction};
+use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
 use std::collections::HashSet;
@@ -366,6 +366,7 @@ impl<C> Platform<C> {
         self.drive.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::GroupActions as u8],
+            TreeType::NormalTree,
             Some(transaction),
             None,
             &mut vec![],

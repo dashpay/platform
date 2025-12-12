@@ -9,9 +9,6 @@ pub mod grove_insert;
 /// Grove insert operation into an empty tree
 pub mod grove_insert_empty_tree;
 
-/// Grove insert operation into an empty sum tree
-pub mod grove_insert_empty_sum_tree;
-
 /// Grove insert operation, but only if it doesn't already exist
 pub mod grove_insert_if_not_exists;
 

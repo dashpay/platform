@@ -573,6 +573,9 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::BigSumTree => Element::empty_big_sum_tree_with_flags(element_flags),
             TreeType::CountTree => Element::empty_count_tree_with_flags(element_flags),
             TreeType::CountSumTree => Element::empty_count_sum_tree_with_flags(element_flags),
+            TreeType::ProvableCountTree => {
+                Element::empty_provable_count_tree_with_flags(element_flags)
+            }
         };
 
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)

@@ -140,6 +140,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
@@ -150,6 +151,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"new_root",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
@@ -245,6 +247,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
@@ -255,6 +258,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"new_root",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
@@ -293,6 +297,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
@@ -303,6 +308,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"new_root",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
@@ -315,6 +321,7 @@ mod tests {
             .grove_insert_empty_tree(
                 [b"root".as_slice()].as_slice().into(),
                 b"sub",
+                TreeType::NormalTree,
                 Some(&tx),
                 None,
                 &mut vec![],
