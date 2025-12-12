@@ -494,13 +494,12 @@ impl WasmSdk {
 
         identity
             .map(|identity| {
-                ProofMetadataResponseWasm::from_sdk_parts_typed(
-                    identity,
+                ProofMetadataResponseWasm::from_sdk_parts(
+                    IdentityWasm::from(identity),
                     metadata,
                     proof,
                 )
             })
-            .transpose()?
             .ok_or_else(|| WasmSdkError::not_found("Identity not found"))
     }
 
@@ -744,7 +743,7 @@ impl WasmSdk {
         let data = IdentityNonceWasm::new(nonce);
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentityContractNonce")]
@@ -815,7 +814,7 @@ impl WasmSdk {
         let data = IdentityNonceWasm::new(nonce);
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentityBalance")]
@@ -1153,7 +1152,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             keys_array, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -1185,7 +1184,6 @@ impl WasmSdk {
                     proof,
                 )
             })
-            .transpose()?
             .ok_or_else(|| WasmSdkError::not_found("Identity balance not found"))
     }
 
@@ -1238,7 +1236,7 @@ impl WasmSdk {
             balances_array,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -1270,7 +1268,6 @@ impl WasmSdk {
                     proof,
                 )
             })
-            .transpose()?
             .ok_or_else(|| WasmSdkError::not_found("Identity balance and revision not found"))
     }
 
@@ -1314,7 +1311,6 @@ impl WasmSdk {
                     proof,
                 )
             })
-            .transpose()?
             .ok_or_else(|| WasmSdkError::not_found("Identity not found for public key hash"))
     }
 
@@ -1384,7 +1380,7 @@ impl WasmSdk {
             identities_array,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     // TODO: This method returns proof only for first identity
@@ -1432,7 +1428,7 @@ impl WasmSdk {
             responses_array,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -1492,6 +1488,6 @@ impl WasmSdk {
             JsValue::from(balances_map),
             metadata,
             proof,
-        )?)
+        ))
     }
 }

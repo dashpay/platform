@@ -390,7 +390,7 @@ impl WasmSdk {
             documents_map,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(js_name = "getDocument")]
@@ -493,6 +493,6 @@ impl WasmSdk {
             JsValue::from(document_js),
             metadata,
             proof,
-        )?)
+        ))
     }
 }

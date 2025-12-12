@@ -70,6 +70,52 @@ describe('Identity queries', function describeBlock() {
     expect(json.proof).to.have.property('quorumType');
   });
 
+  it('fetches data contract with proof and toJSON returns full structure', async () => {
+    const response = await client.getDataContractWithProofInfo(DPNS_CONTRACT);
+
+    // Basic shape check
+    expect(response).to.be.ok();
+    expect(response.data).to.be.ok();
+    expect(response.metadata).to.be.ok();
+    expect(response.proof).to.be.ok();
+
+    // Call toJSON and verify structure
+    const json = response.toJSON();
+
+    // Verify top-level structure
+    expect(json).to.have.property('data');
+    expect(json).to.have.property('metadata');
+    expect(json).to.have.property('proof');
+
+    // Verify data contract data - id should be Base58 string in JSON
+    expect(json.data).to.have.property('id');
+    expect(json.data.id).to.be.a('string');
+    expect(json.data.id).to.equal(DPNS_CONTRACT);
+    expect(json.data).to.have.property('ownerId');
+    expect(json.data.ownerId).to.be.a('string');
+    expect(json.data).to.have.property('version');
+    expect(json.data).to.have.property('documentSchemas');
+    expect(json.data.documentSchemas).to.be.an('object');
+
+    // Verify metadata structure
+    expect(json.metadata).to.have.property('height');
+    expect(json.metadata).to.have.property('coreChainLockedHeight');
+    expect(json.metadata).to.have.property('epoch');
+    expect(json.metadata).to.have.property('timeMs');
+    expect(json.metadata).to.have.property('protocolVersion');
+    expect(json.metadata).to.have.property('chainId');
+    expect(json.metadata.chainId).to.be.a('string'); // base64
+
+    // Verify proof structure
+    expect(json.proof).to.have.property('grovedbProof');
+    expect(json.proof.grovedbProof).to.be.a('string'); // base64
+    expect(json.proof).to.have.property('quorumHash');
+    expect(json.proof).to.have.property('signature');
+    expect(json.proof).to.have.property('round');
+    expect(json.proof).to.have.property('blockIdHash');
+    expect(json.proof).to.have.property('quorumType');
+  });
+
   it('gets identity balance and nonce', async () => {
     const bal = await client.getIdentityBalance(TEST_IDENTITY);
     expect(bal).to.be.an('object');

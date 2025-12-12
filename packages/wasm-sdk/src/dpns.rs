@@ -197,7 +197,7 @@ impl WasmSdk {
             usernames_array,
             metadata,
             proof,
-        )?)
+        ))
     }
 }
 
@@ -436,7 +436,7 @@ impl WasmSdk {
                 WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
             })?;
 
-            let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof)?;
+            let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
 
             Ok(response)
         } else {
@@ -516,7 +516,7 @@ impl WasmSdk {
             JsValue::NULL
         };
 
-        response.set_data(username)?;
+        response.set_data(username);
 
         Ok(response)
     }

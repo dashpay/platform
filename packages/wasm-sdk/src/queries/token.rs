@@ -725,7 +725,7 @@ impl WasmSdk {
             balances_map,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -759,7 +759,7 @@ impl WasmSdk {
             statuses_map,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -793,7 +793,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 
     // Additional proof info versions for remaining token queries
@@ -843,7 +843,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             infos_map, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -891,7 +891,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             infos_map, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -951,7 +951,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             prices_map, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -981,7 +981,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -1044,6 +1044,6 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 }

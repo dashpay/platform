@@ -965,7 +965,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -1003,7 +1003,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -1066,6 +1066,6 @@ impl WasmSdk {
             elements_array,
             metadata,
             proof,
-        )?)
+        ))
     }
 }

@@ -248,7 +248,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             state, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo")]

@@ -227,6 +227,13 @@ impl IdentifierWasm {
         self.0.to_string(Base58)
     }
 
+    /// Returns the identifier as a Base58 string for JSON serialization.
+    /// This method is called automatically when the object is serialized to JSON.
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> String {
+        self.to_base58()
+    }
+
     #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> String {
         self.0.to_string(Base64)

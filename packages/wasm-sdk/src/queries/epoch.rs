@@ -441,7 +441,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -458,7 +458,7 @@ impl WasmSdk {
             ExtendedEpochInfoWasm::from(epoch),
             metadata,
             proof,
-        )?)
+        ))
     }
 
     // Additional proof info versions for epoch queries
@@ -514,7 +514,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo")]

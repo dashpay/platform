@@ -10,7 +10,7 @@ use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVot
 use drive_proof_verifier::types::Voter;
 use js_sys::Array;
 use platform_value::{string_encoding::Encoding, Identifier};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -203,8 +203,13 @@ impl WasmSdk {
             .map(|voter| voter.0.to_string(Encoding::Base58))
             .collect();
 
-        Ok(ProofMetadataResponseWasm::from_sdk_parts_typed(
-            voters_list, metadata, proof,
-        )?)
+        let voters_array = Array::new();
+        for voter in voters_list {
+            voters_array.push(&JsValue::from_str(&voter));
+        }
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            voters_array, metadata, proof,
+        ))
     }
 }

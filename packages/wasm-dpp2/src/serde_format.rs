@@ -66,11 +66,27 @@ pub fn to_js_value_json_compatible<T: Serialize>(
     value.serialize(&serializer)
 }
 
-/// Convert JsValue to serde_json::Value, handling BigInt values.
+/// Convert JsValue to serde_json::Value, handling BigInt values and WASM objects.
 ///
-/// This function converts BigInt values to strings before conversion, which is the standard
-/// approach for serializing large integers in JSON.
+/// This function:
+/// - Converts BigInt values to strings (JSON doesn't support BigInt natively)
+/// - For WASM objects with a `toJSON` method, calls that method first to get proper JSON
+/// - Falls back to serde_wasm_bindgen conversion for plain objects
 pub fn js_value_to_json(value: &JsValue) -> WasmDppResult<JsonValue> {
+    // Check if the value has a toJSON method (WASM objects like DataContractWasm, IdentityWasm)
+    if value.is_object() && !value.is_null() && !js_sys::Array::is_array(value) {
+        if let Ok(to_json_fn) = js_sys::Reflect::get(value, &JsValue::from_str("toJSON")) {
+            if to_json_fn.is_function() {
+                let func: js_sys::Function = to_json_fn.unchecked_into();
+                // Call toJSON() on the object
+                if let Ok(json_result) = func.call0(value) {
+                    // Recursively convert the result (it might contain BigInt or nested WASM objects)
+                    return js_value_to_json(&json_result);
+                }
+            }
+        }
+    }
+
     let converted = convert_bigints_to_strings(value)?;
     serde_wasm_bindgen::from_value(converted)
         .map_err(|e| WasmDppError::serialization(format!("Failed to convert JsValue to JSON: {}", e)))

@@ -14,7 +14,7 @@ pub use group::*;
 
 use crate::impl_wasm_serde_conversions;
 use crate::WasmSdkError;
-use js_sys::{Object, Reflect, Uint8Array};
+use js_sys::Uint8Array;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
@@ -255,12 +255,15 @@ impl ProofMetadataResponseWasm {
         data: JsValue,
         metadata: ResponseMetadataWasm,
         proof: ProofInfoWasm,
-    ) -> Result<Self, WasmSdkError> {
-        ProofMetadataResponseWasm::from_serde(ProofMetadataResponseSerde {
-            data: serde_format::js_value_to_json(&data).map_err(WasmSdkError::from)?,
+    ) -> Self {
+        // Store data as-is. Conversion to JSON happens in to_serde()/toJSON().
+        // This allows WASM objects (like DataContractWasm) to be stored directly
+        // and their toJSON() method will be called when serializing.
+        ProofMetadataResponseWasm {
+            data,
             metadata,
             proof,
-        })
+        }
     }
 
     #[wasm_bindgen(getter)]
@@ -269,10 +272,8 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "setData")]
-    pub fn set_data(&mut self, data: JsValue) -> Result<(), WasmSdkError> {
-        let json = serde_format::js_value_to_json(&data).map_err(WasmSdkError::from)?;
-        self.data = serde_format::json_to_js_value(&json).map_err(WasmSdkError::from)?;
-        Ok(())
+    pub fn set_data(&mut self, data: JsValue) {
+        self.data = data;
     }
 
     #[wasm_bindgen(getter)]
@@ -323,33 +324,20 @@ impl ProofMetadataResponseWasm {
 }
 
 impl ProofMetadataResponseWasm {
-    /// Create from SDK response parts with raw JsValue data.
+    /// Create from SDK response parts with a WASM wrapper object or JsValue as data.
     ///
-    /// Use this when the data is already a JsValue (e.g., JS array, Map, or plain object).
-    /// The data will be stored as-is after normalizing BigInt values.
+    /// Use this for WASM wrapper types (e.g., `DataContractWasm`, `IdentityWasm`)
+    /// or JS values (Map, Array, or pre-serialized JsValue). The data is stored as-is,
+    /// and when `toJSON()` is called, WASM objects will have their `toJSON()` method
+    /// invoked automatically.
+    ///
+    /// This allows `response.data` to return the actual WASM object with all its methods.
     pub(crate) fn from_sdk_parts(
         data: impl Into<JsValue>,
         metadata: dash_sdk::platform::proto::ResponseMetadata,
         proof: dash_sdk::platform::proto::Proof,
-    ) -> Result<Self, WasmSdkError> {
+    ) -> Self {
         ProofMetadataResponseWasm::new(data.into(), metadata.into(), proof.into())
-    }
-
-    /// Create from SDK response parts with proper JSON serialization.
-    ///
-    /// The data is serialized using `serde_format::to_json` which produces
-    /// human-readable output (Base58 identifiers, base64 bytes, etc.).
-    ///
-    /// Use this for WASM wrapper types (e.g., `IdentityWasm`, `DataContractWasm`)
-    /// that implement `Serialize` to ensure proper JSON formatting.
-    pub(crate) fn from_sdk_parts_typed<T: serde::Serialize>(
-        data: T,
-        metadata: dash_sdk::platform::proto::ResponseMetadata,
-        proof: dash_sdk::platform::proto::Proof,
-    ) -> Result<Self, WasmSdkError> {
-        // Serialize data to JSON-compatible JsValue (human-readable format)
-        let data_js = serde_format::to_json(&data).map_err(WasmSdkError::from)?;
-        ProofMetadataResponseWasm::new(data_js, metadata.into(), proof.into())
     }
 }
 

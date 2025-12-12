@@ -242,7 +242,7 @@ impl WasmSdk {
 
         let array = contested_resources_into_wasm(contested_resources)?;
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(array, metadata, proof)?;
+        let response = ProofMetadataResponseWasm::from_sdk_parts(array, metadata, proof);
 
         Ok(response)
     }

@@ -139,7 +139,6 @@ impl WasmSdk {
                     proof,
                 )
             })
-            .transpose()?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))
     }
 
@@ -240,7 +239,7 @@ impl WasmSdk {
             history_map,
             metadata,
             proof,
-        )?)
+        ))
     }
 
     #[wasm_bindgen(
@@ -284,6 +283,6 @@ impl WasmSdk {
             contracts_map,
             metadata,
             proof,
-        )?)
+        ))
     }
 }
