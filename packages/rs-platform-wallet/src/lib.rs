@@ -5,6 +5,7 @@
 
 use dashcore::Address as DashAddress;
 use dashcore::Transaction;
+use dpp::async_trait::async_trait;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use indexmap::IndexMap;
@@ -96,17 +97,20 @@ impl PlatformWalletInfo {
 }
 
 /// Implement WalletTransactionChecker by delegating to ManagedWalletInfo
+#[async_trait]
 impl WalletTransactionChecker for PlatformWalletInfo {
-    fn check_transaction(
+    async fn check_transaction(
         &mut self,
         tx: &Transaction,
         network: Network,
         context: TransactionContext,
-        update_state_with_wallet_if_found: Option<&Wallet>,
+        wallet: &mut Wallet,
+        update_state: bool,
     ) -> TransactionCheckResult {
         // Delegate to the underlying wallet info
         self.wallet_info
-            .check_transaction(tx, network, context, update_state_with_wallet_if_found)
+            .check_transaction(tx, network, context, wallet, update_state)
+            .await
     }
 }
 
@@ -362,6 +366,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
             fee_level,
             current_block_height,
         )
+    }
+
+    fn update_chain_height(&mut self, network: Network, height: u32) {
+        self.wallet_info.update_chain_height(network, height)
     }
 }
 
