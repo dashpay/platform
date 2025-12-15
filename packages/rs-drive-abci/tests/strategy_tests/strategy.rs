@@ -105,10 +105,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::str::FromStr;
-use strategy_tests::transitions::{
-    create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs,
-    instant_asset_lock_proof_fixture_with_dynamic_range,
-};
+use strategy_tests::transitions::{create_identity_credit_transfer_to_addresses_transition, create_identity_credit_transfer_to_addresses_transition_with_outputs, create_identity_credit_transfer_transition, create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs, instant_asset_lock_proof_fixture_with_dynamic_range};
 use strategy_tests::Strategy;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 
@@ -1334,29 +1331,119 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::IdentityTransfer(_) if current_identities.len() > 1 => {
-                        let identities_clone = current_identities.clone();
+                    OperationType::IdentityTransfer(identity_transfer_info) if current_identities.len() > 1 => {
+                        for _ in 0..count {
+                            // Handle the case where specific sender, recipient, and amount are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+                                let recipient = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.to)
+                                    .expect(
+                                        "Expected to find recipient identity in hardcoded start identities",
+                                    );
 
-                        // Sender is the first in the list, which should be loaded_identity
-                        let owner = &mut current_identities[0];
-                        // Recipient is the second in the list
-                        let recipient = &identities_clone[1];
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    sender,
+                                    recipient,
+                                    identity_nonce_counter,
+                                    signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
+                                    transfer_info.amount,
+                                );
+                                operations.push(state_transition);
+                            } else if current_identities.len() > 1 {
+                                // Handle the case where no sender, recipient, and amount are provided
 
-                        let fetched_owner_balance = platform
-                            .drive
-                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
-                            .expect("expected to be able to get identity")
-                            .expect("expected to get an identity");
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
 
-                        let state_transition =
-                            strategy_tests::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                identity_nonce_counter,
-                                signer,
-                                fetched_owner_balance - 100,
-                            );
-                        operations.push(state_transition);
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
+
+                                // Clone current_identities to a Vec for manipulation
+                                let mut unused_identities: Vec<_> = current_identities.to_vec();
+                                unused_identities.remove(random_index_sender); // Remove the sender
+                                let unused_identities_count = unused_identities.len();
+
+                                // Select a random identity from the remaining ones for the recipient
+                                let random_index_recipient =
+                                    rng.gen_range(0..unused_identities_count);
+                                let recipient = &unused_identities[random_index_recipient];
+
+                                // Use the sender index on the original slice
+                                let sender = &mut current_identities[random_index_sender];
+
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    sender,
+                                    recipient,
+                                    identity_nonce_counter,
+                                    signer,
+                                    300000,
+                                );
+                                operations.push(state_transition);
+                            }
+                        }
+                    }
+                    OperationType::IdentityTransferToAddresses(
+                        amount_range,
+                        output_count_range,
+                        _use_existing,
+                        identity_transfer_info,
+                    ) if !current_identities.is_empty() => {
+                        for _ in 0..count {
+                            // Handle the case where specific sender and outputs are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+
+                                // Use the pre-specified outputs from transfer_info
+                                let state_transition = create_identity_credit_transfer_to_addresses_transition_with_outputs(
+                                    sender,
+                                    identity_nonce_counter,
+                                    signer,
+                                    transfer_info.outputs.clone(),
+                                    platform_version,
+                                );
+                                operations.push(state_transition);
+                            } else {
+                                // Handle the case where no sender/outputs are provided - generate random ones
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
+
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
+                                let sender = &current_identities[random_index_sender];
+
+                                // Generate random number of outputs from the provided range
+                                let output_count = rng.gen_range(output_count_range.clone()) as usize;
+                                let total_amount = rng.gen_range(amount_range.clone());
+
+                                let (state_transition, _recipient_addresses) = create_identity_credit_transfer_to_addresses_transition(
+                                    sender,
+                                    identity_nonce_counter,
+                                    current_addresses_with_balance,
+                                    signer,
+                                    total_amount,
+                                    output_count,
+                                    rng,
+                                    platform_version,
+                                );
+                                operations.push(state_transition);
+                            }
+                        }
                     }
                     OperationType::ContractCreate(params, doc_type_range)
                         if !current_identities.is_empty() =>

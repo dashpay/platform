@@ -1,6 +1,6 @@
 use crate::frequency::Frequency;
 use bincode::{Decode, Encode};
-use dpp::address_funds::AddressFundsFeeStrategy;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -613,6 +613,13 @@ pub struct IdentityTransferInfo {
     pub amount: Credits,
 }
 
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+pub struct IdentityTransferToAddresses {
+    pub from: Identifier,
+    pub outputs: BTreeMap<PlatformAddress, Credits>,
+    pub amount: Credits,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationType {
     Document(DocumentOp),
@@ -636,6 +643,12 @@ pub enum OperationType {
         AmountRange,
         MaybeOutputAmount,
         Option<AddressFundsFeeStrategy>,
+    ),
+    IdentityTransferToAddresses(
+        AmountRange,
+        OutputCountRange,
+        UseExistingAddressesAsOutputChance,
+        Option<IdentityTransferToAddresses>,
     ),
 }
 
@@ -663,6 +676,12 @@ enum OperationTypeInSerializationFormat {
         AmountRange,
         MaybeOutputAmount,
         Option<AddressFundsFeeStrategy>,
+    ),
+    IdentityTransferToAddresses(
+        AmountRange,
+        OutputCountRange,
+        UseExistingAddressesAsOutputChance,
+        Option<IdentityTransferToAddresses>,
     ),
 }
 
@@ -745,6 +764,17 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                     fee_strategy,
                 )
             }
+            OperationType::IdentityTransferToAddresses(
+                amount_range,
+                output_count_range,
+                use_existing,
+                transfer_to_address_op,
+            ) => OperationTypeInSerializationFormat::IdentityTransferToAddresses(
+                amount_range,
+                output_count_range,
+                use_existing,
+                transfer_to_address_op,
+            )
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -839,6 +869,17 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 maybe_output_amount,
                 fee_strategy,
             ) => OperationType::AddressWithdrawal(amount_range, maybe_output_amount, fee_strategy),
+            OperationTypeInSerializationFormat::IdentityTransferToAddresses(
+                amount_range,
+                output_count_range,
+                use_existing,
+                transfer_to_address_op,
+            ) => OperationType::IdentityTransferToAddresses(
+                amount_range,
+                output_count_range,
+                use_existing,
+                transfer_to_address_op,
+            )
         })
     }
 }
