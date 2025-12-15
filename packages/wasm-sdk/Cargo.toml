@@ -76,7 +76,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 tracing-wasm = { version = "0.2.1" }
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
-serde-wasm-bindgen = { path = "/Users/ivanshumkov/Projects/dashpay/serde-wasm-bindgen" }
+serde-wasm-bindgen = { git = "https://github.com/dashpay/serde-wasm-bindgen", branch = "fix/uint8array-to-bytes" }
 serde_json = "1.0"
 hex = "0.4"
 base64 = "0.22"

@@ -5846,6 +5846,7 @@ dependencies = [
 [[package]]
 name = "serde-wasm-bindgen"
 version = "0.5.0"
+source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat%2Fnot_human_readable#121d1f7fbf62cb97f74b91626a1b23851098cc82"
 dependencies = [
  "js-sys",
  "serde",
@@ -5855,7 +5856,7 @@ dependencies = [
 [[package]]
 name = "serde-wasm-bindgen"
 version = "0.5.0"
-source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat%2Fnot_human_readable#121d1f7fbf62cb97f74b91626a1b23851098cc82"
+source = "git+https://github.com/dashpay/serde-wasm-bindgen?branch=fix%2Fuint8array-to-bytes#c909c5759c9ca997abe96283edd8e23cb64b4ce0"
 dependencies = [
  "js-sys",
  "serde",
@@ -7540,7 +7541,7 @@ dependencies = [
  "hex",
  "js-sys",
  "serde",
- "serde-wasm-bindgen 0.5.0",
+ "serde-wasm-bindgen 0.5.0 (git+https://github.com/dashpay/serde-wasm-bindgen?branch=fix%2Fuint8array-to-bytes)",
  "serde_json",
  "sha2",
  "thiserror 1.0.69",
@@ -7603,7 +7604,7 @@ dependencies = [
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
  "serde",
- "serde-wasm-bindgen 0.5.0",
+ "serde-wasm-bindgen 0.5.0 (git+https://github.com/dashpay/serde-wasm-bindgen?branch=fix%2Fuint8array-to-bytes)",
  "serde_json",
  "sha2",
  "simple-signer",
