@@ -5,6 +5,7 @@ mod json_conversion;
 pub mod methods;
 #[cfg(all(test, feature = "state-transition-signing"))]
 mod signing_tests;
+mod state_transition_estimated_fee_validation;
 mod state_transition_fee_strategy;
 mod state_transition_like;
 mod state_transition_validation;
