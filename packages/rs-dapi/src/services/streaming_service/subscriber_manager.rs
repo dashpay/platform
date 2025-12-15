@@ -39,7 +39,6 @@ impl FilterType {
         match self {
             FilterType::CoreBloomFilter(bloom, flags) => match deserialize::<CoreTx>(raw_tx) {
                 Ok(tx) => super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags),
-
                 Err(e) => {
                     debug!(
                         error = %e,

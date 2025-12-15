@@ -101,7 +101,6 @@ mod tests {
                     drive: DriveConfig::default(),
                     block_spacing_ms: 1000 * 60 * 5,
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
-
                     ..Default::default()
                 };
 

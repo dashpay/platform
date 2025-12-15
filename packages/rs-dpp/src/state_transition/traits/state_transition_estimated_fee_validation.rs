@@ -2,7 +2,7 @@ use crate::address_funds::PlatformAddress;
 use crate::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use crate::fee::Credits;
 use crate::prelude::AddressNonce;
-use crate::validation::ConsensusValidationResult;
+use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -82,4 +82,28 @@ pub trait StateTransitionAddressEstimatedFeeValidation:
         &self,
         remaining_balances: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> Credits;
+}
+
+/// Trait for validating that identity-based state transitions have sufficient funds for fees.
+///
+/// This trait extends fee estimation with validation capabilities specific to
+/// identity-based state transitions that pay fees from identity balances.
+pub trait StateTransitionIdentityEstimatedFeeValidation:
+    StateTransitionEstimatedFeeValidation
+{
+    /// Validates that sufficient identity balance is available to cover the estimated fee.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_known_balance` - The known balance of the identity.
+    /// * `platform_version` - The platform version containing fee configuration.
+    ///
+    /// # Returns
+    ///
+    /// A validation result. If validation fails, contains an `IdentityInsufficientBalanceError`.
+    fn validate_estimated_fee(
+        &self,
+        identity_known_balance: Credits,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult;
 }

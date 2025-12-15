@@ -613,6 +613,22 @@ impl StateTransition {
         call_method!(self, user_fee_increase)
     }
 
+    /// Calculates the estimated minimum fee required for this state transition.
+    ///
+    /// The fee is calculated based on the number of inputs, outputs, and any
+    /// transition-specific costs (e.g., key creation costs for identity creation).
+    ///
+    /// # Arguments
+    ///
+    /// * `platform_version` - The platform version containing fee configuration.
+    ///
+    /// # Returns
+    ///
+    /// The estimated fee in credits.
+    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits {
+        call_method!(self, calculate_estimated_fee, platform_version)
+    }
+
     /// The transaction id is a single hash of the data with the signature
     pub fn transaction_id(&self) -> Result<[u8; 32], ProtocolError> {
         Ok(hash_single(

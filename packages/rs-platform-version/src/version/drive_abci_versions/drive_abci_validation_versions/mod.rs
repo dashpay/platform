@@ -31,7 +31,6 @@ pub struct DriveAbciStateTransitionValidationVersion {
     pub basic_structure: OptionalFeatureVersion,
     pub advanced_structure: OptionalFeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
-    pub advanced_minimum_balance_pre_check: OptionalFeatureVersion,
     pub nonce: OptionalFeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
@@ -50,6 +49,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub identity_credit_transfer_to_addresses_state_transition:
         DriveAbciStateTransitionValidationVersion,
     pub masternode_vote_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub masternode_vote_state_transition_balance_pre_check: FeatureVersion,
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
@@ -70,7 +70,6 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
     pub validate_master_key_uniqueness: FeatureVersion,
-    pub validate_simple_pre_check_balance: FeatureVersion,
     pub validate_non_masternode_identity_exists: FeatureVersion,
     pub validate_identity_exists: FeatureVersion,
 }
@@ -94,7 +93,6 @@ pub struct DriveAbciAssetLockValidationVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
-    pub balance_pre_check: FeatureVersion,
     pub basic_structure: FeatureVersion,
     pub advanced_structure: FeatureVersion,
     pub revision: FeatureVersion,

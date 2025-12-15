@@ -138,7 +138,6 @@ mod tests {
                     ..Default::default()
                 },
                 identity_inserts: Default::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer.clone()),
             },
@@ -459,7 +458,6 @@ mod tests {
                     ..Default::default()
                 },
                 identity_inserts: Default::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
             },
@@ -730,7 +728,6 @@ mod tests {
                     ..Default::default()
                 },
                 identity_inserts: Default::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
             },
@@ -846,7 +843,6 @@ mod tests {
                     }],
                     start_identities: StartIdentities::default(),
                     identity_inserts: Default::default(),
-
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
                 },
@@ -855,7 +851,6 @@ mod tests {
                 validator_quorum_count: 24,
                 chain_lock_quorum_count: 24,
                 upgrading_info: None,
-
                 proposer_strategy: Default::default(),
                 rotate_quorums: false,
                 failure_testing: None,
@@ -1083,7 +1078,6 @@ mod tests {
                     ..Default::default()
                 },
                 identity_inserts: Default::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
             },
@@ -1204,7 +1198,6 @@ mod tests {
                     }],
                     start_identities: StartIdentities::default(),
                     identity_inserts: Default::default(),
-
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
                 },
@@ -1213,7 +1206,6 @@ mod tests {
                 validator_quorum_count: 24,
                 chain_lock_quorum_count: 24,
                 upgrading_info: None,
-
                 proposer_strategy: Default::default(),
                 rotate_quorums: false,
                 failure_testing: None,
@@ -1334,7 +1326,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: 3000,
@@ -1464,7 +1455,6 @@ mod tests {
                             ..Default::default()
                         },
                         identity_inserts: Default::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: Some(simple_signer),
                     },
@@ -1473,7 +1463,6 @@ mod tests {
                     validator_quorum_count: 24,
                     chain_lock_quorum_count: 24,
                     upgrading_info: None,
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1544,7 +1533,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: day_in_ms,
@@ -1601,7 +1589,6 @@ mod tests {
                             }],
                             start_identities: StartIdentities::default(),
                             identity_inserts: Default::default(),
-
                             identity_contract_nonce_gaps: None,
                             signer: voting_signer,
                         },
@@ -1610,7 +1597,6 @@ mod tests {
                         validator_quorum_count: 24,
                         chain_lock_quorum_count: 24,
                         upgrading_info: None,
-
                         proposer_strategy: Default::default(),
                         rotate_quorums: false,
                         failure_testing: None,
@@ -1761,7 +1747,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: 3000,
@@ -1890,7 +1875,6 @@ mod tests {
                             ..Default::default()
                         },
                         identity_inserts: Default::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: Some(simple_signer),
                     },
@@ -1899,7 +1883,6 @@ mod tests {
                     validator_quorum_count: 24,
                     chain_lock_quorum_count: 24,
                     upgrading_info: None,
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1970,7 +1953,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: day_in_ms,
@@ -2027,7 +2009,6 @@ mod tests {
                             }],
                             start_identities: StartIdentities::default(),
                             identity_inserts: Default::default(),
-
                             identity_contract_nonce_gaps: None,
                             signer: voting_signer,
                         },
@@ -2036,7 +2017,6 @@ mod tests {
                         validator_quorum_count: 24,
                         chain_lock_quorum_count: 24,
                         upgrading_info: None,
-
                         proposer_strategy: Default::default(),
                         rotate_quorums: false,
                         failure_testing: None,
@@ -2195,7 +2175,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: 3000,
@@ -2325,7 +2304,6 @@ mod tests {
                             ..Default::default()
                         },
                         identity_inserts: Default::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: Some(simple_signer.clone()),
                     },
@@ -2338,7 +2316,6 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(7, 1)],
                         upgrade_three_quarters_life: 0.2,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -2411,7 +2388,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: day_in_ms,
@@ -2479,7 +2455,6 @@ mod tests {
                             }],
                             start_identities: StartIdentities::default(),
                             identity_inserts: Default::default(),
-
                             identity_contract_nonce_gaps: None,
                             signer: voting_signer,
                         },
@@ -2492,7 +2467,6 @@ mod tests {
                             proposed_protocol_versions_with_weight: vec![(7, 1)],
                             upgrade_three_quarters_life: 0.2,
                         }),
-
                         proposer_strategy: Default::default(),
                         rotate_quorums: false,
                         failure_testing: None,
@@ -2640,7 +2614,6 @@ mod tests {
                     execution: ExecutionConfig {
                         //we disable document triggers because we are using dpns and dpns needs a preorder
                         use_document_triggers: false,
-
                         ..Default::default()
                     },
                     block_spacing_ms: ten_hours_in_ms,
@@ -2683,7 +2656,6 @@ mod tests {
                             operations: vec![],
                             start_identities: StartIdentities::default(),
                             identity_inserts: Default::default(),
-
                             identity_contract_nonce_gaps: None,
                             signer: None,
                         },
@@ -2696,7 +2668,6 @@ mod tests {
                             proposed_protocol_versions_with_weight: vec![(8, 1)],
                             upgrade_three_quarters_life: 0.1,
                         }),
-
                         proposer_strategy: Default::default(),
                         rotate_quorums: false,
                         failure_testing: None,
@@ -2812,7 +2783,6 @@ mod tests {
                             ],
                             start_identities: StartIdentities::default(),
                             identity_inserts: Default::default(),
-
                             identity_contract_nonce_gaps: None,
                             signer: Some(simple_signer),
                         },
@@ -2825,7 +2795,6 @@ mod tests {
                             proposed_protocol_versions_with_weight: vec![(8, 1)],
                             upgrade_three_quarters_life: 0.1,
                         }),
-
                         proposer_strategy: Default::default(),
                         rotate_quorums: false,
                         failure_testing: None,
@@ -2865,7 +2834,6 @@ mod tests {
                             operations: vec![],
                             start_identities: StartIdentities::default(),
                             identity_inserts: Default::default(),
-
                             identity_contract_nonce_gaps: None,
                             signer: None,
                         },
@@ -2878,7 +2846,6 @@ mod tests {
                             proposed_protocol_versions_with_weight: vec![(8, 1)],
                             upgrade_three_quarters_life: 0.1,
                         }),
-
                         proposer_strategy: Default::default(),
                         rotate_quorums: false,
                         failure_testing: None,

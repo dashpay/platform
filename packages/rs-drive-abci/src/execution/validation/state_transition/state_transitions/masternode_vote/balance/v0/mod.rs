@@ -7,6 +7,7 @@ use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::StateTransitionEstimatedFeeValidation;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -62,20 +63,15 @@ impl MasternodeVoteTransitionBalanceValidationV0 for MasternodeVoteTransition {
                 PrefundedSpecializedBalanceNotFoundError::new(balance_id).into(),
             ));
         };
-        if balance
-            < platform_version
-                .fee_version
-                .state_transition_min_fees
-                .masternode_vote
-        {
+
+        let required_fee = self.calculate_estimated_fee(platform_version);
+
+        if balance < required_fee {
             return Ok(ConsensusValidationResult::new_with_error(
                 PrefundedSpecializedBalanceInsufficientError::new(
                     balance_id,
                     balance,
-                    platform_version
-                        .fee_version
-                        .state_transition_min_fees
-                        .masternode_vote,
+                    required_fee,
                 )
                 .into(),
             ));

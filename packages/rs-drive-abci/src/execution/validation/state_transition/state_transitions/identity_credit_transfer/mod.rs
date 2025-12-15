@@ -1,4 +1,3 @@
-mod balance;
 mod nonce;
 mod state;
 mod structure;

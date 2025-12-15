@@ -103,7 +103,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -125,7 +124,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -155,7 +153,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -178,7 +175,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -208,7 +204,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -231,7 +226,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -347,7 +341,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -376,7 +369,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..ExecutionConfig::default()
             },
             block_spacing_ms: 3000,
@@ -499,7 +491,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -522,7 +513,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -579,7 +569,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -602,7 +591,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -639,7 +627,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -665,7 +652,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -695,7 +681,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -722,7 +707,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -759,7 +743,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -787,7 +770,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
@@ -869,7 +851,6 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -930,7 +911,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -978,7 +958,6 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -1016,7 +995,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1068,7 +1046,6 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -1105,7 +1082,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1153,7 +1129,6 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -1229,7 +1204,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1258,7 +1232,6 @@ mod tests {
             instant_lock: InstantLockConfig::default(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1296,7 +1269,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1320,7 +1292,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -1393,7 +1364,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1416,7 +1386,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1523,7 +1492,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1546,7 +1514,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1618,7 +1585,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1641,7 +1607,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1730,7 +1695,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1753,7 +1717,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -1818,7 +1781,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1842,7 +1804,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -1934,7 +1895,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -1958,7 +1918,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2069,7 +2028,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2093,7 +2051,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2204,7 +2161,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: Some(Frequency {
                     times_per_block_range: 1..3,
                     chance_per_block: Some(0.5),
@@ -2231,7 +2187,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2342,7 +2297,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: Some(Frequency {
                     times_per_block_range: 24..25,
                     chance_per_block: Some(1.0),
@@ -2369,7 +2323,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2464,7 +2417,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: Some(Frequency {
                     times_per_block_range: 25..26,
                     chance_per_block: Some(1.0),
@@ -2491,7 +2443,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: day_in_ms,
@@ -2594,7 +2545,6 @@ mod tests {
                             extra_keys: Default::default(),
                             start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                         },
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -2603,7 +2553,6 @@ mod tests {
                     validator_quorum_count: 24,
                     chain_lock_quorum_count: 24,
                     upgrading_info: None,
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -2620,7 +2569,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -2744,7 +2692,6 @@ mod tests {
                     extra_keys: Default::default(),
                     start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -2770,7 +2717,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
@@ -2900,7 +2846,6 @@ mod tests {
                     ..Default::default()
                 },
                 identity_inserts: Default::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
             },
@@ -2926,7 +2871,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
@@ -3058,7 +3002,6 @@ mod tests {
                             extra_keys: Default::default(),
                             start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                         },
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -3067,7 +3010,6 @@ mod tests {
                     validator_quorum_count: 24,
                     chain_lock_quorum_count: 24,
                     upgrading_info: None,
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -3084,7 +3026,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -3249,7 +3190,6 @@ mod tests {
                             extra_keys: Default::default(),
                             start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                         },
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -3258,7 +3198,6 @@ mod tests {
                     validator_quorum_count: 24,
                     chain_lock_quorum_count: 24,
                     upgrading_info: None,
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -3275,7 +3214,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-
                         epoch_time_length_s: 1576800,
                         ..Default::default()
                     },
@@ -3334,7 +3272,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3358,7 +3295,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3459,7 +3395,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3560,7 +3495,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3615,7 +3549,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3640,7 +3573,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3708,7 +3640,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3733,7 +3664,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -3796,7 +3726,6 @@ mod tests {
                     extra_keys: Default::default(),
                     start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -3990,7 +3919,6 @@ mod tests {
                     extra_keys: Default::default(),
                     start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -4162,7 +4090,6 @@ mod tests {
                     extra_keys: Default::default(),
                     start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -4326,7 +4253,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -4498,7 +4424,6 @@ mod tests {
                     .into(),
                     start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -4522,7 +4447,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -4576,7 +4500,6 @@ mod tests {
                     extra_keys: Default::default(),
                     start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
                 },
-
                 ..Default::default()
             },
             max_tx_bytes_per_block: 3500,
@@ -4588,7 +4511,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,

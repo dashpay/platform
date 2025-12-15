@@ -52,7 +52,6 @@ impl Drive {
                     ))
                 }) {
                     Ok(bytes) => bytes,
-
                     Err(e) => return Some(Err(e)),
                 };
                 let group_contract_position: GroupContractPosition =
@@ -61,7 +60,6 @@ impl Drive {
                     Some(Item(value, ..)) => {
                         let group = match Group::deserialize_from_bytes(&value) {
                             Ok(group) => group,
-
                             Err(e) => return Some(Err(e.into())),
                         };
                         Some(Ok((group_contract_position, group)))
