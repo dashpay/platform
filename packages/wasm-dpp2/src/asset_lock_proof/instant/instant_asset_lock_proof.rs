@@ -4,14 +4,9 @@ use crate::asset_lock_proof::tx_out::TxOutWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::serde_format;
-use crate::utils::{JsValueExt, js_value_to_vec_u8};
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use js_sys::{Object, Reflect};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -63,9 +58,8 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(value: JsValue) -> WasmDppResult<InstantAssetLockProofWasm> {
-        let (instant_lock, transaction, output_index) =
-            parse_instant_asset_lock_proof_fields(value)?;
-        InstantAssetLockProofWasm::new(instant_lock, transaction, output_index)
+        let proof: InstantAssetLockProof = serde_format::from_object(value)?;
+        Ok(InstantAssetLockProofWasm(proof))
     }
 
     #[wasm_bindgen(js_name = "toObject")]
@@ -129,91 +123,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(value: JsValue) -> WasmDppResult<InstantAssetLockProofWasm> {
-        let object = value.dyn_into::<Object>().map_err(|_| {
-            WasmDppError::invalid_argument("InstantAssetLockProof expects an object".to_string())
-        })?;
-
-        let instant_lock_js =
-            Reflect::get(&object, &JsValue::from_str("instantLock")).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "unable to read instantLock: {}",
-                    err.error_message()
-                ))
-            })?;
-        let transaction_js =
-            Reflect::get(&object, &JsValue::from_str("transaction")).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "unable to read transaction: {}",
-                    err.error_message()
-                ))
-            })?;
-        let output_index_js =
-            Reflect::get(&object, &JsValue::from_str("outputIndex")).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "unable to read outputIndex: {}",
-                    err.error_message()
-                ))
-            })?;
-
-        let output_index = output_index_js
-            .as_f64()
-            .ok_or_else(|| {
-                WasmDppError::invalid_argument("outputIndex must be a number".to_string())
-            })? as u32;
-
-        // Parse base64 strings
-        let instant_lock_base64 = instant_lock_js.as_string().ok_or_else(|| {
-            WasmDppError::invalid_argument("instantLock must be a base64 string".to_string())
-        })?;
-        let transaction_base64 = transaction_js.as_string().ok_or_else(|| {
-            WasmDppError::invalid_argument("transaction must be a base64 string".to_string())
-        })?;
-
-        let instant_lock = BASE64_STANDARD.decode(&instant_lock_base64).map_err(|e| {
-            WasmDppError::invalid_argument(format!("invalid base64 instantLock: {}", e))
-        })?;
-        let transaction = BASE64_STANDARD.decode(&transaction_base64).map_err(|e| {
-            WasmDppError::invalid_argument(format!("invalid base64 transaction: {}", e))
-        })?;
-
-        InstantAssetLockProofWasm::new(instant_lock, transaction, output_index)
+        let proof: InstantAssetLockProof = serde_format::from_json(value)?;
+        Ok(InstantAssetLockProofWasm(proof))
     }
-}
-
-fn parse_instant_asset_lock_proof_fields(value: JsValue) -> WasmDppResult<(Vec<u8>, Vec<u8>, u32)> {
-    let object = value.dyn_into::<Object>().map_err(|_| {
-        WasmDppError::invalid_argument("InstantAssetLockProof expects an object".to_string())
-    })?;
-
-    let instant_lock_js =
-        Reflect::get(&object, &JsValue::from_str("instantLock")).map_err(|err| {
-            WasmDppError::invalid_argument(format!(
-                "unable to read instantLock: {}",
-                err.error_message()
-            ))
-        })?;
-    let transaction_js =
-        Reflect::get(&object, &JsValue::from_str("transaction")).map_err(|err| {
-            WasmDppError::invalid_argument(format!(
-                "unable to read transaction: {}",
-                err.error_message()
-            ))
-        })?;
-    let output_index_js =
-        Reflect::get(&object, &JsValue::from_str("outputIndex")).map_err(|err| {
-            WasmDppError::invalid_argument(format!(
-                "unable to read outputIndex: {}",
-                err.error_message()
-            ))
-        })?;
-
-    let output_index = output_index_js
-        .as_f64()
-        .ok_or_else(|| WasmDppError::invalid_argument("outputIndex must be a number".to_string()))?
-        as u32;
-
-    let instant_lock = js_value_to_vec_u8(&instant_lock_js)?;
-    let transaction = js_value_to_vec_u8(&transaction_js)?;
-
-    Ok((instant_lock, transaction, output_index))
 }

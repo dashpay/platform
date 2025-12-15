@@ -38,6 +38,42 @@ describe('InstantLock', () => {
 
       expect(instantLockProof.__wbg_ptr).to.not.equal(0);
     });
+
+    it('should round-trip via toJSON/fromJSON', () => {
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
+
+      const json = instantLockProof.toJSON();
+
+      // JSON format should have base64 strings
+      expect(json.instantLock).to.be.a('string');
+      expect(json.transaction).to.be.a('string');
+      expect(json.outputIndex).to.equal(0);
+
+      // Verify base64 decodes to original bytes
+      expect(Buffer.from(json.instantLock, 'base64')).to.deep.equal(Buffer.from(instantLockBytes));
+      expect(Buffer.from(json.transaction, 'base64')).to.deep.equal(Buffer.from(transactionBytes));
+
+      // Round-trip via fromJSON
+      const restored = wasm.InstantAssetLockProof.fromJSON(json);
+
+      expect(restored.toObject()).to.deep.equal(instantLockProof.toObject());
+    });
+
+    it('should round-trip via toObject/fromObject', () => {
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
+
+      const obj = instantLockProof.toObject();
+
+      // Object format should have Uint8Array
+      expect(obj.instantLock).to.be.instanceOf(Uint8Array);
+      expect(obj.transaction).to.be.instanceOf(Uint8Array);
+      expect(obj.outputIndex).to.equal(0);
+
+      // Round-trip via fromObject
+      const restored = wasm.InstantAssetLockProof.fromObject(obj);
+
+      expect(restored.toObject()).to.deep.equal(obj);
+    });
   });
 
   describe('getters', () => {
