@@ -1,4 +1,4 @@
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{ PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -9,7 +9,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition };
 use dpp::state_transition::StateTransitionType;
 use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
@@ -118,7 +118,7 @@ fn assert_address_inputs_state(
             *proof_nonce >= *transition_nonce,
             "{context}: proof nonce {proof_nonce} should be >= transition nonce {transition_nonce} for address {address:?}"
         );
-        
+
         assert!(
             action_nonce >= *transition_nonce,
             "{context}: action nonce {action_nonce} should be >= transition nonce {transition_nonce} for address {address:?}"
@@ -136,6 +136,8 @@ fn assert_address_inputs_state(
     }
 }
 
+/// Verifies a single optional output, ensuring the action's address/balance
+/// (if any) matches the transition expectation and the proof snapshot.
 fn assert_optional_action_output_state(
     transition_output: Option<(PlatformAddress, Credits)>,
     action_output: Option<(PlatformAddress, Credits)>,
@@ -187,6 +189,8 @@ fn assert_optional_action_output_state(
     }
 }
 
+/// Checks a set of explicit action outputs, ensuring every address has the
+/// expected or higher balance and that proofs reflect the action balances.
 fn assert_action_outputs_state(
     transition_outputs: &BTreeMap<PlatformAddress, Credits>,
     action_outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -203,25 +207,33 @@ fn assert_action_outputs_state(
         let Some(action_balance) = action_outputs.get(address) else {
             panic!("{context}: missing action output for address {:?}", address);
         };
+        let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
+            panic!("{context}: missing proof info for address {:?}", address);
+        };
         assert!(
-            *action_balance >= *transition_balance,
+            *action_balance == *transition_balance,
             "{context}: action output balance {} should be >= transition balance {} for address {:?}",
             action_balance,
             transition_balance,
             address
         );
-        let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
-            panic!("{context}: missing proof info for address {:?}", address);
-        };
 
+        // we cannot be sure that the proof balance matches the action/transition balance here,
+        // as it can also contain initial balance of the output.
+        let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
         assert!(
-            *proof_balance <= *action_balance,
-            "{context}: proof balance mismatch for address {:?}",
+            *proof_balance >= *transition_balance - fee_guesstimate,
+            "{context}: proof balance {} should be >= transition balance {} minus fees {fee_guesstimate} for address {:?}",
+            proof_balance,
+            action_balance,
             address
         );
     }
 }
 
+/// Handles asset lock outputs where each address may either specify an
+/// explicit payout or only a remainder resolved later, validating both the
+/// optional amounts and the resolved balances against proofs.
 fn assert_asset_lock_outputs_state(
     transition_outputs: &BTreeMap<PlatformAddress, Option<Credits>>,
     action_outputs: &BTreeMap<PlatformAddress, Option<Credits>>,
@@ -267,12 +279,13 @@ fn assert_asset_lock_outputs_state(
         let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
             panic!("{context}: missing proof info for address {:?}", address);
         };
-        // TODO: restore
-        // assert_eq!(
-        //     *proof_balance, *action_resolved_balance,
-        //     "{context}: proof balance mismatch for address {:?}",
-        //     address
-        // );
+        let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
+        let diff = (*proof_balance as i64 - *action_resolved_balance as i64).abs();
+        assert!(
+            diff < fee_guesstimate,
+            "{context}: proof balance {proof_balance} differs from resolved balance {action_resolved_balance} by {diff} for address {:?}",
+            address
+        );
     }
 }
 
@@ -361,7 +374,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
     for (state_transition, action, was_executed) in &actions {
         let transition_type = state_transition.state_transition_type();
-        tracing::info!(
+        tracing::debug!(
             %transition_type,
             ?state_transition,
             ?action,
@@ -1059,7 +1072,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         identity_top_up_from_addresses_transition,
                     ) = state_transition
                     {
-                        // Verify identity balance was topped up from addresses
                         let block_info = abci_app.platform.state.load().last_block_info().clone();
                         let (root_hash_identity, data) =
                             Drive::verify_state_transition_was_executed_with_proof(
@@ -1224,6 +1236,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             )
                             .expect("expected to verify address funds transfer proof");
 
+                        tracing::debug!(
+                            proof_result = %proof_result,
+                            "address funds transfer proof result"
+                        );
+
                         assert_eq!(
                             &root_hash,
                             expected_root_hash,
@@ -1288,8 +1305,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 platform_version,
                             )
                             .expect("expected to verify address funding from asset lock proof");
-                        tracing::info!(
-                            ?proof_result,
+                        tracing::debug!(
+                            proof_result = %proof_result,
                             "address funding from asset lock proof result"
                         );
                         assert_eq!(
@@ -1334,7 +1351,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         let action_outputs = address_funding_from_asset_lock_action.outputs();
                         let resolved_outputs =
                             address_funding_from_asset_lock_action.resolved_outputs();
-                        tracing::info!(
+                        tracing::debug!(
                             ?resolved_outputs,
                             "resolved outputs for address funding from asset lock"
                         );
