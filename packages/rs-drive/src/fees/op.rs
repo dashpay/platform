@@ -9,7 +9,7 @@ use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::MaxReferenceHop;
-use grovedb::reference_path::ReferencePathType;
+use grovedb::element::reference_path::ReferencePathType;
 use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
 use itertools::Itertools;
