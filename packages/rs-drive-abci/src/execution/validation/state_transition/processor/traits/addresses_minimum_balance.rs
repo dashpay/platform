@@ -72,7 +72,7 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::MasternodeVote(_) => {
                 return Ok(SimpleConsensusValidationResult::new());
             }
-        };
+        }?;
 
         // Convert ConsensusValidationResult<Credits> to SimpleConsensusValidationResult
         Ok(validation_result.map(|_| ()))

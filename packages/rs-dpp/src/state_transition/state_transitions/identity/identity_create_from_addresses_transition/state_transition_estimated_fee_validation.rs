@@ -7,17 +7,21 @@ use crate::state_transition::{
     StateTransitionAddressEstimatedFeeValidation, StateTransitionAddressesFeeStrategy,
     StateTransitionEstimatedFeeValidation, StateTransitionWitnessSigned,
 };
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl StateTransitionEstimatedFeeValidation for IdentityCreateFromAddressesTransition {
-    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits {
+    fn calculate_min_required_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
         let min_fees = &platform_version.fee_version.state_transition_min_fees;
         let input_count = self.inputs().len();
         let output_count = if self.output().is_some() { 1 } else { 0 };
         let keys_in_creation = self.public_keys().len();
-        min_fees
-            .identity_create_from_addresses_base_cost
+        Ok(min_fees
+            .identity_create_base_cost
             .saturating_add(
                 min_fees
                     .address_funds_transfer_input_cost
@@ -32,7 +36,7 @@ impl StateTransitionEstimatedFeeValidation for IdentityCreateFromAddressesTransi
                 min_fees
                     .identity_key_in_creation_cost
                     .saturating_mul(keys_in_creation as u64),
-            )
+            ))
     }
 }
 

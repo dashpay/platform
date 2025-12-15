@@ -56,7 +56,6 @@ use crate::consensus::ConsensusError;
 pub use traits::*;
 
 use crate::address_funds::PlatformAddress;
-use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
 #[cfg(any(
@@ -465,36 +464,18 @@ impl StateTransition {
     pub fn required_asset_lock_balance_for_processing_start(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Credits {
+    ) -> Result<Credits, ProtocolError> {
         match self {
-            StateTransition::IdentityCreate(_) => {
-                platform_version
-                    .dpp
-                    .state_transitions
-                    .identities
-                    .asset_locks
-                    .required_asset_lock_duff_balance_for_processing_start_for_identity_create
-                    * CREDITS_PER_DUFF
+            StateTransition::IdentityCreate(st) => {
+                st.calculate_min_required_fee(platform_version)
             }
-            StateTransition::IdentityTopUp(_) => {
-                platform_version
-                    .dpp
-                    .state_transitions
-                    .identities
-                    .asset_locks
-                    .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up
-                    * CREDITS_PER_DUFF
+            StateTransition::IdentityTopUp(st) => {
+                st.calculate_min_required_fee(platform_version)
             }
-            StateTransition::AddressFundingFromAssetLock(_) => {
-                platform_version
-                    .dpp
-                    .state_transitions
-                    .identities
-                    .asset_locks
-                    .required_asset_lock_duff_balance_for_processing_start_for_address_funding
-                    * CREDITS_PER_DUFF
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                st.calculate_min_required_fee(platform_version)
             }
-            _ => 0,
+            st => Err(ProtocolError::CorruptedCodeExecution(format!("{} is not an asset lock transaction, but we are calling required_asset_lock_balance_for_processing_start", st.name()))),
         }
     }
 
@@ -625,8 +606,11 @@ impl StateTransition {
     /// # Returns
     ///
     /// The estimated fee in credits.
-    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits {
-        call_method!(self, calculate_estimated_fee, platform_version)
+    fn calculate_estimated_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        call_method!(self, calculate_min_required_fee, platform_version)
     }
 
     /// The transaction id is a single hash of the data with the signature

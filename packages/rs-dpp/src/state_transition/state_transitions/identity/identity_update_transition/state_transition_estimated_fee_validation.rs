@@ -6,14 +6,18 @@ use crate::state_transition::{
     StateTransitionEstimatedFeeValidation, StateTransitionIdentityEstimatedFeeValidation,
 };
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl StateTransitionEstimatedFeeValidation for IdentityUpdateTransition {
-    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits {
-        platform_version
+    fn calculate_min_required_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        Ok(platform_version
             .fee_version
             .state_transition_min_fees
-            .identity_update
+            .identity_update)
     }
 }
 
@@ -22,20 +26,20 @@ impl StateTransitionIdentityEstimatedFeeValidation for IdentityUpdateTransition 
         &self,
         identity_known_balance: Credits,
         platform_version: &PlatformVersion,
-    ) -> SimpleConsensusValidationResult {
-        let required_fee = self.calculate_estimated_fee(platform_version);
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let required_fee = self.calculate_min_required_fee(platform_version)?;
 
         if identity_known_balance < required_fee {
-            return SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 IdentityInsufficientBalanceError::new(
                     self.identity_id(),
                     identity_known_balance,
                     required_fee,
                 )
                 .into(),
-            );
+            ));
         }
 
-        SimpleConsensusValidationResult::new()
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

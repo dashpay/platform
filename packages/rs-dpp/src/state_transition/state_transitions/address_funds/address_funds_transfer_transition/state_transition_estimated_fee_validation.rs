@@ -7,22 +7,26 @@ use crate::state_transition::{
     StateTransitionAddressEstimatedFeeValidation, StateTransitionAddressesFeeStrategy,
     StateTransitionEstimatedFeeValidation, StateTransitionWitnessSigned,
 };
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 impl StateTransitionEstimatedFeeValidation for AddressFundsTransferTransition {
-    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits {
+    fn calculate_min_required_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
         let min_fees = &platform_version.fee_version.state_transition_min_fees;
         let input_count = self.inputs().len();
         let output_count = self.outputs().len().max(1);
-        min_fees
+        Ok(min_fees
             .address_funds_transfer_input_cost
             .saturating_mul(input_count as u64)
             .saturating_add(
                 min_fees
                     .address_funds_transfer_output_cost
                     .saturating_mul(output_count as u64),
-            )
+            ))
     }
 }
 

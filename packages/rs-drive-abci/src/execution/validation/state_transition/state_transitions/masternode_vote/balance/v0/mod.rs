@@ -64,7 +64,7 @@ impl MasternodeVoteTransitionBalanceValidationV0 for MasternodeVoteTransition {
             ));
         };
 
-        let required_fee = self.calculate_estimated_fee(platform_version);
+        let required_fee = self.calculate_min_required_fee(platform_version)?;
 
         if balance < required_fee {
             return Ok(ConsensusValidationResult::new_with_error(

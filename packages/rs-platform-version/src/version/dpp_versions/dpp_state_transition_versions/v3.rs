@@ -5,7 +5,7 @@ use crate::version::dpp_versions::dpp_state_transition_versions::{
     IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
 };
 
-pub const STATE_TRANSITION_VERSIONS_V2: DPPStateTransitionVersions = DPPStateTransitionVersions {
+pub const STATE_TRANSITION_VERSIONS_V3: DPPStateTransitionVersions = DPPStateTransitionVersions {
     documents: DocumentTransitionVersions {
         documents_batch_transition: DocumentsBatchTransitionVersions {
             validation: DocumentsBatchTransitionValidationVersions {
@@ -26,8 +26,8 @@ pub const STATE_TRANSITION_VERSIONS_V2: DPPStateTransitionVersions = DPPStateTra
         credit_withdrawal: IdentityCreditWithdrawalTransitionVersions {
             default_constructor: 1,
         },
-        calculate_min_required_fee_on_identity_create_transition: 0,
-        calculate_min_required_fee_on_identity_top_up_transition: 0,
+        calculate_min_required_fee_on_identity_create_transition: 1,
+        calculate_min_required_fee_on_identity_top_up_transition: 1,
     },
     contract: ContractTransitionVersions {
         contract_create_transition_default_version: 0,

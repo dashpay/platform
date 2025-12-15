@@ -6,17 +6,21 @@ use crate::state_transition::{
     StateTransitionEstimatedFeeValidation, StateTransitionIdentityEstimatedFeeValidation,
 };
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl StateTransitionEstimatedFeeValidation for IdentityCreditTransferToAddressesTransition {
-    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits {
+    fn calculate_min_required_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
         let min_fees = &platform_version.fee_version.state_transition_min_fees;
         let output_count = self.recipient_addresses().len() as u64;
-        min_fees.credit_transfer_to_addresses.saturating_add(
+        Ok(min_fees.credit_transfer_to_addresses.saturating_add(
             min_fees
                 .address_funds_transfer_output_cost
                 .saturating_mul(output_count),
-        )
+        ))
     }
 }
 
@@ -25,26 +29,26 @@ impl StateTransitionIdentityEstimatedFeeValidation for IdentityCreditTransferToA
         &self,
         identity_known_balance: Credits,
         platform_version: &PlatformVersion,
-    ) -> SimpleConsensusValidationResult {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let amount = self
             .recipient_addresses()
             .values()
             .fold(0u64, |acc, &val| acc.saturating_add(val));
 
-        let required_fee = self.calculate_estimated_fee(platform_version);
+        let required_fee = self.calculate_min_required_fee(platform_version)?;
         let outbound_amount = amount.saturating_add(required_fee);
 
         if identity_known_balance < outbound_amount {
-            return SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 IdentityInsufficientBalanceError::new(
                     self.identity_id(),
                     identity_known_balance,
                     outbound_amount,
                 )
                 .into(),
-            );
+            ));
         }
 
-        SimpleConsensusValidationResult::new()
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

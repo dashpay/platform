@@ -48,25 +48,27 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
                     "expected to have a balance on identity for credit transfer transition",
                 )))?;
         match self {
-            StateTransition::IdentityCreditTransfer(st) => {
-                Ok(st.validate_estimated_fee(balance, platform_version))
-            }
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                Ok(st.validate_estimated_fee(balance, platform_version))
-            }
-            StateTransition::Batch(st) => Ok(st.validate_estimated_fee(balance, platform_version)),
-            StateTransition::IdentityCreditTransferToAddresses(st) => {
-                Ok(st.validate_estimated_fee(balance, platform_version))
-            }
-            StateTransition::DataContractCreate(st) => {
-                Ok(st.validate_estimated_fee(balance, platform_version))
-            }
-            StateTransition::DataContractUpdate(st) => {
-                Ok(st.validate_estimated_fee(balance, platform_version))
-            }
-            StateTransition::IdentityUpdate(st) => {
-                Ok(st.validate_estimated_fee(balance, platform_version))
-            }
+            StateTransition::IdentityCreditTransfer(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::IdentityCreditWithdrawal(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::Batch(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::DataContractCreate(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::DataContractUpdate(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::IdentityUpdate(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
             StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)

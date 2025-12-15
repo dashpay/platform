@@ -3,6 +3,7 @@ use crate::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use crate::fee::Credits;
 use crate::prelude::AddressNonce;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -23,7 +24,10 @@ pub trait StateTransitionEstimatedFeeValidation {
     /// # Returns
     ///
     /// The estimated fee in credits.
-    fn calculate_estimated_fee(&self, platform_version: &PlatformVersion) -> Credits;
+    fn calculate_min_required_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError>;
 }
 
 /// Trait for validating that address-based state transitions have sufficient funds for fees.
@@ -52,17 +56,17 @@ pub trait StateTransitionAddressEstimatedFeeValidation:
         &self,
         remaining_balances: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         platform_version: &PlatformVersion,
-    ) -> ConsensusValidationResult<Credits> {
-        let required_fee = self.calculate_estimated_fee(platform_version);
+    ) -> Result<ConsensusValidationResult<Credits>, ProtocolError> {
+        let required_fee = self.calculate_min_required_fee(platform_version)?;
         let amount_available = self.calculate_amount_available(remaining_balances);
 
-        if amount_available < required_fee {
+        Ok(if amount_available < required_fee {
             ConsensusValidationResult::new_with_error(
                 AddressesNotEnoughFundsError::new(remaining_balances.clone(), required_fee).into(),
             )
         } else {
             ConsensusValidationResult::new()
-        }
+        })
     }
 
     /// Calculates the total amount available for fee payment based on the fee strategy.
@@ -105,5 +109,5 @@ pub trait StateTransitionIdentityEstimatedFeeValidation:
         &self,
         identity_known_balance: Credits,
         platform_version: &PlatformVersion,
-    ) -> SimpleConsensusValidationResult;
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
