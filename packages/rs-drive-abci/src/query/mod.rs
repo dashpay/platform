@@ -24,8 +24,8 @@ pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
 pub(crate) mod tests {
     use crate::error::query::QueryError;
     use crate::platform_types::platform::Platform;
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::platform_state::PlatformState;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};

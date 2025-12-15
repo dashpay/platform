@@ -24,6 +24,7 @@ use dpp::version::PlatformVersion;
 
 use lru::LruCache;
 use reqwest::Client;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 #[cfg(not(target_arch = "wasm32"))]
@@ -33,7 +34,6 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 use tracing::{debug, info};
-#[cfg(not(target_arch = "wasm32"))]
 use url::Url;
 
 /// A trusted HTTP-based context provider that fetches quorum information
@@ -63,6 +63,20 @@ pub struct TrustedHttpContextProvider {
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct MasternodeEntry {
+    address: String,
+    status: String,
+    #[serde(rename = "versionCheck")]
+    version_check: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MasternodeDiscoveryResponse {
+    success: bool,
+    data: Vec<MasternodeEntry>,
 }
 
 impl TrustedHttpContextProvider {
@@ -227,6 +241,70 @@ impl TrustedHttpContextProvider {
             .unwrap_or(0);
 
         current_count + previous_count
+    }
+
+    /// Fetch DAPI HTTPS addresses from the masternode discovery endpoint
+    pub async fn fetch_masternode_addresses(
+        &self,
+    ) -> Result<Vec<Url>, TrustedContextProviderError> {
+        let url = format!("{}/masternodes", self.base_url);
+        debug!(
+            "Fetching masternode addresses from trusted resource: {}",
+            url
+        );
+
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            return Err(TrustedContextProviderError::NetworkError(format!(
+                "HTTP {} from {}",
+                response.status(),
+                url
+            )));
+        }
+
+        let body = response.text().await?;
+        let parsed: MasternodeDiscoveryResponse = serde_json::from_str(&body)?;
+
+        if !parsed.success {
+            return Err(TrustedContextProviderError::NetworkError(
+                "Masternode discovery response indicated failure".to_string(),
+            ));
+        }
+
+        let dapi_port = match self.network {
+            Network::Dash => 443,
+            Network::Testnet => 1443,
+            _ => 443,
+        };
+
+        let mut addresses = Vec::new();
+        for entry in parsed
+            .data
+            .into_iter()
+            .filter(|m| m.status == "ENABLED" && m.version_check.as_deref() == Some("success"))
+        {
+            let host_port = entry.address;
+            let host = host_port
+                .rsplit_once(':')
+                .map(|(h, _)| h)
+                .unwrap_or(host_port.as_str());
+            let https_url = format!("https://{}:{}", host, dapi_port);
+            let url = url::Url::parse(&https_url).map_err(|e| {
+                TrustedContextProviderError::NetworkError(format!(
+                    "Invalid masternode URL '{}': {}",
+                    https_url, e
+                ))
+            })?;
+            addresses.push(url);
+        }
+
+        if addresses.is_empty() {
+            return Err(TrustedContextProviderError::NetworkError(
+                "No eligible masternode addresses discovered".to_string(),
+            ));
+        }
+
+        Ok(addresses)
     }
 
     /// Fetch current quorums from the HTTP endpoint
