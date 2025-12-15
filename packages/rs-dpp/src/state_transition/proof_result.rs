@@ -15,6 +15,10 @@ use platform_value::Identifier;
 use std::collections::BTreeMap;
 
 #[derive(Debug, strum::Display, derive_more::TryInto)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub enum StateTransitionProofResult {
     VerifiedDataContract(DataContract),
     VerifiedIdentity(Identity),
@@ -52,3 +56,4 @@ pub enum StateTransitionProofResult {
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
 }
+
