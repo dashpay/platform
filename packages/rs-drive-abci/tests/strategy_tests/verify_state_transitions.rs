@@ -1,5 +1,4 @@
 use dpp::address_funds::PlatformAddress;
-use dpp::consensus::codes::ErrorWithCode;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -1341,14 +1340,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             "proved addresses should match funding outputs"
                         );
 
-                        let transition_inputs =
-                            AddressFundingFromAssetLockTransitionAccessorsV0::inputs(
-                                address_funding_from_asset_lock_transition,
-                            );
+                        let transition_inputs = address_funding_from_asset_lock_transition.inputs();
                         let transition_outputs =
-                            AddressFundingFromAssetLockTransitionAccessorsV0::outputs(
-                                address_funding_from_asset_lock_transition,
-                            );
+                            address_funding_from_asset_lock_transition.outputs();
                         let action_outputs = address_funding_from_asset_lock_action.outputs();
                         let resolved_outputs =
                             address_funding_from_asset_lock_action.resolved_outputs();
