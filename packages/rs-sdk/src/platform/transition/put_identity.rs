@@ -16,6 +16,7 @@ use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
+use simple_signer::signer::SimpleSigner;
 use simple_signer::SimpleAddressSigner;
 use std::collections::BTreeMap;
 
@@ -49,11 +50,11 @@ pub enum IdentityFunding<S: Signer<PlatformAddress>> {
 
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
-pub trait PutIdentity<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>: Waitable {
+pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts an identity on platform.
     ///
     /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
-    async fn send_to_platform(
+    async fn send_to_platform<WS: Signer<PlatformAddress> + Send>(
         &self,
         sdk: &Sdk,
         funding: IdentityFunding<WS>,
@@ -62,7 +63,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>
     ) -> Result<StateTransition, Error>;
 
     /// Sends the identity and waits for confirmation proof.
-    async fn send_to_platform_and_wait_for_response(
+    async fn send_to_platform_and_wait_for_response<WS: Signer<PlatformAddress> + Send>(
         &self,
         sdk: &Sdk,
         funding: IdentityFunding<WS>,
@@ -82,7 +83,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        self.send_to_platform(
+        self.send_to_platform::<SimpleSigner>(
             sdk,
             IdentityFunding::AssetLock {
                 asset_lock_proof,
@@ -107,7 +108,7 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>
     where
         Self: Sized,
     {
-        self.send_to_platform_and_wait_for_response(
+        self.send_to_platform_and_wait_for_response::<SimpleSigner>(
             sdk,
             IdentityFunding::AssetLock {
                 asset_lock_proof,
@@ -122,8 +123,8 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>
 
 // TODO: This should require addresses + identity, not only identity
 #[async_trait::async_trait]
-impl<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>> PutIdentity<S, WS> for Identity {
-    async fn send_to_platform(
+impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
+    async fn send_to_platform<WS: Signer<PlatformAddress> + Send>(
         &self,
         sdk: &Sdk,
         funding: IdentityFunding<WS>,
@@ -133,7 +134,7 @@ impl<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>> PutIdentity<S, W
         send_to_identity_with_source(self, sdk, funding, signer, settings).await
     }
 
-    async fn send_to_platform_and_wait_for_response(
+    async fn send_to_platform_and_wait_for_response<WS: Signer<PlatformAddress> + Send>(
         &self,
         sdk: &Sdk,
         funding: IdentityFunding<WS>,
@@ -280,7 +281,7 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>, WS: Signer<P
         output,
         fee_strategy,
         signer,
-        &address_signer,
+        address_signer,
         user_fee_increase,
         sdk.version(),
     )?;
