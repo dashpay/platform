@@ -89,10 +89,10 @@ pub(crate) fn collect_address_infos_from_proof(
     Ok(infos)
 }
 
-fn ensure_address_exists<'a>(
-    infos: &'a AddressInfos,
+fn ensure_address_exists(
+    infos: &AddressInfos,
     address: PlatformAddress,
-) -> Result<&'a AddressInfo, Error> {
+) -> Result<&AddressInfo, Error> {
     infos
         .get(&address)
         .ok_or_else(|| Error::from(AddressDoesNotExistError::new(address)))?
