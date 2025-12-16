@@ -13,9 +13,7 @@ use super::{
 };
 
 /// Given an existing platform address, when I fetch address info, I get balance and nonce.
-/// TODO: Lukazs please fix
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore]
 async fn test_fetch_address_info() {
     setup_logs();
 
@@ -33,9 +31,7 @@ async fn test_fetch_address_info() {
 }
 
 /// Given multiple platform addresses, when I fetch infos, I get them indexed by address.
-/// TODO: Lukazs please fix
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore]
 async fn test_fetch_addresses_infos() {
     setup_logs();
 
