@@ -13,7 +13,7 @@ pub const STATE_TRANSITION_MIN_FEES_VERSION1: StateTransitionMinFees = StateTran
     address_credit_withdrawal: 400_000_000, // withdrawals are expensive
     address_funds_transfer_input_cost: 500_000,
     address_funds_transfer_output_cost: 6_000_000,
-    identity_create_from_addresses_base_cost: 2_000_000,
+    identity_create_base_cost: 2_000_000,
     identity_key_in_creation_cost: 6_500_000,
-    identity_topup_from_addresses: 500_000,
+    identity_topup_base_cost: 500_000,
 };

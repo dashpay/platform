@@ -114,6 +114,7 @@ impl PlatformAddress {
         // Build the 21-byte payload: type_byte || hash
         let payload = self.to_bytes();
 
+        // Verified that this can not error
         bech32::encode::<Bech32m>(hrp, &payload).expect("encoding should succeed")
     }
 
@@ -961,7 +962,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2pkh_mainnet_roundtrip() {
-        // Test P2PKH address roundtrip on mainnet
+        // Test P2PKH address roundtrip on mainnet using DIP-0018 Vector 1
         let hash: [u8; 20] = [
             0xf7, 0xda, 0x0a, 0x2b, 0x5c, 0xbd, 0x4f, 0xf6, 0xbb, 0x2c, 0x4d, 0x89, 0xb6, 0x7d,
             0x2f, 0x3f, 0xfe, 0xec, 0x05, 0x25,
@@ -971,11 +972,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Dash);
 
-        // Should start with mainnet HRP
-        assert!(
-            encoded.starts_with("dashevo1"),
-            "Mainnet address should start with 'dashevo1', got: {}",
-            encoded
+        // Verify exact match against DIP-0018 test vector
+        assert_eq!(
+            encoded, "dashevo1qrma5z3ttj75la4m93xcndna9ullamq9y5smxxxm",
+            "Encoded address must match DIP-0018 Vector 1 mainnet"
         );
 
         // Decode and verify roundtrip
@@ -987,7 +987,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2pkh_testnet_roundtrip() {
-        // Test P2PKH address roundtrip on testnet
+        // Test P2PKH address roundtrip on testnet using DIP-0018 Vector 1
         let hash: [u8; 20] = [
             0xf7, 0xda, 0x0a, 0x2b, 0x5c, 0xbd, 0x4f, 0xf6, 0xbb, 0x2c, 0x4d, 0x89, 0xb6, 0x7d,
             0x2f, 0x3f, 0xfe, 0xec, 0x05, 0x25,
@@ -997,11 +997,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Testnet);
 
-        // Should start with testnet HRP
-        assert!(
-            encoded.starts_with("tdashevo1"),
-            "Testnet address should start with 'tdashevo1', got: {}",
-            encoded
+        // Verify exact match against DIP-0018 test vector
+        assert_eq!(
+            encoded, "tdashevo1qrma5z3ttj75la4m93xcndna9ullamq9y5aawfeu",
+            "Encoded address must match DIP-0018 Vector 1 testnet"
         );
 
         // Decode and verify roundtrip
@@ -1013,7 +1012,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2sh_mainnet_roundtrip() {
-        // Test P2SH address roundtrip on mainnet
+        // Test P2SH address roundtrip on mainnet using DIP-0018 P2SH vector
         let hash: [u8; 20] = [
             0x43, 0xfa, 0x18, 0x3c, 0xf3, 0xfb, 0x6e, 0x9e, 0x7d, 0xc6, 0x2b, 0x69, 0x2a, 0xeb,
             0x4f, 0xc8, 0xd8, 0x04, 0x56, 0x36,
@@ -1023,11 +1022,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Dash);
 
-        // Should start with mainnet HRP
-        assert!(
-            encoded.starts_with("dashevo1"),
-            "Mainnet address should start with 'dashevo1', got: {}",
-            encoded
+        // Verify exact match against DIP-0018 P2SH test vector
+        assert_eq!(
+            encoded, "dashevo1q9pl5xpu70aka8nacc4kj2htflydspzkxckndrac",
+            "Encoded address must match DIP-0018 P2SH mainnet"
         );
 
         // Decode and verify roundtrip
@@ -1039,7 +1037,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2sh_testnet_roundtrip() {
-        // Test P2SH address roundtrip on testnet
+        // Test P2SH address roundtrip on testnet using DIP-0018 P2SH vector
         let hash: [u8; 20] = [
             0x43, 0xfa, 0x18, 0x3c, 0xf3, 0xfb, 0x6e, 0x9e, 0x7d, 0xc6, 0x2b, 0x69, 0x2a, 0xeb,
             0x4f, 0xc8, 0xd8, 0x04, 0x56, 0x36,
@@ -1049,11 +1047,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Testnet);
 
-        // Should start with testnet HRP
-        assert!(
-            encoded.starts_with("tdashevo1"),
-            "Testnet address should start with 'tdashevo1', got: {}",
-            encoded
+        // Verify exact match against DIP-0018 P2SH test vector
+        assert_eq!(
+            encoded, "tdashevo1q9pl5xpu70aka8nacc4kj2htflydspzkxcm49vzl",
+            "Encoded address must match DIP-0018 P2SH testnet"
         );
 
         // Decode and verify roundtrip

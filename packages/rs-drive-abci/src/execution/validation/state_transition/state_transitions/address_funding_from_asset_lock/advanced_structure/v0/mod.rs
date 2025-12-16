@@ -7,6 +7,7 @@ use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use dpp::fee::Credits;
 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

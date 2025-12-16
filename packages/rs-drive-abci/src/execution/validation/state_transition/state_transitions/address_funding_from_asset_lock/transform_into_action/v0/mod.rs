@@ -15,7 +15,7 @@ use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
-use dpp::state_transition::StateTransitionSingleSigned;
+use dpp::state_transition::{StateTransitionEstimatedFeeValidation, StateTransitionSingleSigned};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -63,12 +63,7 @@ impl AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let required_balance = platform_version
-            .dpp
-            .state_transitions
-            .identities
-            .asset_locks
-            .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
+        let required_balance = self.calculate_min_required_fee(platform_version)?;
 
         let signable_bytes_len = signable_bytes.len();
 
@@ -122,13 +117,9 @@ impl AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0
             // had a version change that would have changed the minimum duff balance for processing
             // start
 
-            let min_value = platform_version
-                .dpp
-                .state_transitions
-                .identities
-                .asset_locks
-                .required_asset_lock_duff_balance_for_processing_start_for_address_funding;
-            if tx_out.value < min_value {
+            let tx_out_credit_value = tx_out.value.saturating_mul(CREDITS_PER_DUFF);
+
+            if tx_out_credit_value < required_balance {
                 let asset_lock_proof = AssetLockProved::asset_lock_proof(self);
                 return Ok(ConsensusValidationResult::new_with_error(
                     IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
@@ -137,9 +128,9 @@ impl AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0
                             .map(|outpoint| outpoint.txid)
                             .unwrap_or(Txid::all_zeros()),
                         asset_lock_proof.output_index() as usize,
-                        tx_out.value,
-                        tx_out.value,
-                        min_value,
+                        tx_out_credit_value,
+                        tx_out_credit_value,
+                        required_balance,
                     )
                     .into(),
                 ));

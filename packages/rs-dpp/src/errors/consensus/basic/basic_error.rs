@@ -58,17 +58,17 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
-    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
-    InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
-    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
-    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
-    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
+    InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError,
+    InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError,
+    InvalidInstantAssetLockProofSignatureError, InvalidKeyPurposeForContractBoundsError,
+    MissingMasterPublicKeyError, NotImplementedCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -364,8 +364,8 @@ pub enum BasicError {
     InvalidIdentityCreditTransferAmountError(InvalidIdentityCreditTransferAmountError),
 
     #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
-        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    InvalidCreditWithdrawalTransitionOutputScriptError(
+        InvalidCreditWithdrawalTransitionOutputScriptError,
     ),
 
     #[error(transparent)]
@@ -374,9 +374,7 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
-        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    ),
+    InvalidCreditWithdrawalTransitionCoreFeeError(InvalidCreditWithdrawalTransitionCoreFeeError),
 
     #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionAmountError(
@@ -392,8 +390,8 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
-        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    NotImplementedCreditWithdrawalTransitionPoolingError(
+        NotImplementedCreditWithdrawalTransitionPoolingError,
     ),
 
     // State Transition

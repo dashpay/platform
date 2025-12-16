@@ -1,0 +1,18 @@
+[package]
+
+name = "dash-platform-macros"
+version.workspace = true
+edition = "2024"
+description = "Proc macros used by Dash Platform. Internal use only."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.37"
+syn = "2.0.75"
+heck = "0.5.0"
+
+[dev-dependencies]
+
+dapi-grpc = { path = "../dapi-grpc" }

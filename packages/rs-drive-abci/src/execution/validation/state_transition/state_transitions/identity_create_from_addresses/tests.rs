@@ -154,6 +154,7 @@ mod tests {
         address_signer: &TestAddressSigner,
         identity_signer: &SimpleSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
+        output: Option<(PlatformAddress, Credits)>,
         fee_strategy: Option<AddressFundsFeeStrategy>,
         platform_version: &PlatformVersion,
     ) -> StateTransition {
@@ -163,6 +164,7 @@ mod tests {
         IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
             identity,
             inputs,
+            output,
             fee_strategy,
             identity_signer,
             address_signer,
@@ -493,6 +495,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -645,6 +648,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -1008,6 +1012,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -1105,6 +1110,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 Some(fee_strategy),
                 platform_version,
             );
@@ -1209,6 +1215,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 Some(fee_strategy),
                 platform_version,
             );
@@ -1291,6 +1298,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -1409,6 +1417,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -1504,6 +1513,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -1619,6 +1629,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -1692,6 +1703,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -1768,6 +1780,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -1861,6 +1874,7 @@ mod tests {
                 &identity_signer,
                 inputs1,
                 None,
+                None,
                 platform_version,
             );
 
@@ -1910,6 +1924,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs2,
+                None,
                 None,
                 platform_version,
             );
@@ -1996,6 +2011,7 @@ mod tests {
                 &identity_signer1,
                 inputs1,
                 None,
+                None,
                 platform_version,
             );
 
@@ -2050,6 +2066,7 @@ mod tests {
                 &address_signer,
                 &identity_signer1, // Use same signer since it has the same keys
                 inputs2,
+                None,
                 None,
                 platform_version,
             );
@@ -2253,6 +2270,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -2367,6 +2385,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -2898,6 +2917,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3026,6 +3046,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3085,6 +3106,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -3158,6 +3180,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 Some(AddressFundsFeeStrategy::from(vec![
                     AddressFundsFeeStrategyStep::DeductFromInput(address1_index),
                 ])),
@@ -3294,6 +3317,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -3547,6 +3571,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3621,6 +3646,7 @@ mod tests {
                 &identity_signer,
                 inputs,
                 None,
+                None,
                 platform_version,
             );
 
@@ -3694,6 +3720,7 @@ mod tests {
                 &address_signer,
                 &identity_signer,
                 inputs,
+                None,
                 None,
                 platform_version,
             );
@@ -3857,7 +3884,6 @@ mod tests {
 
     mod user_fee_increase {
         use super::*;
-        use dpp::state_transition::StateTransitionLike;
 
         #[test]
         fn test_zero_user_fee_increase() {
@@ -6926,54 +6952,124 @@ mod tests {
 
     mod state_validation_with_platform {
         use super::*;
-        use crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses::StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0;
-        use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 
-        // TODO: This test needs to be rewritten to use the correct setup_identity function
-        // #[test]
-        // fn test_identity_already_exists_with_same_id() {
-        //     let platform_version = PlatformVersion::latest();
-        //     let mut rng = StdRng::seed_from_u64(4300);
-        //
-        //     let config = PlatformConfig {
-        //         testing_configs: PlatformTestConfig {
-        //             disable_instant_lock_signature_verification: true,
-        //             ..Default::default()
-        //         },
-        //         ..Default::default()
-        //     };
-        //
-        //     let mut platform = TestPlatformBuilder::new()
-        //         .with_config(config)
-        //         .build_with_mock_rpc()
-        //         .set_genesis_state();
-        //
-        //     // Create an identity first
-        //     let (identity, _) = setup_identity(&mut platform, 1000, &mut rng);
-        //
-        //     // Now try to create another identity that would have the same ID
-        //     // This requires using the same first public key
-        //     let public_keys = create_default_public_keys(&mut rng, platform_version);
-        //
-        //     let mut inputs = BTreeMap::new();
-        //     let address = create_platform_address(1);
-        //     inputs.insert(address.clone(), (1 as AddressNonce, dash_to_credits!(1.0)));
-        //
-        //     let transition = IdentityCreateFromAddressesTransition::V0(
-        //         IdentityCreateFromAddressesTransitionV0 {
-        //             public_keys,
-        //             inputs,
-        //             output: None,
-        //             fee_strategy: AddressFundsFeeStrategy::from(vec![
-        //                 AddressFundsFeeStrategyStep::DeductFromInput(0),
-        //             ]),
-        //             user_fee_increase: 0,
-        //             input_witnesses: vec![create_dummy_witness()],
-        //         },
-        //     );
-        //
-        //     // State validation would check if identity already exists
-        // }
+        #[test]
+        fn test_identity_already_exists_with_same_id() {
+            // For IdentityCreateFromAddresses, the identity ID is derived from inputs (addresses + nonces).
+            // This test verifies that trying to create an identity with the same inputs
+            // (which would produce the same ID) after one already exists returns an error.
+            use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(4300);
+
+            let config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(config)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create address signer and set up address with balance
+            let mut address_signer = TestAddressSigner::new();
+            let address = address_signer.add_p2pkh([42u8; 32]);
+            let initial_balance = dash_to_credits!(10.0);
+            setup_address_with_balance(&mut platform, address.clone(), 0, initial_balance);
+
+            // Create inputs - this determines the identity ID
+            let mut inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)> = BTreeMap::new();
+            inputs.insert(address.clone(), (1 as AddressNonce, dash_to_credits!(5.0)));
+
+            // Create identity with keys
+            let (identity, identity_signer) =
+                create_identity_with_keys([100u8; 32], &mut rng, platform_version);
+
+            // Calculate what the identity ID would be from these inputs
+            // Create a temporary transition just to get the ID
+            let temp_transition = IdentityCreateFromAddressesTransitionV0 {
+                public_keys: identity
+                    .public_keys()
+                    .values()
+                    .map(|pk| pk.clone().into())
+                    .collect(),
+                inputs: inputs.clone(),
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            };
+            let expected_identity_id = temp_transition
+                .identity_id_from_inputs()
+                .expect("should calculate identity id");
+
+            // Create an identity with that ID and insert it into the platform
+            let existing_identity: Identity = IdentityV0 {
+                id: expected_identity_id,
+                revision: 0,
+                balance: dash_to_credits!(1.0),
+                public_keys: identity.public_keys().clone(),
+            }
+            .into();
+
+            // Insert the identity into drive
+            platform
+                .drive
+                .add_new_identity(
+                    existing_identity,
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should insert identity");
+
+            // Now try to create a new identity using the same inputs
+            // This should fail because an identity with this ID already exists
+            let transition = create_signed_identity_create_from_addresses_transition(
+                &identity,
+                &address_signer,
+                &identity_signer,
+                inputs,
+                None,
+                None,
+                platform_version,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail because identity already exists
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityAlreadyExistsError(_))
+                )]
+            );
+        }
 
         #[test]
         fn test_address_balance_exact_match() {

@@ -15,7 +15,7 @@ use dpp::prelude::ConsensusValidationResult;
 
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
-use dpp::state_transition::StateTransitionSingleSigned;
+use dpp::state_transition::{StateTransitionEstimatedFeeValidation, StateTransitionSingleSigned};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -53,13 +53,10 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Todo: we might want a lowered required balance
-        let required_balance = platform_version
-            .dpp
-            .state_transitions
-            .identities
-            .asset_locks
-            .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
+        // There was an issue in protocol version 11 and before where we were not multiplying by 1000
+        // However it should be caught later on at "if tx_out_credit_value < required_balance"
+        // in this function as that was correct.
+        let required_balance = self.calculate_min_required_fee(platform_version)?;
 
         let signable_bytes_len = signable_bytes.len();
 
@@ -113,13 +110,9 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             // had a version change that would have changed the minimum duff balance for processing
             // start
 
-            let min_value = platform_version
-                .dpp
-                .state_transitions
-                .identities
-                .asset_locks
-                .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up;
-            if tx_out.value < min_value {
+            let tx_out_credit_value = tx_out.value.saturating_mul(CREDITS_PER_DUFF);
+
+            if tx_out_credit_value < required_balance {
                 return Ok(ConsensusValidationResult::new_with_error(
                     IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
                         self.asset_lock_proof()
@@ -127,9 +120,9 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
                             .map(|outpoint| outpoint.txid)
                             .unwrap_or(Txid::all_zeros()),
                         self.asset_lock_proof().output_index() as usize,
-                        tx_out.value,
-                        tx_out.value,
-                        min_value,
+                        tx_out_credit_value,
+                        tx_out_credit_value,
+                        required_balance,
                     )
                     .into(),
                 ));

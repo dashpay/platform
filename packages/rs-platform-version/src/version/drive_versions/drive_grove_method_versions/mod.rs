@@ -14,7 +14,6 @@ pub struct DriveGroveMethodVersions {
 pub struct DriveGroveBasicMethodVersions {
     pub grove_insert: FeatureVersion,
     pub grove_insert_empty_tree: FeatureVersion,
-    pub grove_insert_empty_sum_tree: FeatureVersion,
     pub grove_insert_if_not_exists: FeatureVersion,
     pub grove_insert_if_not_exists_return_existing_element: FeatureVersion,
     pub grove_clear: FeatureVersion,

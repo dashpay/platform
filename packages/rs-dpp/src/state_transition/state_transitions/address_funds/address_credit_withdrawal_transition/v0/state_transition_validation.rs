@@ -1,4 +1,9 @@
 use crate::address_funds::AddressFundsFeeStrategyStep;
+use crate::consensus::basic::identity::{
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError,
+    NotImplementedCreditWithdrawalTransitionPoolingError,
+};
 use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
@@ -8,8 +13,11 @@ use crate::consensus::basic::state_transition::{
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
+use crate::state_transition::address_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use crate::state_transition::StateTransitionStructureValidation;
+use crate::util::is_fibonacci_number::is_fibonacci_number;
 use crate::validation::SimpleConsensusValidationResult;
+use crate::withdrawal::Pooling;
 use platform_version::version::PlatformVersion;
 use std::collections::HashSet;
 
@@ -166,6 +174,32 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
         // Note: The withdrawal amount is implicitly input_sum - output_sum
         // No explicit balance check needed here as the withdrawal amount is computed, not specified
 
+        // Validate pooling - currently we do not support pooling, so we must validate that pooling is `Never`
+        if self.pooling != Pooling::Never {
+            return SimpleConsensusValidationResult::new_with_error(
+                NotImplementedCreditWithdrawalTransitionPoolingError::new(self.pooling as u8)
+                    .into(),
+            );
+        }
+
+        // Validate core_fee_per_byte is a Fibonacci number
+        if !is_fibonacci_number(self.core_fee_per_byte as u64) {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidCreditWithdrawalTransitionCoreFeeError::new(
+                    self.core_fee_per_byte,
+                    MIN_CORE_FEE_PER_BYTE,
+                )
+                .into(),
+            );
+        }
+
+        // Validate output_script is P2PKH or P2SH
+        if !self.output_script.is_p2pkh() && !self.output_script.is_p2sh() {
+            return SimpleConsensusValidationResult::new_with_error(
+                InvalidCreditWithdrawalTransitionOutputScriptError::new(self.output_script.clone())
+                    .into(),
+            );
+        }
         // Validate input sum doesn't overflow
         let input_sum = self
             .inputs

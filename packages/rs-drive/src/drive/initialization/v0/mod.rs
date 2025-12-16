@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 use integer_encoding::VarInt;
 
 impl Drive {
@@ -50,6 +50,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::DataContractDocuments as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
@@ -61,15 +62,17 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Identities as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
             drive_version,
         )?;
 
-        self.grove_insert_empty_sum_tree(
+        self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Balances as u8],
+            TreeType::SumTree,
             transaction,
             None,
             &mut drive_operations,
@@ -81,15 +84,17 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Tokens as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
             drive_version,
         )?;
 
-        self.grove_insert_empty_sum_tree(
+        self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Pools as u8],
+            TreeType::SumTree,
             transaction,
             None,
             &mut drive_operations,
@@ -99,6 +104,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::WithdrawalTransactions as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
@@ -108,6 +114,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Votes as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
@@ -119,6 +126,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
@@ -128,15 +136,17 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::UniquePublicKeyHashesToIdentities as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
             drive_version,
         )?;
 
-        self.grove_insert_empty_sum_tree(
+        self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::PreFundedSpecializedBalances as u8],
+            TreeType::SumTree,
             transaction,
             None,
             &mut drive_operations,
@@ -146,6 +156,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::SpentAssetLockTransactions as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
@@ -155,6 +166,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Misc as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,
@@ -164,6 +176,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::Versions as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut drive_operations,

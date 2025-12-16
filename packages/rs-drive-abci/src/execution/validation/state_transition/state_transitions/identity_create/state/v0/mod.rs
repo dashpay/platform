@@ -18,7 +18,7 @@ use dpp::ProtocolError;
 
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
-use dpp::state_transition::StateTransitionSingleSigned;
+use dpp::state_transition::{StateTransitionEstimatedFeeValidation, StateTransitionSingleSigned};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -130,14 +130,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Todo: we might want a lowered required balance
-        let required_balance = platform_version
-            .dpp
-            .state_transitions
-            .identities
-            .asset_locks
-            .required_asset_lock_duff_balance_for_processing_start_for_identity_create
-            * CREDITS_PER_DUFF;
+        let required_balance = self.calculate_min_required_fee(platform_version)?;
 
         let signable_bytes_len = signable_bytes.len();
 
@@ -186,14 +179,9 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
             }
 
             let tx_out = tx_out_validation.into_data()?;
+            let tx_out_credit_value = tx_out.value.saturating_mul(CREDITS_PER_DUFF);
 
-            let min_value = platform_version
-                .dpp
-                .state_transitions
-                .identities
-                .asset_locks
-                .required_asset_lock_duff_balance_for_processing_start_for_identity_create;
-            if tx_out.value < min_value {
+            if tx_out_credit_value < required_balance {
                 return Ok(ConsensusValidationResult::new_with_error(
                     IdentityAssetLockTransactionOutPointNotEnoughBalanceError::new(
                         self.asset_lock_proof()
@@ -201,9 +189,9 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                             .map(|outpoint| outpoint.txid)
                             .unwrap_or(Txid::all_zeros()),
                         self.asset_lock_proof().output_index() as usize,
-                        tx_out.value,
-                        tx_out.value,
-                        min_value,
+                        tx_out_credit_value,
+                        tx_out_credit_value,
+                        required_balance,
                     )
                     .into(),
                 ));

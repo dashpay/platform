@@ -105,11 +105,17 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         network: Network,
         context: TransactionContext,
         wallet: &mut Wallet,
-        update_state: bool,
+        update_state_with_wallet_if_found: bool,
     ) -> TransactionCheckResult {
         // Delegate to the underlying wallet info
         self.wallet_info
-            .check_transaction(tx, network, context, wallet, update_state)
+            .check_transaction(
+                tx,
+                network,
+                context,
+                wallet,
+                update_state_with_wallet_if_found,
+            )
             .await
     }
 }
@@ -367,9 +373,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
             current_block_height,
         )
     }
-
-    fn update_chain_height(&mut self, network: Network, height: u32) {
-        self.wallet_info.update_chain_height(network, height)
+    fn update_chain_height(&mut self, network: Network, current_height: u32) {
+        self.wallet_info
+            .update_chain_height(network, current_height)
     }
 }
 
