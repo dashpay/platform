@@ -1,9 +1,9 @@
 [package]
 
-name = "dapi-grpc-macros"
+name = "dash-platform-macros"
 version.workspace = true
-edition = "2021"
-description = "Macros used by dapi-grpc. Internal use only."
+edition = "2024"
+description = "Proc macros used by Dash Platform. Internal use only."
 
 [lib]
 proc-macro = true

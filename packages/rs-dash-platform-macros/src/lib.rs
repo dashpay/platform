@@ -10,7 +10,7 @@ use syn::{parse_macro_input, DeriveInput, Expr, Ident, ItemFn};
 /// # Example
 ///
 /// ```rust
-/// use dapi_grpc_macros::stack_size;
+/// use dash_platform_macros::stack_size;
 ///
 /// #[stack_size(32 * 1024 * 1024)] // 32 MB
 /// fn test_stack_size_ok() {

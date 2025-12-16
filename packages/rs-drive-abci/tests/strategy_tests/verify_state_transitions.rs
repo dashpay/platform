@@ -1,4 +1,5 @@
-use dpp::address_funds::{ PlatformAddress};
+use dpp::address_funds::PlatformAddress;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;

@@ -304,7 +304,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         platform,
                         &mut signable_bytes_hasher,
                         state_transition
-                            .required_asset_lock_balance_for_processing_start(platform_version),
+                            .required_asset_lock_balance_for_processing_start(platform_version)?,
                         None,
                         platform_version,
                     )?;

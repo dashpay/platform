@@ -228,7 +228,6 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 300,

@@ -1,5 +1,5 @@
 use bincode::{Decode, Encode};
-use grovedb::reference_path::ReferencePathType;
+use grovedb::element::reference_path::ReferencePathType;
 
 /// Represents the storage form of a reference.
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]

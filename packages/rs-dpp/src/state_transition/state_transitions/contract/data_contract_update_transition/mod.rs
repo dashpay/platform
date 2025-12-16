@@ -16,6 +16,7 @@ mod identity_signed;
 mod json_conversion;
 pub mod methods;
 mod serialize;
+mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]

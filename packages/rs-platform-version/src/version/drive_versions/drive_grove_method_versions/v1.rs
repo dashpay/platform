@@ -7,7 +7,6 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
     basic: DriveGroveBasicMethodVersions {
         grove_insert: 0,
         grove_insert_empty_tree: 0,
-        grove_insert_empty_sum_tree: 0,
         grove_insert_if_not_exists: 0,
         grove_insert_if_not_exists_return_existing_element: 0,
         grove_clear: 0,

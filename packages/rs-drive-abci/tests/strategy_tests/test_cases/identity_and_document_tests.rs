@@ -29,6 +29,7 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
+    use dash_platform_macros::stack_size;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::DocumentAction::{
         DocumentActionReplaceRandom, DocumentActionTransferRandom,
@@ -1493,50 +1494,42 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
 
-        let builder = std::thread::Builder::new()
-            .stack_size(stack_size)
-            .name("custom_stack_size_thread".into());
+        let contract = created_contract.data_contract();
 
-        let handler = builder
-            .spawn(|| {
-                let platform_version = PlatformVersion::latest();
-                let created_contract = json_document_to_created_contract(
-                    "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-                    1,
-                    true,
-                    platform_version,
-                )
-                .expect("expected to get contract from a json document");
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let contract = created_contract.data_contract();
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let document_insertion_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentAction::DocumentActionInsertRandom(
-                        DocumentFieldFillType::FillIfNotRequired,
-                        DocumentFieldFillSize::AnyDocumentFillSize,
-                    ),
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
-
-                let document_deletion_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentAction::DocumentActionDelete,
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
-
-                let strategy = NetworkStrategy {
+        let strategy = NetworkStrategy {
                     strategy: Strategy {
                         start_contracts: vec![(created_contract, None)],
                         operations: vec![
@@ -1635,20 +1628,16 @@ mod tests {
                     )
                     .expect("expected to have no issues");
 
-                assert_eq!(
-                    issues.len(),
-                    0,
-                    "issues are {}",
-                    issues
-                        .iter()
-                        .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                );
-            })
-            .expect("Failed to create thread with custom stack size");
-        // Wait for the thread to finish and assert that it didn't panic.
-        handler.join().expect("Thread has panicked");
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
@@ -1941,59 +1930,51 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
-        // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
 
-        let builder = std::thread::Builder::new()
-            .stack_size(stack_size)
-            .name("custom_stack_size_thread".into());
+        let contract = created_contract.data_contract();
 
-        let handler = builder
-            .spawn(|| {
-                let platform_version = PlatformVersion::latest();
-                let created_contract = json_document_to_created_contract(
-                    "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-                    1,
-                    true,
-                    platform_version,
-                )
-                .expect("expected to get contract from a json document");
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let contract = created_contract.data_contract();
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let document_insertion_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentAction::DocumentActionInsertRandom(
-                        DocumentFieldFillType::FillIfNotRequired,
-                        DocumentFieldFillSize::AnyDocumentFillSize,
-                    ),
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let document_replace_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentActionReplaceRandom,
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
-
-                let document_deletion_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentAction::DocumentActionDelete,
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
-
-                let strategy = NetworkStrategy {
+        let strategy = NetworkStrategy {
                     strategy: Strategy {
                         start_contracts: vec![(created_contract, None)],
                         operations: vec![
@@ -2099,85 +2080,73 @@ mod tests {
                     )
                     .expect("expected to have no issues");
 
-                assert_eq!(
-                    issues.len(),
-                    0,
-                    "issues are {}",
-                    issues
-                        .iter()
-                        .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                );
-            })
-            .expect("Failed to create thread with custom stack size");
-        // Wait for the thread to finish and assert that it didn't panic.
-        handler.join().expect("Thread has panicked");
+        assert_eq!(
+            issues.len(),
+            0,
+            "issues are {}",
+            issues
+                .iter()
+                .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_transfers_and_deletions_with_epoch_change(
     ) {
-        // Define the desired stack size
-        let stack_size = 4 * 1024 * 1024; //Let's set the stack size to be higher than the default 2MB
+        let platform_version = PlatformVersion::latest();
+        let created_contract = json_document_to_created_contract(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            1,
+            true,
+            platform_version,
+        )
+        .expect("expected to get contract from a json document");
 
-        let builder = std::thread::Builder::new()
-            .stack_size(stack_size)
-            .name("custom_stack_size_thread".into());
+        let contract = created_contract.data_contract();
 
-        let handler = builder
-            .spawn(|| {
-                let platform_version = PlatformVersion::latest();
-                let created_contract = json_document_to_created_contract(
-                    "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-                    1,
-                    true,
-                    platform_version,
-                )
-                .expect("expected to get contract from a json document");
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let contract = created_contract.data_contract();
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplaceRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let document_insertion_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentAction::DocumentActionInsertRandom(
-                        DocumentFieldFillType::FillIfNotRequired,
-                        DocumentFieldFillSize::AnyDocumentFillSize,
-                    ),
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
+        let document_transfer_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionTransferRandom,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let document_replace_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentActionReplaceRandom,
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
 
-                let document_transfer_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentActionTransferRandom,
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
-
-                let document_deletion_op = DocumentOp {
-                    contract: contract.clone(),
-                    action: DocumentAction::DocumentActionDelete,
-                    document_type: contract
-                        .document_type_for_name("contactRequest")
-                        .expect("expected a profile document type")
-                        .to_owned_document_type(),
-                };
-
-                let strategy = NetworkStrategy {
+        let strategy = NetworkStrategy {
                     strategy: Strategy {
                         start_contracts: vec![(created_contract, None)],
                         operations: vec![
@@ -2259,26 +2228,22 @@ mod tests {
                     .with_config(config.clone())
                     .build_with_mock_rpc();
 
-                let outcome = run_chain_for_strategy(
-                    &mut platform,
-                    block_count,
-                    strategy,
-                    config,
-                    15,
-                    &mut None,
-                    &mut None,
-                );
-                assert_eq!(outcome.identities.len() as u64, 201);
-                assert_eq!(outcome.masternode_identity_balances.len(), 100);
-                let balance_count = outcome
-                    .masternode_identity_balances
-                    .into_iter()
-                    .filter(|(_, balance)| *balance != 0)
-                    .count();
-                assert_eq!(balance_count, 55); // 1 epoch worth of proposers
-            })
-            .expect("Failed to create thread with custom stack size");
-        // Wait for the thread to finish and assert that it didn't panic.
-        handler.join().expect("Thread has panicked");
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+        assert_eq!(outcome.identities.len() as u64, 201);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 55); // 1 epoch worth of proposers
     }
 }
