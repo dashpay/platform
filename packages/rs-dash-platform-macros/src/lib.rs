@@ -1,7 +1,53 @@
 use heck::AsSnakeCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, DeriveInput, Ident};
+use syn::{parse_macro_input, DeriveInput, Expr, Ident, ItemFn};
+
+/// Runs the annotated function body on a thread with the provided stack size.
+///
+/// Annotate your test function with `#[stack_size(size_in_bytes)]` to run it
+///
+/// # Example
+///
+/// ```rust
+/// use dash_platform_macros::stack_size;
+///
+/// #[stack_size(32 * 1024 * 1024)] // 32 MB
+/// fn test_stack_size_ok() {
+///    // allocate 30 MB on the stack; should work fine
+///    let large_array = [0u8; 30 * 1024 * 1024];
+///    assert_eq!(large_array.len(), 30 * 1024 * 1024);
+/// }
+///
+/// test_stack_size_ok();
+/// ```
+///
+#[proc_macro_attribute]
+pub fn stack_size(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let stack_size_expr = parse_macro_input!(attr as Expr);
+    let function = parse_macro_input!(item as ItemFn);
+
+    let attrs = function.attrs;
+    let vis = function.vis;
+    let sig = function.sig;
+    let block = function.block;
+    let fn_ident = sig.ident.clone();
+
+    TokenStream::from(quote! {
+        #(#attrs)*
+        #vis #sig {
+            let builder = ::std::thread::Builder::new()
+                .stack_size(#stack_size_expr)
+                .name(::std::string::String::from(stringify!(#fn_ident)));
+
+            builder
+                .spawn(|| #block)
+                .expect("failed to spawn stack_size thread")
+                .join()
+                .expect("stack_size thread panicked")
+        }
+    })
+}
 
 /// Versioned gRPC message derive macro
 ///

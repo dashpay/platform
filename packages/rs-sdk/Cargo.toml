@@ -21,7 +21,7 @@ platform-wallet = { path = "../rs-platform-wallet", optional = true }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
-dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
+dash-platform-macros = { path = "../rs-dash-platform-macros" }
 http = { version = "1.1" }
 rustls-pemfile = { version = "2.0.0" }
 thiserror = "2.0.17"

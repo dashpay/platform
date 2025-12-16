@@ -1354,7 +1354,7 @@ dependencies = [
 name = "dapi-grpc"
 version = "2.2.0-dev.2"
 dependencies = [
- "dapi-grpc-macros",
+ "dash-platform-macros",
  "futures-core",
  "getrandom 0.2.16",
  "platform-version",
@@ -1366,16 +1366,6 @@ dependencies = [
  "tonic 0.14.2",
  "tonic-prost",
  "tonic-prost-build",
-]
-
-[[package]]
-name = "dapi-grpc-macros"
-version = "2.2.0-dev.2"
-dependencies = [
- "dapi-grpc",
- "heck 0.5.0",
- "quote",
- "syn 2.0.106",
 ]
 
 [[package]]
@@ -1464,6 +1454,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-platform-macros"
+version = "2.2.0-dev.2"
+dependencies = [
+ "dapi-grpc",
+ "heck 0.5.0",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "dash-sdk"
 version = "2.2.0-dev.2"
 dependencies = [
@@ -1477,8 +1477,8 @@ dependencies = [
  "ciborium",
  "clap",
  "dapi-grpc",
- "dapi-grpc-macros",
  "dash-context-provider",
+ "dash-platform-macros",
  "derive_more 1.0.0",
  "dotenvy",
  "dpp",
@@ -2011,6 +2011,7 @@ dependencies = [
  "clap",
  "console-subscriber",
  "dapi-grpc",
+ "dash-platform-macros",
  "delegate",
  "derive_more 1.0.0",
  "dotenvy",
@@ -2024,6 +2025,7 @@ dependencies = [
  "integer-encoding",
  "itertools 0.13.0",
  "lazy_static",
+ "libc",
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
