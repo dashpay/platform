@@ -61,13 +61,13 @@ use crate::consensus::basic::identity::{
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
+    NotImplementedCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
     WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
@@ -364,8 +364,8 @@ pub enum BasicError {
     InvalidIdentityCreditTransferAmountError(InvalidIdentityCreditTransferAmountError),
 
     #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
-        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    InvalidCreditWithdrawalTransitionOutputScriptError(
+        InvalidCreditWithdrawalTransitionOutputScriptError,
     ),
 
     #[error(transparent)]
@@ -374,8 +374,8 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
-        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionCoreFeeError(
+        InvalidCreditWithdrawalTransitionCoreFeeError,
     ),
 
     #[error(transparent)]
@@ -392,8 +392,8 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
-        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    NotImplementedCreditWithdrawalTransitionPoolingError(
+        NotImplementedCreditWithdrawalTransitionPoolingError,
     ),
 
     // State Transition

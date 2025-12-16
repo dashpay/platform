@@ -92,9 +92,9 @@ export function patchConsensusErrors() {
     // extend(dpp_module.DuplicatedIdentityPublicKeyError, AbstractConsensusError);
     // extend(dpp_module.DuplicatedIdentityPublicKeyIdError, AbstractConsensusError);
     // extend(dpp_module.IdentityInsufficientBalanceError, AbstractConsensusError);
-    // extend(dpp_module.InvalidIdentityCreditWithdrawalTransitionCoreFeeError, AbstractConsensusError);
-    // extend(dpp_module.InvalidIdentityCreditWithdrawalTransitionOutputScriptError, AbstractConsensusError);
-    // extend(dpp_module.NotImplementedIdentityCreditWithdrawalTransitionPoolingError, AbstractConsensusError);
+    // extend(dpp_module.InvalidCreditWithdrawalTransitionCoreFeeError, AbstractConsensusError);
+    // extend(dpp_module.InvalidCreditWithdrawalTransitionOutputScriptError, AbstractConsensusError);
+    // extend(dpp_module.NotImplementedCreditWithdrawalTransitionPoolingError, AbstractConsensusError);
     // extend(dpp_module.DuplicatedIdentityPublicKeyIdStateError, AbstractConsensusError);
     // extend(dpp_module.DuplicatedIdentityPublicKeyStateError, AbstractConsensusError);
 }

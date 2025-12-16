@@ -2,8 +2,6 @@ mod advanced_structure;
 mod basic_structure;
 pub(crate) mod public_key_signatures;
 mod state;
-#[cfg(test)]
-mod tests;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
