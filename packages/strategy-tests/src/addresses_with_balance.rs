@@ -110,7 +110,7 @@ impl AddressesWithBalance {
         // 1. Addresses with in-block updates (override committed)
         for (addr, (_nonce, credits)) in &self.addresses_in_block_with_new_balance {
             if *credits >= min_amount {
-                candidates.push((addr.clone(), *credits));
+                candidates.push((*addr, *credits));
             }
         }
 
@@ -119,7 +119,7 @@ impl AddressesWithBalance {
             if !self.addresses_in_block_with_new_balance.contains_key(addr)
                 && *credits >= min_amount
             {
-                candidates.push((addr.clone(), *credits));
+                candidates.push((*addr, *credits));
             }
         }
 
@@ -131,8 +131,7 @@ impl AddressesWithBalance {
         let (address, available) = candidates
             .into_iter()
             .choose(rng)
-            .expect("candidates is not empty; qed")
-            .clone();
+            .expect("candidates is not empty; qed");
 
         // Clamp upper bound by what's actually available
         let effective_max = std::cmp::min(available, max_amount);
@@ -180,7 +179,7 @@ impl AddressesWithBalance {
 
         // Stage the new (nonce, balance)
         self.addresses_in_block_with_new_balance
-            .insert(address.clone(), (new_nonce, new_balance));
+            .insert(address, (new_nonce, new_balance));
 
         Some((address, new_nonce, taken))
     }
@@ -230,7 +229,7 @@ impl AddressesWithBalance {
         let mut total_available: Credits = 0;
 
         // in-block first (overrides)
-        for (_addr, (_nonce, credits)) in &self.addresses_in_block_with_new_balance {
+        for (_nonce, credits) in self.addresses_in_block_with_new_balance.values() {
             total_available += *credits;
         }
 
@@ -262,11 +261,7 @@ impl AddressesWithBalance {
 
             // While we haven't reached the minimum yet, we must ensure we don't
             // choose too tiny amounts. Once we hit range_min, we can be looser.
-            let remaining_to_min = if taken_total >= range_min {
-                0
-            } else {
-                range_min - taken_total
-            };
+            let remaining_to_min = range_min.saturating_sub(taken_total);
 
             // Per-step min:
             //   - at least 1

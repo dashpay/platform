@@ -60,7 +60,7 @@ impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransitionV0
         {
             let witnesses = witnesses_value
                 .into_iter()
-                .map(|val| platform_value::from_value(val))
+                .map(platform_value::from_value)
                 .collect::<Result<Vec<AddressWitness>, _>>()?;
             state_transition.input_witnesses = witnesses;
         }

@@ -4,6 +4,7 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::query::QueryStrategy;
     use crate::strategy::NetworkStrategy;
+    use dash_platform_macros::stack_size;
     use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -29,7 +30,6 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
-    use dash_platform_macros::stack_size;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::DocumentAction::{
         DocumentActionReplaceRandom, DocumentActionTransferRandom,
@@ -1530,103 +1530,98 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-                    strategy: Strategy {
-                        start_contracts: vec![(created_contract, None)],
-                        operations: vec![
-                            Operation {
-                                op_type: OperationType::Document(document_insertion_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..40,
-                                    chance_per_block: None,
-                                },
-                            },
-                            Operation {
-                                op_type: OperationType::Document(document_deletion_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..15,
-                                    chance_per_block: None,
-                                },
-                            },
-                        ],
-                        start_identities: StartIdentities::default(),
-                        identity_inserts: IdentityInsertInfo {
-                            frequency: Frequency {
-                                times_per_block_range: 1..30,
-                                chance_per_block: None,
-                            },
-                            start_keys: 5,
-                            extra_keys: Default::default(),
-                            start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
                         },
-
-                        identity_contract_nonce_gaps: None,
-                        signer: None,
                     },
-                    total_hpmns: 100,
-                    extra_normal_mns: 0,
-                    validator_quorum_count: 24,
-                    chain_lock_quorum_count: 24,
-                    upgrading_info: None,
-
-                    proposer_strategy: Default::default(),
-                    rotate_quorums: false,
-                    failure_testing: None,
-                    query_testing: None,
-                    verify_state_transition_results: true,
-                    ..Default::default()
-                };
-
-                let day_in_ms = 1000 * 60 * 60 * 24;
-
-                let config = PlatformConfig {
-                    validator_set: ValidatorSetConfig::default_100_67(),
-                    chain_lock: ChainLockConfig::default_100_67(),
-                    instant_lock: InstantLockConfig::default_100_67(),
-                    execution: ExecutionConfig {
-                        verify_sum_trees: true,
-
-                        epoch_time_length_s: 1576800,
-                        ..Default::default()
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..15,
+                            chance_per_block: None,
+                        },
                     },
-                    block_spacing_ms: day_in_ms,
-                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
-                    ..Default::default()
-                };
-                let block_count = 30;
-                let mut platform = TestPlatformBuilder::new()
-                    .with_config(config.clone())
-                    .build_with_mock_rpc();
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..30,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+                },
 
-                let outcome = run_chain_for_strategy(
-                    &mut platform,
-                    block_count,
-                    strategy,
-                    config,
-                    15,
-                    &mut None,
-                    &mut None,
-                );
-                assert_eq!(outcome.identities.len() as u64, 472);
-                assert_eq!(outcome.masternode_identity_balances.len(), 100);
-                let balance_count = outcome
-                    .masternode_identity_balances
-                    .into_iter()
-                    .filter(|(_, balance)| *balance != 0)
-                    .count();
-                assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
 
-                let issues = outcome
-                    .abci_app
-                    .platform
-                    .drive
-                    .grove
-                    .visualize_verify_grovedb(
-                        None,
-                        true,
-                        false,
-                        &platform_version.drive.grove_version,
-                    )
-                    .expect("expected to have no issues");
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let block_count = 30;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+        assert_eq!(outcome.identities.len() as u64, 472);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
 
         assert_eq!(
             issues.len(),
@@ -1975,110 +1970,105 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-                    strategy: Strategy {
-                        start_contracts: vec![(created_contract, None)],
-                        operations: vec![
-                            Operation {
-                                op_type: OperationType::Document(document_insertion_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..40,
-                                    chance_per_block: None,
-                                },
-                            },
-                            Operation {
-                                op_type: OperationType::Document(document_replace_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..5,
-                                    chance_per_block: None,
-                                },
-                            },
-                            Operation {
-                                op_type: OperationType::Document(document_deletion_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..5,
-                                    chance_per_block: None,
-                                },
-                            },
-                        ],
-                        start_identities: StartIdentities::default(),
-                        identity_inserts: IdentityInsertInfo {
-                            frequency: Frequency {
-                                times_per_block_range: 1..6,
-                                chance_per_block: None,
-                            },
-                            start_keys: 5,
-                            extra_keys: Default::default(),
-                            start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
                         },
-
-                        identity_contract_nonce_gaps: None,
-                        signer: None,
                     },
-                    total_hpmns: 100,
-                    extra_normal_mns: 0,
-                    validator_quorum_count: 24,
-                    chain_lock_quorum_count: 24,
-                    upgrading_info: None,
-
-                    proposer_strategy: Default::default(),
-                    rotate_quorums: false,
-                    failure_testing: None,
-                    query_testing: None,
-                    verify_state_transition_results: true,
-                    ..Default::default()
-                };
-
-                let day_in_ms = 1000 * 60 * 60 * 24;
-
-                let config = PlatformConfig {
-                    validator_set: ValidatorSetConfig::default_100_67(),
-                    chain_lock: ChainLockConfig::default_100_67(),
-                    instant_lock: InstantLockConfig::default_100_67(),
-                    execution: ExecutionConfig {
-                        verify_sum_trees: true,
-
-                        epoch_time_length_s: 1576800,
-                        ..Default::default()
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
                     },
-                    block_spacing_ms: day_in_ms,
-                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
-                    ..Default::default()
-                };
-                let block_count = 100;
-                let mut platform = TestPlatformBuilder::new()
-                    .with_config(config.clone())
-                    .build_with_mock_rpc();
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+                },
 
-                let outcome = run_chain_for_strategy(
-                    &mut platform,
-                    block_count,
-                    strategy,
-                    config,
-                    15,
-                    &mut None,
-                    &mut None,
-                );
-                assert_eq!(outcome.identities.len() as u64, 296);
-                assert_eq!(outcome.masternode_identity_balances.len(), 100);
-                let balance_count = outcome
-                    .masternode_identity_balances
-                    .into_iter()
-                    .filter(|(_, balance)| *balance != 0)
-                    .count();
-                assert_eq!(balance_count, 92); // 1 epoch worth of proposers
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
 
-                let issues = outcome
-                    .abci_app
-                    .platform
-                    .drive
-                    .grove
-                    .visualize_verify_grovedb(
-                        None,
-                        true,
-                        false,
-                        &platform_version.drive.grove_version,
-                    )
-                    .expect("expected to have no issues");
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let block_count = 100;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+        assert_eq!(outcome.identities.len() as u64, 296);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 92); // 1 epoch worth of proposers
+
+        let issues = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .expect("expected to have no issues");
 
         assert_eq!(
             issues.len(),
@@ -2147,86 +2137,86 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-                    strategy: Strategy {
-                        start_contracts: vec![(created_contract, None)],
-                        operations: vec![
-                            Operation {
-                                op_type: OperationType::Document(document_insertion_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..10,
-                                    chance_per_block: None,
-                                },
-                            },
-                            Operation {
-                                op_type: OperationType::Document(document_replace_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..5,
-                                    chance_per_block: None,
-                                },
-                            },
-                            Operation {
-                                op_type: OperationType::Document(document_transfer_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..5,
-                                    chance_per_block: None,
-                                },
-                            },
-                            Operation {
-                                op_type: OperationType::Document(document_deletion_op),
-                                frequency: Frequency {
-                                    times_per_block_range: 1..5,
-                                    chance_per_block: None,
-                                },
-                            },
-                        ],
-                        start_identities: StartIdentities::default(),
-                        identity_inserts: IdentityInsertInfo {
-                            frequency: Frequency {
-                                times_per_block_range: 1..6,
-                                chance_per_block: None,
-                            },
-                            start_keys: 5,
-                            extra_keys: Default::default(),
-                            start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+            strategy: Strategy {
+                start_contracts: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..10,
+                            chance_per_block: None,
                         },
-
-                        identity_contract_nonce_gaps: None,
-                        signer: None,
                     },
-                    total_hpmns: 100,
-                    extra_normal_mns: 0,
-                    validator_quorum_count: 24,
-                    chain_lock_quorum_count: 24,
-                    upgrading_info: None,
-
-                    proposer_strategy: Default::default(),
-                    rotate_quorums: false,
-                    failure_testing: None,
-                    query_testing: None,
-                    verify_state_transition_results: true,
-                    ..Default::default()
-                };
-
-                let day_in_ms = 1000 * 60 * 60 * 24;
-
-                let config = PlatformConfig {
-                    validator_set: ValidatorSetConfig::default_100_67(),
-                    chain_lock: ChainLockConfig::default_100_67(),
-                    instant_lock: InstantLockConfig::default_100_67(),
-                    execution: ExecutionConfig {
-                        verify_sum_trees: true,
-
-                        epoch_time_length_s: 1576800,
-                        ..Default::default()
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
                     },
-                    block_spacing_ms: day_in_ms,
-                    testing_configs: PlatformTestConfig::default_minimal_verifications(),
-                    ..Default::default()
-                };
-                let block_count = 70;
-                let mut platform = TestPlatformBuilder::new()
-                    .with_config(config.clone())
-                    .build_with_mock_rpc();
+                    Operation {
+                        op_type: OperationType::Document(document_transfer_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..6,
+                        chance_per_block: None,
+                    },
+                    start_keys: 5,
+                    extra_keys: Default::default(),
+                    start_balance_range: dash_to_duffs!(1)..=dash_to_duffs!(1),
+                },
+
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            ..Default::default()
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+        let block_count = 70;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
 
         let outcome = run_chain_for_strategy(
             &mut platform,

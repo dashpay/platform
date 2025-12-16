@@ -367,7 +367,7 @@ impl ExecutionEvent<'_> {
                     .clone();
                 let added_to_balance_outputs =
                     if let Some(output) = identity_top_up_from_addresses_action.output() {
-                        [output.clone()].into()
+                        [output].into()
                     } else {
                         BTreeMap::new()
                     };

@@ -60,8 +60,8 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
 
         // Sign with input witnesses
         address_funding_transition.input_witnesses = inputs
-            .iter()
-            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
+            .keys()
+            .map(|address| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         tracing::debug!("try_from_asset_lock_with_signer: Successfully created transition");
