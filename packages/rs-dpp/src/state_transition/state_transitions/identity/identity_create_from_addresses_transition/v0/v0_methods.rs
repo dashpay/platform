@@ -41,6 +41,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         identity_public_key_signer: &S,
         address_signer: &WS,
@@ -51,6 +52,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         let mut identity_create_from_addresses_transition =
             IdentityCreateFromAddressesTransitionV0 {
                 inputs: inputs.clone(),
+                output,
                 fee_strategy,
                 user_fee_increase,
                 input_witnesses: Vec::new(),

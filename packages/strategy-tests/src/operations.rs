@@ -1,4 +1,5 @@
 use crate::frequency::Frequency;
+use crate::KeyMaps;
 use bincode::{Decode, Encode};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -13,7 +14,7 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{DataContract as Contract, DataContract, TokenContractPosition};
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, KeyCount};
 use dpp::platform_value::Value;
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
@@ -606,6 +607,8 @@ pub type MaybeOutputAmount = Option<AmountRange>;
 
 pub type UseExistingAddressesAsOutputChance = Option<f64>; //between 0 and 1.
 
+pub type ExtraKeys = KeyMaps;
+
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct IdentityTransferInfo {
     pub from: Identifier,
@@ -650,6 +653,13 @@ pub enum OperationType {
         UseExistingAddressesAsOutputChance,
         Option<IdentityTransferToAddresses>,
     ),
+    IdentityCreateFromAddresses(
+        AmountRange,
+        MaybeOutputAmount,
+        Option<AddressFundsFeeStrategy>,
+        KeyCount,
+        ExtraKeys,
+    ),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -682,6 +692,13 @@ enum OperationTypeInSerializationFormat {
         OutputCountRange,
         UseExistingAddressesAsOutputChance,
         Option<IdentityTransferToAddresses>,
+    ),
+    IdentityCreateFromAddresses(
+        AmountRange,
+        MaybeOutputAmount,
+        Option<AddressFundsFeeStrategy>,
+        KeyCount,
+        ExtraKeys,
     ),
 }
 
@@ -774,7 +791,20 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 output_count_range,
                 use_existing,
                 transfer_to_address_op,
-            )
+            ),
+            OperationType::IdentityCreateFromAddresses(
+                amount_range,
+                maybe_output_amount,
+                fee_strategy,
+                key_count,
+                extra_keys,
+            ) => OperationTypeInSerializationFormat::IdentityCreateFromAddresses(
+                amount_range,
+                maybe_output_amount,
+                fee_strategy,
+                key_count,
+                extra_keys,
+            ),
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -879,7 +909,20 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 output_count_range,
                 use_existing,
                 transfer_to_address_op,
-            )
+            ),
+            OperationTypeInSerializationFormat::IdentityCreateFromAddresses(
+                amount_range,
+                maybe_output_amount,
+                fee_strategy,
+                key_count,
+                extra_keys,
+            ) => OperationType::IdentityCreateFromAddresses(
+                amount_range,
+                maybe_output_amount,
+                fee_strategy,
+                key_count,
+                extra_keys,
+            ),
         })
     }
 }

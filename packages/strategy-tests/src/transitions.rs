@@ -1,3 +1,4 @@
+use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
@@ -20,7 +21,6 @@ use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use dpp::address_funds::PlatformAddress;
 use dpp::ProtocolError;
 
 use dpp::native_bls::NativeBlsModule;
@@ -34,18 +34,18 @@ use dpp::withdrawal::Pooling;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
+use crate::addresses_with_balance::AddressesWithBalance;
 use crate::operations::AmountRange;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use dpp::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use rand::Rng;
 use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
-use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
-use dpp::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
-use crate::addresses_with_balance::AddressesWithBalance;
 
 /// Constructs an `AssetLockProof` representing an instant asset lock proof.
 ///
