@@ -12,7 +12,7 @@ use bincode::{Decode, Encode};
 )]
 #[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence and not less than {min_core_fee_per_byte:?}")]
 #[platform_serialize(unversioned)]
-pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
+pub struct InvalidCreditWithdrawalTransitionCoreFeeError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -22,7 +22,7 @@ pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
     min_core_fee_per_byte: u32,
 }
 
-impl InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
+impl InvalidCreditWithdrawalTransitionCoreFeeError {
     pub fn new(core_fee_per_byte: u32, min_core_fee_per_byte: u32) -> Self {
         Self {
             core_fee_per_byte,
@@ -38,8 +38,8 @@ impl InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
     }
 }
 
-impl From<InvalidIdentityCreditWithdrawalTransitionCoreFeeError> for ConsensusError {
-    fn from(err: InvalidIdentityCreditWithdrawalTransitionCoreFeeError) -> Self {
-        Self::BasicError(BasicError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(err))
+impl From<InvalidCreditWithdrawalTransitionCoreFeeError> for ConsensusError {
+    fn from(err: InvalidCreditWithdrawalTransitionCoreFeeError) -> Self {
+        Self::BasicError(BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(err))
     }
 }

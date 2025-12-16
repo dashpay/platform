@@ -14,7 +14,7 @@ use bincode::{Decode, Encode};
     "pooling {pooling:?} should be equal to 0. Other pooling mechanism are not implemented yet"
 )]
 #[platform_serialize(unversioned)]
-pub struct NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
+pub struct NotImplementedCreditWithdrawalTransitionPoolingError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -23,7 +23,7 @@ pub struct NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
     pooling: u8,
 }
 
-impl NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
+impl NotImplementedCreditWithdrawalTransitionPoolingError {
     pub fn new(pooling: u8) -> Self {
         Self { pooling }
     }
@@ -33,10 +33,10 @@ impl NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
     }
 }
 
-impl From<NotImplementedIdentityCreditWithdrawalTransitionPoolingError> for ConsensusError {
-    fn from(err: NotImplementedIdentityCreditWithdrawalTransitionPoolingError) -> Self {
+impl From<NotImplementedCreditWithdrawalTransitionPoolingError> for ConsensusError {
+    fn from(err: NotImplementedCreditWithdrawalTransitionPoolingError) -> Self {
         Self::BasicError(
-            BasicError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(err),
+            BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(err),
         )
     }
 }

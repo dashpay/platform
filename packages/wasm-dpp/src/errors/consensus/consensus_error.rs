@@ -20,12 +20,12 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityAssetLockTransactionErrorWasm,
     InvalidIdentityAssetLockTransactionOutputErrorWasm,
     InvalidIdentityCreditTransferAmountErrorWasm,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm,
+    InvalidCreditWithdrawalTransitionCoreFeeErrorWasm,
+    InvalidCreditWithdrawalTransitionOutputScriptErrorWasm,
     InvalidIdentityKeySignatureErrorWasm, InvalidIdentityPublicKeyDataErrorWasm,
     InvalidIdentityPublicKeySecurityLevelErrorWasm, InvalidInstantAssetLockProofErrorWasm,
     InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm,
+    NotImplementedCreditWithdrawalTransitionPoolingErrorWasm,
 };
 
 use crate::errors::consensus::state::identity::{
@@ -45,11 +45,11 @@ use dpp::consensus::basic::BasicError::{
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
     InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
     InvalidInstantAssetLockProofSignatureError, MissingMasterPublicKeyError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
+    NotImplementedCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
     UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
 use dpp::consensus::basic::{BasicError, UnsupportedFeatureError};
@@ -621,14 +621,14 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         InvalidIdentityCreditTransferAmountError(e) => {
             InvalidIdentityCreditTransferAmountErrorWasm::from(e).into()
         }
-        InvalidIdentityCreditWithdrawalTransitionCoreFeeError(e) => {
-            InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
+        InvalidCreditWithdrawalTransitionCoreFeeError(e) => {
+            InvalidCreditWithdrawalTransitionCoreFeeErrorWasm::from(e).into()
         }
-        InvalidIdentityCreditWithdrawalTransitionOutputScriptError(e) => {
-            InvalidIdentityCreditWithdrawalTransitionOutputScriptErrorWasm::from(e).into()
+        InvalidCreditWithdrawalTransitionOutputScriptError(e) => {
+            InvalidCreditWithdrawalTransitionOutputScriptErrorWasm::from(e).into()
         }
-        NotImplementedIdentityCreditWithdrawalTransitionPoolingError(e) => {
-            NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
+        NotImplementedCreditWithdrawalTransitionPoolingError(e) => {
+            NotImplementedCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
         }
         IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::from(err).into(),
         BasicError::VersionError(err) => generic_consensus_error!(VersionError, err).into(),

@@ -441,6 +441,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
 
 [[package]]
+name = "bech32"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1605,7 +1611,7 @@ source = "git+https://github.com/dashpay/rust-dashcore?tag=v0.40.0#c877c1a74d145
 dependencies = [
  "anyhow",
  "base64-compat",
- "bech32",
+ "bech32 0.9.1",
  "bincode 2.0.0-rc.3",
  "bincode_derive",
  "bitvec",
@@ -1631,7 +1637,7 @@ source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c88849
 dependencies = [
  "anyhow",
  "base64-compat",
- "bech32",
+ "bech32 0.9.1",
  "bincode 2.0.0-rc.3",
  "bincode_derive",
  "bitvec",
@@ -1914,6 +1920,7 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "base64 0.22.1",
+ "bech32 0.11.1",
  "bincode 2.0.0-rc.3",
  "bincode_derive",
  "bs58",
