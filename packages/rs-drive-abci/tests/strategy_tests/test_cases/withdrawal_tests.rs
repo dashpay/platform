@@ -1,12 +1,12 @@
 mod tests {
-    use crate::asset_unlock_index;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::{BlockHash, ChainLock, Txid};
+    use dpp::dashcore::transaction::TransactionPayload::AssetUnlockPayloadType;
+    use dpp::dashcore::{BlockHash, ChainLock, Transaction, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::data_contracts::withdrawals_contract;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
@@ -31,6 +31,13 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+
+    fn asset_unlock_index(tx: &Transaction) -> u64 {
+        let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
+            panic!("expected to get AssetUnlockPayloadType");
+        };
+        payload.base.index
+    }
 
     struct CoreState {
         asset_unlock_statuses: BTreeMap<WithdrawalTransactionIndex, AssetUnlockStatusResult>,
@@ -165,6 +172,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             signer,
             ..
         } = {
@@ -295,6 +303,7 @@ mod tests {
                 identity_contract_nonce_counter,
                 instant_lock_quorums,
                 identities,
+                addresses_with_balance,
                 ..
             },
             last_block_pooled_withdrawals_amount,
@@ -316,6 +325,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
@@ -385,6 +395,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -404,6 +415,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 config.clone(),
@@ -483,6 +495,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -502,6 +515,7 @@ mod tests {
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 config.clone(),
@@ -592,6 +606,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -611,6 +626,7 @@ mod tests {
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 config.clone(),
@@ -695,6 +711,7 @@ mod tests {
                 current_time_ms: end_time_ms + 1000,
                 instant_lock_quorums,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             continue_strategy_no_operations.clone(),
             config.clone(),
@@ -845,6 +862,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             signer,
             ..
         } = {
@@ -975,6 +993,7 @@ mod tests {
                 identity_contract_nonce_counter,
                 instant_lock_quorums,
                 identities,
+                addresses_with_balance,
                 ..
             },
             last_block_pooled_withdrawals_amount,
@@ -996,6 +1015,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
@@ -1065,6 +1085,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -1084,6 +1105,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 config.clone(),
@@ -1149,6 +1171,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -1168,6 +1191,7 @@ mod tests {
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 config.clone(),
@@ -1245,6 +1269,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -1264,6 +1289,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 config.clone(),
@@ -1364,6 +1390,7 @@ mod tests {
                 current_time_ms: end_time_ms,
                 instant_lock_quorums,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             continue_strategy_no_operations.clone(),
             config.clone(),
@@ -1552,6 +1579,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             signer,
             ..
         } = {
@@ -1714,6 +1742,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -1733,6 +1762,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
@@ -1872,6 +1902,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -1891,6 +1922,7 @@ mod tests {
                     current_time_ms: end_time_ms + 1000,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_no_operations.clone(),
                 PlatformConfig {
@@ -2025,6 +2057,7 @@ mod tests {
                 current_time_ms: end_time_ms + 1000,
                 instant_lock_quorums,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             continue_strategy_no_operations.clone(),
             PlatformConfig {
@@ -2269,6 +2302,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             signer,
             ..
         } = {
@@ -2431,6 +2465,7 @@ mod tests {
             identity_contract_nonce_counter,
             instant_lock_quorums,
             identities,
+            addresses_with_balance,
             ..
         } = {
             let outcome = continue_chain_for_strategy(
@@ -2450,6 +2485,7 @@ mod tests {
                     current_time_ms: end_time_ms,
                     instant_lock_quorums,
                     current_identities: identities,
+                    current_addresses_with_balance: addresses_with_balance,
                 },
                 continue_strategy_only_withdrawal.clone(),
                 config.clone(),
@@ -2586,6 +2622,7 @@ mod tests {
                 current_time_ms: end_time_ms + 1000,
                 instant_lock_quorums,
                 current_identities: identities,
+                current_addresses_with_balance: addresses_with_balance,
             },
             continue_strategy_no_operations.clone(),
             PlatformConfig {

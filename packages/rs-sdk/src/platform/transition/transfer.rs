@@ -3,6 +3,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
@@ -59,6 +60,7 @@ impl TransferToIdentity for Identity {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         let (sender, receiver): (PartialIdentity, PartialIdentity) =
             state_transition.broadcast_and_wait(sdk, settings).await?;

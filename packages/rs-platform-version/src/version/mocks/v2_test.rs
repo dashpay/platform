@@ -149,7 +149,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V1,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1,
         query: DriveAbciQueryVersions {
-            max_returned_elements: 100,
+                        max_returned_elements: 100,
             response_metadata: 0,
             proofs_query: 0,
             document_query: FeatureVersionBounds {

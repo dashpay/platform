@@ -933,7 +933,7 @@ pub fn create_identities_state_transitions(
         id_pub_key_v0.set_id(current_id_num);
         current_id_num += 1; // Increment for each key
     }
-    signer.add_keys(keys);
+    signer.add_identity_public_keys(keys);
 
     // Generate state transitions for each identity
     identities

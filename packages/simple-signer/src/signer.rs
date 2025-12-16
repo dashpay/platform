@@ -1,8 +1,10 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use dpp::address_funds::AddressWitness;
+use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
+use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
+use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -10,7 +12,8 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
-use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
+use dpp::util::hash::ripemd160_sha256;
+use dpp::{bls_signatures, dashcore, ed25519_dalek, ProtocolError};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -21,6 +24,11 @@ pub struct SimpleSigner {
     pub private_keys: BTreeMap<IdentityPublicKey, [u8; 32]>,
     /// Private keys to be added at the end of a block
     pub private_keys_in_creation: BTreeMap<IdentityPublicKey, [u8; 32]>,
+
+    /// Maps address hash (20 bytes) to private key (32 bytes)
+    pub address_private_keys: BTreeMap<[u8; 20], [u8; 32]>,
+    /// Addres private keys to be added at the end of a block
+    pub address_private_keys_in_creation: BTreeMap<[u8; 20], [u8; 32]>,
 }
 
 impl Debug for SimpleSigner {
@@ -48,18 +56,62 @@ impl Debug for SimpleSigner {
 
 impl SimpleSigner {
     /// Add a key to the signer
-    pub fn add_key(&mut self, public_key: IdentityPublicKey, private_key: [u8; 32]) {
+    pub fn add_identity_public_key(
+        &mut self,
+        public_key: IdentityPublicKey,
+        private_key: [u8; 32],
+    ) {
         self.private_keys.insert(public_key, private_key);
     }
 
     /// Add keys to the signer
-    pub fn add_keys<I: IntoIterator<Item = (IdentityPublicKey, [u8; 32])>>(&mut self, keys: I) {
+    pub fn add_identity_public_keys<I: IntoIterator<Item = (IdentityPublicKey, [u8; 32])>>(
+        &mut self,
+        keys: I,
+    ) {
         self.private_keys.extend(keys)
+    }
+
+    /// Add a key to the signer
+    pub fn add_address_key(&mut self, address: [u8; 20], private_key: [u8; 32]) {
+        self.address_private_keys.insert(address, private_key);
+    }
+
+    /// Add keys to the signer
+    pub fn add_address_keys<I: IntoIterator<Item = ([u8; 20], [u8; 32])>>(&mut self, keys: I) {
+        self.address_private_keys_in_creation.extend(keys)
     }
 
     /// Commit keys in creation
     pub fn commit_block_keys(&mut self) {
-        self.private_keys.append(&mut self.private_keys_in_creation)
+        self.private_keys.append(&mut self.private_keys_in_creation);
+        self.address_private_keys
+            .append(&mut self.address_private_keys_in_creation);
+    }
+
+    /// Generate a new random ECDSA keypair and corresponding P2PKH address hash,
+    /// store the private key so this signer can use it, and return the PlatformAddress.
+    ///
+    /// This is only for tests.
+    pub fn add_random_address_key<R: RngCore + ?Sized>(&mut self, rng: &mut R) -> PlatformAddress {
+        let secp = Secp256k1::new();
+
+        // Generate a valid secp256k1 secret key from random bytes
+        let mut ecdsa_rng = dashcore::secp256k1::rand::rngs::StdRng::from_rng(rng).unwrap();
+        let secret_key = SecretKey::new(&mut ecdsa_rng);
+
+        // Derive compressed public key
+        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+        let pubkey_ser = public_key.serialize(); // 33-byte compressed
+
+        let address_hash = ripemd160_sha256(&pubkey_ser);
+
+        // Store private key so this signer can later sign for this address
+        // (use *_in_creation to mirror your identity key behavior)
+        self.address_private_keys_in_creation
+            .insert(address_hash, secret_key.secret_bytes());
+
+        PlatformAddress::P2pkh(address_hash)
     }
 }
 
@@ -152,5 +204,52 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
             .get(identity_public_key)
             .or_else(|| self.private_keys_in_creation.get(identity_public_key))
             .is_some()
+    }
+}
+
+impl Signer<PlatformAddress> for SimpleSigner {
+    fn sign(&self, address: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        let hash = match address {
+            PlatformAddress::P2pkh(hash) => hash,
+            PlatformAddress::P2sh(_) => {
+                return Err(ProtocolError::Generic(
+                    "P2SH addresses not supported".to_string(),
+                ));
+            }
+        };
+        let private_key = self
+            .address_private_keys
+            .get(hash)
+            .or_else(|| self.address_private_keys_in_creation.get(hash))
+            .ok_or(format!("No private key found for address {:?}", address))?;
+
+        let signature = signer::sign(data, private_key)?;
+        Ok(signature.to_vec().into())
+    }
+
+    fn sign_create_witness(
+        &self,
+        key: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        // First, sign the data to get the signature
+        let signature = self.sign(key, data)?;
+        match key {
+            PlatformAddress::P2pkh(_) => Ok(AddressWitness::P2pkh { signature }),
+            PlatformAddress::P2sh(_) => Err(ProtocolError::Generic(
+                "P2SH addresses not supported".to_string(),
+            )),
+        }
+    }
+
+    fn can_sign_with(&self, key: &PlatformAddress) -> bool {
+        match key {
+            PlatformAddress::P2pkh(hash) => self
+                .address_private_keys
+                .get(hash)
+                .or_else(|| self.address_private_keys_in_creation.get(hash))
+                .is_some(),
+            PlatformAddress::P2sh(_) => false,
+        }
     }
 }

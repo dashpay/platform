@@ -111,7 +111,7 @@ impl Cli {
                     "rs-dapi server initializing",
                 );
 
-                let mut server_future = run_server(config, access_logger);
+                let server_future = run_server(config, access_logger);
                 tokio::pin!(server_future);
 
                 let outcome = tokio::select! {

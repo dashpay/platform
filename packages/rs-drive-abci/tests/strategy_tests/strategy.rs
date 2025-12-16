@@ -1,6 +1,5 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
-use crate::BlockHeight;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::dashcore::{ProTxHash, QuorumHash};
@@ -15,9 +14,12 @@ use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
     AmountRange, DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp,
-    OperationType, TokenOp,
+    MaybeOutputAmount, OperationType, OutputCountRange, TokenOp,
+    UseExistingAddressesAsOutputChance,
 };
 
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -31,6 +33,7 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::util::storage_flags::StorageFlags::SingleEpoch;
 
+use crate::addresses_with_balance::AddressesWithBalance;
 use crate::strategy::CoreHeightIncrease::NoCoreHeightIncrease;
 use dpp::dashcore::hashes::Hash;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -38,11 +41,19 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
-use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
+use dpp::prelude::{AssetLockProof, BlockHeight, Identifier, IdentityNonce};
+use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
+use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
+use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
@@ -63,6 +74,8 @@ use dpp::state_transition::batch_transition::{
 };
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::tokens::calculate_token_id;
@@ -72,6 +85,7 @@ use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::Vote;
+use dpp::withdrawal::Pooling;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::DriveDocumentQuery;
 use drive_abci::abci::app::FullAbciApplication;
@@ -376,7 +390,8 @@ impl NetworkStrategy {
         drive: &Drive,
         platform_version: &PlatformVersion,
     ) {
-        for op in &self.strategy.operations {
+        let operations_to_execute = self.strategy.operations.clone();
+        for op in operations_to_execute.iter() {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
@@ -578,10 +593,11 @@ impl NetworkStrategy {
     // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
     // and could be moved out of here
     pub fn operations_based_transitions(
-        &self,
+        &mut self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
@@ -600,7 +616,8 @@ impl NetworkStrategy {
         let mut deleted = vec![];
         let max_document_operation_count_without_inserts =
             self.strategy.max_document_operation_count_without_inserts();
-        for op in &self.strategy.operations {
+        let operations_to_execute = self.strategy.operations.clone();
+        for op in operations_to_execute.iter() {
             if op.frequency.check_hit(rng) {
                 let mut count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
@@ -1170,6 +1187,96 @@ impl NetworkStrategy {
                             ));
                         }
                     }
+                    OperationType::IdentityTopUpFromAddresses(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        let random_identities: Vec<&Identity> = indices
+                            .into_iter()
+                            .map(|index| &current_identities[index])
+                            .collect();
+
+                        for random_identity in random_identities {
+                            let Some(state_transition) = self
+                                .create_identity_top_up_from_addresses_transitions(
+                                    current_addresses_with_balance,
+                                    random_identity,
+                                    amount_range,
+                                    signer,
+                                    rng,
+                                    platform_version,
+                                )
+                            else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::AddressFundingFromCoreAssetLock(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self
+                                .create_address_funding_from_asset_lock_transitions(
+                                    current_addresses_with_balance,
+                                    amount_range,
+                                    rng,
+                                    signer,
+                                    instant_lock_quorums,
+                                    &platform.config,
+                                    platform_version,
+                                )
+                            else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::AddressTransfer(
+                        amount_range,
+                        output_count_range,
+                        use_existing_outputs_chance,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_address_transfer_transition(
+                                current_addresses_with_balance,
+                                amount_range,
+                                output_count_range,
+                                *use_existing_outputs_chance,
+                                fee_strategy,
+                                signer,
+                                rng,
+                                platform_version,
+                            ) else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::AddressWithdrawal(
+                        amount_range,
+                        maybe_output_range,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_address_withdrawal_transition(
+                                current_addresses_with_balance,
+                                amount_range,
+                                maybe_output_range,
+                                fee_strategy,
+                                signer,
+                                rng,
+                                platform_version,
+                            ) else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -1598,6 +1705,7 @@ impl NetworkStrategy {
         start_block_height: BlockHeight,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
         current_votes: &mut BTreeMap<Identifier, BTreeMap<Identifier, ResourceVoteChoice>>,
@@ -1645,11 +1753,12 @@ impl NetworkStrategy {
             };
         if should_do_operation_transitions {
             // Don't do any state transitions on block 1
-            let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
-                .operations_based_transitions(
+            let (mut operation_based_state_transitions, mut add_to_finalize_block_operations) =
+                self.operations_based_transitions(
                     platform,
                     block_info,
                     current_identities,
+                    current_addresses_with_balance,
                     signer,
                     identity_nonce_counter,
                     contract_nonce_counter,
@@ -1659,7 +1768,7 @@ impl NetworkStrategy {
                     platform_version,
                 );
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
-            state_transitions.append(&mut document_state_transitions);
+            state_transitions.append(&mut operation_based_state_transitions);
 
             // There can also be contract updates
 
@@ -1718,7 +1827,7 @@ impl NetworkStrategy {
             }
         }
 
-        signer.add_keys(keys);
+        signer.add_identity_public_keys(keys);
 
         if self.sign_instant_locks {
             let identities_with_proofs = create_signed_instant_asset_lock_proofs_for_identities(
@@ -1811,6 +1920,304 @@ impl NetworkStrategy {
         )
         .expect("expected to create top up transition")
     }
+
+    fn create_asset_lock_proof_with_amount(
+        &self,
+        rng: &mut StdRng,
+        amount_range: &AmountRange,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
+        platform_version: &PlatformVersion,
+    ) -> (AssetLockProof, Vec<u8>, Credits) {
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+        let sk_bytes: [u8; 32] = pk.try_into().unwrap();
+        let secret_key = SecretKey::from_str(hex::encode(sk_bytes).as_str()).unwrap();
+        let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
+            PrivateKey::new(secret_key, Network::Dash),
+            amount_range,
+            rng,
+        );
+
+        if self.sign_instant_locks {
+            let quorum_config = QuorumConfig {
+                quorum_type: platform_config.instant_lock.quorum_type,
+                active_signers: platform_config.instant_lock.quorum_active_signers,
+                rotation: platform_config.instant_lock.quorum_rotation,
+                window: platform_config.instant_lock.quorum_window,
+            };
+
+            let AssetLockProof::Instant(InstantAssetLockProof { instant_lock, .. }) =
+                &mut asset_lock_proof
+            else {
+                panic!("must be instant lock proof");
+            };
+
+            let request_id = instant_lock
+                .request_id()
+                .expect("failed to build request id");
+
+            let (quorum_hash, quorum) = instant_lock_quorums
+                .choose_quorum(&quorum_config, request_id.as_ref())
+                .expect("failed to choose quorum for instant lock transaction signing");
+
+            instant_lock.signature = quorum
+                .sign_for_instant_lock(
+                    &quorum_config,
+                    &quorum_hash,
+                    request_id.as_ref(),
+                    &instant_lock.txid,
+                )
+                .expect("failed to sign transaction for instant lock");
+        }
+
+        let funded_amount = match &asset_lock_proof {
+            AssetLockProof::Instant(proof) => {
+                let output_index = proof.output_index() as usize;
+                proof
+                    .transaction()
+                    .output
+                    .get(output_index)
+                    .map(|output| output.value)
+                    .unwrap_or_default()
+            }
+            AssetLockProof::Chain(_chain) => 0,
+        };
+
+        (
+            asset_lock_proof,
+            secret_key.secret_bytes().to_vec(),
+            funded_amount,
+        )
+    }
+
+    fn create_identity_top_up_from_addresses_transitions<S: Signer<PlatformAddress>>(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        recipient: &Identity,
+        amount_range: &AmountRange,
+        signer: &S,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        tracing::warn!(
+            ?inputs,
+            "Preparing identity top-up transition with addresses"
+        );
+
+        let top_up_transition =
+            IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+                recipient,
+                inputs,
+                signer,
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected to create top up from addresses transition"); // if you need to upcast to StateTransition
+
+        tracing::debug!(
+            ?top_up_transition,
+            "Top up from addresses transition successfully signed"
+        );
+
+        Some(top_up_transition)
+    }
+
+    fn create_address_transfer_transition(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        output_count_range: &OutputCountRange,
+        use_existing_outputs_chance: UseExistingAddressesAsOutputChance,
+        fee_strategy: &Option<AddressFundsFeeStrategy>,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+
+        let fee_strategy = fee_strategy
+            .clone()
+            .unwrap_or(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
+        tracing::debug!(?inputs, "Preparing address funds transfer transition");
+
+        // Calculate total input amount (we'll distribute this among outputs)
+        let total_input: Credits = inputs.values().map(|(_, credits)| credits).sum();
+
+        // Generate random number of outputs within the specified range
+        let output_count = rng.gen_range(output_count_range.clone()).max(1) as usize;
+
+        // Create output addresses and distribute funds evenly
+        let amount_per_output = total_input / output_count as Credits;
+        let mut outputs = BTreeMap::new();
+
+        // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
+        let input_addresses: std::collections::HashSet<_> = inputs.keys().cloned().collect();
+        let mut available_existing_addresses: Vec<_> = current_addresses_with_balance
+            .addresses_with_balance
+            .keys()
+            .filter(|addr| !input_addresses.contains(*addr))
+            .cloned()
+            .collect();
+
+        for _ in 0..output_count {
+            // Check if we should use an existing address as output
+            let use_existing = use_existing_outputs_chance
+                .map(|chance| rng.gen::<f64>() < chance && !available_existing_addresses.is_empty())
+                .unwrap_or(false);
+
+            let address = if use_existing {
+                // Pick a random existing address and remove it from available pool
+                let idx = rng.gen_range(0..available_existing_addresses.len());
+                let existing_address = available_existing_addresses.swap_remove(idx);
+                // Update the balance for this existing address
+                if let Some((nonce, balance)) = current_addresses_with_balance
+                    .addresses_with_balance
+                    .get(&existing_address)
+                {
+                    current_addresses_with_balance
+                        .addresses_in_block_with_new_balance
+                        .insert(
+                            existing_address.clone(),
+                            (*nonce, balance + amount_per_output),
+                        );
+                }
+                existing_address
+            } else {
+                // Create a new address
+                let new_address = signer.add_random_address_key(rng);
+                current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .insert(new_address.clone(), (0, amount_per_output));
+                new_address
+            };
+
+            outputs.insert(address, amount_per_output);
+        }
+
+        let transfer_transition = AddressFundsTransferTransition::try_from_inputs_with_signer(
+            inputs,
+            outputs,
+            fee_strategy,
+            signer,
+            0,
+            platform_version,
+        )
+        .expect("expected to create address funds transfer transition");
+
+        tracing::debug!(
+            ?transfer_transition,
+            "Address funds transfer transition successfully signed"
+        );
+
+        Some(transfer_transition)
+    }
+
+    fn create_address_withdrawal_transition(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        maybe_output_amount: &MaybeOutputAmount,
+        fee_strategy: &Option<AddressFundsFeeStrategy>,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+
+        let fee_strategy = fee_strategy
+            .clone()
+            .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+        tracing::debug!(?inputs, "Preparing address credit withdrawal transition");
+
+        // Determine if we have an output (change address) and its amount
+        let output = if let Some(output_amount_range) = maybe_output_amount {
+            let output_amount = rng.gen_range(output_amount_range.clone());
+            let output_address = signer.add_random_address_key(rng);
+            current_addresses_with_balance
+                .addresses_in_block_with_new_balance
+                .insert(output_address.clone(), (0, output_amount));
+            Some((output_address, output_amount))
+        } else {
+            None
+        };
+
+        // Generate a random output script for the withdrawal
+        let output_script = if rng.gen_bool(0.5) {
+            CoreScript::random_p2pkh(rng)
+        } else {
+            CoreScript::random_p2sh(rng)
+        };
+
+        let withdrawal_transition = AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+            inputs,
+            output,
+            fee_strategy,
+            1, // core_fee_per_byte
+            Pooling::Never,
+            output_script,
+            signer,
+            0,
+            platform_version,
+        )
+        .expect("expected to create address credit withdrawal transition");
+
+        tracing::debug!(
+            ?withdrawal_transition,
+            "Address credit withdrawal transition successfully signed"
+        );
+
+        Some(withdrawal_transition)
+    }
+
+    fn create_address_funding_from_asset_lock_transitions(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        rng: &mut StdRng,
+        signer: &mut SimpleSigner,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let (asset_lock_proof, asset_lock_private_key, funded_amount) = self
+            .create_asset_lock_proof_with_amount(
+                rng,
+                amount_range,
+                instant_lock_quorums,
+                platform_config,
+                platform_version,
+            );
+
+        let address = signer.add_random_address_key(rng);
+        current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .insert(address, (0, funded_amount));
+        let mut outputs = BTreeMap::new();
+        outputs.insert(address.clone(), None);
+
+        tracing::debug!(?outputs, "Preparing funding transition");
+        let funding_transition =
+            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                asset_lock_proof,
+                asset_lock_private_key.as_slice(),
+                BTreeMap::new(),
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                signer,
+                0,
+                platform_version,
+            )
+            .ok()?;
+
+        Some(funding_transition)
+    }
 }
 
 pub enum StrategyRandomness {
@@ -1830,6 +2237,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub abci_app: FullAbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
+    pub addresses_with_balance: AddressesWithBalance,
     pub proposers: Vec<MasternodeListItemWithUpdates>,
     pub validator_quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_validator_quorum_hash: QuorumHash,
@@ -1874,6 +2282,7 @@ pub struct ChainExecutionParameters {
     pub start_time_ms: u64,
     pub current_time_ms: u64,
     pub current_identities: Vec<Identity>,
+    pub current_addresses_with_balance: AddressesWithBalance,
 }
 
 fn create_signed_instant_asset_lock_proofs_for_identities(

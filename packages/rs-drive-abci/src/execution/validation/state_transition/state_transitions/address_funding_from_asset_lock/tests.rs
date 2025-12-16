@@ -111,7 +111,7 @@ mod tests {
             .random_public_and_private_key_data(rng, platform_version)
             .unwrap();
 
-        let one_time_private_key = PrivateKey::from_slice(&pk, Network::Testnet).unwrap();
+        let one_time_private_key = PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap();
         let one_time_public_key = one_time_private_key.public_key(&secp);
         let one_time_key_hash = one_time_public_key.pubkey_hash();
 
@@ -8065,7 +8065,7 @@ mod tests {
                 )
                 .expect("expected to get key pair");
 
-            identity_signer.add_key(master_key.clone(), master_private_key);
+            identity_signer.add_identity_public_key(master_key.clone(), master_private_key);
 
             let (critical_public_key_that_is_already_in_system, private_key) =
                 IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -8108,7 +8108,7 @@ mod tests {
                 )
                 .expect("expected to add a new identity");
 
-            identity_signer.add_key(
+            identity_signer.add_identity_public_key(
                 critical_public_key_that_is_already_in_system.clone(),
                 private_key,
             );
@@ -8312,7 +8312,7 @@ mod tests {
                 )
                 .expect("expected to add a new identity");
 
-            identity_signer.add_key(
+            identity_signer.add_identity_public_key(
                 critical_public_key_that_is_already_in_system.clone(),
                 private_key,
             );
@@ -8346,7 +8346,7 @@ mod tests {
                 )
                 .expect("expected to get key pair");
 
-            identity_signer.add_key(new_master_key.clone(), new_master_private_key);
+            identity_signer.add_identity_public_key(new_master_key.clone(), new_master_private_key);
 
             let identity: Identity = IdentityV0 {
                 id: identifier,

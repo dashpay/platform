@@ -23,6 +23,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_full_identity_by_public_key_hash: 0,
         verify_identity_balance_for_identity_id: 0,
         verify_identity_balances_for_identity_ids: 0,
+        verify_identity_balance_revision_and_addresses_from_inputs: 0,
         verify_identity_id_by_unique_public_key_hash: 0,
         verify_identity_ids_by_unique_public_key_hashes: 0,
         verify_identity_keys_by_identity_id: 0,

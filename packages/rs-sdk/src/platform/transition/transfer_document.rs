@@ -1,3 +1,4 @@
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
@@ -80,6 +81,7 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
             sdk.version(),
             settings.state_transition_creation_options,
         )?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         let request = transition.broadcast_request_for_state_transition()?;
 

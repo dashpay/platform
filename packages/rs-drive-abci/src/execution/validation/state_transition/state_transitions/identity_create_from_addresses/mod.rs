@@ -24,7 +24,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 use drive::state_transition_action::StateTransitionAction;

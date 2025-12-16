@@ -2,6 +2,7 @@ use derive_more::From;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
+use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
 pub use abstract_state_transition::state_transition_helpers;
@@ -54,6 +55,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 pub use traits::*;
 
+use crate::address_funds::PlatformAddress;
 use crate::balances::credits::CREDITS_PER_DUFF;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::fee::Credits;
@@ -72,7 +74,7 @@ use crate::identity::Purpose;
 ))]
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
 use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
@@ -654,6 +656,27 @@ impl StateTransition {
         }
     }
 
+    /// returns the signature as a byte-array
+    pub fn inputs(&self) -> Option<&BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
+        match self {
+            StateTransition::DataContractCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::Batch(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_) => None,
+            StateTransition::IdentityCreateFromAddresses(st) => Some(st.inputs()),
+            StateTransition::IdentityTopUpFromAddresses(st) => Some(st.inputs()),
+            StateTransition::AddressFundsTransfer(st) => Some(st.inputs()),
+            StateTransition::AddressFundingFromAssetLock(st) => Some(st.inputs()),
+            StateTransition::AddressCreditWithdrawal(st) => Some(st.inputs()),
+        }
+    }
+
     /// returns the state transition type
     pub fn state_transition_type(&self) -> StateTransitionType {
         call_method!(self, state_transition_type)
@@ -1158,5 +1181,60 @@ impl StateTransition {
                     ),
                 ))
             })
+    }
+}
+
+impl StateTransitionStructureValidation for StateTransition {
+    fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> crate::validation::SimpleConsensusValidationResult {
+        match self {
+            StateTransition::DataContractCreate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::DataContractUpdate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::Batch(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityTopUp(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreditWithdrawal(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityUpdate(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreditTransfer(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::MasternodeVote(_) => {
+                crate::validation::SimpleConsensusValidationResult::default()
+            }
+            StateTransition::IdentityCreditTransferToAddresses(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::IdentityCreateFromAddresses(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::IdentityTopUpFromAddresses(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::AddressFundsTransfer(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::AddressFundingFromAssetLock(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::AddressCreditWithdrawal(transition) => {
+                transition.validate_structure(platform_version)
+            }
+        }
     }
 }
