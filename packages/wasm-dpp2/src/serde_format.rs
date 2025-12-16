@@ -249,6 +249,50 @@ pub fn platform_value_to_object(value: &platform_value::Value) -> WasmDppResult<
         .map_err(|e| WasmDppError::serialization(format!("platform_value_to_object: {}", e)))
 }
 
+/// Serialize platform_value::Value to JsValue as JSON-compatible (human-readable).
+///
+/// Converts Value::Identifier and Value::Bytes to base58/base64 strings for JSON compatibility.
+pub fn platform_value_to_json(value: &platform_value::Value) -> WasmDppResult<JsValue> {
+    let converted = convert_value_for_json(value);
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    converted
+        .serialize(&serializer)
+        .map_err(|e| WasmDppError::serialization(format!("platform_value_to_json: {}", e)))
+}
+
+/// Convert platform_value::Value for JSON serialization.
+/// Transforms binary types to their string representations.
+fn convert_value_for_json(value: &platform_value::Value) -> platform_value::Value {
+    use dpp::platform_value::string_encoding::{encode, Encoding};
+
+    match value {
+        platform_value::Value::Identifier(bytes) => {
+            platform_value::Value::Text(encode(bytes, Encoding::Base58))
+        }
+        platform_value::Value::Bytes(bytes) => {
+            platform_value::Value::Text(encode(bytes, Encoding::Base64))
+        }
+        platform_value::Value::Bytes20(bytes) => {
+            platform_value::Value::Text(encode(bytes, Encoding::Base64))
+        }
+        platform_value::Value::Bytes32(bytes) => {
+            platform_value::Value::Text(encode(bytes, Encoding::Base64))
+        }
+        platform_value::Value::Bytes36(bytes) => {
+            platform_value::Value::Text(encode(bytes, Encoding::Base64))
+        }
+        platform_value::Value::Map(map) => platform_value::Value::Map(
+            map.iter()
+                .map(|(k, v)| (convert_value_for_json(k), convert_value_for_json(v)))
+                .collect(),
+        ),
+        platform_value::Value::Array(arr) => {
+            platform_value::Value::Array(arr.iter().map(convert_value_for_json).collect())
+        }
+        other => other.clone(),
+    }
+}
+
 /// Deserialize JsValue to platform_value::Value.
 ///
 /// serde-wasm-bindgen's deserialize_any handles Uint8Array via visit_byte_buf, which creates
