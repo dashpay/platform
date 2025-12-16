@@ -1,5 +1,4 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
-use crate::asset_lock_proof::tx_out::TxOutWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::serde_format;
@@ -67,8 +66,8 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "getOutput")]
-    pub fn get_output(&self) -> Option<TxOutWasm> {
-        self.0.output().map(|output| output.clone().into())
+    pub fn get_output(&self) -> Option<Vec<u8>> {
+        self.0.output().map(|output| serialize(output))
     }
 
     #[wasm_bindgen(js_name = "getOutPoint")]
