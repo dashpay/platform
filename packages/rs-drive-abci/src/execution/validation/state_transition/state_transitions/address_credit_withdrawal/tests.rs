@@ -72,6 +72,31 @@ mod tests {
         check_result.is_valid()
     }
 
+    /// Perform check_tx on a raw transaction and return the full validation result
+    fn run_check_tx(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        raw_tx: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> dpp::validation::ValidationResult<crate::execution::check_tx::CheckTxResult, ConsensusError>
+    {
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        platform
+            .check_tx(
+                raw_tx,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx")
+    }
+
     // ==========================================
     // Helper Functions
     // ==========================================
@@ -3105,11 +3130,10 @@ mod tests {
             };
 
             let result = transition.validate_structure(platform_version);
-            // TODO: Empty script validation not yet implemented - currently passes
-            // This test documents current behavior; update when validation is added
+            // Empty output script should fail validation
             assert!(
-                result.is_valid(),
-                "Empty output script currently passes validation"
+                !result.is_valid(),
+                "Empty output script should fail validation"
             );
         }
 
@@ -3277,11 +3301,10 @@ mod tests {
             };
 
             let result = transition.validate_structure(platform_version);
-            // TODO: Zero core fee validation not yet implemented - currently passes
-            // This test documents current behavior; update when validation is added
+            // Zero core_fee_per_byte should fail validation
             assert!(
-                result.is_valid(),
-                "Zero core_fee_per_byte currently passes validation"
+                !result.is_valid(),
+                "Zero core_fee_per_byte should fail validation"
             );
         }
 
@@ -3408,31 +3431,19 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Pooling::IfAvailable is not yet implemented, should return error
             assert!(
-                check_tx_is_valid(&platform, &result, platform_version),
-                "check_tx should accept Pooling::IfAvailable"
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject Pooling::IfAvailable (not implemented)"
             );
 
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
+            let check_result = run_check_tx(&platform, &result, platform_version);
+            assert!(check_result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::BasicError(
+                    BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(_)
                 )
-                .expect("expected to process state transition");
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-            );
+            )));
         }
 
         #[test]
@@ -3479,31 +3490,19 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Pooling::Standard is not yet implemented, should return error
             assert!(
-                check_tx_is_valid(&platform, &result, platform_version),
-                "check_tx should accept Pooling::Standard"
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject Pooling::Standard (not implemented)"
             );
 
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
+            let check_result = run_check_tx(&platform, &result, platform_version);
+            assert!(check_result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::BasicError(
+                    BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(_)
                 )
-                .expect("expected to process state transition");
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
-            );
+            )));
         }
     }
 
@@ -4669,11 +4668,10 @@ mod tests {
             };
 
             let result = transition.validate_structure(platform_version);
-            // TODO: OP_RETURN validation not yet implemented - currently passes
-            // This test documents current behavior; update when validation is added
+            // OP_RETURN output script should fail validation
             assert!(
-                result.is_valid(),
-                "OP_RETURN output script currently passes validation"
+                !result.is_valid(),
+                "OP_RETURN output script should fail validation"
             );
         }
 
@@ -4706,11 +4704,10 @@ mod tests {
             };
 
             let result = transition.validate_structure(platform_version);
-            // TODO: Long script validation not yet implemented - currently passes
-            // This test documents current behavior; update when validation is added
+            // Very long output script should fail validation
             assert!(
-                result.is_valid(),
-                "Very long output script currently passes validation"
+                !result.is_valid(),
+                "Very long output script should fail validation"
             );
         }
     }
@@ -5680,14 +5677,14 @@ mod tests {
                 &signer,
                 inputs,
                 create_random_output_script(&mut rng),
-                1000, // High but reasonable
+                987, // High fibonacci number (1000 is not fibonacci)
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             assert!(
                 check_tx_is_valid(&platform, &result, platform_version),
-                "check_tx should accept high core fee per byte"
+                "check_tx should accept high fibonacci core fee per byte"
             );
         }
     }

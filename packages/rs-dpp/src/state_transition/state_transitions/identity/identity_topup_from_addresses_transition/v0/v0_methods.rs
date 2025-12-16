@@ -54,8 +54,8 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         let signable_bytes = state_transition.signable_bytes()?;
 
         identity_top_up_from_addresses_transition.input_witnesses = inputs
-            .iter()
-            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
+            .keys()
+            .map(|address| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         Ok(identity_top_up_from_addresses_transition.into())

@@ -31,7 +31,7 @@ impl DriveHighLevelOperationConverter for BumpAddressInputNoncesAction {
                     .iter()
                     .map(|(address, (nonce, balance))| {
                         AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress {
-                            address: address.clone(),
+                            address: *address,
                             nonce: *nonce,
                             balance: *balance,
                         })
