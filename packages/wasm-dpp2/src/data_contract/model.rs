@@ -209,11 +209,10 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let json_value: JsonValue = js_value.with_serde_to_json_value()?;
+        let json_value = serde_format::js_value_to_json(&js_value)?;
 
         let contract =
-            DataContract::from_json(json_value, full_validation, &platform_version.into())
-                .map_err(WasmDppError::from)?;
+            DataContract::from_json(json_value, full_validation, &platform_version.into())?;
 
         Ok(DataContractWasm(contract))
     }
