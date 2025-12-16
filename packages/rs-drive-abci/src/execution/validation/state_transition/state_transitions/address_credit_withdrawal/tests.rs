@@ -790,7 +790,14 @@ mod tests {
             );
 
             // Create an OP_RETURN script (not P2PKH or P2SH)
-            let op_return_script = CoreScript::new(ScriptBuf::from(vec![OP_RETURN, 0x04, 0x01, 0x02, 0x03, 0x04]));
+            let op_return_script = CoreScript::new(ScriptBuf::from(vec![
+                OP_RETURN.to_u8(),
+                0x04,
+                0x01,
+                0x02,
+                0x03,
+                0x04,
+            ]));
 
             let transition = AddressCreditWithdrawalTransitionV0 {
                 inputs,
@@ -848,7 +855,11 @@ mod tests {
             };
 
             let result = transition.validate_structure(platform_version);
-            assert!(result.is_valid(), "Expected valid result, got errors: {:?}", result.errors);
+            assert!(
+                result.is_valid(),
+                "Expected valid result, got errors: {:?}",
+                result.errors
+            );
         }
 
         #[test]
@@ -4239,8 +4250,6 @@ mod tests {
 
         #[test]
         fn test_transition_round_trip_serialization() {
-            let platform_version = PlatformVersion::latest();
-
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
 

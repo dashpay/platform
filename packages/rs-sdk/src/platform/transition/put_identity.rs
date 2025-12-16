@@ -20,7 +20,6 @@ use dpp::state_transition::identity_create_from_addresses_transition::IdentityCr
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::AddressInfos;
-use simple_signer::SimpleAddressSigner;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait for creating identities on the platform.
@@ -49,22 +48,30 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         Self: Sized;
 
     /// Creates an identity funded by Platform addresses (nonces fetched automatically).
-    async fn put_with_address_funding(
+    async fn put_with_address_funding<
+        WS: Signer<PlatformAddress> + Send + Sync,
+        K: Into<WS> + Send + Sync,
+    >(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
-        signer: &S,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &S,
+        input_address_signer: K,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error>;
 
     /// Creates an identity funded by Platform addresses using explicit nonces.
-    async fn put_with_address_funding_with_nonce(
+    async fn put_with_address_funding_with_nonce<
+        WS: Signer<PlatformAddress> + Send + Sync,
+        K: Into<WS> + Send + Sync,
+    >(
         &self,
         sdk: &Sdk,
-        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
-        signer: &S,
+        inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &S,
+        input_address_signer: K,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error>;
 }
@@ -111,35 +118,53 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 
-    async fn put_with_address_funding(
+    async fn put_with_address_funding<
+        WS: Signer<PlatformAddress> + Send + Sync,
+        K: Into<WS> + Send + Sync,
+    >(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
-        signer: &S,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &S,
+        input_address_signer: K,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error> {
         let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
         self.put_with_address_funding_with_nonce(
             sdk,
             inputs_with_nonce,
-            input_private_keys,
-            signer,
+            output,
+            identity_signer,
+            input_address_signer,
             settings,
         )
         .await
     }
 
-    async fn put_with_address_funding_with_nonce(
+    async fn put_with_address_funding_with_nonce<
+        WS: Signer<PlatformAddress> + Send + Sync,
+        K: Into<WS> + Send + Sync,
+    >(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
-        signer: &S,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &S,
+        input_address_signer: K,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error> {
-        put_identity_with_address_funding(self, sdk, inputs, input_private_keys, signer, settings)
-            .await
+        let input_signer: WS = input_address_signer.into();
+        put_identity_with_address_funding::<S, WS>(
+            self,
+            sdk,
+            inputs,
+            output,
+            identity_signer,
+            &input_signer,
+            settings,
+        )
+        .await
     }
 }
 
@@ -162,25 +187,20 @@ async fn put_identity_with_asset_lock<S: Signer<IdentityPublicKey>>(
     Ok(state_transition)
 }
 
-async fn put_identity_with_address_funding<S: Signer<IdentityPublicKey>>(
+async fn put_identity_with_address_funding<
+    S: Signer<IdentityPublicKey>,
+    WS: Signer<PlatformAddress>,
+>(
     identity: &Identity,
     sdk: &Sdk,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    input_private_keys: Vec<Vec<u8>>,
-    signer: &S,
+    output: Option<(PlatformAddress, Credits)>,
+    identity_signer: &S,
+    input_signer: &WS,
     settings: Option<PutSettings>,
 ) -> Result<(Identity, AddressInfos), Error> {
-    if input_private_keys.is_empty() {
-        return Err(Error::InvalidCreditTransfer(
-            "input_private_keys must contain at least one key".to_string(),
-        ));
-    }
-
     let expected_addresses: BTreeSet<PlatformAddress> =
         inputs.keys().copied().collect::<BTreeSet<_>>();
-    let signer_addresses: Vec<PlatformAddress> = expected_addresses.iter().copied().collect();
-    let address_signer =
-        SimpleAddressSigner::from_addresses_and_keys(&signer_addresses, &input_private_keys)?;
 
     let fee_strategy: AddressFundsFeeStrategy =
         vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
@@ -193,9 +213,10 @@ async fn put_identity_with_address_funding<S: Signer<IdentityPublicKey>>(
     let state_transition = IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
         identity,
         inputs,
+        output,
         fee_strategy,
-        signer,
-        &address_signer,
+        identity_signer,
+        input_signer,
         user_fee_increase,
         sdk.version(),
     )?;
