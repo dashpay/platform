@@ -319,7 +319,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "getSchemas")]
     pub fn get_schemas(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0.document_schemas())
+        serde_format::to_object(&self.0.document_schemas())
     }
 
     #[wasm_bindgen(getter = "version")]
@@ -339,7 +339,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "getConfig")]
     pub fn get_config(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(self.0.config())
+        serde_format::to_object(self.0.config())
     }
 
     #[wasm_bindgen(getter = "tokens")]
