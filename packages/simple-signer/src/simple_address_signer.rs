@@ -62,7 +62,7 @@ impl SimpleAddressSigner {
 
         for (address, private_key) in addresses.iter().zip(private_keys.iter()) {
             // Verify the private key corresponds to this address
-            let secret_key = SecretKey::from_byte_array(&private_key)
+            let secret_key = SecretKey::from_byte_array(private_key)
                 .map_err(|e| ProtocolError::Generic(format!("Invalid private key: {}", e)))?;
             let public_key =
                 dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);

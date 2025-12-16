@@ -331,8 +331,7 @@ impl PlatformAddress {
                 let mut matched = 0;
                 let mut signature_verifications: u16 = 0;
 
-                let signable_bytes_hash =
-                    sha256d::Hash::hash(signable_bytes.as_ref()).to_byte_array();
+                let signable_bytes_hash = sha256d::Hash::hash(signable_bytes).to_byte_array();
                 let msg = Message::from_digest(signable_bytes_hash);
                 let secp = Secp256k1::new();
 

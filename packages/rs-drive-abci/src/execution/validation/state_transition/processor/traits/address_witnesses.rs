@@ -50,9 +50,7 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
             .validate_address_witnesses
         {
             0 => {
-                let signable_bytes = self
-                    .signable_bytes()
-                    .map_err(|e| Error::Protocol(e.into()))?;
+                let signable_bytes = self.signable_bytes()?;
 
                 let witness_result = match self {
                     StateTransition::AddressFundsTransfer(st) => {
@@ -128,7 +126,7 @@ fn add_witness_verification_operations_to_context(
         // SHA256 has 64-byte blocks. For double_sha256:
         // - First SHA256: ceil((len + 9) / 64) blocks (9 bytes for length + padding)
         // - Second SHA256: 1 block (32-byte input from first hash)
-        let first_sha256_blocks = ((operations.signable_bytes_len + 9 + 63) / 64) as u16;
+        let first_sha256_blocks = (operations.signable_bytes_len + 9).div_ceil(64) as u16;
         let second_sha256_blocks = 1u16;
         let blocks_per_double_sha256 = first_sha256_blocks + second_sha256_blocks;
         execution_context.add_operation(ValidationOperation::DoubleSha256(

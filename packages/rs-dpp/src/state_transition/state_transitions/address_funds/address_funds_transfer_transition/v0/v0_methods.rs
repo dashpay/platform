@@ -51,8 +51,8 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
         let signable_bytes = state_transition.signable_bytes()?;
 
         address_funds_transition.input_witnesses = inputs
-            .iter()
-            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
+            .keys()
+            .map(|address| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");

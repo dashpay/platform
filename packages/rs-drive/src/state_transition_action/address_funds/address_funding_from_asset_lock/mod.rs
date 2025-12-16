@@ -77,6 +77,7 @@ impl AddressFundingFromAssetLockTransitionAction {
     }
 
     /// Returns owned copies of inputs and outputs.
+    #[allow(clippy::type_complexity)]
     pub fn inputs_with_remaining_balance_outputs_and_asset_lock_value_owned(
         self,
     ) -> (

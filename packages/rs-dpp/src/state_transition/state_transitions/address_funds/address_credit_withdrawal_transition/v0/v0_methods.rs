@@ -62,8 +62,8 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         let signable_bytes = state_transition.signable_bytes()?;
 
         address_credit_withdrawal_transition.input_witnesses = inputs
-            .iter()
-            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
+            .keys()
+            .map(|address| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");

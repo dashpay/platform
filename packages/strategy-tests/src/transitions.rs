@@ -867,6 +867,7 @@ pub fn create_identity_credit_transfer_transition(
 /// This function may panic if:
 /// - The sender's identity does not have a suitable transfer key available for signing.
 /// - There's an error during the signing process.
+#[allow(clippy::too_many_arguments)]
 pub fn create_identity_credit_transfer_to_addresses_transition(
     identity: &Identity,
     identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -887,7 +888,7 @@ pub fn create_identity_credit_transfer_to_addresses_transition(
 
     for _ in 0..output_count {
         let new_address = signer.add_random_address_key(rng);
-        current_addresses_with_balance.register_new_address(new_address.clone(), amount_per_output);
+        current_addresses_with_balance.register_new_address(new_address, amount_per_output);
         recipient_addresses.insert(new_address, amount_per_output);
     }
 
