@@ -9,6 +9,9 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "identity-value-conversion")]
 use platform_value::Value;
+#[cfg(feature = "identity-serde-conversion")]
+use serde::{Deserialize, Serialize};
+
 use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::Revision;
 
@@ -24,7 +27,7 @@ use bincode::{Decode, Encode};
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
     feature = "identity-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize),
+    derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub struct IdentityV0 {

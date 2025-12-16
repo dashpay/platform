@@ -6,6 +6,7 @@ use platform_serialization::de::Decode;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
+
 mod methods;
 pub mod v0;
 
@@ -19,10 +20,6 @@ pub mod v0;
     PlatformVersioned,
     From,
     PartialEq,
-)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum TokenStatus {
