@@ -70,9 +70,9 @@ pub(crate) fn collect_address_infos_from_proof(
             ?address_infos_keys,
             "address proof mismatch",
         );
-        return Err(Error::InvalidProvedResponse(format!(
-            "proof returned different addresses",
-        )));
+        return Err(Error::InvalidProvedResponse(
+            "proof returned different addresses".to_string(),
+        ));
     }
     let infos: AddressInfos = address_infos_map
         .into_iter()
