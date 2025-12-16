@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::operations::insert::InsertOptions;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
 
 impl Drive {
@@ -17,6 +17,7 @@ impl Drive {
     /// * `path`: The groveDB hierarchical authenticated structure path where the new element is to be inserted.
     /// * `key`: The key where the new element should be inserted in the subtree.
     /// * `transaction`: The groveDB transaction associated with this operation.
+    /// * `tree_type`: The type of tree (normal - sum tree - count tree - count sum tree)
     /// * `options`: Optional insert options to further configure the operation.
     /// * `drive_operations`: A vector to collect the costs of operations for later computation.
     /// * `platform_version`: The platform version to select the correct function version to run.
@@ -28,6 +29,7 @@ impl Drive {
         &self,
         path: SubtreePath<'_, B>,
         key: &[u8],
+        tree_type: TreeType,
         transaction: TransactionArg,
         options: Option<InsertOptions>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -37,6 +39,7 @@ impl Drive {
             0 => self.grove_insert_empty_tree_v0(
                 path,
                 key,
+                tree_type,
                 transaction,
                 options,
                 drive_operations,

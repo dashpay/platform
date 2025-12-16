@@ -15,7 +15,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
 
 impl Drive {
@@ -31,6 +31,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::GroupActions as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut vec![],
