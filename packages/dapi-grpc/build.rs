@@ -185,7 +185,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]"#,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
@@ -195,13 +195,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage,::dapi_grpc_macros::VersionedGrpcResponse)]"#,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
     // All messages can be mocked.
-    let platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+    let platform = platform.message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#);
 
     let platform = platform
         .type_attribute(
@@ -236,7 +236,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
 fn configure_drive(drive: MappingConfig) -> MappingConfig {
     drive
-        .message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#)
+        .message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#)
         .type_attribute(
             ".",
             r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
@@ -271,7 +271,7 @@ fn check_unique(messages: &[&'static str]) -> Result<(), String> {
 
 fn configure_core(core: MappingConfig) -> MappingConfig {
     // All messages can be mocked.
-    let core = core.message_attribute(".", r#"#[derive(::dapi_grpc_macros::Mockable)]"#);
+    let core = core.message_attribute(".", r#"#[derive(::dash_platform_macros::Mockable)]"#);
 
     // Serde support
     let core = core.type_attribute(

@@ -363,7 +363,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/dapi-grpc \
-    packages/rs-dapi-grpc-macros \
+    packages/rs-dash-platform-macros \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
@@ -453,7 +453,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/dapi-grpc \
-    packages/rs-dapi-grpc-macros \
+    packages/rs-dash-platform-macros \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
@@ -781,7 +781,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/dapi-grpc \
-    packages/rs-dapi-grpc-macros \
+    packages/rs-dash-platform-macros \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \

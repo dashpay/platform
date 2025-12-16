@@ -29,7 +29,7 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
-    use dapi_grpc_macros::stack_size;
+    use dash_platform_macros::stack_size;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::DocumentAction::{
         DocumentActionReplaceRandom, DocumentActionTransferRandom,

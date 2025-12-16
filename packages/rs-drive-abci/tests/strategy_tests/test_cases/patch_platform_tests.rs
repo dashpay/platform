@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use dapi_grpc_macros::stack_size;
+    use dash_platform_macros::stack_size;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use drive::config::DriveConfig;
     use std::collections::{BTreeMap, HashMap};

@@ -2,7 +2,7 @@
 mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness, UpgradingInfo};
-    use dapi_grpc_macros::stack_size;
+    use dash_platform_macros::stack_size;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
