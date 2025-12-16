@@ -114,6 +114,7 @@ impl PlatformAddress {
         // Build the 21-byte payload: type_byte || hash
         let payload = self.to_bytes();
 
+        // Verified that this can not error
         bech32::encode::<Bech32m>(hrp, &payload).expect("encoding should succeed")
     }
 
