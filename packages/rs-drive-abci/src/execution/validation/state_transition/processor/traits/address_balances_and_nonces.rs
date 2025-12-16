@@ -39,6 +39,11 @@ pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
             "Validating input address balances and nonces for state transition"
         );
 
+        tracing::trace!(
+            inputs = ?inputs,
+            "Validating input address balances and nonces for state transition"
+        );
+
         // Validate maximum inputs, we need to do this here so we don't go and check too much data
         // in the state.
         if inputs.len() > platform_version.dpp.state_transitions.max_address_inputs as usize {

@@ -11,7 +11,6 @@ use crate::{
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 
-use crate::state_transition::StateTransitionType::IdentityCreditTransfer;
 use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 use crate::version::FeatureVersion;
 
@@ -29,7 +28,7 @@ impl StateTransitionLike for IdentityCreditTransferToAddressesTransitionV0 {
 
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
-        IdentityCreditTransfer
+        StateTransitionType::IdentityCreditTransferToAddresses
     }
 
     /// Returns ID of the created contract

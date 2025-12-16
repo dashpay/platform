@@ -4249,8 +4249,6 @@ mod tests {
 
         #[test]
         fn test_transition_round_trip_serialization() {
-            let platform_version = PlatformVersion::latest();
-
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
 

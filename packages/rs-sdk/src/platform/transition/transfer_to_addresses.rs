@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::address_inputs::collect_address_infos_from_proof;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::platform::transition::waitable::Waitable;
-use crate::platform::{Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -14,13 +14,14 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use drive_proof_verifier::types::{AddressInfo, AddressInfos};
+use drive_proof_verifier::types::AddressInfos;
 
 #[async_trait::async_trait]
 pub trait TransferToAddresses: Waitable {
     /// Transfer credits from an identity to multiple Platform addresses.
     ///
     /// Returns tuple of:
+    /// * Proof-backed address infos for provided recipients
     /// * Updated identity balance
     /// * Proof-backed address infos for provided recipients
     #[allow(clippy::too_many_arguments)]
@@ -31,7 +32,7 @@ pub trait TransferToAddresses: Waitable {
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, AddressInfos), Error>;
+    ) -> Result<(AddressInfos, Credits), Error>;
 }
 
 #[async_trait::async_trait]
@@ -43,7 +44,7 @@ impl TransferToAddresses for Identity {
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, AddressInfos), Error> {
+    ) -> Result<(AddressInfos, Credits), Error> {
         if recipient_addresses.is_empty() {
             return Err(Error::Generic(
                 "recipient_addresses must contain at least one address".to_string(),
@@ -68,31 +69,40 @@ impl TransferToAddresses for Identity {
         )?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
+        let expected_addresses: BTreeSet<PlatformAddress> =
+            recipient_addresses.keys().copied().collect();
+
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
             .await?
         {
-            // TODO: Return correct data from the proof result and avoid extra fetches.
-            StateTransitionProofResult::VerifiedPartialIdentity(_) => {}
-            other => {
-                return Err(Error::Generic(format!(
-                    "unexpected proof result received: {:?}",
-                    other
-                )))
+            StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                identity,
+                address_infos_map,
+            ) => {
+                if identity.id != self.id() {
+                    return Err(Error::InvalidProvedResponse(format!(
+                        "proof returned identity {} but {} initiated transfer",
+                        identity.id,
+                        self.id()
+                    )));
+                }
+
+                let address_infos =
+                    collect_address_infos_from_proof(address_infos_map, &expected_addresses)?;
+
+                let balance = identity.balance.ok_or_else(|| {
+                    Error::InvalidProvedResponse(
+                        "identity proof did not include updated balance".to_string(),
+                    )
+                })?;
+
+                Ok((address_infos, balance))
             }
+            other => Err(Error::InvalidProvedResponse(format!(
+                "identity proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
         }
-
-        // Refresh identity balance after transfer to reflect final state
-        let updated_identity = Identity::fetch(sdk, self.id())
-            .await?
-            .ok_or_else(|| Error::Generic("identity was not found after transfer".to_string()))?;
-        let updated_balance = updated_identity.balance();
-
-        // Fetch updated address balances/nonces for recipients
-        let addresses_query: BTreeSet<PlatformAddress> =
-            recipient_addresses.keys().copied().collect();
-        let address_infos = AddressInfo::fetch_many(sdk, addresses_query).await?;
-
-        Ok((updated_balance, address_infos))
     }
 }

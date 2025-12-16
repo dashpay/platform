@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::address_inputs::fetch_inputs_with_nonce;
+use super::address_inputs::{collect_address_infos_from_proof, fetch_inputs_with_nonce};
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::platform::transition::address_inputs::nonce_inc;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
-use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::errors::consensus::basic::state_transition::TransitionNoOutputsError;
@@ -15,7 +14,7 @@ use dpp::prelude::AddressNonce;
 use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use drive_proof_verifier::types::{AddressInfo, AddressInfos};
+use drive_proof_verifier::types::AddressInfos;
 
 /// Helper trait to transfer funds directly between Platform addresses.
 #[async_trait::async_trait]
@@ -91,14 +90,20 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
         )?;
         ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
-            .await?;
-
-        // Refresh balances for all addresses involved.
-        // TODO: Read this info from the proof returned by broadcast_and_wait above to avoid extra fetch.
-        let addresses: BTreeSet<PlatformAddress> =
+        let expected_addresses: BTreeSet<PlatformAddress> =
             inputs.keys().chain(outputs.keys()).copied().collect();
-        AddressInfo::fetch_many(self, addresses).await
+
+        match state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
+            .await?
+        {
+            StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) => {
+                collect_address_infos_from_proof(address_infos_map, &expected_addresses)
+            }
+            other => Err(Error::InvalidProvedResponse(format!(
+                "address info proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
+        }
     }
 }

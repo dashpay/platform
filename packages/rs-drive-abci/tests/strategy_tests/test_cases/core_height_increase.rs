@@ -3,6 +3,7 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
     use crate::strategy::{ChainExecutionOutcome, MasternodeListChangesStrategy, NetworkStrategy};
+    use dash_platform_macros::stack_size;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::dash_to_duffs;
     use dpp::dashcore::hashes::Hash;
@@ -142,6 +143,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {

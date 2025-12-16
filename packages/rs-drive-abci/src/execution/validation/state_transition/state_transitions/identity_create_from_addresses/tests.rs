@@ -10180,7 +10180,6 @@ mod tests {
 
             // Create identity signer with the first key
             let mut identity_signer = SimpleSigner::default();
-
             identity_signer.add_identity_public_key(key1.clone(), signer1);
 
             // Build identity manually with these duplicate-ID keys

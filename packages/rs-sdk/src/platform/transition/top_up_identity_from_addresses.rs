@@ -28,7 +28,7 @@ pub trait TopUpIdentityFromAddresses<S: Signer<PlatformAddress>>: Waitable {
         inputs: BTreeMap<PlatformAddress, Credits>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, u64), Error>;
+    ) -> Result<(AddressInfos, Credits), Error>;
 
     /// Top up identity providing explicit address nonces.
     ///
@@ -39,7 +39,7 @@ pub trait TopUpIdentityFromAddresses<S: Signer<PlatformAddress>>: Waitable {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, u64), Error>;
+    ) -> Result<(AddressInfos, Credits), Error>;
 }
 
 #[async_trait::async_trait]
@@ -50,7 +50,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         inputs: BTreeMap<PlatformAddress, Credits>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, u64), Error> {
+    ) -> Result<(AddressInfos, Credits), Error> {
         let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
         self.top_up_from_addresses_with_nonce(sdk, inputs_with_nonce, signer, settings)
             .await
@@ -62,7 +62,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, u64), Error> {
+    ) -> Result<(AddressInfos, Credits), Error> {
         let user_fee_increase = settings
             .as_ref()
             .and_then(|settings| settings.user_fee_increase)

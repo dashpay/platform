@@ -9,6 +9,8 @@ use crate::verify::state_transition::state_transition_execution_path_queries::Tr
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
 use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
@@ -18,6 +20,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -205,7 +208,20 @@ impl Drive {
                 }
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
-                Drive::balances_for_clear_addresses_query(st.recipient_addresses().keys())
+                let identity_query = Drive::revision_and_balance_path_query(
+                    st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                let mut addresses_query =
+                    Drive::balances_for_clear_addresses_query(st.recipient_addresses().keys());
+
+                // TODO: fix this limit setting - "can not merge pathqueries with limits, consider setting the limit after the merge"
+                addresses_query.query.limit = None;
+
+                PathQuery::merge(
+                    vec![&identity_query, &addresses_query],
+                    &platform_version.drive.grove_version,
+                )?
             }
             StateTransition::IdentityCreateFromAddresses(st) => {
                 let identity_id = st.identity_id_from_inputs().map_err(|e| {
@@ -214,15 +230,40 @@ impl Drive {
                         e
                     )))
                 })?;
-                Drive::full_identity_query(
+                let identity_query = Drive::full_identity_query(
                     &identity_id.into_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                let change_output = st.output().into_iter().map(|(address, _)| address);
+                let addresses_to_check = st.inputs().keys().chain(change_output);
+
+                let mut addresses_query =
+                    Drive::balances_for_clear_addresses_query(addresses_to_check);
+
+                // TODO: fix this limit setting - "can not merge pathqueries with limits, consider setting the limit after the merge"
+                addresses_query.query.limit = None;
+
+                PathQuery::merge(
+                    vec![&identity_query, &addresses_query],
                     &platform_version.drive.grove_version,
                 )?
             }
             StateTransition::IdentityTopUpFromAddresses(st) => {
                 // we expect to get a new balance and revision
-                Drive::revision_and_balance_path_query(
+                let identity_query = Drive::revision_and_balance_path_query(
                     st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                let change_output = st.output().into_iter().map(|(address, _)| address);
+                let addresses_to_check = st.inputs().keys().chain(change_output);
+                let addresses_query = Drive::balances_for_clear_addresses_query(addresses_to_check);
+
+                // TODO: not sure if just setting this to unlimited is correct
+                let mut addresses_query = addresses_query;
+                addresses_query.query.limit = None;
+
+                PathQuery::merge(
+                    vec![&identity_query, &addresses_query],
                     &platform_version.drive.grove_version,
                 )?
             }
@@ -230,11 +271,16 @@ impl Drive {
                 st.inputs().keys().chain(st.outputs().keys()),
             ),
             StateTransition::AddressFundingFromAssetLock(st) => {
-                use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
-                Drive::balances_for_clear_addresses_query(st.outputs().keys())
+                Drive::balances_for_clear_addresses_query(
+                    st.inputs().keys().chain(st.outputs().keys()),
+                )
             }
             StateTransition::AddressCreditWithdrawal(st) => {
-                Drive::balances_for_clear_addresses_query(st.inputs().keys())
+                let addresses_to_check = st
+                    .inputs()
+                    .keys()
+                    .chain(st.output().into_iter().map(|(address, _)| address));
+                Drive::balances_for_clear_addresses_query(addresses_to_check)
             }
         };
 
