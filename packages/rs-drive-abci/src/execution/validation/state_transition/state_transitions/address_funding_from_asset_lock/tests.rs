@@ -111,7 +111,7 @@ mod tests {
             .random_public_and_private_key_data(rng, platform_version)
             .unwrap();
 
-        let one_time_private_key = PrivateKey::from_slice(&pk, Network::Testnet).unwrap();
+        let one_time_private_key = PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap();
         let one_time_public_key = one_time_private_key.public_key(&secp);
         let one_time_key_hash = one_time_public_key.pubkey_hash();
 

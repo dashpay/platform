@@ -1,6 +1,5 @@
 use crate::masternodes::MasternodeListItemWithUpdates;
 use crate::query::QueryStrategy;
-use crate::BlockHeight;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::dashcore::{ProTxHash, QuorumHash};
@@ -48,7 +47,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
-use dpp::prelude::{AssetLockProof, Identifier, IdentityNonce};
+use dpp::prelude::{AssetLockProof, BlockHeight, Identifier, IdentityNonce};
 use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;

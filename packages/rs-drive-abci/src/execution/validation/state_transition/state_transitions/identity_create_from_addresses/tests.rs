@@ -3857,7 +3857,6 @@ mod tests {
 
     mod user_fee_increase {
         use super::*;
-        use dpp::state_transition::StateTransitionLike;
 
         #[test]
         fn test_zero_user_fee_increase() {
