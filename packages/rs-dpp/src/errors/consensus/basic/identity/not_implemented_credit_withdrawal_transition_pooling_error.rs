@@ -35,8 +35,6 @@ impl NotImplementedCreditWithdrawalTransitionPoolingError {
 
 impl From<NotImplementedCreditWithdrawalTransitionPoolingError> for ConsensusError {
     fn from(err: NotImplementedCreditWithdrawalTransitionPoolingError) -> Self {
-        Self::BasicError(
-            BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(err),
-        )
+        Self::BasicError(BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(err))
     }
 }

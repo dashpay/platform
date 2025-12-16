@@ -42,8 +42,8 @@ impl StateTransitionIdentityEstimatedFeeValidation for BatchTransition {
                     ))),
                 ))
             }
-            // Other errors shouldn't happen, but if they do, treat as zero
-            Err(_) => 0,
+            // Other errors shouldn't happen
+            Err(e) => return Err(e),
         };
 
         // If we added documents that had a conflicting index we need to put up a collateral that voters can draw on
@@ -57,8 +57,8 @@ impl StateTransitionIdentityEstimatedFeeValidation for BatchTransition {
                         ))),
                     ))
                 }
-                // Other errors shouldn't happen, but if they do, treat as zero
-                Err(_) => 0,
+                // Other errors shouldn't happen
+                Err(e) => return Err(e),
             };
 
         let base_fees = self.calculate_min_required_fee(platform_version)?;

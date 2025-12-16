@@ -58,17 +58,17 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidCreditWithdrawalTransitionCoreFeeError,
-    InvalidCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
-    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
-    InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
-    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
-    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
-    NotImplementedCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
-    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
+    InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError,
+    InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError,
+    InvalidInstantAssetLockProofSignatureError, InvalidKeyPurposeForContractBoundsError,
+    MissingMasterPublicKeyError, NotImplementedCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -374,9 +374,7 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    InvalidCreditWithdrawalTransitionCoreFeeError(
-        InvalidCreditWithdrawalTransitionCoreFeeError,
-    ),
+    InvalidCreditWithdrawalTransitionCoreFeeError(InvalidCreditWithdrawalTransitionCoreFeeError),
 
     #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionAmountError(

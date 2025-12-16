@@ -40,6 +40,8 @@ impl InvalidCreditWithdrawalTransitionCoreFeeError {
 
 impl From<InvalidCreditWithdrawalTransitionCoreFeeError> for ConsensusError {
     fn from(err: InvalidCreditWithdrawalTransitionCoreFeeError) -> Self {
-        Self::BasicError(BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(err))
+        Self::BasicError(BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(
+            err,
+        ))
     }
 }

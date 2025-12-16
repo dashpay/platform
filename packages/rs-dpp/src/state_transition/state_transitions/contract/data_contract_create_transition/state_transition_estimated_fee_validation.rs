@@ -20,10 +20,7 @@ impl StateTransitionEstimatedFeeValidation for DataContractCreateTransition {
             .state_transition_min_fees
             .contract_create;
 
-        let registration_cost = self
-            .data_contract()
-            .registration_cost(platform_version)
-            .unwrap_or(0);
+        let registration_cost = self.data_contract().registration_cost(platform_version)?;
 
         Ok(base_fee.saturating_add(registration_cost))
     }

@@ -54,7 +54,8 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // There was an issue in protocol version 11 and before where we were not multiplying by 1000
-        // However it should be caught later on.
+        // However it should be caught later on at "if tx_out_credit_value < required_balance"
+        // in this function as that was correct.
         let required_balance = self.calculate_min_required_fee(platform_version)?;
 
         let signable_bytes_len = signable_bytes.len();
