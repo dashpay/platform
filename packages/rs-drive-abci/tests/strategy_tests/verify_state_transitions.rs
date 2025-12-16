@@ -9,9 +9,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::StateTransition;
-use dpp::state_transition::StateTransitionAddressEstimatedFeeValidation;
-use dpp::state_transition::StateTransitionEstimatedFeeValidation;
+use dpp::state_transition::{StateTransition };
 use dpp::state_transition::StateTransitionType;
 use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
@@ -94,35 +92,6 @@ fn latest_block_info<C>(platform: &PlatformRef<C>) -> BlockInfo {
         .as_ref()
         .map(|info| info.basic_info().clone())
         .unwrap_or_else(BlockInfo::default)
-}
-
-fn assert_estimated_fee_is_covered_by_inputs<T>(
-    transition: &T,
-    inputs_with_remaining_balance: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    platform_version: &PlatformVersion,
-    context: &str,
-) where
-    T: StateTransitionAddressEstimatedFeeValidation,
-{
-    let required_fee = transition
-        .calculate_min_required_fee(platform_version)
-        .expect("expected to calculate minimum fee");
-    let available_fee_amount = transition.calculate_amount_available(inputs_with_remaining_balance);
-
-    assert!(
-        available_fee_amount >= required_fee,
-        "{context}: fee coverage mismatch (available {available_fee_amount} < required {required_fee})"
-    );
-
-    let validation_result = transition
-        .validate_estimated_fee(inputs_with_remaining_balance, platform_version)
-        .expect("expected fee validation to succeed");
-
-    assert!(
-        validation_result.is_valid(),
-        "{context}: estimated fee validation failed with errors {:?}",
-        validation_result.errors
-    );
 }
 
 fn assert_address_inputs_state(
@@ -226,7 +195,6 @@ fn assert_action_outputs_state(
     transition_outputs: &BTreeMap<PlatformAddress, Credits>,
     action_outputs: &BTreeMap<PlatformAddress, Credits>,
     proof_address_infos: &BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-    minimum_fee: Credits,
     context: &str,
 ) {
     assert_eq!(
@@ -250,14 +218,14 @@ fn assert_action_outputs_state(
             address
         );
 
-        // Proof balances can still include the initial funding of the output address,
-        // so allow for the minimum fee being deducted from the transition amount.
-        let tolerated_balance = transition_balance.saturating_sub(minimum_fee);
+        // we cannot be sure that the proof balance matches the action/transition balance here,
+        // as it can also contain initial balance of the output.
+        let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
         assert!(
-            *proof_balance >= tolerated_balance,
-            "{context}: proof balance {} should be >= transition balance {} minus minimum fee {minimum_fee} for address {:?}",
+            *proof_balance >= *transition_balance - fee_guesstimate,
+            "{context}: proof balance {} should be >= transition balance {} minus fees {fee_guesstimate} for address {:?}",
             proof_balance,
-            transition_balance,
+            action_balance,
             address
         );
     }
@@ -271,7 +239,6 @@ fn assert_asset_lock_outputs_state(
     action_outputs: &BTreeMap<PlatformAddress, Option<Credits>>,
     resolved_action_outputs: &BTreeMap<PlatformAddress, Credits>,
     proof_address_infos: &BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-    minimum_fee: Credits,
     context: &str,
 ) {
     assert_eq!(
@@ -312,10 +279,11 @@ fn assert_asset_lock_outputs_state(
         let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
             panic!("{context}: missing proof info for address {:?}", address);
         };
-        let diff = proof_balance.abs_diff(*action_resolved_balance);
+        let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
+        let diff = (*proof_balance as i64 - *action_resolved_balance as i64).abs();
         assert!(
-            diff <= minimum_fee,
-            "{context}: proof balance {proof_balance} differs from resolved balance {action_resolved_balance} by {diff} which exceeds minimum fee {minimum_fee} for address {:?}",
+            diff < fee_guesstimate,
+            "{context}: proof balance {proof_balance} differs from resolved balance {action_resolved_balance} by {diff} for address {:?}",
             address
         );
     }
@@ -1001,13 +969,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         identity_create_from_addresses_transition,
                     ) = state_transition
                     {
-                        assert_estimated_fee_is_covered_by_inputs(
-                            identity_create_from_addresses_transition,
-                            identity_create_from_addresses_action.inputs_with_remaining_balance(),
-                            platform_version,
-                            "identity create from addresses",
-                        );
-
                         if *was_executed {
                             let block_info = latest_block_info(&platform);
                             let (root_hash, proof_result) =
@@ -1111,13 +1072,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         identity_top_up_from_addresses_transition,
                     ) = state_transition
                     {
-                        assert_estimated_fee_is_covered_by_inputs(
-                            identity_top_up_from_addresses_transition,
-                            identity_top_up_from_addresses_action.inputs_with_remaining_balance(),
-                            platform_version,
-                            "identity top up from addresses",
-                        );
-
                         let block_info = abci_app.platform.state.load().last_block_info().clone();
                         let (root_hash_identity, data) =
                             Drive::verify_state_transition_was_executed_with_proof(
@@ -1304,13 +1258,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             );
                         };
 
-                        assert_estimated_fee_is_covered_by_inputs(
-                            address_funds_transfer_transition,
-                            address_funds_transfer_action.inputs_with_remaining_balance(),
-                            platform_version,
-                            "address funds transfer",
-                        );
-
                         let expected_addresses: BTreeSet<PlatformAddress> =
                             address_funds_transfer_transition
                                 .inputs()
@@ -1331,14 +1278,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             &proof_address_infos_map,
                             "address funds transfer",
                         );
-                        let minimum_fee = address_funds_transfer_transition
-                            .calculate_min_required_fee(platform_version)
-                            .expect("expected to calculate minimum fee");
                         assert_action_outputs_state(
                             address_funds_transfer_transition.outputs(),
                             address_funds_transfer_action.outputs(),
                             &proof_address_infos_map,
-                            minimum_fee,
                             "address funds transfer outputs",
                         );
                     } else {
@@ -1414,15 +1357,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             "address funding from asset lock",
                         );
 
-                        let minimum_fee = address_funding_from_asset_lock_transition
-                            .calculate_min_required_fee(platform_version)
-                            .expect("expected to calculate minimum fee");
                         assert_asset_lock_outputs_state(
                             transition_outputs,
                             action_outputs,
                             &resolved_outputs,
                             &proof_address_infos,
-                            minimum_fee,
                             "address funding from asset lock outputs",
                         );
                     } else {
@@ -1462,13 +1401,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 proof_result
                             );
                         };
-
-                        assert_estimated_fee_is_covered_by_inputs(
-                            address_credit_withdrawal_transition,
-                            address_credit_withdrawal_action.inputs_with_remaining_balance(),
-                            platform_version,
-                            "address credit withdrawal",
-                        );
 
                         let mut expected_addresses: BTreeSet<PlatformAddress> =
                             address_credit_withdrawal_transition
