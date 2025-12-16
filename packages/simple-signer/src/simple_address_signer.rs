@@ -46,7 +46,7 @@ impl SimpleAddressSigner {
     /// - Any address is P2SH (not supported)
     pub fn from_addresses_and_keys(
         addresses: &[PlatformAddress],
-        private_keys: &[Vec<u8>],
+        private_keys: &[[u8; 32]],
     ) -> Result<Self, ProtocolError> {
         if addresses.len() != private_keys.len() {
             return Err(ProtocolError::Generic(
@@ -58,17 +58,8 @@ impl SimpleAddressSigner {
         let mut keys = BTreeMap::new();
 
         for (address, private_key) in addresses.iter().zip(private_keys.iter()) {
-            if private_key.len() != 32 {
-                return Err(ProtocolError::Generic(
-                    "Private key must be 32 bytes".to_string(),
-                ));
-            }
-
-            let mut key_bytes = [0u8; 32];
-            key_bytes.copy_from_slice(private_key);
-
             // Verify the private key corresponds to this address
-            let secret_key = SecretKey::from_byte_array(&key_bytes)
+            let secret_key = SecretKey::from_byte_array(&private_key)
                 .map_err(|e| ProtocolError::Generic(format!("Invalid private key: {}", e)))?;
             let public_key =
                 dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
@@ -90,7 +81,7 @@ impl SimpleAddressSigner {
                 ));
             }
 
-            keys.insert(address_hash, key_bytes);
+            keys.insert(address_hash, *private_key);
         }
 
         Ok(Self { keys })
