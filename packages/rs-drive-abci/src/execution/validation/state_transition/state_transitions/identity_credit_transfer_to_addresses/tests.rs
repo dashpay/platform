@@ -119,7 +119,7 @@ mod tests {
             identity,
             recipient_addresses,
             0, // user_fee_increase
-            signer.clone(),
+            signer,
             None, // use default transfer key
             nonce,
             PlatformVersion::latest(),
@@ -195,7 +195,7 @@ mod tests {
                 matches!(
                     error,
                     ConsensusError::BasicError(BasicError::TransitionOverMaxOutputsError(e))
-                    if e.actual_outputs() as u16 == max_outputs + 1 && e.max_outputs() == max_outputs
+                    if e.actual_outputs() == max_outputs + 1 && e.max_outputs() == max_outputs
                 ),
                 "Expected TransitionOverMaxOutputsError, got {:?}",
                 error
@@ -402,7 +402,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 100, // 1% user fee increase
-                signer.clone(),
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -1351,7 +1351,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -2099,7 +2099,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -2148,7 +2148,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -2214,7 +2214,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -2272,7 +2272,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 u16::MAX,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -2340,7 +2340,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -2509,7 +2509,7 @@ mod tests {
 
     // ==========================================
     // MULTI-IDENTITY TESTS
-    // Tests involving multiple identities
+    // These tests involve multiple identities
     // ==========================================
 
     mod multi_identity_tests {
@@ -2921,7 +2921,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 Some(&transfer_key2), // Explicitly specify key 2
                 1,
                 platform_version,
@@ -3008,7 +3008,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None, // No explicit key - use default
                 1,
                 platform_version,
@@ -3096,7 +3096,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 Some(&transfer_key2), // This key is not in the signer
                 1,
                 platform_version,
@@ -3176,7 +3176,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
@@ -3402,7 +3402,7 @@ mod tests {
                 &identity1,
                 addresses1,
                 0, // No fee increase
-                signer1,
+                &signer1,
                 None,
                 1,
                 platform_version,
@@ -3417,7 +3417,7 @@ mod tests {
                 &identity2,
                 addresses2,
                 10000, // 100% fee increase
-                signer2,
+                &signer2,
                 None,
                 1,
                 platform_version,
@@ -4002,7 +4002,7 @@ mod tests {
                 &identity,
                 recipient_addresses,
                 0,
-                signer,
+                &signer,
                 None,
                 1,
                 platform_version,
