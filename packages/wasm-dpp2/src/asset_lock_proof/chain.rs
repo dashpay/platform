@@ -1,11 +1,10 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::impl_wasm_conversions;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "ChainAssetLockProof")]
@@ -74,32 +73,6 @@ impl ChainAssetLockProofWasm {
         identifier.into()
     }
 
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        // Non-human-readable: OutPoint serializes as 36 bytes (Uint8Array)
-        serde_format::to_object(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Human-readable: OutPoint serializes as "txid:vout" string
-        serde_format::to_json(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<ChainAssetLockProofWasm> {
-        // Non-human-readable: OutPoint expects 36 bytes (Uint8Array)
-        let proof: ChainAssetLockProof = serde_format::from_object(js_value)?;
-        Ok(ChainAssetLockProofWasm(proof))
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<ChainAssetLockProofWasm> {
-        // Human-readable: OutPoint expects "txid:vout" string
-        let proof: ChainAssetLockProof = serde_format::from_json(js_value)?;
-        Ok(ChainAssetLockProofWasm(proof))
-    }
-
     #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
         encode_to_vec(&self.0, bincode::config::standard())
@@ -114,3 +87,5 @@ impl ChainAssetLockProofWasm {
         Ok(ChainAssetLockProofWasm(proof))
     }
 }
+
+impl_wasm_conversions!(ChainAssetLockProofWasm, ChainAssetLockProof);

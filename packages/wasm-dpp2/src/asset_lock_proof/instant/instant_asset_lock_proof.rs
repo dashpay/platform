@@ -1,11 +1,10 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::impl_wasm_conversions;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
@@ -54,17 +53,6 @@ impl InstantAssetLockProofWasm {
         }))
     }
 
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: JsValue) -> WasmDppResult<InstantAssetLockProofWasm> {
-        let proof: InstantAssetLockProof = serde_format::from_object(value)?;
-        Ok(InstantAssetLockProofWasm(proof))
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(&self.0)
-    }
-
     #[wasm_bindgen(js_name = "getOutput")]
     pub fn get_output(&self) -> Option<Vec<u8>> {
         self.0.output().map(|output| serialize(output))
@@ -109,15 +97,6 @@ impl InstantAssetLockProofWasm {
 
         Ok(identifier.into())
     }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(value: JsValue) -> WasmDppResult<InstantAssetLockProofWasm> {
-        let proof: InstantAssetLockProof = serde_format::from_json(value)?;
-        Ok(InstantAssetLockProofWasm(proof))
-    }
 }
+
+impl_wasm_conversions!(InstantAssetLockProofWasm, InstantAssetLockProof);

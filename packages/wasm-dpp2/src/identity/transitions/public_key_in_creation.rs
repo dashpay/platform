@@ -4,7 +4,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::IdentityPublicKeyWasm;
-use crate::serde_format;
+use crate::impl_wasm_conversions;
 use crate::utils::IntoWasm;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -236,27 +236,6 @@ impl IdentityPublicKeyInCreationWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyInCreationWasm> {
-        let key: IdentityPublicKeyInCreation = serde_format::from_json(js_value)?;
-        Ok(IdentityPublicKeyInCreationWasm(key))
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyInCreationWasm> {
-        let key: IdentityPublicKeyInCreation = serde_format::from_object(js_value)?;
-        Ok(IdentityPublicKeyInCreationWasm(key))
-    }
 }
 
 impl IdentityPublicKeyInCreationWasm {
@@ -271,3 +250,5 @@ impl IdentityPublicKeyInCreationWasm {
         Ok(add_public_keys)
     }
 }
+
+impl_wasm_conversions!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);

@@ -3,7 +3,7 @@ use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::serde_format;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -180,30 +180,6 @@ impl IdentityCreateTransitionWasm {
         Ok(encode(self.to_bytes()?.as_slice(), Base64))
     }
 
-    /// Serialize to JSON (human-readable format)
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
-    }
-
-    /// Deserialize from JSON
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityCreateTransitionWasm> {
-        serde_format::from_json(js_value).map(IdentityCreateTransitionWasm)
-    }
-
-    /// Serialize to JS object (binary-preserving format)
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(&self.0)
-    }
-
-    /// Deserialize from JS object
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityCreateTransitionWasm> {
-        serde_format::from_object(js_value).map(IdentityCreateTransitionWasm)
-    }
-
     #[wasm_bindgen(js_name = "toStateTransition")]
     pub fn to_state_transition(&self) -> StateTransitionWasm {
         StateTransitionWasm::from(StateTransition::IdentityCreate(self.clone().0))
@@ -223,3 +199,5 @@ impl IdentityCreateTransitionWasm {
         }
     }
 }
+
+impl_wasm_conversions!(IdentityCreateTransitionWasm, IdentityCreateTransition);

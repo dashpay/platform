@@ -1,7 +1,7 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identifier::Identifier;
 use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
@@ -182,25 +182,6 @@ impl IdentityTopUpTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let transition: IdentityTopUpTransition = serde_format::from_json(js_value)?;
-        Ok(IdentityTopUpTransitionWasm(transition))
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let transition: IdentityTopUpTransition = serde_format::from_object(js_value)?;
-        Ok(IdentityTopUpTransitionWasm(transition))
-    }
 }
+
+impl_wasm_conversions!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);

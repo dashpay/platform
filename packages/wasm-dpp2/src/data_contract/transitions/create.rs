@@ -1,7 +1,7 @@
 use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::serde_format;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -195,23 +195,6 @@ impl DataContractCreateTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<DataContractCreateTransitionWasm> {
-        serde_format::from_json(js_value).map(DataContractCreateTransitionWasm)
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(&self.0)
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<DataContractCreateTransitionWasm> {
-        serde_format::from_object(js_value).map(DataContractCreateTransitionWasm)
-    }
 }
+
+impl_wasm_conversions!(DataContractCreateTransitionWasm, DataContractCreateTransition);
