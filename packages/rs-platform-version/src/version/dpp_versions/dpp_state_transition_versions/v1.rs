@@ -26,6 +26,8 @@ pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTra
         credit_withdrawal: IdentityCreditWithdrawalTransitionVersions {
             default_constructor: 0,
         },
+        calculate_min_required_fee_on_identity_create_transition: 0,
+        calculate_min_required_fee_on_identity_top_up_transition: 0,
     },
     contract: ContractTransitionVersions {
         contract_create_transition_default_version: 0,

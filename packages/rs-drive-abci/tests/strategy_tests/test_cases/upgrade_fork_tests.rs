@@ -52,7 +52,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identity_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -88,7 +87,6 @@ mod tests {
                     },
                     block_spacing_ms: twenty_minutes_in_ms,
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
-
                     ..Default::default()
                 };
                 let mut platform = TestPlatformBuilder::new()
@@ -375,7 +373,6 @@ mod tests {
                     },
                     block_spacing_ms: thirty_seconds_in_ms,
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
-
                     ..Default::default()
                 };
                 let mut platform = TestPlatformBuilder::new()
@@ -761,7 +758,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identity_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -773,7 +769,6 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 5.0, //it will take many epochs before we get enough nodes
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -800,7 +795,6 @@ mod tests {
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
-
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 };
@@ -880,7 +874,6 @@ mod tests {
                     proposers,
                     validator_quorums: quorums,
                     current_validator_quorum_hash: current_quorum_hash,
-
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
@@ -1005,7 +998,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identity_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -1017,7 +1009,6 @@ mod tests {
                         proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                         upgrade_three_quarters_life: 5.0,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1044,7 +1035,6 @@ mod tests {
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
-
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 };
@@ -1115,7 +1105,6 @@ mod tests {
                     proposers,
                     validator_quorums: quorums,
                     current_validator_quorum_hash: current_quorum_hash,
-
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
@@ -1178,7 +1167,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identity_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -1193,7 +1181,6 @@ mod tests {
                         ],
                         upgrade_three_quarters_life: 0.1,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1216,7 +1203,6 @@ mod tests {
                     validator_quorums: quorums,
                     current_validator_quorum_hash: current_quorum_hash,
                     current_proposer_versions,
-
                     end_time_ms,
                     identity_nonce_counter,
                     identity_contract_nonce_counter,
@@ -1351,7 +1337,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identity_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -1367,7 +1352,6 @@ mod tests {
                         ],
                         upgrade_three_quarters_life: 0.75,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,
@@ -1393,7 +1377,6 @@ mod tests {
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
-
                     testing_configs: PlatformTestConfig::default_minimal_verifications(),
                     ..Default::default()
                 };
@@ -1483,7 +1466,6 @@ mod tests {
                         operations: vec![],
                         start_identities: StartIdentities::default(),
                         identity_inserts: IdentityInsertInfo::default(),
-
                         identity_contract_nonce_gaps: None,
                         signer: None,
                     },
@@ -1499,7 +1481,6 @@ mod tests {
                         ],
                         upgrade_three_quarters_life: 0.5,
                     }),
-
                     proposer_strategy: Default::default(),
                     rotate_quorums: false,
                     failure_testing: None,

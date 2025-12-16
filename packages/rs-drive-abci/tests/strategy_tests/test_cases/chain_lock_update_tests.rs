@@ -21,7 +21,6 @@ mod tests {
                 operations: vec![],
                 start_identities: StartIdentities::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -63,7 +62,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,

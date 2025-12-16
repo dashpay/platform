@@ -2,6 +2,7 @@ use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionVersions {
@@ -19,6 +20,8 @@ pub struct IdentityTransitionVersions {
     pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
     pub credit_withdrawal: IdentityCreditWithdrawalTransitionVersions,
+    pub calculate_min_required_fee_on_identity_create_transition: FeatureVersion,
+    pub calculate_min_required_fee_on_identity_top_up_transition: i32,
 }
 
 #[derive(Clone, Debug, Default)]

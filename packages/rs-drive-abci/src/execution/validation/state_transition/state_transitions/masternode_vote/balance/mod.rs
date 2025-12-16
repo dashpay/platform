@@ -29,23 +29,18 @@ impl StateTransitionPrefundedSpecializedBalanceValidationV0 for MasternodeVoteTr
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .masternode_vote_state_transition
-            .advanced_minimum_balance_pre_check
+            .masternode_vote_state_transition_balance_pre_check
         {
-            Some(0) => self.validate_advanced_minimum_balance_pre_check_v0(
+            0 => self.validate_advanced_minimum_balance_pre_check_v0(
                 drive,
                 tx,
                 execution_context,
                 platform_version,
             ),
-            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode vote transition: validate_balance".to_string(),
                 known_versions: vec![0],
                 received: version,
-            })),
-            None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                method: "masternode vote transition: validate_balance".to_string(),
-                known_versions: vec![0],
             })),
         }
     }

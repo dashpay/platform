@@ -1,4 +1,3 @@
-mod balance;
 mod nonce;
 pub(crate) mod signature_purpose_matches_requirements;
 mod structure;
