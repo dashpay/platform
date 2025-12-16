@@ -12,7 +12,6 @@ use dpp::document::serialization_traits::{
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Revision;
@@ -112,13 +111,13 @@ impl DocumentWasm {
 
     #[wasm_bindgen(getter=properties)]
     pub fn get_properties(&self) -> WasmDppResult<JsValue> {
-        let json_value: JsonValue = self
-            .properties
-            .clone()
-            .to_json_value()
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-
-        serde_format::to_json(&json_value)
+        let properties_value = Value::Map(
+            self.properties
+                .iter()
+                .map(|(k, v)| (Value::Text(k.clone()), v.clone()))
+                .collect(),
+        );
+        serde_format::platform_value_to_object(&properties_value)
     }
 
     #[wasm_bindgen(getter=revision)]
