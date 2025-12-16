@@ -24,14 +24,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Trait for creating identities on the platform.
 #[async_trait::async_trait]
-pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
+pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     /// Creates an identity using an asset lock proof.
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        signer: &S,
+        signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
@@ -41,49 +41,43 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        signer: &S,
+        signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<Self, Error>
     where
         Self: Sized;
 
     /// Creates an identity funded by Platform addresses (nonces fetched automatically).
-    async fn put_with_address_funding<
-        WS: Signer<PlatformAddress> + Send + Sync,
-        K: Into<WS> + Send + Sync,
-    >(
+    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &S,
-        input_address_signer: K,
+        identity_signer: &IS,
+        input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error>;
 
     /// Creates an identity funded by Platform addresses using explicit nonces.
-    async fn put_with_address_funding_with_nonce<
-        WS: Signer<PlatformAddress> + Send + Sync,
-        K: Into<WS> + Send + Sync,
-    >(
+    async fn put_with_address_funding_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &S,
-        input_address_signer: K,
+        identity_signer: &IS,
+        input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error>;
 }
 
 #[async_trait::async_trait]
-impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
+impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        signer: &S,
+        signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
         put_identity_with_asset_lock(
@@ -102,7 +96,7 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        signer: &S,
+        signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error> {
         let state_transition = self
@@ -118,16 +112,13 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 
-    async fn put_with_address_funding<
-        WS: Signer<PlatformAddress> + Send + Sync,
-        K: Into<WS> + Send + Sync,
-    >(
+    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &S,
-        input_address_signer: K,
+        identity_signer: &IS,
+        input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error> {
         let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
@@ -142,26 +133,22 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         .await
     }
 
-    async fn put_with_address_funding_with_nonce<
-        WS: Signer<PlatformAddress> + Send + Sync,
-        K: Into<WS> + Send + Sync,
-    >(
+    async fn put_with_address_funding_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &S,
-        input_address_signer: K,
+        identity_signer: &IS,
+        input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, AddressInfos), Error> {
-        let input_signer: WS = input_address_signer.into();
-        put_identity_with_address_funding::<S, WS>(
+        put_identity_with_address_funding::<IS, AS>(
             self,
             sdk,
             inputs,
             output,
             identity_signer,
-            &input_signer,
+            input_address_signer,
             settings,
         )
         .await
@@ -188,15 +175,15 @@ async fn put_identity_with_asset_lock<S: Signer<IdentityPublicKey>>(
 }
 
 async fn put_identity_with_address_funding<
-    S: Signer<IdentityPublicKey>,
-    WS: Signer<PlatformAddress>,
+    IS: Signer<IdentityPublicKey>,
+    AS: Signer<PlatformAddress>,
 >(
     identity: &Identity,
     sdk: &Sdk,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     output: Option<(PlatformAddress, Credits)>,
-    identity_signer: &S,
-    input_signer: &WS,
+    identity_signer: &IS,
+    input_signer: &AS,
     settings: Option<PutSettings>,
 ) -> Result<(Identity, AddressInfos), Error> {
     let expected_addresses: BTreeSet<PlatformAddress> =
