@@ -35,8 +35,6 @@ impl InvalidCreditWithdrawalTransitionOutputScriptError {
 }
 impl From<InvalidCreditWithdrawalTransitionOutputScriptError> for ConsensusError {
     fn from(err: InvalidCreditWithdrawalTransitionOutputScriptError) -> Self {
-        Self::BasicError(
-            BasicError::InvalidCreditWithdrawalTransitionOutputScriptError(err),
-        )
+        Self::BasicError(BasicError::InvalidCreditWithdrawalTransitionOutputScriptError(err))
     }
 }

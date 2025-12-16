@@ -1,7 +1,7 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionIdentityEstimatedFeeValidation};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -41,24 +41,34 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let balance =
+            identity
+                .balance
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expected to have a balance on identity for credit transfer transition",
+                )))?;
         match self {
-            StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
-            }
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
-            }
-            StateTransition::Batch(st) => {
-                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
-            }
-            StateTransition::IdentityCreditTransferToAddresses(st) => {
-                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
-            }
-            StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::IdentityUpdate(_) => {
-                self.validate_simple_pre_check_minimum_balance(identity, platform_version)
-            }
+            StateTransition::IdentityCreditTransfer(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::IdentityCreditWithdrawal(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::Batch(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::DataContractCreate(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::DataContractUpdate(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
+            StateTransition::IdentityUpdate(st) => st
+                .validate_estimated_fee(balance, platform_version)
+                .map_err(Error::Protocol),
             StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)

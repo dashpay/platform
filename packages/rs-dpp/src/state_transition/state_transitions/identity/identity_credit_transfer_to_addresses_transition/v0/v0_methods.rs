@@ -32,7 +32,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         identity: &Identity,
         to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
-        signer: S,
+        signer: &S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
@@ -103,7 +103,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
 
         match transition.sign_external(
             identity_public_key,
-            &signer,
+            signer,
             None::<GetDataContractSecurityLevelRequirementFn>,
         ) {
             Ok(_) => tracing::debug!("try_from_identity: sign_external succeeded"),

@@ -30,7 +30,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         identity: &Identity,
         to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
-        signer: S,
+        signer: &S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         nonce: IdentityNonce,
         platform_version: &PlatformVersion,

@@ -70,9 +70,9 @@ impl IdentityCreateFromAddressesTransitionAction {
     }
 
     /// Get output
-    pub fn output(&self) -> &Option<(PlatformAddress, Credits)> {
+    pub fn output(&self) -> Option<(PlatformAddress, Credits)> {
         match self {
-            IdentityCreateFromAddressesTransitionAction::V0(transition) => &transition.output,
+            IdentityCreateFromAddressesTransitionAction::V0(transition) => transition.output,
         }
     }
 

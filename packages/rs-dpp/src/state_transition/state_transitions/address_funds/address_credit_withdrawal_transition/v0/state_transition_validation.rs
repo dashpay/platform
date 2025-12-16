@@ -177,10 +177,8 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
         // Validate pooling - currently we do not support pooling, so we must validate that pooling is `Never`
         if self.pooling != Pooling::Never {
             return SimpleConsensusValidationResult::new_with_error(
-                NotImplementedCreditWithdrawalTransitionPoolingError::new(
-                    self.pooling as u8,
-                )
-                .into(),
+                NotImplementedCreditWithdrawalTransitionPoolingError::new(self.pooling as u8)
+                    .into(),
             );
         }
 
@@ -198,10 +196,8 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
         // Validate output_script is P2PKH or P2SH
         if !self.output_script.is_p2pkh() && !self.output_script.is_p2sh() {
             return SimpleConsensusValidationResult::new_with_error(
-                InvalidCreditWithdrawalTransitionOutputScriptError::new(
-                    self.output_script.clone(),
-                )
-                .into(),
+                InvalidCreditWithdrawalTransitionOutputScriptError::new(self.output_script.clone())
+                    .into(),
             );
         }
         // Validate input sum doesn't overflow

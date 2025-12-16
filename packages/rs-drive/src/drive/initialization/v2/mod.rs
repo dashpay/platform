@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
 
 impl Drive {
@@ -22,6 +22,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::GroupActions as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut vec![],
@@ -29,9 +30,10 @@ impl Drive {
         )?;
 
         //This is new in v2
-        self.grove_insert_empty_sum_tree(
+        self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::AddressBalances as u8],
+            TreeType::SumTree,
             transaction,
             None,
             &mut vec![],
@@ -61,7 +63,7 @@ impl Drive {
         batch.add_insert(
             Self::addresses_path(),
             CLEAR_ADDRESS_POOL.to_vec(),
-            Element::empty_sum_tree(),
+            Element::empty_count_sum_tree(),
         );
 
         Ok(())

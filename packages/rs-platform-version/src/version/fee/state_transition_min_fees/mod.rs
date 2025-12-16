@@ -16,8 +16,8 @@ pub struct StateTransitionMinFees {
     pub address_credit_withdrawal: u64,
     pub address_funds_transfer_input_cost: u64,
     pub address_funds_transfer_output_cost: u64,
-    pub identity_create_from_addresses_base_cost: u64,
-    pub identity_topup_from_addresses: u64,
+    pub identity_create_base_cost: u64,
+    pub identity_topup_base_cost: u64,
     pub identity_key_in_creation_cost: u64,
 }
 
@@ -50,10 +50,8 @@ impl From<StateTransitionMinFeesBeforeProtocolVersion11> for StateTransitionMinF
                 .address_funds_transfer_input_cost,
             address_funds_transfer_output_cost: STATE_TRANSITION_MIN_FEES_VERSION1
                 .address_funds_transfer_output_cost,
-            identity_create_from_addresses_base_cost: STATE_TRANSITION_MIN_FEES_VERSION1
-                .identity_create_from_addresses_base_cost,
-            identity_topup_from_addresses: STATE_TRANSITION_MIN_FEES_VERSION1
-                .identity_topup_from_addresses,
+            identity_create_base_cost: STATE_TRANSITION_MIN_FEES_VERSION1.identity_create_base_cost,
+            identity_topup_base_cost: STATE_TRANSITION_MIN_FEES_VERSION1.identity_topup_base_cost,
             identity_key_in_creation_cost: STATE_TRANSITION_MIN_FEES_VERSION1
                 .identity_key_in_creation_cost,
         }

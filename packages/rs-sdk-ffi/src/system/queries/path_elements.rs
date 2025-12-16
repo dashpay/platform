@@ -150,6 +150,9 @@ fn get_path_elements(
                                 Element::ItemWithSumItem(data, sum, _) => {
                                     format!("item_with_sum_item:{}:{}", hex::encode(data), sum)
                                 }
+                                Element::ProvableCountTree(_, count, _) => {
+                                    format!("provable_count_tree:{}", count)
+                                }
                             };
 
                             format!(
@@ -166,6 +169,7 @@ fn get_path_elements(
                                     Element::CountTree(_, _, _) => "count_tree",
                                     Element::CountSumTree(_, _, _, _) => "count_sum_tree",
                                     Element::ItemWithSumItem(_, _, _) => "item_with_sum_item",
+                                    Element::ProvableCountTree(_, _, _) => "provable_count_tree",
                                 }
                             )
                         })

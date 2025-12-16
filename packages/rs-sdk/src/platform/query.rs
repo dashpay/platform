@@ -780,7 +780,6 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<E
                         }
                     }),
                     limit: self.limit,
-
                     prove,
                 },
             )),

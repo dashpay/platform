@@ -30,6 +30,7 @@ pub trait IdentityCreateFromAddressesTransitionMethodsV0 {
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         identity_public_key_signer: &S,
         address_signer: &WS,

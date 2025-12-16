@@ -97,7 +97,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -789,7 +788,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -1504,7 +1502,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: minute_in_ms,
@@ -1931,7 +1928,6 @@ mod tests {
                     instant_lock: InstantLockConfig::default_100_67(),
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
-
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
@@ -2066,7 +2062,6 @@ mod tests {
                 instant_lock: InstantLockConfig::default_100_67(),
                 execution: ExecutionConfig {
                     verify_sum_trees: true,
-
                     ..Default::default()
                 },
                 block_spacing_ms: hour_in_ms,
@@ -2227,7 +2222,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: minute_in_ms,
@@ -2631,7 +2625,6 @@ mod tests {
                 instant_lock: InstantLockConfig::default_100_67(),
                 execution: ExecutionConfig {
                     verify_sum_trees: true,
-
                     ..Default::default()
                 },
                 block_spacing_ms: hour_in_ms,
