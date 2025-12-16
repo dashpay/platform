@@ -30,7 +30,7 @@ pub trait TransferToAddresses: Waitable {
         sdk: &Sdk,
         recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
-        signer: S,
+        signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits), Error>;
 }
@@ -42,7 +42,7 @@ impl TransferToAddresses for Identity {
         sdk: &Sdk,
         recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
-        signer: S,
+        signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits), Error> {
         if recipient_addresses.is_empty() {

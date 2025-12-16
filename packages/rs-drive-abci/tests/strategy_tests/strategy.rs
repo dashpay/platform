@@ -13,10 +13,11 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use strategy_tests::frequency::Frequency;
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::operations::{
-    AmountRange, DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp,
+    AmountRange, DocumentAction, DocumentOp, ExtraKeys, FinalizeBlockOperation, IdentityUpdateOp,
     MaybeOutputAmount, OperationType, OutputCountRange, TokenOp,
     UseExistingAddressesAsOutputChance,
 };
+use strategy_tests::KeyMaps;
 
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
@@ -45,6 +46,7 @@ use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+use dpp::identity::KeyCount;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{AssetLockProof, BlockHeight, Identifier, IdentityNonce};
@@ -74,6 +76,8 @@ use dpp::state_transition::batch_transition::{
 };
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
@@ -106,7 +110,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::str::FromStr;
 use strategy_tests::transitions::{
-    create_state_transitions_for_identities, create_state_transitions_for_identities_and_proofs,
+    create_identity_credit_transfer_to_addresses_transition,
+    create_identity_credit_transfer_to_addresses_transition_with_outputs,
+    create_identity_credit_transfer_transition, create_state_transitions_for_identities,
+    create_state_transitions_for_identities_and_proofs,
     instant_asset_lock_proof_fixture_with_dynamic_range,
 };
 use strategy_tests::Strategy;
@@ -1214,6 +1221,35 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
+                    OperationType::IdentityCreateFromAddresses(
+                        amount_range,
+                        maybe_output_amount,
+                        fee_strategy,
+                        key_count,
+                        extra_keys,
+                    ) => {
+                        for _i in 0..count {
+                            let Some((identity, state_transition)) = self
+                                .create_identity_from_addresses_transition(
+                                    current_addresses_with_balance,
+                                    amount_range,
+                                    maybe_output_amount,
+                                    fee_strategy,
+                                    *key_count,
+                                    extra_keys,
+                                    signer,
+                                    rng,
+                                    platform_version,
+                                )
+                            else {
+                                // no funds left
+                                break;
+                            };
+                            operations.push(state_transition);
+                            // Add the newly created identity to the pool
+                            current_identities.push(identity);
+                        }
+                    }
                     OperationType::AddressFundingFromCoreAssetLock(amount_range) => {
                         for _i in 0..count {
                             let Some(state_transition) = self
@@ -1334,29 +1370,123 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::IdentityTransfer(_) if current_identities.len() > 1 => {
-                        let identities_clone = current_identities.clone();
+                    OperationType::IdentityTransfer(identity_transfer_info)
+                        if current_identities.len() > 1 =>
+                    {
+                        for _ in 0..count {
+                            // Handle the case where specific sender, recipient, and amount are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+                                let recipient = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.to)
+                                    .expect(
+                                        "Expected to find recipient identity in hardcoded start identities",
+                                    );
 
-                        // Sender is the first in the list, which should be loaded_identity
-                        let owner = &mut current_identities[0];
-                        // Recipient is the second in the list
-                        let recipient = &identities_clone[1];
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    sender,
+                                    recipient,
+                                    identity_nonce_counter,
+                                    signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
+                                    transfer_info.amount,
+                                );
+                                operations.push(state_transition);
+                            } else if current_identities.len() > 1 {
+                                // Handle the case where no sender, recipient, and amount are provided
 
-                        let fetched_owner_balance = platform
-                            .drive
-                            .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
-                            .expect("expected to be able to get identity")
-                            .expect("expected to get an identity");
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
 
-                        let state_transition =
-                            strategy_tests::transitions::create_identity_credit_transfer_transition(
-                                owner,
-                                recipient,
-                                identity_nonce_counter,
-                                signer,
-                                fetched_owner_balance - 100,
-                            );
-                        operations.push(state_transition);
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
+
+                                // Clone current_identities to a Vec for manipulation
+                                let mut unused_identities: Vec<_> = current_identities.to_vec();
+                                unused_identities.remove(random_index_sender); // Remove the sender
+                                let unused_identities_count = unused_identities.len();
+
+                                // Select a random identity from the remaining ones for the recipient
+                                let random_index_recipient =
+                                    rng.gen_range(0..unused_identities_count);
+                                let recipient = &unused_identities[random_index_recipient];
+
+                                // Use the sender index on the original slice
+                                let sender = &mut current_identities[random_index_sender];
+
+                                let state_transition = create_identity_credit_transfer_transition(
+                                    sender,
+                                    recipient,
+                                    identity_nonce_counter,
+                                    signer,
+                                    300000,
+                                );
+                                operations.push(state_transition);
+                            }
+                        }
+                    }
+                    OperationType::IdentityTransferToAddresses(
+                        amount_range,
+                        output_count_range,
+                        _use_existing,
+                        identity_transfer_info,
+                    ) if !current_identities.is_empty() => {
+                        for _ in 0..count {
+                            // Handle the case where specific sender and outputs are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+
+                                // Use the pre-specified outputs from transfer_info
+                                let state_transition = create_identity_credit_transfer_to_addresses_transition_with_outputs(
+                                    sender,
+                                    identity_nonce_counter,
+                                    signer,
+                                    transfer_info.outputs.clone(),
+                                    platform_version,
+                                );
+                                operations.push(state_transition);
+                            } else {
+                                // Handle the case where no sender/outputs are provided - generate random ones
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
+
+                                // Select a random identity from the current_identities for the sender
+                                let random_index_sender = rng.gen_range(0..identities_count);
+                                let sender = &current_identities[random_index_sender];
+
+                                // Generate random number of outputs from the provided range
+                                let output_count =
+                                    rng.gen_range(output_count_range.clone()) as usize;
+                                let total_amount = rng.gen_range(amount_range.clone());
+
+                                let (state_transition, _recipient_addresses) =
+                                    create_identity_credit_transfer_to_addresses_transition(
+                                        sender,
+                                        identity_nonce_counter,
+                                        current_addresses_with_balance,
+                                        signer,
+                                        total_amount,
+                                        output_count,
+                                        rng,
+                                        platform_version,
+                                    );
+                                operations.push(state_transition);
+                            }
+                        }
                     }
                     OperationType::ContractCreate(params, doc_type_range)
                         if !current_identities.is_empty() =>
@@ -2025,6 +2155,89 @@ impl NetworkStrategy {
         );
 
         Some(top_up_transition)
+    }
+
+    fn create_identity_from_addresses_transition(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        maybe_output_amount: &MaybeOutputAmount,
+        fee_strategy: &Option<AddressFundsFeeStrategy>,
+        key_count: KeyCount,
+        extra_keys: &ExtraKeys,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<(Identity, StateTransition)> {
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        tracing::debug!(
+            ?inputs,
+            "Preparing identity create from addresses transition"
+        );
+
+        // Create a new identity with random keys
+        let (mut identity, keys) = Identity::random_identity_with_main_keys_with_private_key::<
+            Vec<_>,
+        >(key_count, rng, platform_version)
+        .expect("Expected to create identity with keys");
+
+        // Add extra keys to the identity
+        for (purpose, security_to_key_type_map) in extra_keys.iter() {
+            for (security_level, key_types) in security_to_key_type_map {
+                for key_type in key_types {
+                    let (key, private_key) = IdentityPublicKey::random_key_with_known_attributes(
+                        (identity.public_keys().len() + 1) as KeyID,
+                        rng,
+                        *purpose,
+                        *security_level,
+                        *key_type,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to create random key");
+                    identity.add_public_key(key.clone());
+                    signer.add_identity_public_key(key, private_key);
+                }
+            }
+        }
+
+        // Add all keys to the signer
+        signer.add_identity_public_keys(keys);
+
+        // Determine fee strategy
+        let fee_strategy = fee_strategy
+            .clone()
+            .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+
+        // Create output if maybe_output_amount is provided
+        let output = maybe_output_amount.as_ref().map(|output_range| {
+            let output_amount = rng.gen_range(output_range.clone());
+            let output_address = signer.add_random_address_key(rng);
+            // Register the output address with balance
+            current_addresses_with_balance
+                .register_new_address(output_address.clone(), output_amount);
+            (output_address, output_amount)
+        });
+
+        let transition = IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
+            &identity,
+            inputs,
+            output,
+            fee_strategy,
+            signer, // identity public key signer
+            signer, // address signer
+            0,      // user_fee_increase
+            platform_version,
+        )
+        .expect("expected to create identity from addresses transition");
+
+        tracing::debug!(
+            ?transition,
+            "Identity create from addresses transition successfully signed"
+        );
+
+        Some((identity, transition))
     }
 
     fn create_address_transfer_transition(

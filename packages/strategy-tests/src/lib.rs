@@ -70,6 +70,7 @@ use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use transitions::create_identity_credit_transfer_transition;
+pub mod addresses_with_balance;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;

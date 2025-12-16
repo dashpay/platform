@@ -38,6 +38,16 @@ impl DriveHighLevelOperationConverter for IdentityCreateFromAddressesTransitionA
                         is_masternode_identity: false,
                     })];
 
+                // Add balance to change output if present
+                if let Some((address, balance_to_add)) = self.output() {
+                    drive_operations.push(AddressFundsOperation(
+                        AddressFundsOperationType::AddBalanceToAddress {
+                            address,
+                            balance_to_add,
+                        },
+                    ));
+                }
+
                 for (address, (nonce, remaining_balance)) in
                     self.inputs_with_remaining_balance_owned()
                 {
