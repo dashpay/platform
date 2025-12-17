@@ -239,7 +239,7 @@ mod tests {
 
         let managed = manager.get_managed_identity(&identity_id).unwrap();
         assert_eq!(managed.label, Some("My Identity".to_string()));
-        assert_eq!(managed.is_active, true);
+        assert!(managed.is_active);
         assert_eq!(managed.last_sync_timestamp, None);
         assert_eq!(managed.last_sync_height, None);
         assert_eq!(managed.id(), identity_id);

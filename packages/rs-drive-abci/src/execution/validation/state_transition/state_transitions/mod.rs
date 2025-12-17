@@ -793,6 +793,7 @@ pub(in crate::execution) mod tests {
         platform.state.store(Arc::new(platform_state));
     }
 
+    #[allow(dead_code)]
     pub(in crate::execution) enum IdentityTestInfo<'a> {
         Given {
             identity: &'a Identity,

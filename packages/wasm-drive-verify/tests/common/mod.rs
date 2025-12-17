@@ -1,4 +1,5 @@
 //! Common test utilities for wasm-drive-verify tests
+#![allow(dead_code)]
 
 use wasm_bindgen_test::*;
 

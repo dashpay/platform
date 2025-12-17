@@ -660,12 +660,14 @@ mod tests {
 
         let target_id = Identifier::from([42u8; 32]);
 
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.primary_key_equal_clause = Some(WhereClause {
-            field: "$id".to_string(),
-            operator: WhereOperator::Equal,
-            value: target_id.into(),
-        });
+        let internal_clauses = InternalClauses {
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: target_id.into(),
+            }),
+            ..Default::default()
+        };
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -718,8 +720,10 @@ mod tests {
             },
         );
 
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.equal_clauses = equal_clauses;
+        let internal_clauses = InternalClauses {
+            equal_clauses,
+            ..Default::default()
+        };
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -765,12 +769,14 @@ mod tests {
             Value::Text("pending".to_string()),
         ];
 
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.in_clause = Some(WhereClause {
-            field: "status".to_string(),
-            operator: WhereOperator::In,
-            value: Value::Array(allowed_values),
-        });
+        let internal_clauses = InternalClauses {
+            in_clause: Some(WhereClause {
+                field: "status".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(allowed_values),
+            }),
+            ..Default::default()
+        };
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -806,12 +812,14 @@ mod tests {
         let contract = fixture.data_contract_owned();
 
         // Test GreaterThan
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.range_clause = Some(WhereClause {
-            field: "score".to_string(),
-            operator: WhereOperator::GreaterThan,
-            value: Value::U64(50),
-        });
+        let internal_clauses = InternalClauses {
+            range_clause: Some(WhereClause {
+                field: "score".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(50),
+            }),
+            ..Default::default()
+        };
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -862,8 +870,10 @@ mod tests {
             },
         );
 
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.equal_clauses = equal_clauses;
+        let internal_clauses = InternalClauses {
+            equal_clauses,
+            ..Default::default()
+        };
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -1037,7 +1047,7 @@ mod tests {
 
         let transfer_v0 = DocumentTransferTransitionV0 {
             base: document_base.clone(),
-            revision: 1 as u64,
+            revision: 1_u64,
             recipient_owner_id: new_owner,
         };
         let transfer = DocumentTransition::Transfer(DocumentTransferTransition::V0(transfer_v0));
@@ -1052,7 +1062,7 @@ mod tests {
         let other_owner = Identifier::from([6u8; 32]);
         let transfer_v0_mismatch = DocumentTransferTransitionV0 {
             base: document_base,
-            revision: 1 as u64,
+            revision: 1_u64,
             recipient_owner_id: other_owner,
         };
         let transfer_mismatch =
@@ -1098,7 +1108,7 @@ mod tests {
 
         let purchase_v0 = DocumentPurchaseTransitionV0 {
             base: document_base,
-            revision: 1 as u64,
+            revision: 1_u64,
             price: 10 as Credits,
         };
         let purchase = DocumentTransition::Purchase(DocumentPurchaseTransition::V0(purchase_v0));
@@ -1360,18 +1370,14 @@ mod tests {
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: original_clauses,
-                new_document_clauses: new_document_clauses,
+                new_document_clauses,
             },
         };
 
         // Build Replace transition with new data
         let mut data = BTreeMap::new();
         data.insert("score".to_string(), Value::U64(10));
-        let replace_v0 = DocumentReplaceTransitionV0 {
-            base: base,
-            revision: 1,
-            data,
-        };
+        let replace_v0 = DocumentReplaceTransitionV0 { base, revision: 1, data };
         let replace = DocumentTransition::Replace(DocumentReplaceTransition::V0(replace_v0));
 
         // Original provided and matching; final matches (requires original)
@@ -1420,12 +1426,14 @@ mod tests {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
 
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.range_clause = Some(WhereClause {
-            field: "value".to_string(),
-            operator: WhereOperator::Between,
-            value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
-        });
+        let internal_clauses = InternalClauses {
+            range_clause: Some(WhereClause {
+                field: "value".to_string(),
+                operator: WhereOperator::Between,
+                value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
+            }),
+            ..Default::default()
+        };
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -1476,7 +1484,6 @@ mod tests {
         let contract = fixture.data_contract_owned();
 
         // Test valid filter with indexed field
-        let mut internal_clauses = InternalClauses::default();
         let mut equal_clauses = BTreeMap::new();
         equal_clauses.insert(
             "firstName".to_string(),
@@ -1486,7 +1493,10 @@ mod tests {
                 value: Value::Text("Alice".to_string()),
             },
         );
-        internal_clauses.equal_clauses = equal_clauses;
+        let internal_clauses = InternalClauses {
+            equal_clauses,
+            ..Default::default()
+        };
 
         let valid_filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -1503,7 +1513,6 @@ mod tests {
 
         // Test filter with non-indexed field: structural validation should pass
         // (indexes are not considered by subscription filters).
-        let mut internal_clauses = InternalClauses::default();
         let mut equal_clauses = BTreeMap::new();
         equal_clauses.insert(
             "name".to_string(),
@@ -1513,7 +1522,10 @@ mod tests {
                 value: Value::Text("value".to_string()),
             },
         );
-        internal_clauses.equal_clauses = equal_clauses;
+        let internal_clauses = InternalClauses {
+            equal_clauses,
+            ..Default::default()
+        };
 
         let invalid_filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -1530,12 +1542,14 @@ mod tests {
         // Index-aware validation removed; structural validation suffices for subscriptions.
 
         // Test valid filter with only primary key
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.primary_key_equal_clause = Some(WhereClause {
-            field: "$id".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier([42u8; 32]),
-        });
+        let internal_clauses = InternalClauses {
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier([42u8; 32]),
+            }),
+            ..Default::default()
+        };
 
         let primary_key_filter = DriveDocumentQueryFilter {
             contract: &contract,
@@ -1696,12 +1710,14 @@ mod tests {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
 
-        let mut internal_clauses = InternalClauses::default();
-        internal_clauses.primary_key_equal_clause = Some(WhereClause {
-            field: "$id".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier([42u8; 32]),
-        });
+        let internal_clauses = InternalClauses {
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier([42u8; 32]),
+            }),
+            ..Default::default()
+        };
 
         let original_filter = DriveDocumentQueryFilter {
             contract: &contract,

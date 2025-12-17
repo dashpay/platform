@@ -155,30 +155,37 @@ where
 }
 
 // Define default functions for serde
+#[cfg(feature = "serde")]
 fn default_batching_consistency_verification() -> bool {
     DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED
 }
 
+#[cfg(feature = "serde")]
 fn default_has_raw_enabled() -> bool {
     DEFAULT_GROVE_HAS_RAW_ENABLED
 }
 
+#[cfg(feature = "serde")]
 fn default_grove_verify_on_startup_enabled() -> bool {
     DEFAULT_VERIFY_GROVE_ON_STARTUP
 }
 
+#[cfg(feature = "serde")]
 fn default_default_query_limit() -> u16 {
     DEFAULT_QUERY_LIMIT
 }
 
+#[cfg(feature = "serde")]
 fn default_epochs_per_era() -> u16 {
     DEFAULT_EPOCHS_PER_ERA
 }
 
+#[cfg(feature = "serde")]
 fn default_max_query_limit() -> u16 {
     DEFAULT_MAX_QUERY_LIMIT
 }
 
+#[cfg(feature = "serde")]
 fn default_data_contracts_cache_size() -> u64 {
     DEFAULT_DATA_CONTRACTS_CACHE_SIZE
 }
@@ -211,6 +218,7 @@ impl Default for DriveConfig {
 }
 
 impl DriveConfig {
+    #[cfg(feature = "serde")]
     fn default_network() -> Network {
         Network::Dash
     }

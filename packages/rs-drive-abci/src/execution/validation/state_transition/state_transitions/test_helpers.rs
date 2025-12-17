@@ -7,7 +7,6 @@
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
-use dpp::dashcore::blockdata::opcodes::all::*;
 use dpp::dashcore::blockdata::script::ScriptBuf;
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
@@ -25,7 +24,9 @@ pub use dpp::dashcore::blockdata::opcodes::all::{
 };
 pub use dpp::dashcore::blockdata::script::ScriptBuf as TestScriptBuf;
 pub use dpp::dashcore::hashes::Hash as TestHash;
+#[allow(unused_imports)]
 pub use dpp::dashcore::secp256k1::Secp256k1 as TestSecp256k1;
+#[allow(unused_imports)]
 pub use dpp::dashcore::PublicKey as TestPublicKey;
 pub use dpp::ProtocolError as TestProtocolError;
 
@@ -120,6 +121,7 @@ impl TestAddressSigner {
     }
 
     /// Get the private key bytes for a P2PKH address (for signing the transition)
+    #[allow(dead_code)]
     pub fn get_p2pkh_private_key(&self, address: &PlatformAddress) -> Option<[u8; 32]> {
         match address {
             PlatformAddress::P2pkh(hash) => self
@@ -170,6 +172,7 @@ impl TestAddressSigner {
     }
 
     /// Sign P2SH and create witness
+    #[allow(dead_code)]
     pub fn sign_p2sh(
         &self,
         address: PlatformAddress,

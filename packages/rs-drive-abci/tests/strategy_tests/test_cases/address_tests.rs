@@ -19,7 +19,6 @@ mod tests {
 
     #[test]
     fn run_chain_address_transitions() {
-        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {
@@ -114,7 +113,6 @@ mod tests {
 
     #[test]
     fn run_chain_identity_to_addresses_transitions() {
-        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {

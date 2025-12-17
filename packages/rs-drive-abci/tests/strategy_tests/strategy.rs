@@ -17,7 +17,6 @@ use strategy_tests::operations::{
     MaybeOutputAmount, OperationType, OutputCountRange, TokenOp,
     UseExistingAddressesAsOutputChance,
 };
-use strategy_tests::KeyMaps;
 
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
@@ -219,15 +218,6 @@ pub struct FailureStrategy {
     pub expect_specific_block_errors_with_codes: HashMap<u64, Vec<u32>>,
     // 1 here would be round 1 is successful
     pub rounds_before_successful_block: Option<u32>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct MasternodeChanges {
-    /// The masternode ban chance should be always quite low
-    pub masternode_ban_chance: Frequency,
-    pub masternode_unban_chance: Frequency,
-    pub masternode_change_ip_chance: Frequency,
-    pub masternode_change_port_chance: Frequency,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -2480,6 +2470,7 @@ impl ChainExecutionOutcome<'_> {
 
 pub struct ChainExecutionParameters {
     pub block_start: u64,
+    #[allow(dead_code)]
     pub core_height_start: u32,
     pub block_count: u64,
     pub proposers: Vec<MasternodeListItemWithUpdates>,

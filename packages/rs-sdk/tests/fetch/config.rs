@@ -47,6 +47,7 @@ pub struct Config {
 
     /// When platform_ssl is true, use the PEM-encoded CA certificate from provided absolute path to verify the server certificate.
     #[serde(default)]
+    #[allow(dead_code)]
     pub platform_ca_cert_path: Option<PathBuf>,
 
     /// Directory where all generated test vectors will be saved.

@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn test_initial_state_structure_proper_heights_in_protocol_version_10() {
         let platform_version = PlatformVersion::get(10).unwrap();
-        let drive = setup_drive_with_initial_state_structure(Some(&platform_version));
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let drive_version = &platform_version.drive;
 
         // Merk Level 0
