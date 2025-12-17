@@ -1377,7 +1377,11 @@ mod tests {
         // Build Replace transition with new data
         let mut data = BTreeMap::new();
         data.insert("score".to_string(), Value::U64(10));
-        let replace_v0 = DocumentReplaceTransitionV0 { base, revision: 1, data };
+        let replace_v0 = DocumentReplaceTransitionV0 {
+            base,
+            revision: 1,
+            data,
+        };
         let replace = DocumentTransition::Replace(DocumentReplaceTransition::V0(replace_v0));
 
         // Original provided and matching; final matches (requires original)
