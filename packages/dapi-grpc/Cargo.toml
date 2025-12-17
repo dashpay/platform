@@ -84,4 +84,5 @@ ignored = [
   "futures-core",
   "tonic-prost-build",
   "getrandom", # Ignore getrandom as we need it to enable `js` feature
+  "dash-platform-macros", # used in build.rs
 ]
