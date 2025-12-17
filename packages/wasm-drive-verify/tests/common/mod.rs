@@ -1,5 +1,4 @@
 //! Common test utilities for wasm-drive-verify tests
-#![allow(dead_code)]
 
 use wasm_bindgen_test::*;
 
@@ -13,11 +12,6 @@ pub fn mock_proof(size: usize) -> Vec<u8> {
 /// Generate a mock 32-byte identifier
 pub fn mock_identifier() -> [u8; 32] {
     [0xFF; 32]
-}
-
-/// Generate a mock 20-byte hash
-pub fn mock_hash_160() -> [u8; 20] {
-    [0xEE; 20]
 }
 
 /// Generate test platform version
