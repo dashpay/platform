@@ -198,14 +198,32 @@ jobs:
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
+      - name: Configure core dumps
+        run: |
+          sudo mkdir /cores
+          sudo chmod 777 /cores
+          # Core filenames will be of the form executable.pid.timestamp:
+          sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
+
       - name: Run tests
-        run: RUST_MIN_STACK=16777216 cargo test --package=${{ inputs.package }} --all-features --locked
+        run: |
+          ulimit -c unlimited
+          RUST_MIN_STACK=16777216 cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Upload core dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dumps-${{ inputs.package }}
+          path: |
+            /cores/*
+          if-no-files-found: ignore
 
   check_each_feature:
     name: Check each feature
