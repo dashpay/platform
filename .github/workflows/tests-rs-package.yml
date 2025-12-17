@@ -196,6 +196,8 @@ jobs:
           secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
+        env:
+          PORTABLE: 1
         uses: ./.github/actions/librocksdb
 
       - name: Configure core dumps
