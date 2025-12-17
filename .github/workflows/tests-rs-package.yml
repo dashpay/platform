@@ -260,7 +260,7 @@ jobs:
           path: |
             core-dumps.zip
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 3
           # Inspect locally with: gdb path/to/binary path/to/core
 
   check_each_feature:
