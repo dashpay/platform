@@ -3,7 +3,7 @@ name = "wasm-drive-verify"
 version.workspace = true
 authors = ["Dash Core Group <dev@dash.org>"]
 edition = "2021"
-rust-version = "1.89"
+rust-version.workspace = true
 license = "MIT"
 
 [lib]
