@@ -168,8 +168,8 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-        // TODO: added one zero below for test
-      } = await client.platform.identities.utils.createAssetLockTransaction(2100000);
+        // TODO: increased for test
+      } = await client.platform.identities.utils.createAssetLockTransaction(2 * 210000);
 
       const account = await client.getWalletAccount();
 
