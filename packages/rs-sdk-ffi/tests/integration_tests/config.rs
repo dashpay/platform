@@ -24,7 +24,7 @@ pub struct Config {
     /// Host of the Dash Core RPC interface running on the Dash Platform node.
     /// Defaults to the same as [platform_host](Config::platform_host).
     #[serde(default)]
-    #[cfg_attr(not(feature = "network-testing"), allow(unused))]
+    #[allow(unused)]
     pub core_host: Option<String>,
     /// Port of the Dash Core RPC interface running on the Dash Platform node
     #[serde(default)]

@@ -181,7 +181,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_result_free(
 
     // Free the serialized data if present
     if !result.serialized_data.is_null() && result.serialized_data_len > 0 {
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             result.serialized_data,
             result.serialized_data_len,
         ));
