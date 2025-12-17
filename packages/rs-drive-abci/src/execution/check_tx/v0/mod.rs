@@ -325,8 +325,8 @@ mod tests {
             217, 221, 43, 251, 104, 84, 78, 35, 20, 237, 188, 237, 240, 216, 62, 79, 208, 96, 149,
             116, 62, 82, 187, 135, 219,
         ];
-        let state_transitions =
-            StateTransition::deserialize_many(&[tx.clone()]).expect("expected a state transition");
+        let state_transitions = StateTransition::deserialize_many(std::slice::from_ref(&tx))
+            .expect("expected a state transition");
         let state_transition = state_transitions.first().unwrap();
         let StateTransition::DataContractCreate(contract_create) = state_transition else {
             panic!("expecting a data contract create");
@@ -373,7 +373,7 @@ mod tests {
         platform
             .platform
             .process_raw_state_transitions(
-                &[tx.clone()],
+                std::slice::from_ref(&tx),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -487,7 +487,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -630,7 +630,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -834,7 +834,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -988,7 +988,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1142,7 +1142,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1293,7 +1293,7 @@ mod tests {
         platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1410,7 +1410,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1491,7 +1491,7 @@ mod tests {
         let update_processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized_update.clone()],
+                std::slice::from_ref(&serialized_update),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1620,7 +1620,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1704,7 +1704,7 @@ mod tests {
         let update_processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized_update.clone()],
+                std::slice::from_ref(&serialized_update),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1834,7 +1834,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1953,7 +1953,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized_update.clone()],
+                std::slice::from_ref(&serialized_update),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2079,7 +2079,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized.clone()],
+                std::slice::from_ref(&serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2201,7 +2201,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[serialized_update.clone()],
+                std::slice::from_ref(&serialized_update),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3689,7 +3689,7 @@ mod tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &[token_mint_serialized_transition.clone()],
+                std::slice::from_ref(&token_mint_serialized_transition),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3771,7 +3771,7 @@ mod tests {
         platform
             .platform
             .process_raw_state_transitions(
-                &[confirm_serialized.clone()],
+                std::slice::from_ref(&confirm_serialized),
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
