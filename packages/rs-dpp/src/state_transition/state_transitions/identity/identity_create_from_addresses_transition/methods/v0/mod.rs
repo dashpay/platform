@@ -27,6 +27,7 @@ use platform_version::version::PlatformVersion;
 
 pub trait IdentityCreateFromAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,

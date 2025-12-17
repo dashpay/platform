@@ -21,6 +21,7 @@ use crate::execution::types::state_transition_execution_context::{StateTransitio
 pub(crate) trait StateTransitionAddressBalancesAndNoncesInnerValidation:
     StateTransitionWitnessSigned
 {
+    #[allow(clippy::type_complexity)]
     fn validate_address_balances_and_nonces_internal_validation(
         &self,
         drive: &Drive,
@@ -146,6 +147,7 @@ pub trait StateTransitionAddressBalancesAndNoncesValidation {
 
     /// Validates that input addresses have sufficient balance and correct nonces.
     /// Returns the remaining balances after the transition would consume funds.
+    #[allow(clippy::type_complexity)]
     fn validate_address_balances_and_nonces(
         &self,
         drive: &Drive,

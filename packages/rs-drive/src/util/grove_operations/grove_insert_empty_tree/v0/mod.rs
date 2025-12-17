@@ -9,6 +9,7 @@ use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an empty tree in groveDB to `drive_operations`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn grove_insert_empty_tree_v0<B: AsRef<[u8]>>(
         &self,
         path: SubtreePath<'_, B>,

@@ -29,12 +29,12 @@ impl Drive {
     /// - `key`: The element key to insert or update.
     /// - `amount_to_add`: The value that should be inserted or added.
     /// - `apply_type`: Controls whether the operation is applied, estimated,
-    ///    or queued for batch processing.
+    ///   or queued for batch processing.
     /// - `transaction`: Optional transaction context for the underlying GroveDB call.
     /// - `drive_operations`: The vector of low-level drive operations this call
-    ///    should append to.
+    ///   should append to.
     /// - `drive_version`: The versioned function selector used to dispatch to the
-    ///    correct implementation.
+    ///   correct implementation.
     ///
     /// # Behavior
     ///
@@ -53,6 +53,7 @@ impl Drive {
     ///   compatible with a sum item update (indicating corrupted state).
     /// - `Err(DriveError::CorruptedCodeExecution)` if the method is not
     ///   implemented for the selected version (should not occur in production).
+    #[allow(clippy::too_many_arguments)]
     pub fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists<D>(
         &self,
         path: &[Vec<u8>],

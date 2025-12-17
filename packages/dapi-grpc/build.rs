@@ -201,7 +201,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     }
 
     // All messages can be mocked.
-    let platform = platform.message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#);
+    let platform =
+        platform.message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#);
 
     let platform = platform
         .type_attribute(

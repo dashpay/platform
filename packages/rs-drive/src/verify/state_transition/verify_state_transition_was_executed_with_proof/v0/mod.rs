@@ -16,12 +16,14 @@ use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::PartialIdentity;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{AddressNonce, Identifier};
+use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -993,12 +995,17 @@ impl Drive {
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain identity {} expected to exist because of state transition (create from addresses)", identity_id))))?;
 
+                let addresses_to_check = st
+                    .inputs()
+                    .keys()
+                    .chain(st.output().into_iter().map(|(address, _)| address));
+
                 let (root_hash_addresses, address_balances): (
                     RootHash,
                     BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
                 ) = Drive::verify_addresses_infos(
                     proof,
-                    st.inputs().keys(),
+                    addresses_to_check,
                     false,
                     platform_version,
                 )?;
@@ -1019,11 +1026,15 @@ impl Drive {
                 // Verify revision and balance for the identity
                 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
                 let identity_id = st.identity_id();
+                let addresses_to_check = st
+                    .inputs()
+                    .keys()
+                    .chain(st.output().into_iter().map(|(address, _)| address));
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
-                        st.inputs().keys(),
+                        addresses_to_check,
                         false,
                         platform_version,
                     )?
@@ -1069,7 +1080,7 @@ impl Drive {
                     BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
                 ) = Drive::verify_addresses_infos(
                     proof,
-                    st.outputs().keys(),
+                    st.inputs().keys().chain(st.outputs().keys()),
                     false,
                     platform_version,
                 )?;
@@ -1079,12 +1090,16 @@ impl Drive {
             StateTransition::AddressCreditWithdrawal(st) => {
                 // Verify balances for input addresses after withdrawal
                 use dpp::state_transition::StateTransitionWitnessSigned;
+                let addresses_to_check = st
+                    .inputs()
+                    .keys()
+                    .chain(st.output().into_iter().map(|(address, _)| address));
                 let (root_hash, balances): (
                     RootHash,
                     BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
                 ) = Drive::verify_addresses_infos(
                     proof,
-                    st.inputs().keys(),
+                    addresses_to_check,
                     false,
                     platform_version,
                 )?;

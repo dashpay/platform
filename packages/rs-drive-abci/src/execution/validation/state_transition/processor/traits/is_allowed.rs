@@ -59,7 +59,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                 } else {
                     Ok(ConsensusValidationResult::new_with_errors(vec![
                         StateTransitionNotActiveError::new(
-                            self.state_transition_type(),
+                            self.state_transition_type().to_string(),
                             platform_version.protocol_version,
                             ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
                         )

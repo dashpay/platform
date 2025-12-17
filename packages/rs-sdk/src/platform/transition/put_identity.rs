@@ -21,7 +21,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::AddressInfos;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Debug;
 
 /// Trait for creating identities on the platform.
 #[async_trait::async_trait]

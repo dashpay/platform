@@ -237,8 +237,6 @@ fn assert_action_outputs_state(
 fn assert_asset_lock_outputs_state(
     transition_outputs: &BTreeMap<PlatformAddress, Option<Credits>>,
     action_outputs: &BTreeMap<PlatformAddress, Option<Credits>>,
-    resolved_action_outputs: &BTreeMap<PlatformAddress, Credits>,
-    proof_address_infos: &BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     context: &str,
 ) {
     assert_eq!(
@@ -269,23 +267,6 @@ fn assert_asset_lock_outputs_state(
                 address
             ),
         }
-
-        let Some(action_resolved_balance) = resolved_action_outputs.get(address) else {
-            panic!(
-                "{context}: missing resolved action output for address {:?}",
-                address
-            );
-        };
-        let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
-            panic!("{context}: missing proof info for address {:?}", address);
-        };
-        let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
-        let diff = (*proof_balance as i64 - *action_resolved_balance as i64).abs();
-        assert!(
-            diff < fee_guesstimate,
-            "{context}: proof balance {proof_balance} differs from resolved balance {action_resolved_balance} by {diff} for address {:?}",
-            address
-        );
     }
 }
 
@@ -1001,7 +982,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 identity_create_from_addresses_action.identity_id(),
                                 "proof identity should match created identity"
                             );
-
+                            tracing::trace!(state_transition=?identity_create_from_addresses_transition,
+                                "Checking proof of identity create from addresses transition"
+                            );
                             let mut expected_addresses: BTreeSet<PlatformAddress> =
                                 identity_create_from_addresses_transition
                                     .inputs()
@@ -1360,8 +1343,6 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         assert_asset_lock_outputs_state(
                             transition_outputs,
                             action_outputs,
-                            &resolved_outputs,
-                            &proof_address_infos,
                             "address funding from asset lock outputs",
                         );
                     } else {

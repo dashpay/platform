@@ -42,6 +42,7 @@ mod tests {
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
     #[test]
+    #[stack_size(STACK_SIZE)]
     fn run_chain_with_temporarily_disabled_contested_documents() {
         let epoch_time_length_s = 60;
 
@@ -326,6 +327,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(STACK_SIZE)]
     fn run_chain_block_two_state_transitions_conflicting_unique_index_inserted_same_block_version_8(
     ) {
         // In this test we try to insert two state transitions with the same unique index
@@ -598,6 +600,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(STACK_SIZE)]
     fn run_chain_with_voting_on_conflicting_index_just_abstain_votes() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"
@@ -948,6 +951,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(STACK_SIZE)]
     fn run_chain_with_voting_on_conflicting_index_various_votes() {
         // In this test we try to insert two state transitions with the same unique index
         // We use the DPNS contract, and we insert two documents both with the same "name"

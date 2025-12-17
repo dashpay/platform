@@ -22,6 +22,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists_v0<D>(
         &self,
         path: &[Vec<u8>],

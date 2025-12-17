@@ -38,6 +38,7 @@ use std::collections::BTreeMap;
 
 pub(in crate::execution::validation::state_transition::state_transitions::address_funding_from_asset_lock) trait AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0
 {
+    #[allow(clippy::too_many_arguments)]
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
