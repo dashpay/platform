@@ -81,7 +81,7 @@ path = "clients/platform/v0/rust/platform_example.rs"
 [package.metadata.cargo-machete]
 ignored = [
   "platform-version",
-  "serde_bytes",
   "futures-core",
-  "dash-platform-macros",
+  "tonic-prost-build",
+  "getrandom", # Ignore getrandom as we need it to enable `js` feature
 ]
