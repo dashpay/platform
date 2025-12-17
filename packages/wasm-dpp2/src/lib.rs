@@ -11,7 +11,6 @@
 
 pub mod asset_lock_proof;
 pub mod block;
-pub mod bytes_b64;
 pub mod consensus_error;
 pub mod core_script;
 pub mod data_contract;
@@ -24,7 +23,7 @@ pub mod identity;
 pub mod mock_bls;
 pub mod private_key;
 pub mod public_key;
-pub mod serde_format;
+pub mod serialization;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;

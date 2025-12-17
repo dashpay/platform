@@ -377,7 +377,7 @@ pub fn normalize_js_value_for_platform_value(value: &JsValue) -> WasmDppResult<J
 
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
-/// for a wasm_bindgen newtype wrapper using the serde_format module.
+/// for a wasm_bindgen newtype wrapper using the serialization::conversions module.
 ///
 /// # Usage
 ///
@@ -397,22 +397,22 @@ macro_rules! impl_wasm_conversions {
         impl $wrapper {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toObject)]
             pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
-                $crate::serde_format::to_object(&self.0)
+                $crate::serialization::conversions::to_object(&self.0)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
             pub fn from_object(obj: wasm_bindgen::JsValue) -> Result<$wrapper, $crate::error::WasmDppError> {
-                $crate::serde_format::from_object(obj).map(Self)
+                $crate::serialization::conversions::from_object(obj).map(Self)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
             pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
-                $crate::serde_format::to_json(&self.0)
+                $crate::serialization::conversions::to_json(&self.0)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
             pub fn from_json(js: wasm_bindgen::JsValue) -> Result<$wrapper, $crate::error::WasmDppError> {
-                $crate::serde_format::from_json(js).map(Self)
+                $crate::serialization::conversions::from_json(js).map(Self)
             }
         }
     };

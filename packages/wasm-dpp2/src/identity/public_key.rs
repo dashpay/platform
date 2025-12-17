@@ -4,7 +4,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::serde_format;
+use crate::serialization;
 use crate::utils::IntoWasm;
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -302,7 +302,7 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
-        serde_format::platform_value_to_object(&value)
+        serialization::platform_value_to_object(&value)
     }
 
     /// Deserialize from JS object (non-human-readable).
@@ -310,7 +310,7 @@ impl IdentityPublicKeyWasm {
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_value = serde_format::platform_value_from_object(js_value)?;
+        let platform_value = serialization::platform_value_from_object(js_value)?;
         let platform_version = PlatformVersion::latest();
         let key = IdentityPublicKey::from_object(platform_value, platform_version)
             .map_err(WasmDppError::from)?;
@@ -324,7 +324,7 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
         let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
-        serde_format::to_json(&json_value)
+        serialization::to_json(&json_value)
     }
 
     /// Deserialize from JSON-compatible JS object (human-readable).

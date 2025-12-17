@@ -1,7 +1,7 @@
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{IntoWasm, JsValueExt, ToSerdeJSONExt};
@@ -209,7 +209,7 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let json_value = serde_format::js_value_to_json(&js_value)?;
+        let json_value = serialization::js_value_to_json(&js_value)?;
 
         let contract =
             DataContract::from_json(json_value, full_validation, &platform_version.into())?;
@@ -228,7 +228,7 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let platform_value: Value = serde_format::platform_value_from_object(js_value)?;
+        let platform_value: Value = serialization::platform_value_from_object(js_value)?;
 
         let contract =
             DataContract::from_value(platform_value, full_validation, &platform_version.into())
@@ -314,12 +314,12 @@ impl DataContractWasm {
         };
 
         let value = self.0.clone().to_value(&platform_version.into())?;
-        serde_format::platform_value_to_object(&value)
+        serialization::platform_value_to_object(&value)
     }
 
     #[wasm_bindgen(js_name = "getSchemas")]
     pub fn get_schemas(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(&self.0.document_schemas())
+        serialization::to_object(&self.0.document_schemas())
     }
 
     #[wasm_bindgen(getter = "version")]
@@ -339,7 +339,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "getConfig")]
     pub fn get_config(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_object(self.0.config())
+        serialization::to_object(self.0.config())
     }
 
     #[wasm_bindgen(getter = "tokens")]
@@ -519,7 +519,7 @@ impl DataContractWasm {
         };
 
         let json = self.0.to_json(&platform_version.into())?;
-        serde_format::to_json(&json)
+        serialization::to_json(&json)
     }
 
     #[wasm_bindgen(js_name = "generateId")]

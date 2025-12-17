@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::serialization;
 use crate::utils::JsValueExt;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
@@ -146,12 +146,12 @@ impl GroupWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
+        serialization::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<GroupWasm> {
-        serde_format::from_json(js_value).map(GroupWasm)
+        serialization::from_json(js_value).map(GroupWasm)
     }
 
     #[wasm_bindgen(js_name = "toObject")]
@@ -170,6 +170,6 @@ impl GroupWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<GroupWasm> {
-        serde_format::from_object(js_value).map(GroupWasm)
+        serialization::from_object(js_value).map(GroupWasm)
     }
 }

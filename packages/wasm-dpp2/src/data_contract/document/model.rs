@@ -2,7 +2,7 @@ use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::serialization;
 use crate::utils::ToSerdeJSONExt;
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
@@ -191,7 +191,7 @@ impl DocumentWasm {
                 .map(|(k, v)| (Value::Text(k.clone()), v.clone()))
                 .collect(),
         );
-        serde_format::platform_value_to_object(&properties_value)
+        serialization::platform_value_to_object(&properties_value)
     }
 
     #[wasm_bindgen(getter=revision)]
@@ -387,7 +387,7 @@ impl DocumentWasm {
         if let Some(entropy) = self.entropy {
             map.insert("$entropy".to_string(), Value::Bytes(entropy.to_vec()));
         }
-        serde_format::platform_value_to_object(&Value::Map(
+        serialization::platform_value_to_object(&Value::Map(
             map.into_iter()
                 .map(|(k, v)| (Value::Text(k), v))
                 .collect(),
@@ -458,7 +458,7 @@ impl DocumentWasm {
             obj.insert("$entropy".to_string(), json!(encode(&entropy, Base58)));
         }
 
-        serde_format::json_to_js_value(&json_value)
+        serialization::json_to_js_value(&json_value)
     }
 
     /// Create a Document from a JSON object.

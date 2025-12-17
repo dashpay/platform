@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
-use crate::serde_format;
+use crate::serialization;
 use crate::utils::{IntoWasm, JsValueExt};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::fields::IDENTIFIER_FIELDS_RAW_OBJECT;
@@ -154,7 +154,7 @@ impl IdentityWasm {
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         // Use platform_value conversion which handles BigInt for balance/revision
         let value = self.0.to_object()?;
-        let js_value = serde_format::platform_value_to_object(&value)?;
+        let js_value = serialization::platform_value_to_object(&value)?;
 
         // Replace `id` with IdentifierWasm instance for JS API compatibility
         // (allows identity.id.toBase58() etc.)
@@ -175,12 +175,12 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
+        serialization::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        serde_format::from_json(js_value).map(IdentityWasm)
+        serialization::from_json(js_value).map(IdentityWasm)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]

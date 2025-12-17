@@ -14,7 +14,7 @@ use wasm_bindgen::{JsCast, JsValue};
 
 #[deprecated(
     since = "0.1.0",
-    note = "Use serde_format::normalize_js_value_for_serde with serde_wasm_bindgen instead"
+    note = "Use serialization::normalize_js_value_for_serde with serde_wasm_bindgen instead"
 )]
 pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
     // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
@@ -72,7 +72,7 @@ impl JsValueExt for JsValue {
 
 pub fn with_serde_to_json_value_wasm(data: JsValue) -> WasmDppResult<JsonValue> {
     // Use direct serde_wasm_bindgen conversion with normalization for BigInt, Buffer, etc.
-    crate::serde_format::js_value_to_json(&data)
+    crate::serialization::js_value_to_json(&data)
 }
 
 pub fn with_serde_to_platform_value_wasm(data: &JsValue) -> WasmDppResult<Value> {
@@ -139,7 +139,7 @@ pub fn to_vec_of_platform_values(
 
 pub fn with_serde_to_json_value(data: JsValue) -> WasmDppResult<JsonValue> {
     // Use direct serde_wasm_bindgen conversion with normalization for BigInt, Buffer, etc.
-    crate::serde_format::js_value_to_json(&data)
+    crate::serialization::js_value_to_json(&data)
 }
 
 pub fn with_serde_to_platform_value(data: &JsValue) -> WasmDppResult<Value> {
@@ -170,13 +170,13 @@ pub fn normalize_json_bytes_to_strings(value: JsValue) -> WasmDppResult<JsonValu
     }
 
     // Use direct serde_wasm_bindgen conversion with normalization
-    let json = crate::serde_format::js_value_to_json(&value)?;
+    let json = crate::serialization::js_value_to_json(&value)?;
     Ok(normalize(json))
 }
 
 #[deprecated(
     since = "0.1.0",
-    note = "Use serde_format::normalize_js_value_for_serde with serde_wasm_bindgen instead"
+    note = "Use serialization::normalize_js_value_for_serde with serde_wasm_bindgen instead"
 )]
 pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
     // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays

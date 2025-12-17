@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::serde_format;
+use crate::serialization;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
@@ -75,12 +75,12 @@ impl ResourceVoteChoiceWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serde_format::to_json(&self.0)
+        serialization::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<ResourceVoteChoiceWasm> {
-        let choice: ResourceVoteChoice = serde_format::from_json(js_value)?;
+        let choice: ResourceVoteChoice = serialization::from_json(js_value)?;
         Ok(ResourceVoteChoiceWasm(choice))
     }
 

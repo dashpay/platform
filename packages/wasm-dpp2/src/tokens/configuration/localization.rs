@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::serde_format;
+use crate::serialization;
 use crate::utils::{IntoWasm, JsValueExt};
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_configuration_localization::accessors::v0::{
