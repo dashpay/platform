@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// untagged is needed here
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
-    feature = "identity-serde-conversion",
+   any( feature = "identity-serde-conversion" ,feature = "state-transition-serde-conversion",),
     derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$version"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")
@@ -35,14 +35,23 @@ use std::collections::{BTreeMap, BTreeSet};
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum Identity {
-    #[cfg_attr(feature = "identity-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(
+        any(
+            feature = "identity-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "0")
+    )]
     V0(IdentityV0),
 }
 
 /// An identity struct that represent partially set/loaded identity data.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
-    feature = "identity-serde-conversion",
+    any(
+        feature = "identity-serde-conversion",
+        feature = "state-transition-serde-conversion",
+    ),
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

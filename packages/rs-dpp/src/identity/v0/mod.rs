@@ -23,7 +23,10 @@ use bincode::{Decode, Encode};
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
-    feature = "identity-serde-conversion",
+    any(
+        feature = "identity-serde-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

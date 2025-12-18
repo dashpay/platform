@@ -55,7 +55,13 @@ use std::fmt::Formatter;
     serde(tag = "$version")
 )]
 pub enum Document {
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "0")
+    )]
     V0(DocumentV0),
 }
 
