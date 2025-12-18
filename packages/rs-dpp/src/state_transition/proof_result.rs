@@ -44,4 +44,3 @@ pub enum StateTransitionProofResult {
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
 }
-

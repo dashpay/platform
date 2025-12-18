@@ -7,10 +7,10 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "identity-value-conversion")]
-use platform_value::Value;
 use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::Revision;
+#[cfg(feature = "identity-value-conversion")]
+use platform_value::Value;
 
 #[cfg(feature = "identity-value-conversion")]
 use crate::errors::ProtocolError;
