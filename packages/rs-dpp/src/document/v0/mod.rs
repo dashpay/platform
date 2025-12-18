@@ -47,10 +47,22 @@ pub struct DocumentV0 {
     )]
     pub id: Identifier,
     /// The ID of the document's owner.
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$ownerId"))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "$ownerId")
+    )]
     pub owner_id: Identifier,
     /// The document's properties (data).
-    #[cfg_attr(feature = "document-serde-conversion", serde(flatten))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(flatten)
+    )]
     pub properties: BTreeMap<String, Value>,
     /// The document revision, if the document is mutable.
     #[cfg_attr(

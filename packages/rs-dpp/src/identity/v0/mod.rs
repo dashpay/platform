@@ -33,7 +33,10 @@ use bincode::{Decode, Encode};
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(
-        feature = "identity-serde-conversion",
+        any(
+            feature = "identity-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(with = "public_key_serialization")
     )]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
