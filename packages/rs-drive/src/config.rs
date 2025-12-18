@@ -209,8 +209,8 @@ impl Default for DriveConfig {
 }
 
 impl DriveConfig {
-    #[cfg(feature = "serde")]
-    fn default_network() -> Network {
+    /// The default network type for mainnet
+    pub fn default_network() -> Network {
         Network::Dash
     }
 
