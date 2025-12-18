@@ -78,7 +78,7 @@ pub fn parse_skip_selector(raw: &str) -> Result<SkipSelector, String> {
 fn parse_line_number(raw: &str) -> Result<usize, String> {
     raw.trim().parse::<usize>().map_err(|_| {
         format!(
-            "invalid skip target '{}'; expected positive line number",
+            "invalid skip target '{}'; expected valid line number",
             raw.trim()
         )
     })
