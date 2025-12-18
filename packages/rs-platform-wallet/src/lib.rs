@@ -97,26 +97,17 @@ impl PlatformWalletInfo {
 }
 
 /// Implement WalletTransactionChecker by delegating to ManagedWalletInfo
-#[async_trait]
 impl WalletTransactionChecker for PlatformWalletInfo {
-    async fn check_transaction(
+    fn check_transaction(
         &mut self,
         tx: &Transaction,
         network: Network,
         context: TransactionContext,
-        wallet: &mut Wallet,
-        update_state_with_wallet_if_found: bool,
+        update_state_with_wallet_if_found: Option<&Wallet>,
     ) -> TransactionCheckResult {
         // Delegate to the underlying wallet info
         self.wallet_info
-            .check_transaction(
-                tx,
-                network,
-                context,
-                wallet,
-                update_state_with_wallet_if_found,
-            )
-            .await
+            .check_transaction(tx, network, context, update_state_with_wallet_if_found)
     }
 }
 
@@ -372,10 +363,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             fee_level,
             current_block_height,
         )
-    }
-    fn update_chain_height(&mut self, network: Network, current_height: u32) {
-        self.wallet_info
-            .update_chain_height(network, current_height)
     }
 }
 
