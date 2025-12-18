@@ -178,6 +178,7 @@ jobs:
       target: drive-abci
       cargo_profile: dev
       tag: ${{ inputs.tag || github.event.release.tag_name }}-debug
+      additional_features: console,grovedbg,replay
 
   release-rs-dapi-image:
     name: Release RS-DAPI image

@@ -84,6 +84,7 @@ async-trait = "0.1.77"
 ron = { version = "0.12", optional = true }
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
+
 [dev-dependencies]
 bs58 = { version = "0.5.0" }
 base64 = "0.22.1"
