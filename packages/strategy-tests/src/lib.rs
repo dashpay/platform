@@ -41,6 +41,7 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 
 use crate::addresses_with_balance::AddressesWithBalance;
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+use dpp::address_funds::PlatformAddress;
 use dpp::identity::core_script::CoreScript;
 use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
@@ -128,6 +129,7 @@ pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
     pub start_identities: StartIdentities,
+    pub start_addresses: StartAddresses,
     pub start_contracts: Vec<(
         CreatedDataContract,
         Option<BTreeMap<u64, CreatedDataContract>>,
@@ -171,6 +173,19 @@ pub struct StartIdentities {
     pub hard_coded: Vec<(Identity, Option<StateTransition>)>,
 }
 
+/// Addresses to create and fund on the first block of the strategy.
+/// These addresses are funded without any state transition - they are assumed to already
+/// exist on the platform with the specified balances (useful for testing address operations).
+#[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
+pub struct StartAddresses {
+    /// Number of random addresses to create
+    pub number_of_addresses: u16,
+    /// Starting balance for each random address (in credits)
+    pub starting_balance: Credits,
+    /// Hard-coded addresses with specific balances
+    pub extra_addresses: BTreeMap<PlatformAddress, Credits>,
+}
+
 /// Identities to register on the first block of the strategy
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct IdentityInsertInfo {
@@ -209,6 +224,7 @@ struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
     pub start_identities: StartIdentities,
+    pub start_addresses: StartAddresses,
     pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -233,6 +249,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             start_contracts: contracts_with_updates,
             operations,
             start_identities,
+            start_addresses,
             identity_inserts: identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -272,6 +289,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             contracts_with_updates: contract_with_updates_in_serialization_format,
             operations: operations_in_serialization_format,
             start_identities,
+            start_addresses,
             identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -308,6 +326,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             contracts_with_updates,
             operations,
             start_identities,
+            start_addresses,
             identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -361,6 +380,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             start_contracts: contracts_with_updates,
             operations,
             start_identities,
+            start_addresses,
             identity_inserts: identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -538,6 +558,25 @@ impl Strategy {
         // Create state_transitions vec and identities vec based on identity_state_transitions outcome
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
+
+        // Initialize start addresses on the first block
+        // These addresses are pre-funded without state transitions (assumed to already exist on platform)
+        if block_info.height == config.start_block_height {
+            // Add random addresses with starting balance
+            for _ in 0..self.start_addresses.number_of_addresses {
+                let address = signer.add_random_address_key(rng);
+                current_addresses_with_balance.register_new_address(
+                    address,
+                    self.start_addresses.starting_balance,
+                );
+            }
+            // Add extra hard-coded addresses
+            for (address, balance) in &self.start_addresses.extra_addresses {
+                current_addresses_with_balance.register_new_address(*address, *balance);
+            }
+            // Commit the initial addresses immediately so they're available for operations
+            current_addresses_with_balance.commit();
+        }
 
         // Add initial contracts for contracts_with_updates on 2nd block of strategy
         #[allow(clippy::comparison_chain)]
@@ -2477,6 +2516,7 @@ mod tests {
                 extra_keys: BTreeMap::new(),
                 hard_coded: vec![],
             },
+            start_addresses: StartAddresses::default(),
             identity_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),
