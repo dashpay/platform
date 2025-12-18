@@ -8330,7 +8330,7 @@ mod tests {
                     )
                     .unwrap(),
                 ),
-                Some(200000), // 200,000 duffs = minimum for identity create
+                Some(2560000), // 200,000 duffs = minimum for identity create
             );
 
             let identifier = asset_lock_proof
