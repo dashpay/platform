@@ -111,7 +111,7 @@ rocksdb = { version = "0.24.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-default = ["bls-signatures", "replay"]
+default = ["bls-signatures"]
 mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
