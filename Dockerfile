@@ -88,6 +88,12 @@ RUN apk add --no-cache \
     xz \
     zeromq-dev
 
+# Configure GitHub authentication for git (optional, increases rate limit from 60 to 5000 req/hour)
+ARG GITHUB_TOKEN
+RUN if [ -n "$GITHUB_TOKEN" ]; then \
+    git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
+    fi
+
 # Configure snappy, dependency of librocksdb-sys
 RUN <<EOS
 echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
@@ -427,7 +433,7 @@ COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
@@ -500,7 +506,7 @@ RUN mkdir /artifacts
 # Build Drive ABCI
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
@@ -540,7 +546,7 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 # Note we unset CFLAGS and CXXFLAGS as they have `-march` included, which breaks wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
@@ -598,7 +604,7 @@ COPY --parents \
 # We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     --mount=type=secret,id=AWS \
     source /root/env && \
@@ -761,7 +767,7 @@ COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
@@ -826,7 +832,7 @@ RUN mkdir /artifacts
 # Build rs-dapi
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
