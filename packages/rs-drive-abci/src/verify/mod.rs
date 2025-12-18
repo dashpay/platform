@@ -1,7 +1,6 @@
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::DefaultCoreRPC;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;

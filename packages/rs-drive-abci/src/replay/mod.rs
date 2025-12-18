@@ -5,7 +5,7 @@ mod runner;
 use crate::abci::app::FullAbciApplication;
 use crate::config::PlatformConfig;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::verify;
 use cli::SkipSelector;

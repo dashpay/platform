@@ -1,6 +1,6 @@
 use crate::abci::app::FullAbciApplication;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::PlatformVersion;
 use hex::ToHex;
