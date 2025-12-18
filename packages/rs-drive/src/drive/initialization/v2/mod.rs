@@ -63,7 +63,7 @@ impl Drive {
         batch.add_insert(
             Self::addresses_path(),
             CLEAR_ADDRESS_POOL.to_vec(),
-            Element::empty_count_sum_tree(),
+            Element::empty_provable_count_sum_tree(),
         );
 
         Ok(())

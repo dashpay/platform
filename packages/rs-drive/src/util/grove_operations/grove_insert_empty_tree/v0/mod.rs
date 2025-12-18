@@ -27,6 +27,7 @@ impl Drive {
             TreeType::CountTree => Element::empty_count_tree(),
             TreeType::CountSumTree => Element::empty_count_sum_tree(),
             TreeType::ProvableCountTree => Element::empty_provable_count_tree(),
+            TreeType::ProvableCountSumTree => Element::empty_provable_count_sum_tree(),
         };
         let cost_context = self.grove.insert(
             path,

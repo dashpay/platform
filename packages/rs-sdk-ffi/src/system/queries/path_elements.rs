@@ -153,6 +153,9 @@ fn get_path_elements(
                                 Element::ProvableCountTree(_, count, _) => {
                                     format!("provable_count_tree:{}", count)
                                 }
+                                Element::ProvableCountSumTree(_, count, sum, _) => {
+                                    format!("provable_count_sum_tree:{}:{}", count, sum)
+                                }
                             };
 
                             format!(
@@ -170,6 +173,9 @@ fn get_path_elements(
                                     Element::CountSumTree(_, _, _, _) => "count_sum_tree",
                                     Element::ItemWithSumItem(_, _, _) => "item_with_sum_item",
                                     Element::ProvableCountTree(_, _, _) => "provable_count_tree",
+                                    Element::ProvableCountSumTree(_, _, _, _) => {
+                                        "provable_count_sum_tree"
+                                    }
                                 }
                             )
                         })
