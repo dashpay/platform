@@ -26,6 +26,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::{
@@ -37,6 +38,21 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
+
+use crate::addresses_with_balance::AddressesWithBalance;
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+use dpp::identity::core_script::CoreScript;
+use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
+use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
+use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+use dpp::withdrawal::Pooling;
 
 use bincode::{Decode, Encode};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -484,7 +500,8 @@ impl Strategy {
         ) -> PartialIdentity,
         asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
-        current_identities: &mut [Identity],
+        current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -542,6 +559,7 @@ impl Strategy {
                     asset_lock_proofs,
                     block_info,
                     current_identities,
+                    current_addresses_with_balance,
                     known_contracts,
                     signer,
                     identity_nonce_counter,
@@ -635,7 +653,8 @@ impl Strategy {
         ) -> PartialIdentity,
         asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
-        current_identities: &mut [Identity],
+        current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -1201,12 +1220,36 @@ impl Strategy {
                             }
                         }
                     }
-                    OperationType::IdentityTopUpFromAddresses(_amount_range) => {
-                        tracing::warn!(
-                            "IdentityTopUpFromAddresses operations are not supported \
-                             by the generic strategy executor"
-                        );
-                        continue;
+                    // Generate state transition for identity top-up from addresses operation
+                    OperationType::IdentityTopUpFromAddresses(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        let random_identities: Vec<&Identity> = indices
+                            .into_iter()
+                            .map(|index| &current_identities[index])
+                            .collect();
+
+                        for random_identity in random_identities {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            let state_transition = IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+                                random_identity,
+                                inputs,
+                                signer,
+                                0, // user_fee_increase
+                                platform_version,
+                                None,
+                            )
+                            .expect("expected to create top up from addresses transition");
+                            operations.push(state_transition);
+                        }
                     }
 
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
@@ -1552,6 +1595,407 @@ impl Strategy {
                             }
                         }
                     }
+                    // Generate state transition for identity transfer to addresses operation
+                    OperationType::IdentityTransferToAddresses(
+                        amount_range,
+                        output_count_range,
+                        use_existing_outputs_chance,
+                        identity_transfer_info,
+                    ) if !current_identities.is_empty() => {
+                        for _ in 0..count {
+                            // Handle the case where specific sender and outputs are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+
+                                let (state_transition, _recipient_addresses) =
+                                    crate::transitions::create_identity_credit_transfer_to_addresses_transition(
+                                        sender,
+                                        identity_nonce_counter,
+                                        current_addresses_with_balance,
+                                        signer,
+                                        transfer_info.amount,
+                                        transfer_info.outputs.len(),
+                                        rng,
+                                        platform_version,
+                                    );
+                                operations.push(state_transition);
+                            } else {
+                                // Handle the case where no specific sender is provided
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
+
+                                // Select a random identity from the current_identities for the sender
+                                let random_index = rng.gen_range(0..identities_count);
+                                let sender = &current_identities[random_index];
+
+                                // Get random amount within range
+                                let amount = rng.gen_range(amount_range.clone());
+
+                                // Get random output count within range
+                                let output_count =
+                                    rng.gen_range(output_count_range.clone()).max(1) as usize;
+
+                                // Calculate amount per output
+                                let amount_per_output = amount / output_count as u64;
+                                let mut recipient_addresses = BTreeMap::new();
+
+                                // Collect existing addresses that could be reused
+                                let mut available_existing_addresses: Vec<_> =
+                                    current_addresses_with_balance
+                                        .addresses_with_balance
+                                        .keys()
+                                        .cloned()
+                                        .collect();
+
+                                for _ in 0..output_count {
+                                    // Check if we should use an existing address as output
+                                    let use_existing = use_existing_outputs_chance
+                                        .map(|chance| {
+                                            rng.gen::<f64>() < chance
+                                                && !available_existing_addresses.is_empty()
+                                        })
+                                        .unwrap_or(false);
+
+                                    let address = if use_existing {
+                                        // Pick a random existing address and remove it from available pool
+                                        let idx =
+                                            rng.gen_range(0..available_existing_addresses.len());
+                                        let existing_address =
+                                            available_existing_addresses.swap_remove(idx);
+                                        // Update the balance for this existing address
+                                        if let Some((nonce, balance)) =
+                                            current_addresses_with_balance
+                                                .addresses_with_balance
+                                                .get(&existing_address)
+                                        {
+                                            current_addresses_with_balance
+                                                .addresses_in_block_with_new_balance
+                                                .insert(
+                                                    existing_address,
+                                                    (*nonce, balance + amount_per_output),
+                                                );
+                                        }
+                                        existing_address
+                                    } else {
+                                        // Create a new address
+                                        let new_address = signer.add_random_address_key(rng);
+                                        current_addresses_with_balance
+                                            .register_new_address(new_address, amount_per_output);
+                                        new_address
+                                    };
+
+                                    recipient_addresses.insert(address, amount_per_output);
+                                }
+
+                                let state_transition =
+                                    crate::transitions::create_identity_credit_transfer_to_addresses_transition_with_outputs(
+                                        sender,
+                                        identity_nonce_counter,
+                                        signer,
+                                        recipient_addresses,
+                                        platform_version,
+                                    );
+                                operations.push(state_transition);
+                            }
+                        }
+                    }
+
+                    // Generate state transition for identity create from addresses operation
+                    OperationType::IdentityCreateFromAddresses(
+                        amount_range,
+                        maybe_output_amount,
+                        fee_strategy,
+                        key_count,
+                        extra_keys,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            // Create a new identity with random keys
+                            let (mut identity, keys) = Identity::random_identity_with_main_keys_with_private_key::<
+                                Vec<_>,
+                            >(*key_count, rng, platform_version)
+                            .expect("Expected to create identity with keys");
+
+                            // Add extra keys to the identity
+                            for (purpose, security_to_key_type_map) in extra_keys.iter() {
+                                for (security_level, key_types) in security_to_key_type_map {
+                                    for key_type in key_types {
+                                        let (key, private_key) =
+                                            IdentityPublicKey::random_key_with_known_attributes(
+                                                (identity.public_keys().len() + 1) as KeyID,
+                                                rng,
+                                                *purpose,
+                                                *security_level,
+                                                *key_type,
+                                                None,
+                                                platform_version,
+                                            )
+                                            .expect("expected to create random key");
+                                        identity.add_public_key(key.clone());
+                                        signer.add_identity_public_key(key, private_key);
+                                    }
+                                }
+                            }
+
+                            // Add all keys to the signer
+                            signer.add_identity_public_keys(keys);
+
+                            // Determine fee strategy
+                            let fee_strategy = fee_strategy
+                                .clone()
+                                .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+
+                            // Create output if maybe_output_amount is provided
+                            let output = maybe_output_amount.as_ref().map(|output_range| {
+                                let output_amount = rng.gen_range(output_range.clone());
+                                let output_address = signer.add_random_address_key(rng);
+                                // Register the output address with balance
+                                current_addresses_with_balance
+                                    .register_new_address(output_address, output_amount);
+                                (output_address, output_amount)
+                            });
+
+                            let state_transition = IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
+                                &identity,
+                                inputs,
+                                output,
+                                fee_strategy,
+                                signer, // identity public key signer
+                                signer, // address signer
+                                0,      // user_fee_increase
+                                platform_version,
+                            )
+                            .expect("expected to create identity from addresses transition");
+
+                            operations.push(state_transition);
+                            // Add the newly created identity to the pool
+                            current_identities.push(identity);
+                        }
+                    }
+
+                    // Generate state transition for address funding from core asset lock operation
+                    // Note: amount_range is not used here because the actual funded amount comes from the asset lock proof
+                    OperationType::AddressFundingFromCoreAssetLock(_amount_range) => {
+                        for _i in 0..count {
+                            // Get an asset lock proof from the pool
+                            let Some((asset_lock_proof, private_key)) = asset_lock_proofs.pop()
+                            else {
+                                tracing::warn!(
+                                    "No asset lock proofs available for AddressFundingFromCoreAssetLock"
+                                );
+                                break;
+                            };
+
+                            // Get the funded amount from the asset lock proof
+                            let funded_amount = match &asset_lock_proof {
+                                AssetLockProof::Instant(proof) => {
+                                    let output_index = proof.output_index() as usize;
+                                    proof
+                                        .transaction()
+                                        .output
+                                        .get(output_index)
+                                        .map(|output| output.value)
+                                        .unwrap_or_default()
+                                }
+                                AssetLockProof::Chain(_chain) => 0,
+                            };
+
+                            // Create a new address for the funding
+                            let address = signer.add_random_address_key(rng);
+                            current_addresses_with_balance
+                                .register_new_address(address, funded_amount);
+
+                            let mut outputs = BTreeMap::new();
+                            outputs.insert(address, None);
+
+                            let funding_transition =
+                                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                                    asset_lock_proof,
+                                    private_key.inner.secret_bytes().as_slice(),
+                                    BTreeMap::new(), // no additional inputs
+                                    outputs,
+                                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                                    signer,
+                                    0,
+                                    platform_version,
+                                );
+
+                            match funding_transition {
+                                Ok(state_transition) => operations.push(state_transition),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Error creating address funding transition: {:?}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    // Generate state transition for address transfer operation
+                    OperationType::AddressTransfer(
+                        amount_range,
+                        output_count_range,
+                        use_existing_outputs_chance,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            let fee_strategy = fee_strategy
+                                .clone()
+                                .unwrap_or(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
+
+                            // Calculate total input amount (we'll distribute this among outputs)
+                            let total_input: Credits =
+                                inputs.values().map(|(_, credits)| credits).sum();
+
+                            // Generate random number of outputs within the specified range
+                            let output_count =
+                                rng.gen_range(output_count_range.clone()).max(1) as usize;
+
+                            // Create output addresses and distribute funds evenly
+                            let amount_per_output = total_input / output_count as Credits;
+                            let mut outputs = BTreeMap::new();
+
+                            // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
+                            let input_addresses: HashSet<_> = inputs.keys().cloned().collect();
+                            let mut available_existing_addresses: Vec<_> =
+                                current_addresses_with_balance
+                                    .addresses_with_balance
+                                    .keys()
+                                    .filter(|addr| !input_addresses.contains(*addr))
+                                    .cloned()
+                                    .collect();
+
+                            for _ in 0..output_count {
+                                // Check if we should use an existing address as output
+                                let use_existing = use_existing_outputs_chance
+                                    .map(|chance| {
+                                        rng.gen::<f64>() < chance
+                                            && !available_existing_addresses.is_empty()
+                                    })
+                                    .unwrap_or(false);
+
+                                let address = if use_existing {
+                                    // Pick a random existing address and remove it from available pool
+                                    let idx = rng.gen_range(0..available_existing_addresses.len());
+                                    let existing_address =
+                                        available_existing_addresses.swap_remove(idx);
+                                    // Update the balance for this existing address
+                                    if let Some((nonce, balance)) = current_addresses_with_balance
+                                        .addresses_with_balance
+                                        .get(&existing_address)
+                                    {
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .insert(
+                                                existing_address,
+                                                (*nonce, balance + amount_per_output),
+                                            );
+                                    }
+                                    existing_address
+                                } else {
+                                    // Create a new address
+                                    let new_address = signer.add_random_address_key(rng);
+                                    current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance
+                                        .insert(new_address, (0, amount_per_output));
+                                    new_address
+                                };
+
+                                outputs.insert(address, amount_per_output);
+                            }
+
+                            let transfer_transition =
+                                AddressFundsTransferTransition::try_from_inputs_with_signer(
+                                    inputs,
+                                    outputs,
+                                    fee_strategy,
+                                    signer,
+                                    0,
+                                    platform_version,
+                                )
+                                .expect("expected to create address funds transfer transition");
+
+                            operations.push(transfer_transition);
+                        }
+                    }
+
+                    // Generate state transition for address withdrawal operation
+                    OperationType::AddressWithdrawal(
+                        amount_range,
+                        maybe_output_range,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            let fee_strategy = fee_strategy
+                                .clone()
+                                .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+
+                            // Determine if we have an output (change address) and its amount
+                            let output = if let Some(output_amount_range) = maybe_output_range {
+                                let output_amount = rng.gen_range(output_amount_range.clone());
+                                let output_address = signer.add_random_address_key(rng);
+                                current_addresses_with_balance
+                                    .addresses_in_block_with_new_balance
+                                    .insert(output_address, (0, output_amount));
+                                Some((output_address, output_amount))
+                            } else {
+                                None
+                            };
+
+                            // Generate a random output script for the withdrawal
+                            let output_script = if rng.gen_bool(0.5) {
+                                CoreScript::random_p2pkh(rng)
+                            } else {
+                                CoreScript::random_p2sh(rng)
+                            };
+
+                            let withdrawal_transition =
+                                AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+                                    inputs,
+                                    output,
+                                    fee_strategy,
+                                    1, // core_fee_per_byte
+                                    Pooling::Never,
+                                    output_script,
+                                    signer,
+                                    0,
+                                    platform_version,
+                                )
+                                .expect("expected to create address credit withdrawal transition");
+
+                            operations.push(withdrawal_transition);
+                        }
+                    }
+
                     _ => {}
                 }
             }
