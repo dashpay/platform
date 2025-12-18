@@ -15,7 +15,6 @@ license = "MIT"
 [dependencies]
 arc-swap = "1.7.0"
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
-base64 = { version = "0.22.1", optional = true }
 ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -81,13 +80,10 @@ tokio = { version = "1.40", features = [
 tokio-util = { version = "0.7" }
 derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
-ron = { version = "0.12", optional = true }
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
 
 [dev-dependencies]
-bs58 = { version = "0.5.0" }
-base64 = "0.22.1"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
@@ -115,13 +111,13 @@ rocksdb = { version = "0.24.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-default = ["bls-signatures"]
+default = ["bls-signatures", "replay"]
 mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 grovedbg = ["drive/grovedbg"]
 # `abci-server replay` command
-replay = ["dep:ron", "dep:time", "tenderdash-abci/serde"]
+replay = ["dep:time", "tenderdash-abci/serde"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"

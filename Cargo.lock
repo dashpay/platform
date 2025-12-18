@@ -597,9 +597,6 @@ name = "bitflags"
 version = "2.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2261d10cca569e4643e526d8dc2e62e433cc8aba21ab764233731f8d369bf394"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "bitvec"
@@ -2012,10 +2009,8 @@ dependencies = [
  "arc-swap",
  "assert_matches",
  "async-trait",
- "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "bls-signatures",
- "bs58",
  "chrono",
  "ciborium",
  "clap",
@@ -2043,7 +2038,6 @@ dependencies = [
  "regex",
  "reopen",
  "rocksdb 0.24.0",
- "ron",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -5343,20 +5337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ron"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd490c5b18261893f14449cbd28cb9c0b637aebf161cd77900bfdedaff21ec32"
-dependencies = [
- "bitflags 2.9.4",
- "once_cell",
- "serde",
- "serde_derive",
- "typeid",
- "unicode-ident",
-]
-
-[[package]]
 name = "rpassword"
 version = "7.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7185,12 +7165,6 @@ dependencies = [
  "url",
  "utf-8",
 ]
-
-[[package]]
-name = "typeid"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
 
 [[package]]
 name = "typenum"
