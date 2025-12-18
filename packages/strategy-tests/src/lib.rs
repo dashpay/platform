@@ -559,19 +559,69 @@ impl Strategy {
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
-        // Initialize start addresses on the first block
-        // These addresses are pre-funded without state transitions (assumed to already exist on platform)
+        // Initialize start addresses on the first block by funding them from asset lock proofs
         if block_info.height == config.start_block_height {
-            // Add random addresses with starting balance
-            for _ in 0..self.start_addresses.number_of_addresses {
+            // Fund random addresses from asset lock proofs
+            for i in 0..self.start_addresses.number_of_addresses {
+                // Get an asset lock proof from the pool
+                let Some((asset_lock_proof, private_key)) = asset_lock_proofs.pop() else {
+                    tracing::warn!(
+                        "No asset lock proofs available for start_addresses (funded {} of {})",
+                        i,
+                        self.start_addresses.number_of_addresses
+                    );
+                    break;
+                };
+
+                // Get the funded amount from the asset lock proof
+                let funded_amount = match &asset_lock_proof {
+                    AssetLockProof::Instant(proof) => {
+                        let output_index = proof.output_index() as usize;
+                        proof
+                            .transaction()
+                            .output
+                            .get(output_index)
+                            .map(|output| output.value * 1000) // Convert sats to credits
+                            .unwrap_or(self.start_addresses.starting_balance)
+                    }
+                    AssetLockProof::Chain(_) => self.start_addresses.starting_balance,
+                };
+
+                // Create a new address for the funding
                 let address = signer.add_random_address_key(rng);
-                current_addresses_with_balance
-                    .register_new_address(address, self.start_addresses.starting_balance);
+                current_addresses_with_balance.register_new_address(address, funded_amount);
+
+                let mut outputs = BTreeMap::new();
+                outputs.insert(address, None);
+
+                let funding_transition =
+                    AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                        asset_lock_proof,
+                        private_key.inner.secret_bytes().as_slice(),
+                        BTreeMap::new(), // no additional inputs
+                        outputs,
+                        vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                        signer,
+                        0,
+                        platform_version,
+                    );
+
+                match funding_transition {
+                    Ok(transition) => state_transitions.push(transition),
+                    Err(e) => {
+                        tracing::error!(
+                            "Error creating address funding transition for start_address: {:?}",
+                            e
+                        );
+                    }
+                }
             }
-            // Add extra hard-coded addresses
+
+            // Add extra hard-coded addresses (these are assumed to already exist on platform)
             for (address, balance) in &self.start_addresses.extra_addresses {
                 current_addresses_with_balance.register_new_address(*address, *balance);
             }
+
             // Commit the initial addresses immediately so they're available for operations
             current_addresses_with_balance.commit();
         }
