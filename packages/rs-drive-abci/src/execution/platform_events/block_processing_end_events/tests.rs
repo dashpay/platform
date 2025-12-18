@@ -4,7 +4,7 @@ mod refund_tests {
         fetch_expected_identity_balance, process_state_transitions,
         setup_identity_with_system_credits,
     };
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
