@@ -262,8 +262,6 @@ identity-cbor-conversion = [
 index-serde-conversion = []
 state-transition-serde-conversion = [
   "data-contract-serde-conversion",
-  "document-serde-conversion",
-  "identity-serde-conversion",
   "vote-serde-conversion",
 ]
 state-transition-value-conversion = [
