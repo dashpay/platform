@@ -565,10 +565,8 @@ impl Strategy {
             // Add random addresses with starting balance
             for _ in 0..self.start_addresses.number_of_addresses {
                 let address = signer.add_random_address_key(rng);
-                current_addresses_with_balance.register_new_address(
-                    address,
-                    self.start_addresses.starting_balance,
-                );
+                current_addresses_with_balance
+                    .register_new_address(address, self.start_addresses.starting_balance);
             }
             // Add extra hard-coded addresses
             for (address, balance) in &self.start_addresses.extra_addresses {
@@ -2387,6 +2385,7 @@ mod tests {
     use crate::frequency::Frequency;
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
+    use crate::StartAddresses;
     use crate::{StartIdentities, Strategy};
     use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
