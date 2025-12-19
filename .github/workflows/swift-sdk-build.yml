@@ -160,6 +160,17 @@ jobs:
             (cd "$RUST_DASHCORE_DIR" && cargo clean || true)
           fi
 
+      - name: Build dash-spv-ffi static libs explicitly
+        shell: bash
+        run: |
+          set -euxo pipefail
+          RUST_DASHCORE_DIR="$(dirname "$GITHUB_WORKSPACE")/rust-dashcore"
+          cd "$RUST_DASHCORE_DIR/dash-spv-ffi"
+          TOOLCHAIN="${{ steps.dashcore_toolchain.outputs.channel }}"
+          cargo +"$TOOLCHAIN" build --lib --release --target aarch64-apple-ios
+          cargo +"$TOOLCHAIN" build --lib --release --target aarch64-apple-ios-sim
+          cargo +"$TOOLCHAIN" build --lib --release --target x86_64-apple-ios
+
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |
           bash packages/swift-sdk/build_ios.sh
