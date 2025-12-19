@@ -8238,7 +8238,7 @@ mod tests {
             // be used for address funding with an output that fits within the remaining balance.
             //
             // Key calculations (CREDITS_PER_DUFF = 1000):
-            // - Asset lock: 200,000 duffs = 200,000,000 credits (minimum for identity create)
+            // - Asset lock: 256,000 duffs = 256,000,000 credits (minimum for identity create)
             // - Penalty for unique_key_already_present: 10,000,000 credits = 10,000 duffs
             // - Processing fees: ~1-2M credits = ~1-2K duffs per attempt
             // - After 1 failure: ~188,000 duffs remain
@@ -8322,7 +8322,7 @@ mod tests {
                     )
                     .unwrap(),
                 ),
-                Some(200000), // 200,000 duffs = minimum for identity create
+                Some(256000), // 200,000 + 56,000 duffs = minimum for identity create
             );
 
             let identifier = asset_lock_proof
