@@ -88,22 +88,8 @@ impl AddressesWithBalance {
         // Take the map, leaving an empty one behind
         let staged = mem::take(&mut self.addresses_in_block_with_new_balance);
 
-        if !staged.is_empty() {
-            tracing::debug!(
-                staged_count = staged.len(),
-                "commit: committing {} staged address updates",
-                staged.len()
-            );
-        }
-
         // Merge staged changes into the main map
         for (address, (nonce, credits)) in staged {
-            tracing::trace!(
-                address = %address,
-                nonce = nonce,
-                credits = credits,
-                "commit: moving address from staged to committed"
-            );
             self.addresses_with_balance
                 .insert(address, (nonce, credits));
         }
@@ -225,7 +211,7 @@ impl AddressesWithBalance {
                 min_amount = min_amount,
                 committed_count = self.addresses_with_balance.len(),
                 already_used_this_block = self.addresses_in_block_with_new_balance.len(),
-                "take_random_amount_with_bounds: no eligible addresses (all already used this block or insufficient balance)"
+                "No eligible addresses (all already used this block or insufficient balance)"
             );
             return None;
         }
@@ -283,16 +269,6 @@ impl AddressesWithBalance {
 
         // Bump nonce – adjust if AddressNonce isn't a plain integer
         let new_nonce = current_nonce + 1;
-
-        tracing::debug!(
-            address = %address,
-            current_nonce = current_nonce,
-            new_nonce = new_nonce,
-            nonce_source = nonce_source,
-            taken_amount = taken,
-            new_balance = new_balance,
-            "take_random_amount_with_bounds: spending from address"
-        );
 
         // Stage the new (nonce, balance)
         self.addresses_in_block_with_new_balance
@@ -450,12 +426,6 @@ impl AddressesWithBalance {
     /// within the same block (after staged state is visible), and will be
     /// committed to the main map when [`commit()`](Self::commit) is called.
     pub fn register_new_address(&mut self, address: PlatformAddress, balance: Credits) {
-        tracing::debug!(
-            address = %address,
-            balance = balance,
-            initial_nonce = 0,
-            "register_new_address: registering new address with initial nonce 0"
-        );
         self.addresses_in_block_with_new_balance
             .insert(address, (0, balance));
     }
@@ -481,12 +451,6 @@ impl AddressesWithBalance {
         if let Some((nonce, _balance)) = self.addresses_in_block_with_new_balance.get_mut(address) {
             let old_nonce = *nonce;
             *nonce = new_nonce;
-            tracing::info!(
-                address = %address,
-                old_nonce = old_nonce,
-                new_nonce = new_nonce,
-                "reset_address_nonce: reset nonce in staged map"
-            );
             found = true;
         }
 
@@ -494,21 +458,7 @@ impl AddressesWithBalance {
         if let Some((nonce, _balance)) = self.addresses_with_balance.get_mut(address) {
             let old_nonce = *nonce;
             *nonce = new_nonce;
-            tracing::info!(
-                address = %address,
-                old_nonce = old_nonce,
-                new_nonce = new_nonce,
-                "reset_address_nonce: reset nonce in committed map"
-            );
             found = true;
-        }
-
-        if !found {
-            tracing::warn!(
-                address = %address,
-                new_nonce = new_nonce,
-                "reset_address_nonce: address not found in any map"
-            );
         }
 
         found
@@ -527,12 +477,6 @@ impl AddressesWithBalance {
         nonce: AddressNonce,
         balance: Credits,
     ) {
-        tracing::info!(
-            address = %address,
-            nonce = nonce,
-            balance = balance,
-            "set_address_state: setting address state from platform"
-        );
         self.addresses_in_block_with_new_balance
             .insert(address, (nonce, balance));
     }
@@ -549,11 +493,6 @@ impl AddressesWithBalance {
         &mut self,
         platform_states: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) {
-        tracing::info!(
-            count = platform_states.len(),
-            "sync_from_platform: syncing {} addresses from platform state",
-            platform_states.len()
-        );
         for (address, (nonce, balance)) in platform_states {
             self.set_address_state(address, nonce, balance);
         }

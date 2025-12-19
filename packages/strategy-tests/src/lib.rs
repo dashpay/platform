@@ -799,12 +799,6 @@ impl Strategy {
             );
             state_transitions.append(&mut contract_state_transitions);
         } else if block_info.height > config.start_block_height + 1 {
-            // Do operations and contract updates after the first two blocks
-            tracing::debug!(
-                "Starting operations (block {}), addresses_with_balance count: {}",
-                block_info.height,
-                current_addresses_with_balance.addresses_with_balance.len()
-            );
             let (mut operations_state_transitions, mut add_to_finalize_block_operations) = self
                 .operations_based_transitions(
                     document_query_callback,
@@ -2041,7 +2035,8 @@ impl Strategy {
 
                             // Track fee deductions for balance tracking
                             let mut output_fee_deduction: Credits = 0;
-                            let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
 
                             let input_addresses_in_order: Vec<PlatformAddress> =
                                 inputs.keys().cloned().collect();
@@ -2061,8 +2056,9 @@ impl Strategy {
                                     }
                                     AddressFundsFeeStrategyStep::DeductFromInput(index) => {
                                         if (*index as usize) < inputs.len() {
-                                            let entry =
-                                                input_fee_deductions.entry(*index as usize).or_insert(0);
+                                            let entry = input_fee_deductions
+                                                .entry(*index as usize)
+                                                .or_insert(0);
                                             *entry = entry.saturating_add(remaining_fee);
                                             remaining_fee = 0;
                                         }
@@ -2074,9 +2070,10 @@ impl Strategy {
                             for (idx, fee_deduction) in input_fee_deductions {
                                 if let Some(address) = input_addresses_in_order.get(idx) {
                                     // Get the current staged balance and reduce it further by the fee
-                                    if let Some((_, staged_balance)) = current_addresses_with_balance
-                                        .addresses_in_block_with_new_balance
-                                        .get_mut(address)
+                                    if let Some((_, staged_balance)) =
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .get_mut(address)
                                     {
                                         *staged_balance =
                                             staged_balance.saturating_sub(fee_deduction);
@@ -2388,8 +2385,7 @@ impl Strategy {
                                             let deduction = remaining_fee.min(output_amount);
                                             *output_fee_deductions.entry(idx).or_insert(0) +=
                                                 deduction;
-                                            remaining_fee =
-                                                remaining_fee.saturating_sub(deduction);
+                                            remaining_fee = remaining_fee.saturating_sub(deduction);
                                         }
                                     }
                                     AddressFundsFeeStrategyStep::DeductFromInput(index) => {
@@ -2428,8 +2424,7 @@ impl Strategy {
 
                             // Apply fee deductions to OUTPUT balance tracking
                             for (idx, address) in output_addresses_in_order.iter().enumerate() {
-                                let transition_amount =
-                                    outputs.get(address).copied().unwrap_or(0);
+                                let transition_amount = outputs.get(address).copied().unwrap_or(0);
                                 let fee_deduction =
                                     output_fee_deductions.get(&idx).copied().unwrap_or(0);
                                 let actual_credited_amount =
@@ -2535,7 +2530,8 @@ impl Strategy {
 
                             // Track fee deductions for balance tracking
                             let mut output_fee_deduction: Credits = 0;
-                            let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
 
                             let input_addresses_in_order: Vec<PlatformAddress> =
                                 inputs.keys().cloned().collect();
@@ -2555,8 +2551,9 @@ impl Strategy {
                                     }
                                     AddressFundsFeeStrategyStep::DeductFromInput(index) => {
                                         if (*index as usize) < inputs.len() {
-                                            let entry =
-                                                input_fee_deductions.entry(*index as usize).or_insert(0);
+                                            let entry = input_fee_deductions
+                                                .entry(*index as usize)
+                                                .or_insert(0);
                                             *entry = entry.saturating_add(remaining_fee);
                                             remaining_fee = 0;
                                         }
@@ -2568,9 +2565,10 @@ impl Strategy {
                             for (idx, fee_deduction) in input_fee_deductions {
                                 if let Some(address) = input_addresses_in_order.get(idx) {
                                     // Get the current staged balance and reduce it further by the fee
-                                    if let Some((_, staged_balance)) = current_addresses_with_balance
-                                        .addresses_in_block_with_new_balance
-                                        .get_mut(address)
+                                    if let Some((_, staged_balance)) =
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .get_mut(address)
                                     {
                                         *staged_balance =
                                             staged_balance.saturating_sub(fee_deduction);
