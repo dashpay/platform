@@ -90,3 +90,6 @@ ffi_core_stubs = []
 [[test]]
 name = "integration"
 path = "tests/integration.rs"
+
+[package.metadata.cargo-machete]
+ignored = ["cbindgen"]
