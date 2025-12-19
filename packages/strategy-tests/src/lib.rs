@@ -1,4 +1,3 @@
-#![allow(clippy::result_large_err)]
 //! Comprehensive testing framework for Dash Platform using configurable strategies.
 //!
 //! This library provides the [`Strategy`] struct and supporting types for simulating
@@ -64,6 +63,8 @@
 //! - [`frequency`]: Randomized event frequency configuration
 //! - [`operations`]: Operation type definitions
 //! - [`transitions`]: State transition factory functions
+
+#![allow(clippy::result_large_err)]
 
 use crate::addresses_with_balance::AddressesWithBalance;
 use crate::frequency::Frequency;
@@ -138,25 +139,11 @@ use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use transitions::create_identity_credit_transfer_transition;
+
 pub mod addresses_with_balance;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
-
-/// Maps key purposes to security levels to key types for identity key generation.
-///
-/// Used to specify additional keys when creating identities. The nested structure
-/// allows fine-grained control over which key types are created for each
-/// purpose/security-level combination.
-///
-/// Example: Create a HIGH-security ECDSA key for AUTHENTICATION:
-/// ```ignore
-/// let extra_keys: KeyMaps = BTreeMap::from([(
-///     Purpose::AUTHENTICATION,
-///     BTreeMap::from([(SecurityLevel::HIGH, vec![KeyType::ECDSA_SECP256K1])])
-/// )]);
-/// ```
-pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 
 /// The core configuration for a Dash Platform testing strategy.
 ///
@@ -261,6 +248,21 @@ pub struct StrategyConfig {
     /// Total number of blocks to simulate.
     pub number_of_blocks: u64,
 }
+
+/// Maps key purposes to security levels to key types for identity key generation.
+///
+/// Used to specify additional keys when creating identities. The nested structure
+/// allows fine-grained control over which key types are created for each
+/// purpose/security-level combination.
+///
+/// Example: Create a HIGH-security ECDSA key for AUTHENTICATION:
+/// ```ignore
+/// let extra_keys: KeyMaps = BTreeMap::from([(
+///     Purpose::AUTHENTICATION,
+///     BTreeMap::from([(SecurityLevel::HIGH, vec![KeyType::ECDSA_SECP256K1])])
+/// )]);
+/// ```
+pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 
 /// Configuration for identities created at strategy start (block 1).
 ///
