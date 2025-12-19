@@ -164,6 +164,11 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          export IPHONEOS_DEPLOYMENT_TARGET="18.0"
+          export IPHONESIMULATOR_DEPLOYMENT_TARGET="18.0"
+          export CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS="${CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS:-} -C link-arg=-mios-version-min=${IPHONEOS_DEPLOYMENT_TARGET}"
+          export CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS="${CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS:-} -C link-arg=-mios-version-min=${IPHONESIMULATOR_DEPLOYMENT_TARGET}"
+          export CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS="${CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS:-} -C link-arg=-mios-version-min=${IPHONESIMULATOR_DEPLOYMENT_TARGET}"
           RUST_DASHCORE_DIR="$(dirname "$GITHUB_WORKSPACE")/rust-dashcore"
           cd "$RUST_DASHCORE_DIR/dash-spv-ffi"
           TOOLCHAIN="${{ steps.dashcore_toolchain.outputs.channel }}"
