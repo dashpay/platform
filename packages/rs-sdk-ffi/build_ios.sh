@@ -359,6 +359,29 @@ require_spv_artifact() {
 DEVICE_SPV_LIB=""
 SIM_ARM_SPV_LIB=""
 SIM_X86_SPV_LIB=""
+reinforce_combined_with_spv() {
+  local combined_lib="$1"
+  shift
+  if [ ! -f "$combined_lib" ]; then
+    return 0
+  fi
+
+  local spv_lib
+  for target_dir in "$@"; do
+    if spv_lib=$(find_spv_artifact "$target_dir"); then
+      break
+    fi
+  done
+  if [ -z "${spv_lib:-}" ]; then
+    echo -e "${YELLOW}⚠ Unable to find dash-spv-ffi library to reinforce $(basename "$combined_lib")${NC}"
+    return 0
+  fi
+
+  echo -e "${GREEN}Embedding dash-spv-ffi symbols from $spv_lib into $(basename "$combined_lib")${NC}"
+  libtool -static -o "${combined_lib}.tmp" "$combined_lib" "$spv_lib"
+  mv "${combined_lib}.tmp" "$combined_lib"
+}
+
 if [ -d "$SPV_CRATE_PATH" ]; then
   echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
   pushd "$SPV_CRATE_PATH" >/dev/null
@@ -430,6 +453,7 @@ if [ "$BUILD_ARCH" != "x86" ]; then
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
         "$DEVICE_SPV_LIB"
       COMBINED_DEVICE_LIB=1
+      reinforce_combined_with_spv "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" "aarch64-apple-ios"
     fi
 fi
 
@@ -513,6 +537,13 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
       libtool -static -o "$OUTPUT_DIR/simulator/libDashSDKFFI_combined.a" \
         "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" \
         "$SIM_SPV_LIB"
+      if [ "$BUILD_ARCH" = "universal" ]; then
+        reinforce_combined_with_spv "$OUTPUT_DIR/simulator/libDashSDKFFI_combined.a" "aarch64-apple-ios-sim" "x86_64-apple-ios"
+      elif [ "$BUILD_ARCH" = "x86" ]; then
+        reinforce_combined_with_spv "$OUTPUT_DIR/simulator/libDashSDKFFI_combined.a" "x86_64-apple-ios"
+      else
+        reinforce_combined_with_spv "$OUTPUT_DIR/simulator/libDashSDKFFI_combined.a" "aarch64-apple-ios-sim"
+      fi
       XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/libDashSDKFFI_combined.a -headers $HEADERS_DIR"
     else
       XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
