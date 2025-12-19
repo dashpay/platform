@@ -323,16 +323,42 @@ fi
 # Build dash-spv-ffi from local rust-dashcore for device and simulator
 RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
 SPV_CRATE_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi"
-verify_spv_artifact() {
-  local artifact_path="$1"
-  local label="$2"
-  if [ ! -f "$artifact_path" ]; then
-    echo -e "${RED}❌ Missing dash-spv-ffi artifact (${label}) at:${NC}"
-    echo "    $artifact_path"
-    echo -e "${YELLOW}   Ensure the previous cargo build step produced this target.${NC}"
-    exit 1
-  fi
+SPV_SEARCH_DIRS=()
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+  SPV_SEARCH_DIRS+=("$CARGO_TARGET_DIR")
+fi
+SPV_SEARCH_DIRS+=("$SPV_CRATE_PATH/target" "$RUST_DASHCORE_PATH/target")
+find_spv_artifact() {
+  local target_dir="$1"
+  for base in "${SPV_SEARCH_DIRS[@]}"; do
+    local candidate="$base/$target_dir/release/libdash_spv_ffi.a"
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
 }
+require_spv_artifact() {
+  local target_dir="$1"
+  local label="$2"
+  local path
+  if path=$(find_spv_artifact "$target_dir"); then
+    echo "$path"
+    return 0
+  fi
+
+  echo -e "${RED}❌ Missing dash-spv-ffi artifact (${label}).${NC}"
+  echo "    Checked the following locations:"
+  for base in "${SPV_SEARCH_DIRS[@]}"; do
+    echo "      - $base/$target_dir/release/libdash_spv_ffi.a"
+  done
+  echo -e "${YELLOW}   Ensure the cargo build step produced this target or set CARGO_TARGET_DIR accordingly.${NC}"
+  exit 1
+}
+DEVICE_SPV_LIB=""
+SIM_ARM_SPV_LIB=""
+SIM_X86_SPV_LIB=""
 if [ -d "$SPV_CRATE_PATH" ]; then
   echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
   pushd "$SPV_CRATE_PATH" >/dev/null
@@ -363,15 +389,15 @@ if [ -d "$SPV_CRATE_PATH" ]; then
   fi
   popd >/dev/null
   if [ "$BUILD_ARCH" != "x86" ]; then
-    verify_spv_artifact "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" "device (aarch64-apple-ios)"
+    DEVICE_SPV_LIB="$(require_spv_artifact "aarch64-apple-ios" "device (aarch64-apple-ios)")"
   fi
   if [ "$BUILD_ARCH" = "universal" ]; then
-    verify_spv_artifact "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" "simulator arm64 (aarch64-apple-ios-sim)"
-    verify_spv_artifact "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" "simulator x86_64"
+    SIM_ARM_SPV_LIB="$(require_spv_artifact "aarch64-apple-ios-sim" "simulator arm64 (aarch64-apple-ios-sim)")"
+    SIM_X86_SPV_LIB="$(require_spv_artifact "x86_64-apple-ios" "simulator x86_64")"
   elif [ "$BUILD_ARCH" = "x86" ]; then
-    verify_spv_artifact "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" "simulator x86_64"
+    SIM_X86_SPV_LIB="$(require_spv_artifact "x86_64-apple-ios" "simulator x86_64")"
   else
-    verify_spv_artifact "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" "simulator arm64 (aarch64-apple-ios-sim)"
+    SIM_ARM_SPV_LIB="$(require_spv_artifact "aarch64-apple-ios-sim" "simulator arm64 (aarch64-apple-ios-sim)")"
   fi
 else
   echo -e "${YELLOW}⚠ Local rust-dashcore not found at $SPV_CRATE_PATH; SPV symbols must be provided by rs-sdk-ffi${NC}"
@@ -398,11 +424,11 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     mkdir -p "$OUTPUT_DIR/device"
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
     # Merge with dash-spv-ffi device lib if available
-    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
+    if [ -n "$DEVICE_SPV_LIB" ] && [ -f "$DEVICE_SPV_LIB" ]; then
       echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
       libtool -static -o "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" \
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
-        "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a"
+        "$DEVICE_SPV_LIB"
       COMBINED_DEVICE_LIB=1
     fi
 fi
@@ -466,10 +492,21 @@ fi
 if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
     # Try to merge with SPV sim lib if it exists
     SIM_SPV_LIB=""
-    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
-    elif [ -f "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a"
+    if [ "$BUILD_ARCH" = "x86" ]; then
+      SIM_SPV_LIB="$SIM_X86_SPV_LIB"
+    elif [ "$BUILD_ARCH" = "universal" ]; then
+      if [ -n "$SIM_ARM_SPV_LIB" ] && [ -f "$SIM_ARM_SPV_LIB" ] && [ -n "$SIM_X86_SPV_LIB" ] && [ -f "$SIM_X86_SPV_LIB" ]; then
+        UNIVERSAL_SIM_SPV_LIB="$OUTPUT_DIR/simulator/libdash_spv_ffi_universal.a"
+        echo -e "${GREEN}Creating universal simulator dash-spv-ffi library...${NC}"
+        lipo -create "$SIM_ARM_SPV_LIB" "$SIM_X86_SPV_LIB" -output "$UNIVERSAL_SIM_SPV_LIB"
+        SIM_SPV_LIB="$UNIVERSAL_SIM_SPV_LIB"
+      elif [ -n "$SIM_ARM_SPV_LIB" ] && [ -f "$SIM_ARM_SPV_LIB" ]; then
+        SIM_SPV_LIB="$SIM_ARM_SPV_LIB"
+      else
+        SIM_SPV_LIB="$SIM_X86_SPV_LIB"
+      fi
+    else
+      SIM_SPV_LIB="$SIM_ARM_SPV_LIB"
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
