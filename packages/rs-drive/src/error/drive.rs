@@ -201,4 +201,8 @@ pub enum DriveError {
     /// Element was not found
     #[error("element not found: {0}")]
     ElementNotFound(&'static str),
+
+    /// Invalid input provided
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }

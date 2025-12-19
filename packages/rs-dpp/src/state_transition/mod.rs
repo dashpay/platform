@@ -1186,6 +1186,7 @@ impl StateTransition {
     }
 }
 
+#[cfg(feature = "state-transition-validation")]
 impl StateTransitionStructureValidation for StateTransition {
     fn validate_structure(
         &self,

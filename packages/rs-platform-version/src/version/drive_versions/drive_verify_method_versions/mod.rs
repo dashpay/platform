@@ -113,4 +113,6 @@ pub struct DriveVerifyStateTransitionMethodVersions {
 pub struct DriveVerifyAddressFundsMethodVersions {
     pub verify_address_info: FeatureVersion,
     pub verify_addresses_infos: FeatureVersion,
+    pub verify_address_funds_trunk_query: FeatureVersion,
+    pub verify_address_funds_branch_query: FeatureVersion,
 }

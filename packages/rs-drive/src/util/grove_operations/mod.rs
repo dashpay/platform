@@ -48,6 +48,12 @@ pub mod grove_get_raw_path_query;
 /// Proved path query in grove
 pub mod grove_get_proved_path_query;
 
+/// Proved branch chunk query in grove
+pub mod grove_get_proved_branch_chunk_query;
+
+/// Proved trunk chunk query in grove
+pub mod grove_get_proved_trunk_chunk_query;
+
 /// Get total value from sum tree in grove
 pub mod grove_get_sum_tree_total_value;
 

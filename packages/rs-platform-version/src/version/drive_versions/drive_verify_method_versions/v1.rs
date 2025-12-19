@@ -82,6 +82,8 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     address_funds: DriveVerifyAddressFundsMethodVersions {
         verify_address_info: 0,
         verify_addresses_infos: 0,
+        verify_address_funds_trunk_query: 0,
+        verify_address_funds_branch_query: 0,
     },
     state_transition: DriveVerifyStateTransitionMethodVersions {
         verify_state_transition_was_executed_with_proof: 0,
