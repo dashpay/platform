@@ -33,7 +33,10 @@ rm -rf "$DEST_XCFRAMEWORK_DIR"
 cp -R "$SRC_XCFRAMEWORK_DIR" "$DEST_XCFRAMEWORK_DIR"
 
 # Verify required SPV symbols are present in the binary
-mapfile -t SIM_LIBS < <(find "$DEST_XCFRAMEWORK_DIR" -maxdepth 2 -type f -name "*.a" -path "*simulator*" 2>/dev/null)
+SIM_LIBS=()
+while IFS= read -r -d '' lib; do
+  SIM_LIBS+=("$lib")
+done < <(find "$DEST_XCFRAMEWORK_DIR" -maxdepth 2 -type f -name "*.a" -path "*simulator*" -print0 2>/dev/null || true)
 if [[ ${#SIM_LIBS[@]} -eq 0 ]]; then
   echo "❌ Missing simulator static libraries inside $DEST_XCFRAMEWORK_DIR (searched for *.a under *simulator* slices)"
   exit 1
