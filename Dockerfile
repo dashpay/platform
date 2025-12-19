@@ -88,12 +88,6 @@ RUN apk add --no-cache \
     xz \
     zeromq-dev
 
-# Configure GitHub authentication for git (optional, increases rate limit from 60 to 5000 req/hour)
-ARG GITHUB_TOKEN
-RUN if [ -n "$GITHUB_TOKEN" ]; then \
-    git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"; \
-    fi
-
 # Configure snappy, dependency of librocksdb-sys
 RUN <<EOS
 echo "export SNAPPY_STATIC=/usr/lib/libsnappy.a" >> /root/env
@@ -177,6 +171,10 @@ ENV NODE_ENV=${NODE_ENV}
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
 # ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. This is to prevent leaking secrets to the final image. The secrets are
 # loaded using docker buildx `--secret` flag and need to be explicitly mounted with `--mount=type=secret,id=SECRET_ID`.
+#
+# Available secrets:
+#   - AWS: AWS credentials for sccache S3 backend
+#   - GITHUB_TOKEN: GitHub token to increase API rate limit from 60 to 5000 req/hour (optional, for local builds)
 
 FROM deps-base AS deps-sccache
 
@@ -435,7 +433,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
+    --mount=type=secret,id=GITHUB_TOKEN \
     set -ex; \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
@@ -451,7 +453,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package drive-abci \
     ${FEATURES_FLAG} \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    git config --global --unset-all url."https://github.com/".insteadOf || true
 
 COPY --parents \
     Cargo.lock \
@@ -548,6 +551,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
+    --mount=type=secret,id=GITHUB_TOKEN \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
     cargo chef cook \
@@ -556,7 +563,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package wasm-dpp \
     --target wasm32-unknown-unknown \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    git config --global --unset-all url."https://github.com/".insteadOf || true
 
 
 # Rust deps
@@ -769,7 +777,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
+    --mount=type=secret,id=GITHUB_TOKEN \
     set -ex; \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
@@ -779,7 +791,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --profile "$CARGO_BUILD_PROFILE" \
     --package rs-dapi \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    git config --global --unset-all url."https://github.com/".insteadOf || true
 
 COPY --parents \
     Cargo.lock \

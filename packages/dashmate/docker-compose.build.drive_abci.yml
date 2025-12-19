@@ -7,7 +7,6 @@ services:
       dockerfile: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_DOCKER_FILE:?err}
       target: ${PLATFORM_DRIVE_ABCI_DOCKER_BUILD_TARGET}
       args:
-        GITHUB_TOKEN: ${GITHUB_TOKEN}
         RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
@@ -17,8 +16,14 @@ services:
         SCCACHE_REGION: ${SCCACHE_REGION}
         SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
         SDK_TEST_DATA: ${SDK_TEST_DATA}
+      secrets:
+        - GITHUB_TOKEN
       cache_from:
         - ${CACHE_DRIVE_ABCI_FROM:-${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE}}
       cache_to:
         - ${CACHE_DRIVE_ABCI_TO:-type=inline}
     image: drive:local
+
+secrets:
+  GITHUB_TOKEN:
+    environment: GITHUB_TOKEN
