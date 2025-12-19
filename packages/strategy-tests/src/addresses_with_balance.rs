@@ -1,3 +1,45 @@
+//! Address balance tracking for strategy tests.
+//!
+//! This module provides [`AddressesWithBalance`], a data structure that tracks platform
+//! addresses along with their nonces and credit balances during test execution.
+//!
+//! # Design: Two-Phase Balance Tracking
+//!
+//! The core design uses two separate maps to handle the complexities of blockchain
+//! transaction processing:
+//!
+//! 1. **Committed balances** (`addresses_with_balance`): Represents confirmed on-chain state.
+//!    These are balances that have been finalized in previous blocks.
+//!
+//! 2. **Staged/in-block balances** (`addresses_in_block_with_new_balance`): Represents
+//!    pending changes within the current block being constructed. These changes haven't
+//!    been confirmed yet.
+//!
+//! This two-phase approach is necessary because:
+//!
+//! - **Nonce conflicts**: Each address can only have one transaction per block. If we
+//!   tried to spend from the same address twice in a block, the second transaction would
+//!   fail because it would use an incorrect nonce (it wouldn't know about the first
+//!   transaction's nonce increment until that transaction is confirmed).
+//!
+//! - **Atomicity**: If block processing fails, we can roll back staged changes without
+//!   affecting the committed state.
+//!
+//! - **Accurate balance queries**: When selecting addresses for new transactions, we need
+//!   to see the "effective" balance (staged if modified this block, otherwise committed)
+//!   to avoid overspending.
+//!
+//! # Typical Workflow
+//!
+//! ```text
+//! 1. Start with committed balances from previous block
+//! 2. For each transaction in the new block:
+//!    - Query effective balance (staged overrides committed)
+//!    - Deduct amount and bump nonce in staged map
+//! 3. On block success: commit() merges staged → committed
+//! 4. On block failure: rollback() discards staged changes
+//! ```
+
 use crate::operations::AmountRange;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -7,13 +49,26 @@ use rand::Rng;
 use std::collections::BTreeMap;
 use std::mem;
 
+/// Tracks platform addresses with their nonces and credit balances.
+///
+/// Uses a two-phase design with committed and staged (in-block) balance maps
+/// to handle transaction ordering and block atomicity. See module documentation
+/// for details on the design rationale.
 #[derive(Clone, Debug, Default)]
 pub struct AddressesWithBalance {
+    /// Committed balances representing confirmed on-chain state from previous blocks.
+    /// Maps each address to its (nonce, credits) pair.
     pub addresses_with_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+
+    /// Staged balances for the current block being constructed.
+    /// These override committed balances when querying effective state.
+    /// Merged into committed on [`commit()`](Self::commit) or discarded on
+    /// [`rollback()`](Self::rollback).
     pub addresses_in_block_with_new_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
 }
 
 impl AddressesWithBalance {
+    /// Creates a new empty tracker with no addresses.
     pub fn new() -> Self {
         Self {
             addresses_with_balance: BTreeMap::new(),
@@ -21,10 +76,14 @@ impl AddressesWithBalance {
         }
     }
 
-    /// Commit all in-block updates into the main map.
-    /// After this, the in-block map is empty.
+    /// Commits all staged (in-block) updates into the committed map.
     ///
-    /// TODO: explain why we have this
+    /// Call this after a block has been successfully processed. All addresses
+    /// that were modified during block construction will have their staged
+    /// nonces and balances become the new committed state.
+    ///
+    /// After calling this method, the staged map is empty and ready for the
+    /// next block's transactions.
     pub fn commit(&mut self) {
         // Take the map, leaving an empty one behind
         let staged = mem::take(&mut self.addresses_in_block_with_new_balance);
@@ -50,24 +109,38 @@ impl AddressesWithBalance {
         }
     }
 
-    /// Roll back in-block updates (discard them).
-    /// The committed balances remain unchanged.
+    /// Discards all staged (in-block) updates, restoring the committed state.
     ///
-    /// TODO: explain why we have this
+    /// Call this when block processing fails or is aborted. All addresses
+    /// that were modified during block construction will revert to their
+    /// previously committed nonces and balances.
+    ///
+    /// This enables atomic block construction: either all transactions in
+    /// a block succeed and are committed, or none of them affect the state.
     pub fn rollback(&mut self) {
         self.addresses_in_block_with_new_balance.clear();
     }
 
-    /// Get the effective balance/nonce for an address,
-    /// preferring in-block updates if present.
+    /// Returns the effective (nonce, credits) for an address.
+    ///
+    /// The "effective" state is the most up-to-date view of an address:
+    /// - If the address has been modified this block (exists in staged map),
+    ///   returns the staged state.
+    /// - Otherwise, returns the committed state from previous blocks.
+    ///
+    /// This is essential for accurate balance checking when constructing
+    /// multiple transactions in the same block, as each transaction needs
+    /// to see the cumulative effect of prior transactions.
     pub fn get_effective(&self, address: &PlatformAddress) -> Option<&(AddressNonce, Credits)> {
         self.addresses_in_block_with_new_balance
             .get(address)
             .or_else(|| self.addresses_with_balance.get(address))
     }
 
-    /// Returns a random address whose *effective* balance is >= min_amount.
-    /// Returns None if no such address exists.
+    /// Returns a randomly selected address with effective balance >= `min_amount`.
+    ///
+    /// Considers both staged and committed balances (staged takes precedence).
+    /// Returns `None` if no address meets the minimum balance requirement.
     pub fn get_rng_with_min_amount<R: Rng>(
         &self,
         min_amount: Credits,
@@ -95,24 +168,31 @@ impl AddressesWithBalance {
         candidates.into_iter().choose(rng)
     }
 
-    /// Internal helper:
-    /// Randomly selects an address whose *effective* balance is >= min_amount,
-    /// then chooses a random amount to take in [min_amount, max_amount],
-    /// clamped by the address's available balance.
+    /// Internal helper to select a random address and take an amount within bounds.
     ///
-    /// **IMPORTANT**: Only selects addresses that haven't been used this block yet.
-    /// This prevents creating multiple transactions from the same address in a block,
-    /// which would fail due to nonce conflicts (each tx needs the previous to confirm first).
+    /// # Address Selection
     ///
-    /// Probabilities (when effective_max > min_amount):
-    ///   - 25%: take `effective_max`
-    ///   - 50%: take uniform in [min_amount, effective_max]
-    ///   - 25%: take exactly `min_amount`
+    /// Only considers addresses from the **committed** map that have NOT been
+    /// used this block (i.e., not present in the staged map). This prevents
+    /// nonce conflicts: each address can only have one transaction per block
+    /// because subsequent transactions would need to know the updated nonce.
     ///
-    /// The chosen address's balance is reduced in `addresses_in_block_with_new_balance`
-    /// and the nonce is bumped.
+    /// # Amount Selection (25/50/25 Rule)
     ///
-    /// Returns (address, new_nonce, taken_amount) or None if no eligible address exists.
+    /// When `effective_max > min_amount`:
+    /// - 25% chance: take `effective_max` (the maximum available, clamped by `max_amount`)
+    /// - 50% chance: take uniform random in `[min_amount, effective_max]`
+    /// - 25% chance: take exactly `min_amount`
+    ///
+    /// # Side Effects
+    ///
+    /// On success, the address is added to the staged map with:
+    /// - Nonce incremented by 1
+    /// - Balance reduced by the taken amount
+    ///
+    /// # Returns
+    ///
+    /// `Some((address, new_nonce, taken_amount))` or `None` if no eligible address exists.
     fn take_random_amount_with_bounds<R: Rng + ?Sized>(
         &mut self,
         min_amount: Credits,
@@ -221,13 +301,21 @@ impl AddressesWithBalance {
         Some((address, new_nonce, taken))
     }
 
-    /// Randomly selects an address whose *effective* balance is >= range.start(),
-    /// then chooses a random amount to take restricted by the inclusive range,
-    /// but not exceeding that address's available balance.
+    /// Selects a random address and takes a random amount within the given range.
     ///
-    /// Uses the 25/50/25 logic described above (anchored at range.start()).
+    /// Only considers addresses that:
+    /// - Have not been used this block (not in staged map)
+    /// - Have effective balance >= `range.start()`
     ///
-    /// Returns (address, new_nonce, taken_amount).
+    /// The amount taken follows the 25/50/25 probability distribution:
+    /// - 25%: take the maximum (clamped by available balance)
+    /// - 50%: take a uniform random amount between min and max
+    /// - 25%: take exactly the minimum
+    ///
+    /// Updates the staged map with the new nonce and reduced balance.
+    ///
+    /// Returns `Some((address, new_nonce, taken_amount))` on success,
+    /// or `None` if no eligible address exists.
     pub fn take_random_amount_with_range<R: Rng + ?Sized>(
         &mut self,
         range: &AmountRange,
@@ -242,15 +330,20 @@ impl AddressesWithBalance {
         self.take_random_amount_with_bounds(range_min, range_max, rng)
     }
 
-    /// Randomly takes from one or more addresses so that the **total taken**
-    /// falls within the given inclusive range (clamped by total available).
+    /// Takes from multiple addresses so that the total amount falls within the given range.
     ///
-    /// Each individual take uses the same 25/50/25 rule (anchored to a
-    /// dynamically chosen per-step minimum), and each step bumps the nonce
-    /// and updates `addresses_in_block_with_new_balance`.
+    /// This method aggregates funds from multiple addresses when a single address
+    /// cannot satisfy the required amount. Useful for large transactions that
+    /// exceed any individual address's balance.
     ///
-    /// Returns a vector of (address, new_nonce, taken_amount) triplets, or
-    /// None if total available funds < range.start().
+    /// Each individual take uses the 25/50/25 probability distribution and
+    /// updates the staged map with new nonces and reduced balances.
+    ///
+    /// Once the minimum is reached, there's a 50% chance to stop or continue
+    /// taking more (up to the maximum).
+    ///
+    /// Returns `Some(map)` where map contains `address -> (new_nonce, taken_amount)`,
+    /// or `None` if total available funds < `range.start()`.
     pub fn take_random_amounts_with_range<R: Rng + ?Sized>(
         &mut self,
         range: &AmountRange,
@@ -347,8 +440,15 @@ impl AddressesWithBalance {
         Some(result)
     }
 
-    /// Registers a new address with a balance in the in-block staging area.
-    /// This is used when creating new addresses as outputs.
+    /// Registers a new address with an initial balance in the staged map.
+    ///
+    /// Use this when a transaction creates a new address as an output (e.g., a
+    /// transfer to a fresh address). The address is added to the staged map
+    /// with nonce 0 and the specified balance.
+    ///
+    /// The address will become available for spending in subsequent transactions
+    /// within the same block (after staged state is visible), and will be
+    /// committed to the main map when [`commit()`](Self::commit) is called.
     pub fn register_new_address(&mut self, address: PlatformAddress, balance: Credits) {
         tracing::debug!(
             address = %address,
@@ -360,11 +460,16 @@ impl AddressesWithBalance {
             .insert(address, (0, balance));
     }
 
-    /// Resets an address's nonce to a specific value, keeping the current balance.
-    /// This is used to sync local nonce tracking with on-chain state after transaction failures.
+    /// Resets an address's nonce to a specific value, preserving its current balance.
     ///
-    /// Updates both the staged and committed maps if the address exists in either.
-    /// Returns true if the address was found and updated, false otherwise.
+    /// Use this to resynchronize local nonce tracking with on-chain state after
+    /// transaction failures. When a transaction fails, the on-chain nonce doesn't
+    /// increment, but our local tracking may have already bumped it.
+    ///
+    /// Updates both staged and committed maps if the address exists in either,
+    /// ensuring consistency regardless of which map is queried.
+    ///
+    /// Returns `true` if the address was found and updated, `false` otherwise.
     pub fn reset_address_nonce(
         &mut self,
         address: &PlatformAddress,
@@ -409,10 +514,13 @@ impl AddressesWithBalance {
         found
     }
 
-    /// Sets an address's nonce and balance to specific values.
-    /// This is used to fully sync local state with on-chain state.
+    /// Sets an address's nonce and balance to exact values.
     ///
-    /// Updates the staged map (which takes precedence over committed).
+    /// Use this to fully synchronize local state with on-chain state, typically
+    /// after querying the platform for current address information.
+    ///
+    /// Updates the staged map, which takes precedence over committed state
+    /// when querying effective balances.
     pub fn set_address_state(
         &mut self,
         address: PlatformAddress,
@@ -429,8 +537,14 @@ impl AddressesWithBalance {
             .insert(address, (nonce, balance));
     }
 
-    /// Syncs multiple addresses' states from platform data.
-    /// Takes a map of address -> (nonce, balance) from platform queries.
+    /// Bulk synchronizes multiple addresses from platform query results.
+    ///
+    /// Applies [`set_address_state`](Self::set_address_state) for each address
+    /// in the provided map, updating the staged map with current on-chain
+    /// nonces and balances.
+    ///
+    /// Use this after fetching address states from the platform to ensure
+    /// local tracking matches the actual chain state.
     pub fn sync_from_platform(
         &mut self,
         platform_states: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,

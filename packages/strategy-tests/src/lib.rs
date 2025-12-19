@@ -1,15 +1,69 @@
 #![allow(clippy::result_large_err)]
-//! This library facilitates the creation and execution of comprehensive testing strategies for Dash Platform, leveraging the `Strategy` struct as its core.
-//! It is designed to simulate a wide range of blockchain activities, offering detailed control over the generation of state transitions, contract interactions, and identity management across blocks.
+//! Comprehensive testing framework for Dash Platform using configurable strategies.
 //!
-//! Utilizing this library, users can craft scenarios that encompass every conceivable state transition on Dash Platform, with precise timing control on a block-by-block basis.
-//! Strategies can be as simple or complex as needed, from initializing contracts and identities at the start of a simulation to conducting intricate operations like document submissions, credit transfers, and more throughout the lifespan of the blockchain.
+//! This library provides the [`Strategy`] struct and supporting types for simulating
+//! realistic blockchain activity on Dash Platform. It enables automated testing of
+//! state transitions, contract interactions, identity management, and fund operations
+//! across multiple blocks.
 //!
-//! This tool does not require any preliminary setup for the entities involved in the strategies; identities, contracts, and documents can be introduced at any point in the simulation.
-//! This flexibility ensures users can test against both new and existing blockchain states, adapting the scenarios as Dash Platform evolves.
+//! # Overview
 //!
-//! As of March 2024, the recommended approach to leverage this library's capabilities is through the `Strategies` module within Dash Platform's terminal user interface, located at `dashpay/rs-platform-explorer`.
-//! This interface provides an accessible and streamlined way to define, manage, and execute your testing strategies against Dash Platform.
+//! Strategy tests simulate real-world platform usage by executing randomized sequences
+//! of operations over configurable block ranges. A strategy defines:
+//!
+//! - **Initial state**: Identities, addresses, and contracts created at the start
+//! - **Operations**: Actions to perform each block (documents, transfers, votes, etc.)
+//! - **Frequency**: How often each operation type occurs
+//!
+//! # Block Execution Model
+//!
+//! Strategies execute over a sequence of blocks with specific timing:
+//!
+//! | Block | Activity |
+//! |-------|----------|
+//! | 1 (start) | Create start identities, fund start addresses |
+//! | 2 | Create initial contracts from `start_contracts` |
+//! | 3+ | Execute operations, insert new identities, apply contract updates |
+//!
+//! # Key Types
+//!
+//! - [`Strategy`]: The main configuration struct defining what to test
+//! - [`StrategyConfig`]: Runtime parameters (start block, number of blocks)
+//! - [`StartIdentities`]: Initial identities to create
+//! - [`StartAddresses`]: Initial platform addresses to fund
+//! - [`IdentityInsertInfo`]: Configuration for ongoing identity creation
+//! - [`Operation`](operations::Operation): Individual operations with frequency settings
+//!
+//! # Usage
+//!
+//! Strategies are used in two main contexts:
+//!
+//! 1. **Platform TUI** (`dashpay/platform-tui`): Interactive terminal UI for
+//!    defining, managing, and executing strategies
+//! 2. **Drive ABCI tests** (`rs-drive-abci/tests/strategy_tests`): Automated
+//!    integration tests that verify platform behavior under various conditions
+//!
+//! Programmatic usage via the [`Strategy`] struct:
+//!
+//! ```ignore
+//! let strategy = Strategy {
+//!     start_identities: StartIdentities { number_of_identities: 10, .. },
+//!     start_contracts: vec![(my_contract, None)],
+//!     operations: vec![document_insert_op, transfer_op],
+//!     identity_inserts: IdentityInsertInfo { frequency: ..., ... },
+//!     ..Default::default()
+//! };
+//!
+//! // Execute for each block
+//! let (transitions, finalize_ops, new_identities) = strategy.state_transitions_for_block(...);
+//! ```
+//!
+//! # Submodules
+//!
+//! - [`addresses_with_balance`]: Two-phase address balance tracking
+//! - [`frequency`]: Randomized event frequency configuration
+//! - [`operations`]: Operation type definitions
+//! - [`transitions`]: State transition factory functions
 
 use crate::addresses_with_balance::AddressesWithBalance;
 use crate::frequency::Frequency;
@@ -88,56 +142,99 @@ pub mod addresses_with_balance;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
+
+/// Maps key purposes to security levels to key types for identity key generation.
+///
+/// Used to specify additional keys when creating identities. The nested structure
+/// allows fine-grained control over which key types are created for each
+/// purpose/security-level combination.
+///
+/// Example: Create a HIGH-security ECDSA key for AUTHENTICATION:
+/// ```ignore
+/// let extra_keys: KeyMaps = BTreeMap::from([(
+///     Purpose::AUTHENTICATION,
+///     BTreeMap::from([(SecurityLevel::HIGH, vec![KeyType::ECDSA_SECP256K1])])
+/// )]);
+/// ```
 pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 
-/// Defines a detailed strategy for conducting simulations or tests on Dash Platform.
+/// The core configuration for a Dash Platform testing strategy.
 ///
-/// This struct serves as the core framework for designing and executing comprehensive simulations or automated testing scenarios on Dash Platform. It encompasses a wide array of operations, state transitions, and data contract manipulations, enabling users to craft intricate strategies that mimic real-world blockchain dynamics or test specific functionalities.
+/// A `Strategy` defines everything needed to simulate realistic platform activity
+/// over a sequence of blocks. It specifies initial conditions (identities, addresses,
+/// contracts) and ongoing operations (document actions, transfers, votes, etc.).
 ///
-/// The strategy allows for the specification of initial conditions, such as contracts to be created and identities to be registered, as well as dynamic actions that unfold over the simulation's lifespan, including contract updates and identity transactions. This versatile structure supports a broad spectrum of blockchain-related activities, from simple transfer operations to complex contract lifecycle management.
+/// # Execution Timing
+///
+/// - **Block 1** (`start_block_height`): Creates start identities and funds start addresses
+/// - **Block 2**: Deploys initial contracts from `start_contracts`
+/// - **Block 3+**: Executes operations, inserts new identities, applies contract updates
 ///
 /// # Fields
-/// - `start_identities`: Specifies identities to be established at the simulation's outset, including their initial attributes and balances. This setup allows for immediate participation of these identities in the blockchain's simulated activities.
 ///
-/// - `start_contracts`: Maps each created data contract to potential updates, enabling the simulation of contract evolution. Each tuple consists of a `CreatedDataContract` and an optional mapping of block heights to subsequent contract versions, facilitating time-sensitive contract transformations.
+/// - `start_identities`: Identities created on the first block
+/// - `start_addresses`: Platform addresses funded on the first block
+/// - `start_contracts`: Contracts deployed on the second block, with optional scheduled updates
+/// - `operations`: Actions to perform each block based on their frequency settings
+/// - `identity_inserts`: Configuration for ongoing identity creation (block 3+)
+/// - `identity_contract_nonce_gaps`: Optional nonce gaps for testing edge cases
+/// - `signer`: Key manager for signing state transitions
 ///
-/// - `operations`: Enumerates discrete operations to be executed within the strategy. These operations represent individual actions or sequences of actions, such as document manipulations, identity updates, or contract interactions, each contributing to the overarching simulation narrative.
+/// # Example
 ///
-/// - `identity_inserts`: Controls the stochastic introduction of new identities into the simulation, based on a defined frequency distribution. This field allows the strategy to dynamically expand the set of participants, reflecting organic growth or specific testing requirements.
-///
-/// - `identity_contract_nonce_gaps`: Optionally defines intervals at which nonce values for identities and contracts may be artificially incremented, introducing realistic entropy or testing specific edge cases.
-///
-/// - `signer`: Provides an optional `SimpleSigner` instance responsible for generating cryptographic signatures for various transactions within the strategy. While optional, a signer is critical for authenticating state transitions and operations that require verification.
-///
-/// # Usage Example
 /// ```ignore
 /// let strategy = Strategy {
-///     contracts_with_updates: vec![...], // Initial contracts and their planned updates
-///     operations: vec![...],             // Defined operations to simulate blockchain interactions
-///     start_identities: StartIdentities::new(...), // Identities to initialize
-///     identities_inserts: Frequency::new(...),     // Frequency of new identity introduction
-///     identity_contract_nonce_gaps: Some(Frequency::new(...)), // Optional nonce gaps
-///     signer: Some(SimpleSigner::new(...)),        // Optional signer for authenticating transactions
+///     start_identities: StartIdentities {
+///         number_of_identities: 10,
+///         keys_per_identity: 3,
+///         starting_balances: dash_to_duffs!(1),
+///         ..Default::default()
+///     },
+///     start_addresses: StartAddresses {
+///         number_of_addresses: 5,
+///         starting_balance: dash_to_credits!(0.5),
+///         ..Default::default()
+///     },
+///     operations: vec![document_op, transfer_op],
+///     ..Default::default()
 /// };
 /// ```
-///
-/// # Implementation Note
-/// It's imperative to maintain coherence among the specified operations, identities, and contracts within the `Strategy` to ensure the simulated scenarios accurately reflect intended behaviors or test conditions. Discrepancies or inconsistencies may result in unexpected outcomes or hinder the simulation's effectiveness in achieving its objectives.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
+    /// Identities to create on the first block.
     pub start_identities: StartIdentities,
+
+    /// Platform addresses to fund on the first block.
     pub start_addresses: StartAddresses,
+
+    /// Contracts to deploy on the second block, with optional scheduled updates.
+    /// Each tuple contains the initial contract and an optional map of
+    /// `block_offset -> updated_contract` for time-based contract evolution.
     pub start_contracts: Vec<(
         CreatedDataContract,
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
+
+    /// Operations to execute each block based on their frequency settings.
     pub operations: Vec<Operation>,
+
+    /// Configuration for ongoing identity creation (block 3+).
     pub identity_inserts: IdentityInsertInfo,
+
+    /// Optional nonce gaps to inject for testing edge cases.
+    /// When set, randomly increments nonces to simulate real-world entropy.
     pub identity_contract_nonce_gaps: Option<Frequency>,
+
+    /// Key manager for signing all state transitions.
+    /// Required for most operations; initialized with identity keys.
     pub signer: Option<SimpleSigner>,
 }
 
 impl Strategy {
+    /// Returns the maximum number of document operations that don't create new documents.
+    ///
+    /// Counts operations like delete, replace, and transfer (excluding insert operations).
+    /// Useful for capacity planning when existing documents are required.
     pub fn max_document_operation_count_without_inserts(&self) -> u16 {
         self.operations
             .iter()
@@ -153,42 +250,68 @@ impl Strategy {
     }
 }
 
-/// Config stuff for a Strategy
+/// Runtime configuration for strategy execution.
+///
+/// Specifies the block range over which the strategy runs. These values
+/// are provided at execution time, separate from the strategy definition.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyConfig {
+    /// The block height at which to begin executing the strategy.
     pub start_block_height: u64,
+    /// Total number of blocks to simulate.
     pub number_of_blocks: u64,
 }
 
-/// Identities to register on the first block of the strategy
+/// Configuration for identities created at strategy start (block 1).
+///
+/// These identities are created via asset lock proofs and are available
+/// for all subsequent operations. They form the initial participant pool.
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartIdentities {
+    /// Number of random identities to generate and register.
     pub number_of_identities: u16,
+    /// Number of main keys per identity (authentication, etc.).
     pub keys_per_identity: u8,
-    pub starting_balances: u64, // starting balance in duffs
+    /// Initial credit balance for each identity (in duffs, 1 Dash = 100,000,000 duffs).
+    pub starting_balances: u64,
+    /// Additional keys to create beyond the main keys.
+    /// Allows specifying keys for specific purposes/security levels.
     pub extra_keys: KeyMaps,
+    /// Pre-defined identities with optional pre-signed state transitions.
+    /// Useful for testing with known identity IDs or specific key configurations.
     pub hard_coded: Vec<(Identity, Option<StateTransition>)>,
 }
 
-/// Addresses to create and fund on the first block of the strategy.
-/// These addresses are funded without any state transition - they are assumed to already
-/// exist on the platform with the specified balances (useful for testing address operations).
+/// Configuration for platform addresses funded at strategy start (block 1).
+///
+/// Platform addresses can hold credits and participate in address-based
+/// operations like transfers and withdrawals. Unlike identities, addresses
+/// don't have keys or the ability to sign arbitrary state transitions.
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartAddresses {
-    /// Number of random addresses to create
+    /// Number of random addresses to create and fund.
     pub number_of_addresses: u16,
-    /// Starting balance for each random address (in credits)
+    /// Initial credit balance for each random address.
     pub starting_balance: Credits,
-    /// Hard-coded addresses with specific balances
+    /// Pre-defined addresses with specific balances.
+    /// The addresses are registered with their specified balances.
     pub extra_addresses: BTreeMap<PlatformAddress, Credits>,
 }
 
-/// Identities to register on the first block of the strategy
+/// Configuration for ongoing identity creation during strategy execution.
+///
+/// Controls how new identities are introduced during blocks 3+, enabling
+/// simulation of growing participant pools and testing identity creation
+/// under various conditions.
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct IdentityInsertInfo {
+    /// How often to create new identities and how many per block.
     pub frequency: Frequency,
+    /// Number of main keys for each new identity.
     pub start_keys: u8,
+    /// Additional keys beyond the main keys.
     pub extra_keys: KeyMaps,
+    /// Credit balance range for new identities (randomly selected).
     pub start_balance_range: RangeInclusive<Credits>,
 }
 
@@ -203,14 +326,25 @@ impl Default for IdentityInsertInfo {
     }
 }
 
+/// Query specification for retrieving random documents from the platform.
+///
+/// Used with document query callbacks to fetch existing documents for
+/// operations like replace, delete, or transfer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RandomDocumentQuery<'a> {
+    /// The contract containing the document type.
     pub data_contract: &'a DataContract,
+    /// The document type to query.
     pub document_type: &'a DocumentType,
 }
 
+/// Query types supported by the document query callback.
+///
+/// Currently supports random document queries; may be extended with
+/// additional query types in the future.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalDocumentQuery<'a> {
+    /// Query for random documents matching a contract/type.
     RandomDocumentQuery(RandomDocumentQuery<'a>),
 }
 
@@ -385,8 +519,31 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
+/// Tracks document counts in the mempool per (identity, contract) pair.
+///
+/// The platform limits each identity to 24 pending documents per contract
+/// in the mempool at any time. This counter tracks current counts to avoid
+/// exceeding that limit when generating new document operations.
+///
+/// Key: `(identity_id, contract_id)` → Value: number of pending documents
 pub type MempoolDocumentCounter<'c> = BTreeMap<(Identifier, Identifier), u64>;
 
+/// Selects identities capable of submitting documents for a given contract.
+///
+/// Filters out identities that have reached the mempool limit (24 documents)
+/// for the specified contract. If more documents are needed than available
+/// identities, will reuse identities up to their remaining capacity.
+///
+/// # Parameters
+/// - `identities`: Pool of available identities
+/// - `contract`: The target contract for document submission
+/// - `mempool_document_counter`: Current pending document counts
+/// - `count`: Number of identities needed
+/// - `rng`: Random number generator for selection
+///
+/// # Returns
+/// A vector of identity references, potentially with duplicates if reuse
+/// is required to meet the requested count.
 fn choose_capable_identities<'i>(
     identities: &'i [Identity],
     contract: &DataContract,
@@ -2459,7 +2616,10 @@ impl Strategy {
             .collect()
     }
 
-    /// Convenience method to get all contract ids that are in operations
+    /// Returns all contract IDs referenced by operations in this strategy.
+    ///
+    /// Collects IDs from document operations and contract update operations.
+    /// Useful for preloading contracts or validating strategy configuration.
     pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
         self.operations
             .iter()
