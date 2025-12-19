@@ -323,6 +323,16 @@ fi
 # Build dash-spv-ffi from local rust-dashcore for device and simulator
 RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
 SPV_CRATE_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi"
+verify_spv_artifact() {
+  local artifact_path="$1"
+  local label="$2"
+  if [ ! -f "$artifact_path" ]; then
+    echo -e "${RED}❌ Missing dash-spv-ffi artifact (${label}) at:${NC}"
+    echo "    $artifact_path"
+    echo -e "${YELLOW}   Ensure the previous cargo build step produced this target.${NC}"
+    exit 1
+  fi
+}
 if [ -d "$SPV_CRATE_PATH" ]; then
   echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
   pushd "$SPV_CRATE_PATH" >/dev/null
@@ -352,6 +362,17 @@ if [ -d "$SPV_CRATE_PATH" ]; then
     fi
   fi
   popd >/dev/null
+  if [ "$BUILD_ARCH" != "x86" ]; then
+    verify_spv_artifact "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" "device (aarch64-apple-ios)"
+  fi
+  if [ "$BUILD_ARCH" = "universal" ]; then
+    verify_spv_artifact "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" "simulator arm64 (aarch64-apple-ios-sim)"
+    verify_spv_artifact "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" "simulator x86_64"
+  elif [ "$BUILD_ARCH" = "x86" ]; then
+    verify_spv_artifact "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" "simulator x86_64"
+  else
+    verify_spv_artifact "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" "simulator arm64 (aarch64-apple-ios-sim)"
+  fi
 else
   echo -e "${YELLOW}⚠ Local rust-dashcore not found at $SPV_CRATE_PATH; SPV symbols must be provided by rs-sdk-ffi${NC}"
 fi
