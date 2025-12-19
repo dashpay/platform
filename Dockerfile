@@ -454,7 +454,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     ${FEATURES_FLAG} \
     --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    git config --global --unset-all url."https://github.com/".insteadOf || true
+    rm -f ~/.gitconfig || true
 
 COPY --parents \
     Cargo.lock \
@@ -564,7 +564,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --target wasm32-unknown-unknown \
     --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    git config --global --unset-all url."https://github.com/".insteadOf || true
+    rm -f ~/.gitconfig || true
 
 
 # Rust deps
@@ -792,7 +792,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package rs-dapi \
     --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    git config --global --unset-all url."https://github.com/".insteadOf || true
+    rm -f ~/.gitconfig || true
 
 COPY --parents \
     Cargo.lock \
