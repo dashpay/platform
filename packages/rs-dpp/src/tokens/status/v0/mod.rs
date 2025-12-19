@@ -2,6 +2,11 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 /// Token status
 pub struct TokenStatusV0 {
     pub paused: bool,
