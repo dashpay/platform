@@ -972,6 +972,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4*1024*1024)]
     fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list_deterministic(
     ) {
         let strategy = NetworkStrategy {
