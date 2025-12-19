@@ -180,6 +180,31 @@ jobs:
         run: |
           bash packages/swift-sdk/build_ios.sh
 
+      - name: Collect build logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          shopt -s nullglob
+          LOG_DIR="$RUNNER_TEMP/swift-sdk-build-logs"
+          mkdir -p "$LOG_DIR"
+          for path in /tmp/*.log; do
+            if [ -f "$path" ]; then
+              cp "$path" "$LOG_DIR/"
+            fi
+          done
+          if [ -d "$HOME/.cargo" ]; then
+            find "$HOME/.cargo" -name "*.log" -maxdepth 3 -type f -print0 2>/dev/null | xargs -0 -I{} cp "{}" "$LOG_DIR/" || true
+          fi
+          find "$GITHUB_WORKSPACE" -maxdepth 4 -name "*.log" -type f -print0 2>/dev/null | xargs -0 -I{} cp "{}" "$LOG_DIR/" || true
+
+      - name: Upload build logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-sdk-build-logs
+          path: ${{ runner.temp }}/swift-sdk-build-logs
+
       - name: Zip XCFramework and compute checksum
         run: |
           cd packages/swift-sdk
