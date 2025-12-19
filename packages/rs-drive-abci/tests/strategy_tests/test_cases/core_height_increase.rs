@@ -800,6 +800,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4*1024*1024)]
     fn run_chain_heavy_rotation_deterministic_before_payout() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
