@@ -117,7 +117,7 @@ mod test {
     use dpp::version::DefaultForPlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {

@@ -1,5 +1,5 @@
 use crate::queries::utils::deserialize_required_query;
-use crate::queries::{ProofInfoWasm, ResponseMetadataWasm};
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -17,27 +17,6 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
-#[wasm_bindgen(js_name = "DocumentProofResponse")]
-#[derive(Clone)]
-pub struct DocumentProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub document: Option<DocumentWasm>,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
-
-#[wasm_bindgen(js_name = "DocumentsProofResponse")]
-#[derive(Clone)]
-pub struct DocumentsProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub documents: Map,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -78,7 +57,7 @@ export interface DocumentsQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Document type name.
@@ -107,13 +86,13 @@ export interface DocumentsQuery {
    * Exclusive document ID to resume from.
    * @default undefined
    */
-  startAfter?: Identifier | Uint8Array | string;
+  startAfter?: IdentifierLike
 
   /**
    * Inclusive document ID to start from.
    * @default undefined
    */
-  startAt?: Identifier | Uint8Array | string;
+  startAt?: IdentifierLike
 }
 "#;
 
@@ -242,7 +221,7 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkErr
             return Err(WasmSdkError::invalid_argument(format!(
                 "Unknown operator: {}",
                 operator_str
-            )))
+            )));
         }
     };
 
@@ -283,7 +262,7 @@ fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkErr
         _ => {
             return Err(WasmSdkError::invalid_argument(
                 "order by direction must be 'asc' or 'desc'",
-            ))
+            ));
         }
     };
 
@@ -307,6 +286,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
             }
         }
         JsonValue::String(s) => {
+            // TODO: Should use Identifier::try_from and return text if failed
             // Check if it's an identifier (base58 encoded)
             if s.len() == 44 && s.chars().all(|c| c.is_alphanumeric()) {
                 // Try to parse as identifier
@@ -338,7 +318,10 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(js_name = "getDocuments")]
+    #[wasm_bindgen(
+        js_name = "getDocuments",
+        unchecked_return_type = "Map<Identifier, Document | undefined>"
+    )]
     pub async fn get_documents(&self, query: DocumentsQueryJs) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::Documents;
@@ -370,11 +353,14 @@ impl WasmSdk {
         Ok(documents_map)
     }
 
-    #[wasm_bindgen(js_name = "getDocumentsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getDocumentsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, Document | undefined>>"
+    )]
     pub async fn get_documents_with_proof_info(
         &self,
         query: DocumentsQueryJs,
-    ) -> Result<DocumentsProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = parse_documents_query(self, query).await?;
         let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
@@ -400,19 +386,21 @@ impl WasmSdk {
             }
         }
 
-        Ok(DocumentsProofResponseWasm {
-            documents: documents_map,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_parts(
+            JsValue::from(documents_map),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "getDocument")]
     pub async fn get_document(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: &str,
+        #[wasm_bindgen(js_name = "documentType")] document_type: &str,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
     ) -> Result<Option<DocumentWasm>, WasmSdkError> {
@@ -452,15 +440,20 @@ impl WasmSdk {
         Ok(document)
     }
 
-    #[wasm_bindgen(js_name = "getDocumentWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getDocumentWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Document | undefined>"
+    )]
     pub async fn get_document_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: &str,
+        #[wasm_bindgen(js_name = "documentType")] document_type: &str,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
-    ) -> Result<DocumentProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
 
         // Parse IDs
@@ -493,12 +486,13 @@ impl WasmSdk {
         let (document_result, metadata, proof) =
             Document::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        Ok(DocumentProofResponseWasm {
-            document: document_result.map(|doc| {
-                DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None)
-            }),
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        let document_js = document_result
+            .map(|doc| DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None));
+
+        Ok(ProofMetadataResponseWasm::from_parts(
+            JsValue::from(document_js),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 }

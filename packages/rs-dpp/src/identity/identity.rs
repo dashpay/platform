@@ -17,8 +17,6 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 
 use crate::fee::Credits;
-#[cfg(feature = "identity-serde-conversion")]
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The identity is not stored inside of drive, because of this, the serialization is mainly for
@@ -26,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// untagged is needed here
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
-    feature = "identity-serde-conversion",
-    derive(Serialize, Deserialize),
+   any( feature = "identity-serde-conversion" ,feature = "state-transition-serde-conversion",),
+    derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$version"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
@@ -37,12 +35,26 @@ use std::collections::{BTreeMap, BTreeSet};
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum Identity {
-    #[cfg_attr(feature = "identity-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(
+        any(
+            feature = "identity-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "0")
+    )]
     V0(IdentityV0),
 }
 
 /// An identity struct that represent partially set/loaded identity data.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(
+    any(
+        feature = "identity-serde-conversion",
+        feature = "state-transition-serde-conversion",
+    ),
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct PartialIdentity {
     pub id: Identifier,
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,

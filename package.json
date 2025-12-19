@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "2.2.0-dev.1",
+  "version": "2.2.0-dev.2",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -108,7 +108,8 @@
     "brace-expansion": "^2.0.2",
     "cipher-base": "^1.0.5",
     "sha.js": "^2.4.12",
-    "tmp": "^0.2.4"
+    "tmp": "^0.2.4",
+    "js-yaml": "^4.1.1"
   },
   "dependencies": {
     "dompurify": "^3.2.6",

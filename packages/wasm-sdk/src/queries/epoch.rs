@@ -1,6 +1,6 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
-use crate::queries::{ProofInfoWasm, ResponseMetadataWasm};
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::dashcore::hashes::Hash;
@@ -15,39 +15,6 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
-
-#[wasm_bindgen(js_name = "EpochsProofResponse")]
-#[derive(Clone)]
-pub struct EpochsProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub epochs: Map,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
-
-#[wasm_bindgen(js_name = "EpochProofResponse")]
-#[derive(Clone)]
-pub struct EpochProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub epoch: ExtendedEpochInfoWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
-
-#[wasm_bindgen(js_name = "FinalizedEpochsProofResponse")]
-#[derive(Clone)]
-pub struct FinalizedEpochsProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub epochs: Map,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
 
 #[wasm_bindgen(typescript_custom_section)]
 const EPOCHS_QUERY_TS: &'static str = r#"
@@ -262,7 +229,10 @@ fn parse_evonode_range_query(
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(js_name = "getEpochsInfo")]
+    #[wasm_bindgen(
+        js_name = "getEpochsInfo",
+        unchecked_return_type = "Map<number, ExtendedEpochInfo | undefined>"
+    )]
     pub async fn get_epochs_info(&self, query: EpochsQueryJs) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::types::epoch::EpochQuery;
 
@@ -295,7 +265,10 @@ impl WasmSdk {
         Ok(epochs_map)
     }
 
-    #[wasm_bindgen(js_name = "getFinalizedEpochInfos")]
+    #[wasm_bindgen(
+        js_name = "getFinalizedEpochInfos",
+        unchecked_return_type = "Map<number, FinalizedEpochInfo | undefined>"
+    )]
     pub async fn get_finalized_epoch_infos(
         &self,
         query: FinalizedEpochsQueryJs,
@@ -349,7 +322,10 @@ impl WasmSdk {
         Ok(epochs_map)
     }
 
-    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIds")]
+    #[wasm_bindgen(
+        js_name = "getEvonodesProposedEpochBlocksByIds",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         &self,
         epoch: u16,
@@ -384,7 +360,10 @@ impl WasmSdk {
         Ok(map)
     }
 
-    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByRange")]
+    #[wasm_bindgen(
+        js_name = "getEvonodesProposedEpochBlocksByRange",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_range(
         &self,
         query: EvonodeProposedBlocksRangeQueryJs,
@@ -424,11 +403,14 @@ impl WasmSdk {
         Ok(ExtendedEpochInfoWasm::from(epoch))
     }
 
-    #[wasm_bindgen(js_name = "getEpochsInfoWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getEpochsInfoWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<number, ExtendedEpochInfo | undefined>>"
+    )]
     pub async fn get_epochs_info_with_proof_info(
         &self,
         query: EpochsQueryJs,
-    ) -> Result<EpochsProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::types::epoch::EpochQuery;
 
         let EpochsQueryParsed {
@@ -457,34 +439,40 @@ impl WasmSdk {
             epochs_map.set(&key.into(), &JsValue::from(value));
         }
 
-        Ok(EpochsProofResponseWasm {
-            epochs: epochs_map,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_parts(
+            JsValue::from(epochs_map),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 
-    #[wasm_bindgen(js_name = "getCurrentEpochWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getCurrentEpochWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ExtendedEpochInfo>"
+    )]
     pub async fn get_current_epoch_with_proof_info(
         &self,
-    ) -> Result<EpochProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let (epoch, metadata, proof) =
             ExtendedEpochInfo::fetch_current_with_metadata_and_proof(self.as_ref()).await?;
 
-        Ok(EpochProofResponseWasm {
-            epoch: ExtendedEpochInfoWasm::from(epoch),
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_parts(
+            JsValue::from(ExtendedEpochInfoWasm::from(epoch)),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 
     // Additional proof info versions for epoch queries
 
-    #[wasm_bindgen(js_name = "getFinalizedEpochInfosWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getFinalizedEpochInfosWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<number, FinalizedEpochInfo | undefined>>"
+    )]
     pub async fn get_finalized_epoch_infos_with_proof_info(
         &self,
         query: FinalizedEpochsQueryJs,
-    ) -> Result<FinalizedEpochsProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::types::finalized_epoch::FinalizedEpochQuery;
 
         let FinalizedEpochsQueryParsed {
@@ -526,18 +514,18 @@ impl WasmSdk {
             epochs_map.set(&key.into(), &JsValue::from(value));
         }
 
-        Ok(FinalizedEpochsProofResponseWasm {
-            epochs: epochs_map,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_parts(
+            JsValue::from(epochs_map),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo")]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
-        pro_tx_hashes: Vec<String>,
+        #[wasm_bindgen(js_name = "proTxHashes")] pro_tx_hashes: Vec<String>,
     ) -> Result<JsValue, WasmSdkError> {
         // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountById
         // Currently not supported due to query format issues

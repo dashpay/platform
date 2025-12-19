@@ -25,7 +25,7 @@ export interface ContestedResourceIdentityVotesQuery {
   /**
    * Identity identifier.
    */
-  identityId: Identifier | Uint8Array | string;
+  identityId: IdentifierLike
 
   /**
    * Maximum number of votes to return.
@@ -37,7 +37,7 @@ export interface ContestedResourceIdentityVotesQuery {
    * Vote identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtVoteId?: Identifier | Uint8Array | string;
+  startAtVoteId?: IdentifierLike
 
   /**
    * Include the `startAtVoteId` when true.
@@ -192,7 +192,10 @@ fn resource_votes_to_json(
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(js_name = "getContestedResourceIdentityVotes")]
+    #[wasm_bindgen(
+        js_name = "getContestedResourceIdentityVotes",
+        unchecked_return_type = "Array<any>"
+    )]
     pub async fn get_contested_resource_identity_votes(
         &self,
         query: ContestedResourceIdentityVotesQueryJs,
@@ -216,7 +219,10 @@ impl WasmSdk {
         Ok(array)
     }
 
-    #[wasm_bindgen(js_name = "getContestedResourceIdentityVotesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getContestedResourceIdentityVotesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<{ votes: Array<any> }>"
+    )]
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,
         query: ContestedResourceIdentityVotesQueryJs,

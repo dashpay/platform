@@ -31,7 +31,7 @@ export interface ContestedResourceVoteStateQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Contested document type name.
@@ -65,7 +65,7 @@ export interface ContestedResourceVoteStateQuery {
    * Contender identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtContenderId?: Identifier | Uint8Array | string;
+  startAtContenderId?: IdentifierLike
 
   /**
    * Include the start contender when true.
@@ -339,7 +339,10 @@ impl WasmSdk {
         Ok(convert_contenders(contenders))
     }
 
-    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getContestedResourceVoteStateWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ContestedResourceVoteState>"
+    )]
     pub async fn get_contested_resource_vote_state_with_proof_info(
         &self,
         query: ContestedResourceVoteStateQueryJs,

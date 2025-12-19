@@ -757,6 +757,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
     ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
@@ -780,7 +781,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "waitForStateTransitionResult")]
     pub async fn wait_for_state_transition_result(
         &self,
-        state_transition_hash: &str,
+        #[wasm_bindgen(js_name = "stateTransitionHash")] state_transition_hash: &str,
     ) -> Result<StateTransitionResultWasm, WasmSdkError> {
         use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
             Version, WaitForStateTransitionResultRequestV0,
@@ -846,7 +847,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getPathElements")]
+    #[wasm_bindgen(
+        js_name = "getPathElements",
+        unchecked_return_type = "Array<PathElement>"
+    )]
     pub async fn get_path_elements(
         &self,
         path: Vec<String>,
@@ -904,7 +908,10 @@ impl WasmSdk {
 
     // Proof versions for system queries
 
-    #[wasm_bindgen(js_name = "getTotalCreditsInPlatformWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getTotalCreditsInPlatformWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
+    )]
     pub async fn get_total_credits_in_platform_with_proof_info(
         &self,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -926,9 +933,13 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getPrefundedSpecializedBalanceWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getPrefundedSpecializedBalanceWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<PrefundedSpecializedBalance | undefined>"
+    )]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -960,7 +971,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getPathElementsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getPathElementsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<PathElement>>"
+    )]
     pub async fn get_path_elements_with_proof_info(
         &self,
         path: Vec<String>,
