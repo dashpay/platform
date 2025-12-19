@@ -11,58 +11,45 @@
 //! As of March 2024, the recommended approach to leverage this library's capabilities is through the `Strategies` module within Dash Platform's terminal user interface, located at `dashpay/rs-platform-explorer`.
 //! This interface provides an accessible and streamlined way to define, manage, and execute your testing strategies against Dash Platform.
 
+use crate::addresses_with_balance::AddressesWithBalance;
 use crate::frequency::Frequency;
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
+use bincode::{Decode, Encode};
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::PrivateKey;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::created_data_contract::CreatedDataContract;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
+use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::{DataContract, DataContractFactory};
-
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
+use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
-use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
-
-use crate::addresses_with_balance::AddressesWithBalance;
-use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
-use dpp::address_funds::PlatformAddress;
-use dpp::identity::core_script::CoreScript;
 use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
-use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
-use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
-use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
-use dpp::withdrawal::Pooling;
-
-use bincode::{Decode, Encode};
-use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentType;
-use dpp::fee::Credits;
-use dpp::identifier::Identifier;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
@@ -75,9 +62,19 @@ use dpp::state_transition::batch_transition::document_create_transition::{
 };
 use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
+use dpp::withdrawal::Pooling;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::{dash_to_duffs, ProtocolError};
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
@@ -561,6 +558,11 @@ impl Strategy {
 
         // Initialize start addresses on the first block by funding them from asset lock proofs
         if block_info.height == config.start_block_height {
+            tracing::info!(
+                "Creating {} AddressFundingFromAssetLock transitions (block {})",
+                self.start_addresses.number_of_addresses,
+                block_info.height
+            );
             // Fund random addresses from asset lock proofs
             for i in 0..self.start_addresses.number_of_addresses {
                 // Get an asset lock proof from the pool
@@ -639,6 +641,11 @@ impl Strategy {
             state_transitions.append(&mut contract_state_transitions);
         } else if block_info.height > config.start_block_height + 1 {
             // Do operations and contract updates after the first two blocks
+            tracing::debug!(
+                "Starting operations (block {}), addresses_with_balance count: {}",
+                block_info.height,
+                current_addresses_with_balance.addresses_with_balance.len()
+            );
             let (mut operations_state_transitions, mut add_to_finalize_block_operations) = self
                 .operations_based_transitions(
                     document_query_callback,
@@ -1961,8 +1968,11 @@ impl Strategy {
                                 rng.gen_range(output_count_range.clone()).max(1) as usize;
 
                             // Create output addresses and distribute funds evenly
+                            // Account for remainder from integer division
                             let amount_per_output = total_input / output_count as Credits;
+                            let remainder = total_input % output_count as Credits;
                             let mut outputs = BTreeMap::new();
+                            let mut outputs_created = 0usize;
 
                             // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
                             let input_addresses: HashSet<_> = inputs.keys().cloned().collect();
@@ -1975,6 +1985,14 @@ impl Strategy {
                                     .collect();
 
                             for _ in 0..output_count {
+                                // First output gets the remainder to ensure exact balance
+                                let this_output_amount = if outputs_created == 0 {
+                                    amount_per_output + remainder
+                                } else {
+                                    amount_per_output
+                                };
+                                outputs_created += 1;
+
                                 // Check if we should use an existing address as output
                                 let use_existing = use_existing_outputs_chance
                                     .map(|chance| {
@@ -1997,7 +2015,7 @@ impl Strategy {
                                             .addresses_in_block_with_new_balance
                                             .insert(
                                                 existing_address,
-                                                (*nonce, balance + amount_per_output),
+                                                (*nonce, balance + this_output_amount),
                                             );
                                     }
                                     existing_address
@@ -2006,11 +2024,35 @@ impl Strategy {
                                     let new_address = signer.add_random_address_key(rng);
                                     current_addresses_with_balance
                                         .addresses_in_block_with_new_balance
-                                        .insert(new_address, (0, amount_per_output));
+                                        .insert(new_address, (0, this_output_amount));
                                     new_address
                                 };
 
-                                outputs.insert(address, amount_per_output);
+                                outputs.insert(address, this_output_amount);
+                            }
+
+                            // Verify input/output balance before creating transition
+                            let actual_input_sum: Credits = inputs.values().map(|(_, c)| c).sum();
+                            let actual_output_sum: Credits = outputs.values().sum();
+                            if actual_input_sum != actual_output_sum {
+                                tracing::error!(
+                                    "Balance mismatch BEFORE transition creation: input_sum={}, output_sum={}, diff={}, output_count={}, outputs.len()={}",
+                                    actual_input_sum,
+                                    actual_output_sum,
+                                    actual_input_sum as i128 - actual_output_sum as i128,
+                                    output_count,
+                                    outputs.len()
+                                );
+                            }
+
+                            // Log the inputs for debugging nonce issues
+                            for (addr, (nonce, amount)) in &inputs {
+                                tracing::debug!(
+                                    address = %addr,
+                                    nonce = nonce,
+                                    amount = amount,
+                                    "AddressTransfer: creating transition with input"
+                                );
                             }
 
                             let transfer_transition =
