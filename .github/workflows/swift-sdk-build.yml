@@ -150,6 +150,16 @@ jobs:
           rustup toolchain install "$TOOLCHAIN" --profile minimal --no-self-update
           rustup target add --toolchain "$TOOLCHAIN" aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
+      - name: Clean previous Rust build artifacts
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cargo clean || true
+          RUST_DASHCORE_DIR="$(dirname "$GITHUB_WORKSPACE")/rust-dashcore"
+          if [ -d "$RUST_DASHCORE_DIR" ]; then
+            (cd "$RUST_DASHCORE_DIR" && cargo clean || true)
+          fi
+
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |
           bash packages/swift-sdk/build_ios.sh
