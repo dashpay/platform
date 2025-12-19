@@ -107,7 +107,6 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities_from_addresses() {
-        let platform_version = PlatformVersion::latest();
         drive_abci::logging::init_for_tests(LogLevel::Debug);
 
         let strategy = NetworkStrategy {

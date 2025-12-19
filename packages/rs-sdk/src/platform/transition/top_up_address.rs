@@ -114,6 +114,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_address_funding_from_asset_lock_transition<S: Signer<PlatformAddress>>(
     asset_lock_proof: AssetLockProof,
     asset_lock_private_key: &[u8],

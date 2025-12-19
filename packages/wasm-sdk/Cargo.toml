@@ -105,4 +105,4 @@ lto = "fat"
 wasm-opt = false
 
 [package.metadata.cargo-machete]
-ignored = ["wasm-bindgen-futures"]
+ignored = ["wasm-bindgen-futures", "wasm-sdk"]

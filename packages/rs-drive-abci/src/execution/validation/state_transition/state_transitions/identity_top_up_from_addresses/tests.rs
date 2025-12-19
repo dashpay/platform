@@ -20,7 +20,6 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::signer::Signer;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
-    use dpp::platform_value::BinaryData;
     use dpp::prelude::{AddressNonce, Identifier};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;

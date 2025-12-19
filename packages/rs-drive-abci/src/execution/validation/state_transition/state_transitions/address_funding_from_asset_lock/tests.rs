@@ -4,8 +4,7 @@ mod tests {
     use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_witness, create_platform_address, setup_address_with_balance,
-        P2shMultisigEntry, TestAddressSigner, TestHash, TestProtocolError, TestPublicKey,
-        TestScriptBuf, TestSecp256k1, OP_CHECKSIG, OP_DROP, OP_PUSHNUM_1, OP_RETURN,
+        TestAddressSigner, TestHash,
     };
     use crate::platform_types::platform::{Platform, PlatformRef};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -24,11 +23,8 @@ mod tests {
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-    use dpp::dashcore::{
-        BlockHash, Network, OutPoint, PrivateKey, PublicKey, Transaction, TxIn, TxOut, Txid,
-    };
+    use dpp::dashcore::{BlockHash, Network, OutPoint, PrivateKey, Transaction, TxIn, TxOut, Txid};
     use dpp::dashcore_rpc::json::GetRawTransactionResult;
-    use dpp::identity::signer::Signer;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
@@ -39,7 +35,6 @@ mod tests {
     use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
-    use dpp::ProtocolError;
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
@@ -486,7 +481,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result.unwrap()],
+                    &[result.unwrap()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -747,7 +742,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result.unwrap()],
+                    &[result.unwrap()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -809,7 +804,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result.unwrap()],
+                    &[result.unwrap()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -956,7 +951,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result.unwrap()],
+                    &[result.unwrap()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1027,7 +1022,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1088,7 +1083,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1154,7 +1149,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1233,7 +1228,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1303,7 +1298,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1389,7 +1384,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1485,7 +1480,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1554,7 +1549,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1623,7 +1618,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1702,7 +1697,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1789,7 +1784,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1860,7 +1855,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1931,7 +1926,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -1970,7 +1965,7 @@ mod tests {
             setup_address_with_balance(&mut platform, p2sh_address, 0, dash_to_credits!(1.0));
 
             let mut rng = StdRng::seed_from_u64(567);
-            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let (asset_lock_proof, _asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut inputs = BTreeMap::new();
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -2023,7 +2018,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2092,7 +2087,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result.unwrap()],
+                    &[result.unwrap()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2258,7 +2253,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2322,7 +2317,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2395,7 +2390,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2472,7 +2467,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2536,7 +2531,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2559,7 +2554,6 @@ mod tests {
 
     mod asset_lock_validation {
         use super::*;
-        use dpp::consensus::signature::SignatureError;
 
         #[test]
         fn test_asset_lock_already_spent_returns_error() {
@@ -2604,7 +2598,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result.clone()],
+                    &[result.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2651,7 +2645,7 @@ mod tests {
             let processing_result2 = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result2],
+                    &[result2],
                     &platform_state2,
                     &BlockInfo::default(),
                     &transaction2,
@@ -2722,7 +2716,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2787,7 +2781,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2873,7 +2867,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -2974,7 +2968,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3062,7 +3056,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3136,7 +3130,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3201,7 +3195,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3267,7 +3261,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3337,7 +3331,7 @@ mod tests {
             let processing_result = platform_no_increase
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3386,7 +3380,7 @@ mod tests {
             let processing_result = platform_max_increase
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3506,7 +3500,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3539,7 +3533,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -3588,7 +3582,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result1, result2],
+                    &[result1, result2],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3624,7 +3618,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -3658,7 +3652,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result1],
+                    &[result1],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3710,7 +3704,7 @@ mod tests {
             let processing_result2 = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result2],
+                    &[result2],
                     &platform_state,
                     &BlockInfo::default_with_height(2),
                     &transaction2,
@@ -3779,7 +3773,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3865,7 +3859,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -3949,7 +3943,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4019,7 +4013,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4052,7 +4046,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -4096,7 +4090,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4178,7 +4172,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4204,7 +4198,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -4248,7 +4242,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4323,7 +4317,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4385,7 +4379,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4475,7 +4469,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4509,7 +4503,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -4554,7 +4548,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4580,7 +4574,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -4613,7 +4607,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4708,7 +4702,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4799,7 +4793,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4884,7 +4878,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4956,7 +4950,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -4985,7 +4979,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -5024,7 +5018,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5097,7 +5091,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5169,7 +5163,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5255,7 +5249,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &block_info,
                     &transaction,
@@ -5284,7 +5278,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -5339,7 +5333,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &block_info,
                     &transaction,
@@ -5368,7 +5362,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -5411,7 +5405,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5436,7 +5430,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -5479,7 +5473,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5504,7 +5498,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -5547,7 +5541,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5573,7 +5567,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -5619,7 +5613,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5715,7 +5709,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5810,7 +5804,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5879,7 +5873,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -5947,7 +5941,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6022,7 +6016,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6092,7 +6086,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6168,7 +6162,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6199,7 +6193,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -6232,7 +6226,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6306,7 +6300,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6360,7 +6354,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -6404,7 +6398,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6489,7 +6483,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6573,7 +6567,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6690,7 +6684,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -6720,7 +6714,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -6759,7 +6753,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &block_info,
                     &transaction,
@@ -6829,7 +6823,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &block_info,
                     &transaction,
@@ -6934,7 +6928,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7000,7 +6994,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![serialized],
+                    &[serialized],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7032,7 +7026,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -7068,7 +7062,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7132,7 +7126,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7206,7 +7200,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7275,7 +7269,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7344,7 +7338,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![serialized.clone()],
+                    &[serialized.clone()],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7374,7 +7368,7 @@ mod tests {
             let processing_result2 = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![serialized],
+                    &[serialized],
                     &platform_state,
                     &BlockInfo::default_with_height(2),
                     &transaction2,
@@ -7473,7 +7467,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result1, result2],
+                    &[result1, result2],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7578,7 +7572,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result1, result2],
+                    &[result1, result2],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7683,7 +7677,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result1, result2],
+                    &[result1, result2],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7778,7 +7772,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7813,7 +7807,6 @@ mod tests {
             let mut rng = StdRng::seed_from_u64(911);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
-            let signer = TestAddressSigner::new();
             let input_address1 = create_platform_address(10);
             let input_address2 = create_platform_address(11);
 
@@ -7863,7 +7856,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7934,7 +7927,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -7995,7 +7988,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8022,7 +8015,6 @@ mod tests {
 
     mod partially_used_asset_lock {
         use super::*;
-        use dpp::identity::accessors::IdentityGettersV0;
         use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
         use dpp::native_bls::NativeBlsModule;
         use dpp::prelude::Identifier;
@@ -8166,7 +8158,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![identity_create_serialized_transition],
+                    &[identity_create_serialized_transition],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8223,7 +8215,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![address_funding_serialized],
+                    &[address_funding_serialized],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8380,7 +8372,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![identity_create_serialized],
+                    &[identity_create_serialized],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8432,7 +8424,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![address_funding_serialized],
+                    &[address_funding_serialized],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8544,7 +8536,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8691,7 +8683,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,
@@ -8839,7 +8831,7 @@ mod tests {
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![result],
+                    &[result],
                     &platform_state,
                     &BlockInfo::default(),
                     &transaction,

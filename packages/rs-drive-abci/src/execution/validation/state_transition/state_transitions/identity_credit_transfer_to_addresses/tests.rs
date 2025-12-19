@@ -11,7 +11,7 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;

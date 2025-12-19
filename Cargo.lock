@@ -1163,7 +1163,7 @@ dependencies = [
  "cast",
  "ciborium",
  "clap",
- "criterion-plot 0.5.0",
+ "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
  "num-traits",
@@ -1180,27 +1180,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "criterion"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1c047a62b0cc3e145fa84415a3191f628e980b194c2755aa12300a4e6cbd928"
-dependencies = [
- "anes",
- "cast",
- "ciborium",
- "clap",
- "criterion-plot 0.6.0",
- "itertools 0.13.0",
- "num-traits",
- "oorandom",
- "regex",
- "serde",
- "serde_json",
- "tinytemplate",
- "walkdir",
-]
-
-[[package]]
 name = "criterion-plot"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1208,16 +1187,6 @@ checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
  "itertools 0.10.5",
-]
-
-[[package]]
-name = "criterion-plot"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b1bcc0dc7dfae599d84ad0b1a55f80cde8af3725da8313b528da95ef783e338"
-dependencies = [
- "cast",
- "itertools 0.13.0",
 ]
 
 [[package]]
@@ -1410,7 +1379,6 @@ dependencies = [
  "dpp",
  "drive",
  "hex",
- "serde",
  "serde_json",
  "thiserror 1.0.69",
 ]
@@ -1446,7 +1414,6 @@ dependencies = [
  "dapi-grpc",
  "dash-sdk",
  "dpp",
- "drive-proof-verifier",
  "rpassword",
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
@@ -1457,7 +1424,6 @@ dependencies = [
 name = "dash-platform-macros"
 version = "2.2.0-dev.2"
 dependencies = [
- "dapi-grpc",
  "heck 0.5.0",
  "quote",
  "syn 2.0.106",
@@ -1969,7 +1935,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "criterion 0.5.1",
+ "criterion",
  "derive_more 1.0.0",
  "dpp",
  "enum-map",
@@ -2005,10 +1971,8 @@ dependencies = [
  "arc-swap",
  "assert_matches",
  "async-trait",
- "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "bls-signatures",
- "bs58",
  "chrono",
  "ciborium",
  "clap",
@@ -2069,7 +2033,6 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "serde",
- "serde_json",
  "tenderdash-abci",
  "thiserror 2.0.17",
  "tracing",
@@ -4574,7 +4537,6 @@ dependencies = [
  "indexmap 2.11.4",
  "key-wallet 0.40.0 (git+https://github.com/dashpay/rust-dashcore?rev=8f97c4b7599849ba048cdd7ef98276966b71e1fd)",
  "key-wallet-manager 0.40.0 (git+https://github.com/dashpay/rust-dashcore?rev=8f97c4b7599849ba048cdd7ef98276966b71e1fd)",
- "serde",
  "thiserror 1.0.69",
 ]
 
@@ -5406,7 +5368,6 @@ dependencies = [
  "gloo-timers",
  "hex",
  "http",
- "http-body-util",
  "http-serde",
  "lru",
  "rand 0.8.5",
@@ -5416,7 +5377,6 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tonic-web-wasm-client",
- "tower-service",
  "tracing",
  "wasm-bindgen-futures",
 ]
@@ -5464,7 +5424,6 @@ name = "rs-sdk-trusted-context-provider"
 version = "2.2.0-dev.2"
 dependencies = [
  "arc-swap",
- "async-trait",
  "dash-context-provider",
  "dpp",
  "futures",
@@ -5475,7 +5434,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.17",
  "tokio",
- "tokio-test",
  "tracing",
  "url",
 ]
@@ -6248,14 +6206,9 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
  "drive",
- "futures",
  "hex",
- "platform-serialization",
- "platform-serialization-derive",
  "platform-version",
  "rand 0.8.5",
- "rocksdb 0.23.0",
- "serde_json",
  "simple-signer",
  "tracing",
 ]
@@ -7546,13 +7499,11 @@ dependencies = [
  "bs58",
  "ciborium",
  "console_error_panic_hook",
- "criterion 0.7.0",
  "dpp",
  "drive",
  "hex",
  "indexmap 2.11.4",
  "js-sys",
- "nohash-hasher",
  "serde",
  "serde-wasm-bindgen 0.6.5",
  "serde_json",
