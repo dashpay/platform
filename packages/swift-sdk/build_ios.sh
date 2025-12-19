@@ -33,12 +33,17 @@ rm -rf "$DEST_XCFRAMEWORK_DIR"
 cp -R "$SRC_XCFRAMEWORK_DIR" "$DEST_XCFRAMEWORK_DIR"
 
 # Verify required SPV symbols are present in the binary
-LIB_SIM_MAIN="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/librs_sdk_ffi.a"
-LIB_SIM_SPV="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libdash_spv_ffi.a"
-if [[ ! -f "$LIB_SIM_MAIN" ]]; then
-  echo "❌ Missing simulator library at $LIB_SIM_MAIN"
+LIB_SIM_DIR="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator"
+LIB_SIM_MAIN=""
+if [[ -f "$LIB_SIM_DIR/librs_sdk_ffi.a" ]]; then
+  LIB_SIM_MAIN="$LIB_SIM_DIR/librs_sdk_ffi.a"
+elif [[ -f "$LIB_SIM_DIR/libDashSDKFFI_combined.a" ]]; then
+  LIB_SIM_MAIN="$LIB_SIM_DIR/libDashSDKFFI_combined.a"
+else
+  echo "❌ Missing simulator library (expected librs_sdk_ffi.a or libDashSDKFFI_combined.a) in $LIB_SIM_DIR"
   exit 1
 fi
+LIB_SIM_SPV="$LIB_SIM_DIR/libdash_spv_ffi.a"
 echo "   - Verifying required SPV symbols are present in XCFramework libs"
 # Prefer ripgrep if available; fall back to grep for portability
 # Avoid -q with pipefail, which can cause nm to SIGPIPE and fail the check.
