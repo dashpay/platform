@@ -33,7 +33,7 @@ mod tests {
     use platform_version::version::INITIAL_PROTOCOL_VERSION;
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
 
     #[test]
     #[stack_size(4 * 1024 * 1024)]
@@ -44,6 +44,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -317,6 +318,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -724,6 +726,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -951,6 +954,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -1120,6 +1124,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -1274,6 +1279,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -1403,6 +1409,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,

@@ -47,7 +47,7 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType, TokenOp};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
     use crate::addresses_with_balance::AddressesWithBalance;
 
     #[test]
@@ -124,6 +124,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -279,6 +280,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -426,6 +428,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -697,6 +700,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -970,6 +974,7 @@ mod tests {
                     start_contracts: vec![],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: None,
@@ -1186,6 +1191,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer.clone()),
@@ -1344,6 +1350,7 @@ mod tests {
                     start_contracts: vec![(created_contract, None)],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: Some(simple_signer),
@@ -1562,6 +1569,7 @@ mod tests {
                     start_contracts: vec![],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: None,
@@ -1779,6 +1787,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer.clone()),
@@ -1937,6 +1946,7 @@ mod tests {
                     start_contracts: vec![(created_contract, None)],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: Some(simple_signer),
@@ -2155,6 +2165,7 @@ mod tests {
                     start_contracts: vec![],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: None,

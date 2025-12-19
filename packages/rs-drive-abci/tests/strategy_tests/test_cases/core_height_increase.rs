@@ -21,7 +21,7 @@ mod tests {
     use itertools::Itertools;
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
     #[test]
     fn run_chain_core_height_randomly_increasing() {
         let strategy = NetworkStrategy {
@@ -29,6 +29,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -85,6 +86,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -150,6 +152,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -219,6 +222,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -321,6 +325,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -407,6 +412,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -496,6 +502,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -612,6 +619,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {
@@ -806,6 +814,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {
@@ -978,6 +987,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     //we do this to create some paying transactions
                     frequency: Frequency {

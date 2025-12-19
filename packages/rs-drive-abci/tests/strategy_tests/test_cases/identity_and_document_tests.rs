@@ -36,7 +36,7 @@ mod tests {
     };
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
 
     #[test]
     fn run_chain_one_identity_in_solitude_first_protocol_version() {
@@ -46,6 +46,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -126,6 +127,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -194,6 +196,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -261,6 +264,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -358,6 +362,7 @@ mod tests {
                 start_contracts: vec![(contract, None)],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -488,6 +493,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -583,6 +589,7 @@ mod tests {
                 )],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -695,6 +702,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -783,6 +791,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -900,6 +909,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -1035,6 +1045,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -1170,6 +1181,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -1308,6 +1320,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -1430,6 +1443,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -1550,6 +1564,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..30,
@@ -1692,6 +1707,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..6,
@@ -1857,6 +1873,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
 
                 identity_contract_nonce_gaps: None,
@@ -1999,6 +2016,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..6,
@@ -2173,6 +2191,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..6,
