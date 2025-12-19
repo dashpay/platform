@@ -160,3 +160,8 @@ required-features = ["mocks"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "tokio-test", # used in doctests
+]

@@ -11,10 +11,10 @@ fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
         return true;
     }
 
-    if let Some(pubkey_hash) = extract_pubkey_hash(script.as_script()) {
-        if filter.contains(&pubkey_hash) {
-            return true;
-        }
+    if let Some(pubkey_hash) = extract_pubkey_hash(script.as_script())
+        && filter.contains(&pubkey_hash)
+    {
+        return true;
     }
 
     extract_pushdatas(script_bytes)

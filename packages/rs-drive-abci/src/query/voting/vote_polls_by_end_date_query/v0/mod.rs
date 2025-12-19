@@ -80,11 +80,12 @@ impl<C> Platform<C> {
             })
             .transpose());
 
-        if prove && offset.is_some() && offset != Some(0) {
+        let prove_offset = offset.unwrap_or(0);
+        if prove && prove_offset != 0 {
             return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                 QuerySyntaxError::RequestingProofWithOffset(format!(
                     "requesting proved contested vote polls by end date with an offset {}",
-                    offset.unwrap()
+                    prove_offset
                 )),
             )));
         }
