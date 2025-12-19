@@ -2011,13 +2011,88 @@ impl Strategy {
                                 .clone()
                                 .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
 
+                            // Calculate estimated fee for local balance tracking
+                            // Fee = identity_create_base_cost + identity_key_in_creation_cost * num_keys
+                            //     + address_funds_transfer_input_cost * num_inputs
+                            //     + address_funds_transfer_output_cost * num_outputs
+                            let total_key_count = identity.public_keys().len() as u64;
+                            let num_inputs = inputs.len() as u64;
+                            let has_output = maybe_output_amount.is_some();
+                            let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees
+                                .identity_create_base_cost
+                                .saturating_add(
+                                    min_fees
+                                        .identity_key_in_creation_cost
+                                        .saturating_mul(total_key_count),
+                                )
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_input_cost
+                                        .saturating_mul(num_inputs),
+                                )
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_output_cost
+                                        .saturating_mul(num_outputs),
+                                );
+
+                            // Track fee deductions for balance tracking
+                            let mut output_fee_deduction: Credits = 0;
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+
+                            let input_addresses_in_order: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            let mut remaining_fee = estimated_fee;
+                            for step in &fee_strategy {
+                                if remaining_fee == 0 {
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        if *index == 0 && has_output {
+                                            output_fee_deduction =
+                                                output_fee_deduction.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        if (*index as usize) < inputs.len() {
+                                            let entry =
+                                                input_fee_deductions.entry(*index as usize).or_insert(0);
+                                            *entry = entry.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to input balances (beyond the amount already staged)
+                            for (idx, fee_deduction) in input_fee_deductions {
+                                if let Some(address) = input_addresses_in_order.get(idx) {
+                                    // Get the current staged balance and reduce it further by the fee
+                                    if let Some((_, staged_balance)) = current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance
+                                        .get_mut(address)
+                                    {
+                                        *staged_balance =
+                                            staged_balance.saturating_sub(fee_deduction);
+                                    }
+                                }
+                            }
+
                             // Create output if maybe_output_amount is provided
                             let output = maybe_output_amount.as_ref().map(|output_range| {
                                 let output_amount = rng.gen_range(output_range.clone());
                                 let output_address = signer.add_random_address_key(rng);
-                                // Register the output address with balance
+                                // Register the output address with balance minus fee deduction
+                                let actual_output_amount =
+                                    output_amount.saturating_sub(output_fee_deduction);
                                 current_addresses_with_balance
-                                    .register_new_address(output_address, output_amount);
+                                    .register_new_address(output_address, actual_output_amount);
                                 (output_address, output_amount)
                             });
 
@@ -2066,10 +2141,29 @@ impl Strategy {
                                 AssetLockProof::Chain(_chain) => 0,
                             };
 
+                            // Calculate estimated fee for local balance tracking
+                            // For address funding from asset lock with no platform inputs and one output,
+                            // the fee is just the output cost. With ReduceOutput(0) strategy,
+                            // the fee is deducted from the output.
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees.address_funds_transfer_output_cost; // 1 output
+
+                            // Check if we have enough funds to cover the fee
+                            if funded_amount <= estimated_fee {
+                                tracing::warn!(
+                                    "Asset lock amount {} is too small to cover fee {}",
+                                    funded_amount,
+                                    estimated_fee
+                                );
+                                continue;
+                            }
+
                             // Create a new address for the funding
+                            // Register with the actual amount after fee deduction (ReduceOutput(0))
                             let address = signer.add_random_address_key(rng);
+                            let actual_funded_amount = funded_amount.saturating_sub(estimated_fee);
                             current_addresses_with_balance
-                                .register_new_address(address, funded_amount);
+                                .register_new_address(address, actual_funded_amount);
 
                             let mut outputs = BTreeMap::new();
                             outputs.insert(address, None);
@@ -2126,6 +2220,92 @@ impl Strategy {
                             let output_count =
                                 rng.gen_range(output_count_range.clone()).max(1) as usize;
 
+                            // Calculate estimated fee for local balance tracking
+                            // The transition must have inputs == outputs (balanced), but the chain
+                            // will deduct fees according to fee_strategy. We need to track the
+                            // actual credited amounts locally.
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees
+                                .address_funds_transfer_input_cost
+                                .saturating_mul(inputs.len() as u64)
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_output_cost
+                                        .saturating_mul(output_count as u64),
+                                );
+
+                            // Check if we have enough funds to cover the fee
+                            // The check depends on the fee_strategy:
+                            // - DeductFromInput(i): input[i]'s REMAINING balance must cover the fee
+                            // - ReduceOutput(i): output[i]'s amount must cover the fee
+                            //
+                            // At this point, inputs have been staged with their remaining balances
+                            // (original - transfer_amount). We need to verify fee can be covered.
+
+                            let input_addresses_for_check: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            let mut fee_can_be_covered = false;
+                            let mut remaining_fee_to_check = estimated_fee;
+
+                            for step in &fee_strategy {
+                                if remaining_fee_to_check == 0 {
+                                    fee_can_be_covered = true;
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(_index) => {
+                                        // For ReduceOutput, the output amount must cover the fee
+                                        // Since we're distributing total_input evenly, check if
+                                        // the output amount is enough
+                                        let output_amount =
+                                            total_input / output_count.max(1) as Credits;
+                                        if output_amount >= remaining_fee_to_check {
+                                            remaining_fee_to_check = 0;
+                                            fee_can_be_covered = true;
+                                        } else {
+                                            remaining_fee_to_check -= output_amount;
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        // For DeductFromInput, the input's REMAINING balance
+                                        // (after transfer deduction) must cover the fee
+                                        if let Some(input_addr) =
+                                            input_addresses_for_check.get(*index as usize)
+                                        {
+                                            // Get the staged remaining balance
+                                            if let Some((_, remaining_balance)) =
+                                                current_addresses_with_balance
+                                                    .addresses_in_block_with_new_balance
+                                                    .get(input_addr)
+                                            {
+                                                if *remaining_balance >= remaining_fee_to_check {
+                                                    remaining_fee_to_check = 0;
+                                                    fee_can_be_covered = true;
+                                                } else {
+                                                    remaining_fee_to_check -= *remaining_balance;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !fee_can_be_covered {
+                                tracing::warn!(
+                                    total_input = total_input,
+                                    estimated_fee = estimated_fee,
+                                    "AddressTransfer: insufficient remaining balance for fees, skipping"
+                                );
+                                // Rollback the staged changes from take_random_amounts_with_range
+                                for addr in input_addresses_for_check {
+                                    current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance
+                                        .remove(&addr);
+                                }
+                                continue;
+                            }
+
                             // Create output addresses and distribute funds evenly
                             // Account for remainder from integer division
                             let amount_per_output = total_input / output_count as Credits;
@@ -2142,6 +2322,12 @@ impl Strategy {
                                     .filter(|addr| !input_addresses.contains(*addr))
                                     .cloned()
                                     .collect();
+
+                            // Track output addresses in order for fee deduction
+                            let mut output_addresses_in_order: Vec<PlatformAddress> = Vec::new();
+                            // Track which addresses are existing vs new for balance updates
+                            let mut existing_output_addresses: HashSet<PlatformAddress> =
+                                HashSet::new();
 
                             for _ in 0..output_count {
                                 // First output gets the remainder to ensure exact balance
@@ -2165,29 +2351,109 @@ impl Strategy {
                                     let idx = rng.gen_range(0..available_existing_addresses.len());
                                     let existing_address =
                                         available_existing_addresses.swap_remove(idx);
-                                    // Update the balance for this existing address
+                                    existing_output_addresses.insert(existing_address);
+                                    existing_address
+                                } else {
+                                    // Create a new address
+                                    signer.add_random_address_key(rng)
+                                };
+
+                                outputs.insert(address, this_output_amount);
+                                output_addresses_in_order.push(address);
+                            }
+
+                            // Calculate fee deductions based on fee_strategy
+                            // Track deductions for both outputs (ReduceOutput) and inputs (DeductFromInput)
+                            let mut output_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
+                            let mut remaining_fee = estimated_fee;
+
+                            // Get input addresses in order for DeductFromInput matching
+                            let input_addresses_in_order: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            for step in &fee_strategy {
+                                if remaining_fee == 0 {
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        let idx = *index as usize;
+                                        if idx < output_addresses_in_order.len() {
+                                            let output_addr = &output_addresses_in_order[idx];
+                                            let output_amount =
+                                                outputs.get(output_addr).copied().unwrap_or(0);
+                                            let deduction = remaining_fee.min(output_amount);
+                                            *output_fee_deductions.entry(idx).or_insert(0) +=
+                                                deduction;
+                                            remaining_fee =
+                                                remaining_fee.saturating_sub(deduction);
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        let idx = *index as usize;
+                                        if idx < input_addresses_in_order.len() {
+                                            // The fee is deducted from the input on-chain
+                                            // We need to track this additional deduction
+                                            let deduction = remaining_fee;
+                                            *input_fee_deductions.entry(idx).or_insert(0) +=
+                                                deduction;
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to INPUT balance tracking
+                            // The transfer amount was already deducted by take_random_amounts_with_range,
+                            // but the fee is ALSO deducted from inputs when using DeductFromInput
+                            for (idx, fee_deduction) in input_fee_deductions {
+                                if let Some(input_addr) = input_addresses_in_order.get(idx) {
+                                    if let Some((nonce, current_balance)) =
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .get(input_addr)
+                                    {
+                                        // Further reduce the input's balance by the fee
+                                        let adjusted_balance =
+                                            current_balance.saturating_sub(fee_deduction);
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .insert(*input_addr, (*nonce, adjusted_balance));
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to OUTPUT balance tracking
+                            for (idx, address) in output_addresses_in_order.iter().enumerate() {
+                                let transition_amount =
+                                    outputs.get(address).copied().unwrap_or(0);
+                                let fee_deduction =
+                                    output_fee_deductions.get(&idx).copied().unwrap_or(0);
+                                let actual_credited_amount =
+                                    transition_amount.saturating_sub(fee_deduction);
+
+                                if existing_output_addresses.contains(address) {
+                                    // Update balance for existing address
                                     if let Some((nonce, balance)) = current_addresses_with_balance
                                         .addresses_with_balance
-                                        .get(&existing_address)
+                                        .get(address)
                                     {
                                         current_addresses_with_balance
                                             .addresses_in_block_with_new_balance
                                             .insert(
-                                                existing_address,
-                                                (*nonce, balance + this_output_amount),
+                                                *address,
+                                                (*nonce, balance + actual_credited_amount),
                                             );
                                     }
-                                    existing_address
                                 } else {
-                                    // Create a new address
-                                    let new_address = signer.add_random_address_key(rng);
+                                    // New address - track with fee-adjusted amount
                                     current_addresses_with_balance
                                         .addresses_in_block_with_new_balance
-                                        .insert(new_address, (0, this_output_amount));
-                                    new_address
-                                };
-
-                                outputs.insert(address, this_output_amount);
+                                        .insert(*address, (0, actual_credited_amount));
+                                }
                             }
 
                             // Verify input/output balance before creating transition
@@ -2247,13 +2513,81 @@ impl Strategy {
                                 .clone()
                                 .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
 
+                            // Calculate estimated fee for local balance tracking
+                            // Fee = address_credit_withdrawal + input_cost * num_inputs + output_cost * num_outputs
+                            let num_inputs = inputs.len() as u64;
+                            let has_output = maybe_output_range.is_some();
+                            let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees
+                                .address_credit_withdrawal
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_input_cost
+                                        .saturating_mul(num_inputs),
+                                )
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_output_cost
+                                        .saturating_mul(num_outputs),
+                                );
+
+                            // Track fee deductions for balance tracking
+                            let mut output_fee_deduction: Credits = 0;
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+
+                            let input_addresses_in_order: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            let mut remaining_fee = estimated_fee;
+                            for step in &fee_strategy {
+                                if remaining_fee == 0 {
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        if *index == 0 && has_output {
+                                            output_fee_deduction =
+                                                output_fee_deduction.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        if (*index as usize) < inputs.len() {
+                                            let entry =
+                                                input_fee_deductions.entry(*index as usize).or_insert(0);
+                                            *entry = entry.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to input balances (beyond the amount already staged)
+                            for (idx, fee_deduction) in input_fee_deductions {
+                                if let Some(address) = input_addresses_in_order.get(idx) {
+                                    // Get the current staged balance and reduce it further by the fee
+                                    if let Some((_, staged_balance)) = current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance
+                                        .get_mut(address)
+                                    {
+                                        *staged_balance =
+                                            staged_balance.saturating_sub(fee_deduction);
+                                    }
+                                }
+                            }
+
                             // Determine if we have an output (change address) and its amount
                             let output = if let Some(output_amount_range) = maybe_output_range {
                                 let output_amount = rng.gen_range(output_amount_range.clone());
                                 let output_address = signer.add_random_address_key(rng);
+                                // Register with actual amount after fee deduction
+                                let actual_output_amount =
+                                    output_amount.saturating_sub(output_fee_deduction);
                                 current_addresses_with_balance
                                     .addresses_in_block_with_new_balance
-                                    .insert(output_address, (0, output_amount));
+                                    .insert(output_address, (0, actual_output_amount));
                                 Some((output_address, output_amount))
                             } else {
                                 None
