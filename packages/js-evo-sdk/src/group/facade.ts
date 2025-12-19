@@ -1,176 +1,97 @@
+import * as wasm from '../wasm.js';
 import type { EvoSDK } from '../sdk.js';
-
-interface VotePollsByDocumentTypeQueryInput {
-  dataContractId: string;
-  documentTypeName: string;
-  indexName: string;
-  startIndexValues?: unknown[];
-  endIndexValues?: unknown[];
-  startAtValue?: unknown;
-  startAtValueIncluded?: boolean;
-  limit?: number;
-  orderAscending?: boolean;
-}
-
-interface ContestedResourceVotersForIdentityQueryInput {
-  dataContractId: string;
-  documentTypeName: string;
-  indexName: string;
-  indexValues?: unknown[];
-  contestantId: string;
-  limit?: number;
-  startAtVoterId?: string;
-  startAtIncluded?: boolean;
-  orderAscending?: boolean;
-}
 
 export class GroupFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  async info(contractId: string, groupContractPosition: number): Promise<any> {
+  async info(contractId: wasm.IdentifierLike, groupContractPosition: number): Promise<wasm.Group | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupInfo(contractId, groupContractPosition);
   }
 
-  async infoWithProof(contractId: string, groupContractPosition: number): Promise<any> {
+  async infoWithProof(contractId: wasm.IdentifierLike, groupContractPosition: number): Promise<wasm.ProofMetadataResponseTyped<wasm.Group | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupInfoWithProofInfo(contractId, groupContractPosition);
   }
 
-  async infos(contractId: string, startAtInfo?: unknown, count?: number): Promise<any> {
+  async infos(query: wasm.GroupInfosQuery): Promise<Map<number, wasm.Group | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupInfos(contractId, startAtInfo ?? null, count ?? null);
+    return w.getGroupInfos(query);
   }
 
-  async infosWithProof(contractId: string, startAtInfo?: unknown, count?: number): Promise<any> {
+  async infosWithProof(query: wasm.GroupInfosQuery): Promise<wasm.ProofMetadataResponseTyped<Map<number, wasm.Group | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupInfosWithProofInfo(contractId, startAtInfo ?? null, count ?? null);
+    return w.getGroupInfosWithProofInfo(query);
   }
 
-  async members(contractId: string, groupContractPosition: number, opts: { memberIds?: string[]; startAt?: string; limit?: number } = {}): Promise<any> {
-    const { memberIds, startAt, limit } = opts;
+  async members(query: wasm.GroupMembersQuery): Promise<Map<wasm.Identifier, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupMembers(contractId, groupContractPosition, memberIds ?? null, startAt ?? null, limit ?? null);
+    return w.getGroupMembers(query);
   }
 
-  async membersWithProof(contractId: string, groupContractPosition: number, opts: { memberIds?: string[]; startAt?: string; limit?: number } = {}): Promise<any> {
-    const { memberIds, startAt, limit } = opts;
+  async membersWithProof(query: wasm.GroupMembersQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupMembersWithProofInfo(contractId, groupContractPosition, memberIds ?? null, startAt ?? null, limit ?? null);
+    return w.getGroupMembersWithProofInfo(query);
   }
 
-  async identityGroups(identityId: string, opts: { memberDataContracts?: string[]; ownerDataContracts?: string[]; moderatorDataContracts?: string[] } = {}): Promise<any> {
-    const { memberDataContracts, ownerDataContracts, moderatorDataContracts } = opts;
+  async identityGroups(query: wasm.IdentityGroupsQuery): Promise<wasm.IdentityGroupInfo[]> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityGroups(
-      identityId,
-      memberDataContracts ?? null,
-      ownerDataContracts ?? null,
-      moderatorDataContracts ?? null,
-    );
+    return w.getIdentityGroups(query);
   }
 
-  async identityGroupsWithProof(identityId: string, opts: { memberDataContracts?: string[]; ownerDataContracts?: string[]; moderatorDataContracts?: string[] } = {}): Promise<any> {
-    const { memberDataContracts, ownerDataContracts, moderatorDataContracts } = opts;
+  async identityGroupsWithProof(query: wasm.IdentityGroupsQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityGroupInfo[]>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityGroupsWithProofInfo(
-      identityId,
-      memberDataContracts ?? null,
-      ownerDataContracts ?? null,
-      moderatorDataContracts ?? null,
-    );
+    return w.getIdentityGroupsWithProofInfo(query);
   }
 
-  async actions(contractId: string, groupContractPosition: number, status: string, opts: { startAtInfo?: unknown; count?: number } = {}): Promise<any> {
-    const { startAtInfo, count } = opts;
+  async actions(query: wasm.GroupActionsQuery): Promise<Map<wasm.Identifier, wasm.GroupAction | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActions(contractId, groupContractPosition, status, startAtInfo ?? null, count ?? null);
+    return w.getGroupActions(query);
   }
 
-  async actionsWithProof(contractId: string, groupContractPosition: number, status: string, opts: { startAtInfo?: unknown; count?: number } = {}): Promise<any> {
-    const { startAtInfo, count } = opts;
+  async actionsWithProof(query: wasm.GroupActionsQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.GroupAction | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActionsWithProofInfo(contractId, groupContractPosition, status, startAtInfo ?? null, count ?? null);
+    return w.getGroupActionsWithProofInfo(query);
   }
 
-  async actionSigners(contractId: string, groupContractPosition: number, status: string, actionId: string): Promise<any> {
+  async actionSigners(query: wasm.GroupActionSignersQuery): Promise<Map<wasm.Identifier, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActionSigners(contractId, groupContractPosition, status, actionId);
+    return w.getGroupActionSigners(query);
   }
 
-  async actionSignersWithProof(contractId: string, groupContractPosition: number, status: string, actionId: string): Promise<any> {
+  async actionSignersWithProof(query: wasm.GroupActionSignersQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActionSignersWithProofInfo(contractId, groupContractPosition, status, actionId);
+    return w.getGroupActionSignersWithProofInfo(query);
   }
 
-  async groupsDataContracts(dataContractIds: string[]): Promise<any> {
+  async groupsDataContracts(dataContractIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, Map<number, wasm.Group | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupsDataContracts(dataContractIds);
   }
 
-  async groupsDataContractsWithProof(dataContractIds: string[]): Promise<any> {
+  async groupsDataContractsWithProof(dataContractIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, Map<number, wasm.Group | undefined>>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupsDataContractsWithProofInfo(dataContractIds);
   }
 
-  async contestedResources(params: { documentTypeName: string; contractId: string; indexName: string; startAtValue?: Uint8Array; limit?: number; orderAscending?: boolean }): Promise<any> {
-    const { documentTypeName, contractId, indexName, startAtValue, limit, orderAscending } = params;
+  async contestedResources(query: wasm.VotePollsByDocumentTypeQuery): Promise<any[]> {
     const w = await this.sdk.getWasmSdkConnected();
-    const query: VotePollsByDocumentTypeQueryInput = {
-      dataContractId: contractId,
-      documentTypeName,
-      indexName,
-    };
-    if (startAtValue !== undefined) query.startAtValue = startAtValue;
-    if (limit !== undefined) query.limit = limit;
-    if (orderAscending !== undefined) query.orderAscending = orderAscending;
     return w.getContestedResources(query);
   }
 
-  async contestedResourcesWithProof(params: { documentTypeName: string; contractId: string; indexName: string; startAtValue?: Uint8Array; limit?: number; orderAscending?: boolean }): Promise<any> {
-    const { documentTypeName, contractId, indexName, startAtValue, limit, orderAscending } = params;
+  async contestedResourcesWithProof(query: wasm.VotePollsByDocumentTypeQuery): Promise<wasm.ProofMetadataResponseTyped<Array<any>>> {
     const w = await this.sdk.getWasmSdkConnected();
-    const query: VotePollsByDocumentTypeQueryInput = {
-      dataContractId: contractId,
-      documentTypeName,
-      indexName,
-    };
-    if (startAtValue !== undefined) query.startAtValue = startAtValue;
-    if (limit !== undefined) query.limit = limit;
-    if (orderAscending !== undefined) query.orderAscending = orderAscending;
     return w.getContestedResourcesWithProofInfo(query);
   }
 
-  async contestedResourceVotersForIdentity(params: { contractId: string; documentTypeName: string; indexName: string; indexValues: any[]; contestantId: string; startAtVoterInfo?: string; limit?: number; orderAscending?: boolean }): Promise<any> {
-    const { contractId, documentTypeName, indexName, indexValues, contestantId, startAtVoterInfo, limit, orderAscending } = params;
+  async contestedResourceVotersForIdentity(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<string[]> {
     const w = await this.sdk.getWasmSdkConnected();
-    const query: ContestedResourceVotersForIdentityQueryInput = {
-      dataContractId: contractId,
-      documentTypeName,
-      indexName,
-      indexValues,
-      contestantId,
-    };
-    if (startAtVoterInfo !== undefined) query.startAtVoterId = startAtVoterInfo;
-    if (limit !== undefined) query.limit = limit;
-    if (orderAscending !== undefined) query.orderAscending = orderAscending;
     return w.getContestedResourceVotersForIdentity(query);
   }
 
-  async contestedResourceVotersForIdentityWithProof(params: { contractId: string; documentTypeName: string; indexName: string; indexValues: any[]; contestantId: string; startAtIdentifierInfo?: string; count?: number; orderAscending?: boolean }): Promise<any> {
-    const { contractId, documentTypeName, indexName, indexValues, contestantId, startAtIdentifierInfo, count, orderAscending } = params;
+  async contestedResourceVotersForIdentityWithProof(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<wasm.ProofMetadataResponseTyped<string[]>> {
     const w = await this.sdk.getWasmSdkConnected();
-    const query: ContestedResourceVotersForIdentityQueryInput = {
-      dataContractId: contractId,
-      documentTypeName,
-      indexName,
-      indexValues,
-      contestantId,
-    };
-    if (startAtIdentifierInfo !== undefined) query.startAtVoterId = startAtIdentifierInfo;
-    if (count !== undefined) query.limit = count;
-    if (orderAscending !== undefined) query.orderAscending = orderAscending;
     return w.getContestedResourceVotersForIdentityWithProofInfo(query);
   }
 }

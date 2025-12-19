@@ -7,12 +7,11 @@ use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
 /// Key pair information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct KeyPair {
     /// Private key in WIF format
     pub private_key_wif: String,
@@ -26,18 +25,64 @@ pub struct KeyPair {
     pub network: String,
 }
 
+#[wasm_bindgen(js_name = "KeyPair")]
+#[derive(Clone)]
+pub struct KeyPairWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyWif")]
+    pub private_key_wif: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyHex")]
+    pub private_key_hex: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "publicKey")]
+    pub public_key: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub address: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub network: String,
+}
+
+impl From<KeyPair> for KeyPairWasm {
+    fn from(value: KeyPair) -> Self {
+        Self {
+            private_key_wif: value.private_key_wif,
+            private_key_hex: value.private_key_hex,
+            public_key: value.public_key,
+            address: value.address,
+            network: value.network,
+        }
+    }
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
+    fn build_key_pair(
+        private_key: &PrivateKey,
+        network: Network,
+        network_label: &str,
+    ) -> Result<KeyPair, WasmSdkError> {
+        let secp = Secp256k1::new();
+        let public_key = private_key.public_key(&secp);
+        let public_key_bytes = public_key.inner.serialize();
+        let address = Address::p2pkh(&public_key, network);
+
+        Ok(KeyPair {
+            private_key_wif: private_key.to_wif(),
+            private_key_hex: hex::encode(private_key.inner.secret_bytes()),
+            public_key: hex::encode(public_key_bytes),
+            address: address.to_string(),
+            network: network_label.to_string(),
+        })
+    }
+
     /// Generate a new random key pair
     #[wasm_bindgen(js_name = "generateKeyPair")]
-    pub fn generate_key_pair(network: &str) -> Result<JsValue, WasmSdkError> {
+    pub fn generate_key_pair(network: &str) -> Result<KeyPairWasm, WasmSdkError> {
         let net = match network {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid network. Use 'mainnet' or 'testnet'",
-                ))
+                ));
             }
         };
 
@@ -51,38 +96,17 @@ impl WasmSdk {
         let private_key = PrivateKey::from_byte_array(&key_bytes, net)
             .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
 
-        // Get public key
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&key_bytes)
+        // Ensure secret key is valid before building info
+        SecretKey::from_slice(&key_bytes)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
-        let public_key =
-            dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-        let public_key_bytes = public_key.serialize();
 
-        // Get address
-        let address = Address::p2pkh(
-            &PublicKey::from_slice(&public_key_bytes).map_err(|e| {
-                WasmSdkError::generic(format!("Failed to create public key: {}", e))
-            })?,
-            net,
-        );
-
-        let key_pair = KeyPair {
-            private_key_wif: private_key.to_wif(),
-            private_key_hex: hex::encode(key_bytes),
-            public_key: hex::encode(public_key_bytes),
-            address: address.to_string(),
-            network: network.to_string(),
-        };
-
-        serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
-        })
+        let key_pair = Self::build_key_pair(&private_key, net, network)?;
+        Ok(KeyPairWasm::from(key_pair))
     }
 
     /// Generate multiple key pairs
     #[wasm_bindgen(js_name = "generateKeyPairs")]
-    pub fn generate_key_pairs(network: &str, count: u32) -> Result<Vec<JsValue>, WasmSdkError> {
+    pub fn generate_key_pairs(network: &str, count: u32) -> Result<Vec<KeyPairWasm>, WasmSdkError> {
         if count == 0 || count > 100 {
             return Err(WasmSdkError::invalid_argument(
                 "Count must be between 1 and 100",
@@ -98,7 +122,9 @@ impl WasmSdk {
 
     /// Create key pair from private key WIF
     #[wasm_bindgen(js_name = "keyPairFromWif")]
-    pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, WasmSdkError> {
+    pub fn key_pair_from_wif(
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: &str,
+    ) -> Result<KeyPairWasm, WasmSdkError> {
         let private_key = PrivateKey::from_wif(private_key_wif)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF: {}", e)))?;
 
@@ -108,41 +134,16 @@ impl WasmSdk {
             _ => return Err(WasmSdkError::invalid_argument("Unsupported network")),
         };
 
-        // Get public key
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&private_key.inner.secret_bytes())
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
-        let public_key =
-            dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-        let public_key_bytes = public_key.serialize();
-
-        // Get address
-        let address = Address::p2pkh(
-            &PublicKey::from_slice(&public_key_bytes).map_err(|e| {
-                WasmSdkError::generic(format!("Failed to create public key: {}", e))
-            })?,
-            private_key.network,
-        );
-
-        let key_pair = KeyPair {
-            private_key_wif: private_key_wif.to_string(),
-            private_key_hex: hex::encode(private_key.inner.secret_bytes()),
-            public_key: hex::encode(public_key_bytes),
-            address: address.to_string(),
-            network: network.to_string(),
-        };
-
-        serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
-        })
+        let key_pair = Self::build_key_pair(&private_key, private_key.network, network)?;
+        Ok(KeyPairWasm::from(key_pair))
     }
 
     /// Create key pair from private key hex
     #[wasm_bindgen(js_name = "keyPairFromHex")]
     pub fn key_pair_from_hex(
-        private_key_hex: &str,
+        #[wasm_bindgen(js_name = "privateKeyHex")] private_key_hex: &str,
         network: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<KeyPairWasm, WasmSdkError> {
         if private_key_hex.len() != 64 {
             return Err(WasmSdkError::invalid_argument(
                 "Private key hex must be exactly 64 characters",
@@ -155,7 +156,7 @@ impl WasmSdk {
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid network. Use 'mainnet' or 'testnet'",
-                ))
+                ));
             }
         };
 
@@ -168,19 +169,23 @@ impl WasmSdk {
         let private_key = PrivateKey::from_byte_array(&key_array, net)
             .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
 
-        Self::key_pair_from_wif(&private_key.to_wif())
+        let key_pair = Self::build_key_pair(&private_key, net, network)?;
+        Ok(KeyPairWasm::from(key_pair))
     }
 
     /// Get address from public key
     #[wasm_bindgen(js_name = "pubkeyToAddress")]
-    pub fn pubkey_to_address(pubkey_hex: &str, network: &str) -> Result<String, WasmSdkError> {
+    pub fn pubkey_to_address(
+        #[wasm_bindgen(js_name = "pubkeyHex")] pubkey_hex: &str,
+        network: &str,
+    ) -> Result<String, WasmSdkError> {
         let net = match network {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid network. Use 'mainnet' or 'testnet'",
-                ))
+                ));
             }
         };
 
@@ -210,7 +215,10 @@ impl WasmSdk {
 
     /// Sign a message with a private key
     #[wasm_bindgen(js_name = "signMessage")]
-    pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, WasmSdkError> {
+    pub fn sign_message(
+        message: &str,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: &str,
+    ) -> Result<String, WasmSdkError> {
         let private_key = PrivateKey::from_wif(private_key_wif)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF: {}", e)))?;
 

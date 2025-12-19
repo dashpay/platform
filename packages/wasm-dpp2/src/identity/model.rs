@@ -6,7 +6,7 @@ use dpp::identity::{self, Identity, KeyID};
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::prelude::IdentityPublicKey;
+use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::PlatformVersion;
 use serde_json::Value as JsonValue;
@@ -38,19 +38,25 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> WasmDppResult<IdentityWasm> {
-        let identifier = IdentifierWasm::try_from(js_identifier)?;
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identifier: &JsValue,
+    ) -> WasmDppResult<IdentityWasm> {
+        let identifier: Identifier = IdentifierWasm::try_from(js_identifier)?.into();
 
-        let identity =
-            Identity::create_basic_identity(identifier.into(), PlatformVersion::first())?;
+        let identity = Identity::create_basic_identity(identifier, PlatformVersion::first())?;
 
         Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_identifier: &JsValue) -> WasmDppResult<()> {
-        let identifier = IdentifierWasm::try_from(js_identifier)?;
-        self.0.set_id(identifier.into());
+    pub fn set_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identifier: &JsValue,
+    ) -> WasmDppResult<()> {
+        let identifier: Identifier = IdentifierWasm::try_from(js_identifier)?.into();
+        self.0.set_id(identifier);
         Ok(())
     }
 

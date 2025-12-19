@@ -1,13 +1,23 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{IntoWasm, get_class_type, identifier_from_js_value};
+use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
+use js_sys::Uint8Array;
+use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value as JsonValue;
+use std::fmt;
 use wasm_bindgen::prelude::*;
 
 #[derive(Copy, Clone)]
 #[wasm_bindgen(js_name = "Identifier")]
 pub struct IdentifierWasm(Identifier);
+
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTIFIER_TS_HELPERS: &'static str = r#"
+export type IdentifierLike = Identifier | Uint8Array | string;
+"#;
 
 impl From<IdentifierWasm> for Identifier {
     fn from(identifier: IdentifierWasm) -> Self {
@@ -53,34 +63,32 @@ impl TryFrom<&[u8]> for IdentifierWasm {
 impl TryFrom<JsValue> for IdentifierWasm {
     type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        match value.is_object() {
-            true => match get_class_type(&value) {
-                Ok(class_type) => match class_type.as_str() {
-                    "Identifier" => Ok(*value.to_wasm::<IdentifierWasm>("Identifier")?),
-                    "" => Ok(identifier_from_js_value(&value)?.into()),
-                    _ => Err(WasmDppError::invalid_argument(format!(
-                        "Invalid type of data for identifier (passed {})",
-                        class_type
-                    ))),
-                },
-                Err(_) => Ok(identifier_from_js_value(&value)?.into()),
-            },
-            false => match value.is_string() {
-                false => Ok(identifier_from_js_value(&value)?.into()),
-                true => {
-                    let id_str = value.as_string().unwrap();
-                    match id_str.len() == 64 {
-                        true => {
-                            let bytes = decode(value.as_string().unwrap().as_str(), Hex)
-                                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
-
-                            Ok(IdentifierWasm::try_from(bytes.as_slice())?)
-                        }
-                        false => Ok(identifier_from_js_value(&value)?.into()),
-                    }
-                }
-            },
+        if value.is_undefined() || value.is_null() {
+            return Err(WasmDppError::invalid_argument(
+                "the identifier cannot be null or undefined",
+            ));
         }
+
+        if let Ok(existing) = value.clone().to_wasm::<IdentifierWasm>("Identifier") {
+            return Ok(*existing);
+        }
+
+        if let Some(string) = value.as_string() {
+            return IdentifierWasm::try_from(string.as_str());
+        }
+
+        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
+            let uint8_array = Uint8Array::from(value.clone());
+            let bytes = uint8_array.to_vec();
+
+            return Identifier::from_bytes(&bytes)
+                .map(Into::into)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()));
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "Invalid identifier. Expected Identifier, Uint8Array or string",
+        ))
     }
 }
 
@@ -88,6 +96,87 @@ impl TryFrom<&JsValue> for IdentifierWasm {
     type Error = WasmDppError;
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         IdentifierWasm::try_from(value.clone())
+    }
+}
+
+impl TryFrom<&str> for IdentifierWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()) {
+            let bytes = decode(value, Hex)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+            return IdentifierWasm::try_from(bytes.as_slice());
+        }
+
+        Identifier::from_string(value, Base58)
+            .map(Into::into)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
+    }
+}
+
+struct IdentifierWasmVisitor;
+
+impl<'de> Visitor<'de> for IdentifierWasmVisitor {
+    type Value = IdentifierWasm;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("Identifier or compatible representation")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        IdentifierWasm::try_from(value).map_err(|err| E::custom(err.to_string()))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.visit_str(&value)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(byte) = seq.next_element::<u8>()? {
+            bytes.push(byte);
+        }
+        Identifier::from_vec(bytes)
+            .map(IdentifierWasm)
+            .map_err(|err| A::Error::custom(err.to_string()))
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Identifier::from_vec(value.to_vec())
+            .map(IdentifierWasm)
+            .map_err(|err| E::custom(err.to_string()))
+    }
+
+    fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let value = JsonValue::deserialize(de::value::MapAccessDeserializer::new(map))
+            .map_err(M::Error::custom)?;
+        let js_value = serde_wasm_bindgen::to_value(&value).map_err(M::Error::custom)?;
+        IdentifierWasm::try_from(&js_value).map_err(|err| M::Error::custom(err.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for IdentifierWasm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(IdentifierWasmVisitor)
     }
 }
 
@@ -104,7 +193,10 @@ impl IdentifierWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> WasmDppResult<IdentifierWasm> {
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identifier: &JsValue,
+    ) -> WasmDppResult<IdentifierWasm> {
         IdentifierWasm::try_from(js_identifier)
     }
 

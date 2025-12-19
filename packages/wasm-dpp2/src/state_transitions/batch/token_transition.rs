@@ -222,9 +222,13 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getHistoricalDocumentId")]
-    pub fn get_historical_document_id(&self, js_owner: &JsValue) -> WasmDppResult<IdentifierWasm> {
-        let owner = IdentifierWasm::try_from(js_owner)?;
-        Ok(self.0.historical_document_id(owner.into()).into())
+    pub fn get_historical_document_id(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_owner: &JsValue,
+    ) -> WasmDppResult<IdentifierWasm> {
+        let owner = IdentifierWasm::try_from(js_owner)?.into();
+        Ok(self.0.historical_document_id(owner).into())
     }
 
     #[wasm_bindgen(getter = "identityContractNonce")]
@@ -248,19 +252,25 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "tokenId")]
-    pub fn set_token_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
-        let id = IdentifierWasm::try_from(js_id)?;
+    pub fn set_token_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let id = IdentifierWasm::try_from(js_id)?.into();
 
-        self.0.set_token_id(id.into());
+        self.0.set_token_id(id);
 
         Ok(())
     }
 
     #[wasm_bindgen(setter = "contractId")]
-    pub fn set_contract_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
-        let id = IdentifierWasm::try_from(js_id)?;
+    pub fn set_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let id = IdentifierWasm::try_from(js_id)?.into();
 
-        self.0.set_data_contract_id(id.into());
+        self.0.set_data_contract_id(id);
 
         Ok(())
     }

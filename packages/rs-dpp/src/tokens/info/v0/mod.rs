@@ -1,10 +1,13 @@
 use bincode::{Decode, Encode};
 use derive_more::From;
-#[cfg(feature = "fixtures-and-mocks")]
-use serde::{Deserialize, Serialize};
-
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
-#[cfg_attr(feature = "fixtures-and-mocks", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    any(
+        feature = "fixtures-and-mocks",
+        feature = "state-transition-serde-conversion"
+    ),
+    derive(serde::Serialize, serde::Deserialize)
+)]
 /// Token information for an identity (version 0).
 pub struct IdentityTokenInfoV0 {
     pub frozen: bool,

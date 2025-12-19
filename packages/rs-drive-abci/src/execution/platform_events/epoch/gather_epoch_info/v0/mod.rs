@@ -5,8 +5,8 @@ use dpp::version::PlatformVersion;
 use crate::platform_types::block_proposal;
 use crate::platform_types::epoch_info::v0::EpochInfoV0;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {

@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -510,6 +510,13 @@ pub(crate) trait StateTransitionStateValidationV0:
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+
+    /// Validates full state on check tx, this is only the case for masternode voting.
+    /// This is because masternodes do not pay for the voting, so we need to make sure they can
+    /// actually vote
+    fn validates_full_state_on_check_tx(&self) -> bool {
+        false
+    }
 }
 
 impl StateTransitionBasicStructureValidationV0 for StateTransition {

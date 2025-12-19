@@ -1,4 +1,7 @@
 use crate::error::WasmSdkError;
+use crate::queries::utils::{
+    convert_optional_limit, deserialize_required_query, identifiers_from_js,
+};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
@@ -11,13 +14,13 @@ use dash_sdk::platform::group_actions::{
     GroupActionSignersQuery, GroupActionsQuery, GroupInfosQuery, GroupQuery,
 };
 use dash_sdk::platform::{Fetch, FetchMany, Identifier};
-use js_sys::{Array, BigInt, Map, Number, Reflect};
+use js_sys::{Array, BigInt, Map, Number};
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::group::GroupActionWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::tokens::GroupWasm;
-use wasm_dpp2::utils::JsValueExt;
 
 // Proof info functions are now included below
 
@@ -68,20 +71,536 @@ impl IdentityGroupInfoWasm {
     }
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const GROUP_ACTIONS_QUERY_TS: &'static str = r#"
+/**
+ * Group action status filter.
+ */
+export type GroupActionStatusFilter = 'ACTIVE' | 'CLOSED';
+
+/**
+ * Cursor describing where to resume fetching group actions.
+ */
+export interface GroupActionsStartAt {
+  /**
+   * Group action identifier.
+   */
+  actionId: IdentifierLike
+
+  /**
+   * Include the `actionId` entry in the result set.
+   * @default false
+   */
+  included?: boolean;
+}
+
+/**
+ * Query parameters for retrieving group actions.
+ */
+export interface GroupActionsQuery {
+  /**
+   * Data contract identifier.
+   */
+  dataContractId: IdentifierLike
+
+  /**
+   * Position of the group within the contract.
+   */
+  groupContractPosition: number;
+
+  /**
+   * Filter actions by status.
+   */
+  status: GroupActionStatusFilter;
+
+  /**
+   * Cursor describing where to resume from.
+   * @default undefined
+   */
+  startAt?: GroupActionsStartAt;
+
+  /**
+   * Maximum number of actions to return.
+   * @default undefined
+   */
+  limit?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionsQuery")]
+    pub type GroupActionsQueryJs;
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const GROUP_ACTION_SIGNERS_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for retrieving signers of a group action.
+ */
+export interface GroupActionSignersQuery {
+  /**
+   * Data contract identifier.
+   */
+  dataContractId: IdentifierLike
+
+  /**
+   * Position of the group within the contract.
+   */
+  groupContractPosition: number;
+
+  /**
+   * Action status filter.
+   */
+  status: GroupActionStatusFilter;
+
+  /**
+   * Group action identifier.
+   */
+  actionId: IdentifierLike
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionSignersQuery")]
+    pub type GroupActionSignersQueryJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupActionsQueryInput {
+    data_contract_id: IdentifierWasm,
+    group_contract_position: u32,
+    status: String,
+    #[serde(default)]
+    start_at: Option<GroupActionsStartAtInput>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupActionsStartAtInput {
+    action_id: IdentifierWasm,
+    #[serde(default)]
+    included: Option<bool>,
+}
+
+struct GroupActionsQueryParsed {
+    contract_id: Identifier,
+    group_contract_position: GroupContractPosition,
+    status: GroupActionStatus,
+    start_at: Option<(Identifier, bool)>,
+    limit: Option<u16>,
+}
+
+fn parse_group_action_status(status: &str) -> Result<GroupActionStatus, WasmSdkError> {
+    match status {
+        "ACTIVE" => Ok(GroupActionStatus::ActionActive),
+        "CLOSED" => Ok(GroupActionStatus::ActionClosed),
+        _ => Err(WasmSdkError::invalid_argument(format!(
+            "Invalid status: {}. Must be ACTIVE or CLOSED",
+            status
+        ))),
+    }
+}
+
+fn parse_group_actions_query(
+    query: GroupActionsQueryJs,
+) -> Result<GroupActionsQueryParsed, WasmSdkError> {
+    let input: GroupActionsQueryInput =
+        deserialize_required_query(query, "Query object is required", "group actions query")?;
+
+    let GroupActionsQueryInput {
+        data_contract_id,
+        group_contract_position,
+        status,
+        start_at,
+        limit,
+    } = input;
+
+    let contract_id: Identifier = data_contract_id.into();
+
+    let group_contract_position: GroupContractPosition =
+        group_contract_position.try_into().map_err(|_| {
+            WasmSdkError::invalid_argument(format!(
+                "groupContractPosition {} exceeds maximum of {}",
+                group_contract_position,
+                u16::MAX,
+            ))
+        })?;
+
+    let status = parse_group_action_status(&status)?;
+
+    let start_at = if let Some(cursor) = start_at {
+        let action_id: Identifier = cursor.action_id.into();
+        let included = cursor.included.unwrap_or(false);
+        Some((action_id, included))
+    } else {
+        None
+    };
+
+    let limit = convert_optional_limit(limit, "limit")?;
+
+    Ok(GroupActionsQueryParsed {
+        contract_id,
+        group_contract_position,
+        status,
+        start_at,
+        limit,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupActionSignersQueryInput {
+    data_contract_id: IdentifierWasm,
+    group_contract_position: u32,
+    status: String,
+    action_id: IdentifierWasm,
+}
+
+struct GroupActionSignersQueryParsed {
+    contract_id: Identifier,
+    group_contract_position: GroupContractPosition,
+    status: GroupActionStatus,
+    action_id: Identifier,
+}
+
+fn parse_group_action_signers_query(
+    query: GroupActionSignersQueryJs,
+) -> Result<GroupActionSignersQueryParsed, WasmSdkError> {
+    let input: GroupActionSignersQueryInput = deserialize_required_query(
+        query,
+        "Query object is required",
+        "group action signers query",
+    )?;
+    let GroupActionSignersQueryInput {
+        data_contract_id,
+        group_contract_position,
+        status,
+        action_id,
+    } = input;
+    let contract_id: Identifier = data_contract_id.into();
+    let group_contract_position: GroupContractPosition =
+        group_contract_position.try_into().map_err(|_| {
+            WasmSdkError::invalid_argument(format!(
+                "groupContractPosition {} exceeds maximum of {}",
+                group_contract_position,
+                u16::MAX,
+            ))
+        })?;
+    let status = parse_group_action_status(&status)?;
+    let action_id: Identifier = action_id.into();
+    Ok(GroupActionSignersQueryParsed {
+        contract_id,
+        group_contract_position,
+        status,
+        action_id,
+    })
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const GROUP_INFOS_QUERY_TS: &'static str = r#"
+/**
+ * Cursor describing where to resume fetching group infos.
+ */
+export interface GroupInfosStartAt {
+  /**
+   * Group contract position.
+   */
+  position: number;
+
+  /**
+   * Include the entry at `position`.
+   * @default false
+   */
+  included?: boolean;
+}
+
+/**
+ * Query parameters for retrieving group infos.
+ */
+export interface GroupInfosQuery {
+  /**
+   * Data contract identifier.
+   */
+  dataContractId: IdentifierLike
+
+  /**
+   * Cursor describing where to resume from.
+   * @default undefined
+   */
+  startAt?: GroupInfosStartAt;
+
+  /**
+   * Maximum number of groups to return.
+   * @default undefined
+   */
+  limit?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupInfosQuery")]
+    pub type GroupInfosQueryJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupInfosQueryInput {
+    data_contract_id: IdentifierWasm,
+    #[serde(default)]
+    start_at: Option<GroupInfosStartAtInput>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupInfosStartAtInput {
+    position: u32,
+    #[serde(default)]
+    included: Option<bool>,
+}
+
+struct GroupInfosQueryParsed {
+    contract_id: Identifier,
+    start_at: Option<(GroupContractPosition, bool)>,
+    limit: Option<u16>,
+}
+
+fn parse_group_infos_query(
+    query: GroupInfosQueryJs,
+) -> Result<GroupInfosQueryParsed, WasmSdkError> {
+    let input: GroupInfosQueryInput =
+        deserialize_required_query(query, "Query object is required", "group infos query")?;
+
+    let GroupInfosQueryInput {
+        data_contract_id,
+        start_at,
+        limit,
+    } = input;
+
+    let contract_id: Identifier = data_contract_id.into();
+
+    let start_at = if let Some(cursor) = start_at {
+        let position = cursor.position as GroupContractPosition;
+        let included = cursor.included.unwrap_or(false);
+        Some((position, included))
+    } else {
+        None
+    };
+
+    let limit = convert_optional_limit(limit, "limit")?;
+
+    Ok(GroupInfosQueryParsed {
+        contract_id,
+        start_at,
+        limit,
+    })
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const GROUP_MEMBERS_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for retrieving group members.
+ */
+export interface GroupMembersQuery {
+  /**
+   * Data contract identifier.
+   */
+  dataContractId: IdentifierLike
+
+  /**
+   * Group position inside the contract.
+   */
+  groupContractPosition: number;
+
+  /**
+   * Optional list of member IDs to retrieve. When provided, pagination options are ignored.
+   * @default undefined
+   */
+  memberIds?: Array<Identifier | Uint8Array | string>;
+
+  /**
+   * Member identifier to resume from.
+   * @default undefined
+   */
+  startAtMemberId?: IdentifierLike
+
+  /**
+   * Maximum number of members to return when not requesting specific IDs.
+   * @default undefined
+   */
+  limit?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupMembersQuery")]
+    pub type GroupMembersQueryJs;
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTITY_GROUPS_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for retrieving groups that an identity participates in.
+ */
+export interface IdentityGroupsQuery {
+  /**
+   * Identity identifier.
+   */
+  identityId: IdentifierLike
+
+  /**
+   * Data contracts where the identity participates as a member.
+   * @default undefined
+   */
+  memberDataContracts?: Array<Identifier | Uint8Array | string>;
+
+  /**
+   * Data contracts where the identity participates as an owner.
+   * (Currently not implemented server-side.)
+   * @default undefined
+   */
+  ownerDataContracts?: Array<Identifier | Uint8Array | string>;
+
+  /**
+   * Data contracts where the identity participates as a moderator.
+   * (Currently not implemented server-side.)
+   * @default undefined
+   */
+  moderatorDataContracts?: Array<Identifier | Uint8Array | string>;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityGroupsQuery")]
+    pub type IdentityGroupsQueryJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupMembersQueryInput {
+    data_contract_id: IdentifierWasm,
+    group_contract_position: u32,
+    #[serde(default)]
+    member_ids: Option<Vec<IdentifierWasm>>,
+    #[serde(default)]
+    start_at_member_id: Option<IdentifierWasm>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+struct GroupMembersQueryParsed {
+    contract_id: Identifier,
+    group_contract_position: GroupContractPosition,
+    member_ids: Option<Vec<Identifier>>,
+    start_at_member_id: Option<Identifier>,
+    limit: Option<u16>,
+}
+
+fn parse_group_members_query(
+    query: GroupMembersQueryJs,
+) -> Result<GroupMembersQueryParsed, WasmSdkError> {
+    let input: GroupMembersQueryInput =
+        deserialize_required_query(query, "Query object is required", "group members query")?;
+
+    let GroupMembersQueryInput {
+        data_contract_id,
+        group_contract_position,
+        member_ids: raw_member_ids,
+        start_at_member_id: raw_start_at,
+        limit,
+    } = input;
+
+    let contract_id: Identifier = data_contract_id.into();
+
+    let limit = convert_optional_limit(limit, "limit")?;
+
+    let member_ids = raw_member_ids.map(|ids| ids.into_iter().map(Identifier::from).collect());
+
+    let start_at_member_id = raw_start_at.map(Identifier::from);
+
+    Ok(GroupMembersQueryParsed {
+        contract_id,
+        group_contract_position: group_contract_position as GroupContractPosition,
+        member_ids,
+        start_at_member_id,
+        limit,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityGroupsQueryInput {
+    identity_id: IdentifierWasm,
+    #[serde(default)]
+    member_data_contracts: Option<Vec<IdentifierWasm>>,
+    #[serde(default)]
+    owner_data_contracts: Option<Vec<IdentifierWasm>>,
+    #[serde(default)]
+    moderator_data_contracts: Option<Vec<IdentifierWasm>>,
+}
+
+struct IdentityGroupsQueryParsed {
+    identity_id: Identifier,
+    member_data_contracts: Option<Vec<Identifier>>,
+    owner_data_contracts: Option<Vec<Identifier>>,
+    moderator_data_contracts: Option<Vec<Identifier>>,
+}
+
+fn parse_identity_groups_query(
+    query: IdentityGroupsQueryJs,
+) -> Result<IdentityGroupsQueryParsed, WasmSdkError> {
+    let input: IdentityGroupsQueryInput =
+        deserialize_required_query(query, "Query object is required", "identity groups query")?;
+
+    let IdentityGroupsQueryInput {
+        identity_id: identity_js,
+        member_data_contracts: member_contracts,
+        owner_data_contracts: owner_contracts,
+        moderator_data_contracts: moderator_contracts,
+    } = input;
+
+    let identity_id: Identifier = identity_js.into();
+
+    let member_data_contracts =
+        member_contracts.map(|values| values.into_iter().map(Identifier::from).collect());
+
+    let owner_data_contracts =
+        owner_contracts.map(|values| values.into_iter().map(Identifier::from).collect());
+
+    let moderator_data_contracts =
+        moderator_contracts.map(|values| values.into_iter().map(Identifier::from).collect());
+
+    Ok(IdentityGroupsQueryParsed {
+        identity_id,
+        member_data_contracts,
+        owner_data_contracts,
+        moderator_data_contracts,
+    })
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupInfo")]
     pub async fn get_group_info(
         &self,
-        data_contract_id: &str,
-        group_contract_position: u32,
+        #[wasm_bindgen(js_name = "dataContractId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
     ) -> Result<Option<GroupWasm>, WasmSdkError> {
         // Parse data contract ID
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
+            .into();
 
         // Create group query
         let query = GroupQuery {
@@ -95,70 +614,59 @@ impl WasmSdk {
         Ok(group.map(Into::into))
     }
 
-    #[wasm_bindgen(js_name = "getGroupMembers")]
-    pub async fn get_group_members(
-        &self,
-        data_contract_id: &str,
-        group_contract_position: u32,
-        member_ids: Option<Vec<String>>,
-        start_at: Option<String>,
-        limit: Option<u32>,
-    ) -> Result<Map, WasmSdkError> {
-        // Parse data contract ID
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+    #[wasm_bindgen(
+        js_name = "getGroupMembers",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
+    pub async fn get_group_members(&self, query: GroupMembersQueryJs) -> Result<Map, WasmSdkError> {
+        let params = parse_group_members_query(query)?;
 
-        // Create group query
-        let query = GroupQuery {
+        let GroupMembersQueryParsed {
             contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
+            group_contract_position,
+            member_ids,
+            start_at_member_id,
+            limit,
+        } = params;
+
+        let group_query = GroupQuery {
+            contract_id,
+            group_contract_position,
         };
 
         // Fetch the group
-        let group = Group::fetch(self.as_ref(), query).await?;
+        let group = Group::fetch(self.as_ref(), group_query).await?;
 
         if let Some(group) = group {
-            let members = collect_group_members_map(&group, &member_ids, &start_at, limit)?;
+            let members =
+                collect_group_members_map(&group, &member_ids, &start_at_member_id, limit)?;
             return Ok(members);
-        };
+        }
 
         Ok(Map::new())
     }
 
-    #[wasm_bindgen(js_name = "getIdentityGroups")]
+    #[wasm_bindgen(
+        js_name = "getIdentityGroups",
+        unchecked_return_type = "Array<IdentityGroupInfo>"
+    )]
     pub async fn get_identity_groups(
         &self,
-        identity_id: &str,
-        member_data_contracts: Option<Vec<String>>,
-        owner_data_contracts: Option<Vec<String>>,
-        moderator_data_contracts: Option<Vec<String>>,
+        query: IdentityGroupsQueryJs,
     ) -> Result<Array, WasmSdkError> {
-        // Parse identity ID
-        let id = Identifier::from_string(
+        let IdentityGroupsQueryParsed {
             identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+            member_data_contracts,
+            owner_data_contracts,
+            moderator_data_contracts,
+        } = parse_identity_groups_query(query)?;
 
         let groups_array = Array::new();
 
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
-            for contract_id_str in contracts {
-                let contract_id = Identifier::from_string(
-                    &contract_id_str,
-                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                )
-                .map_err(|e| {
-                    WasmSdkError::invalid_argument(format!(
-                        "Invalid contract ID '{}': {}",
-                        contract_id_str, e
-                    ))
-                })?;
-
+            for contract_id in contracts {
+                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
                 // Fetch all groups for this contract
                 let query = GroupInfosQuery {
                     contract_id,
@@ -171,7 +679,7 @@ impl WasmSdk {
                 // Check each group for the identity
                 for (position, group_opt) in groups_result {
                     if let Some(group) = group_opt {
-                        if let Ok(power) = group.member_power(id) {
+                        if let Ok(power) = group.member_power(identity_id) {
                             let entry = IdentityGroupInfoWasm::new(
                                 contract_id_str.clone(),
                                 position as u32,
@@ -197,46 +705,18 @@ impl WasmSdk {
         Ok(groups_array)
     }
 
-    #[wasm_bindgen(js_name = "getGroupInfos")]
-    pub async fn get_group_infos(
-        &self,
-        contract_id: &str,
-        start_at_info: JsValue,
-        count: Option<u32>,
-    ) -> Result<Map, WasmSdkError> {
-        // Parse contract ID
-        let contract_id = Identifier::from_string(
-            contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
-
-        // Parse start at info if provided
-        let start_group_contract_position = if !start_at_info.is_null()
-            && !start_at_info.is_undefined()
-        {
-            let position_value = Reflect::get(&start_at_info, &JsValue::from_str("position"))
-                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
-            let position = position_value
-                .as_f64()
-                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid start position"))?
-                as GroupContractPosition;
-
-            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
-                .ok()
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-
-            Some((position, included))
-        } else {
-            None
-        };
+    #[wasm_bindgen(
+        js_name = "getGroupInfos",
+        unchecked_return_type = "Map<number, Group | undefined>"
+    )]
+    pub async fn get_group_infos(&self, query: GroupInfosQueryJs) -> Result<Map, WasmSdkError> {
+        let params = parse_group_infos_query(query)?;
 
         // Create query
         let query = GroupInfosQuery {
-            contract_id,
-            start_group_contract_position,
-            limit: count.map(|c| c as u16),
+            contract_id: params.contract_id,
+            start_group_contract_position: params.start_at,
+            limit: params.limit,
         };
 
         // Fetch groups
@@ -253,62 +733,20 @@ impl WasmSdk {
         Ok(infos_map)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActions")]
-    pub async fn get_group_actions(
-        &self,
-        contract_id: &str,
-        group_contract_position: u32,
-        status: &str,
-        start_at_info: JsValue,
-        count: Option<u32>,
-    ) -> Result<Map, WasmSdkError> {
-        // Parse contract ID
-        let contract_id = Identifier::from_string(
-            contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
-
-        // Parse status
-        let status = match status {
-            "ACTIVE" => GroupActionStatus::ActionActive,
-            "CLOSED" => GroupActionStatus::ActionClosed,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid status: {}. Must be ACTIVE or CLOSED",
-                    status
-                )))
-            }
-        };
-
-        // Parse start action ID if provided
-        let start_at_action_id = if !start_at_info.is_null() && !start_at_info.is_undefined() {
-            let action_id_value = Reflect::get(&start_at_info, &JsValue::from_str("actionId"))
-                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
-            let action_id_str = action_id_value
-                .as_string()
-                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid action ID"))?;
-            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
-                .ok()
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-            let identifier = Identifier::from_string(
-                &action_id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e)))?;
-            Some((identifier, included))
-        } else {
-            None
-        };
+    #[wasm_bindgen(
+        js_name = "getGroupActions",
+        unchecked_return_type = "Map<Identifier, GroupAction | undefined>"
+    )]
+    pub async fn get_group_actions(&self, query: GroupActionsQueryJs) -> Result<Map, WasmSdkError> {
+        let params = parse_group_actions_query(query)?;
 
         // Create query
         let query = GroupActionsQuery {
-            contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
-            status,
-            start_at_action_id,
-            limit: count.map(|c| c as u16),
+            contract_id: params.contract_id,
+            group_contract_position: params.group_contract_position,
+            status: params.status,
+            start_at_action_id: params.start_at,
+            limit: params.limit,
         };
 
         // Fetch actions
@@ -324,46 +762,22 @@ impl WasmSdk {
         Ok(actions_map)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActionSigners")]
+    #[wasm_bindgen(
+        js_name = "getGroupActionSigners",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_group_action_signers(
         &self,
-        contract_id: &str,
-        group_contract_position: u32,
-        status: &str,
-        action_id: &str,
+        query: GroupActionSignersQueryJs,
     ) -> Result<Map, WasmSdkError> {
-        // Parse contract ID
-        let contract_id = Identifier::from_string(
-            contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
-
-        // Parse action ID
-        let action_id = Identifier::from_string(
-            action_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e)))?;
-
-        // Parse status
-        let status = match status {
-            "ACTIVE" => GroupActionStatus::ActionActive,
-            "CLOSED" => GroupActionStatus::ActionClosed,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid status: {}. Must be ACTIVE or CLOSED",
-                    status
-                )))
-            }
-        };
+        let params = parse_group_action_signers_query(query)?;
 
         // Create query
         let query = GroupActionSignersQuery {
-            contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
-            status,
-            action_id,
+            contract_id: params.contract_id,
+            group_contract_position: params.group_contract_position,
+            status: params.status,
+            action_id: params.action_id,
         };
 
         // Fetch signers
@@ -381,24 +795,24 @@ impl WasmSdk {
         Ok(signers_map)
     }
 
-    #[wasm_bindgen(js_name = "getGroupsDataContracts")]
+    #[wasm_bindgen(
+        js_name = "getGroupsDataContracts",
+        unchecked_return_type = "Map<Identifier, Map<number, Group | undefined>>"
+    )]
     pub async fn get_groups_data_contracts(
         &self,
-        data_contract_ids: Vec<String>,
+        #[wasm_bindgen(js_name = "dataContractIds")]
+        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
+        data_contract_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
         let contracts_map = Map::new();
 
-        for contract_id_str in data_contract_ids {
-            let contract_id = Identifier::from_string(
-                &contract_id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid contract ID '{}': {}",
-                    contract_id_str, e
-                ))
-            })?;
+        for contract_js in data_contract_ids {
+            let contract_id: Identifier = IdentifierWasm::try_from(&contract_js)
+                .map_err(|err| {
+                    WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+                })?
+                .into();
 
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
@@ -427,18 +841,21 @@ impl WasmSdk {
 
     // Proof versions for group queries
 
-    #[wasm_bindgen(js_name = "getGroupInfoWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupInfoWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Group | undefined>"
+    )]
     pub async fn get_group_info_with_proof_info(
         &self,
-        data_contract_id: &str,
-        group_contract_position: u32,
+        #[wasm_bindgen(js_name = "dataContractId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse data contract ID
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
+            .into();
 
         // Create group query
         let query = GroupQuery {
@@ -459,46 +876,21 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupInfosWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupInfosWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<number, Group | undefined>>"
+    )]
     pub async fn get_group_infos_with_proof_info(
         &self,
-        contract_id: &str,
-        start_at_info: JsValue,
-        count: Option<u32>,
+        query: GroupInfosQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        // Parse contract ID
-        let contract_id = Identifier::from_string(
-            contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
-
-        // Parse start at info if provided
-        let start_group_contract_position = if !start_at_info.is_null()
-            && !start_at_info.is_undefined()
-        {
-            let position_value = Reflect::get(&start_at_info, &JsValue::from_str("position"))
-                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
-            let position = position_value
-                .as_f64()
-                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid start position"))?
-                as GroupContractPosition;
-
-            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
-                .ok()
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-
-            Some((position, included))
-        } else {
-            None
-        };
+        let params = parse_group_infos_query(query)?;
 
         // Create query
         let query = GroupInfosQuery {
-            contract_id,
-            start_group_contract_position,
-            limit: count.map(|c| c as u16),
+            contract_id: params.contract_id,
+            start_group_contract_position: params.start_at,
+            limit: params.limit,
         };
 
         // Fetch groups with proof
@@ -519,34 +911,37 @@ impl WasmSdk {
 
     // Additional proof info versions for remaining group queries
 
-    #[wasm_bindgen(js_name = "getGroupMembersWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupMembersWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_group_members_with_proof_info(
         &self,
-        data_contract_id: &str,
-        group_contract_position: u32,
-        member_ids: Option<Vec<String>>,
-        start_at: Option<String>,
-        limit: Option<u32>,
+        query: GroupMembersQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        // Parse data contract ID
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let params = parse_group_members_query(query)?;
 
-        // Create group query
-        let query = GroupQuery {
+        let GroupMembersQueryParsed {
             contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
+            group_contract_position,
+            member_ids,
+            start_at_member_id,
+            limit,
+        } = params;
+
+        let group_query = GroupQuery {
+            contract_id,
+            group_contract_position,
         };
 
         // Fetch the group with proof
         let (group_result, metadata, proof) =
-            Group::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
+            Group::fetch_with_metadata_and_proof(self.as_ref(), group_query, None).await?;
 
         let data = match group_result {
-            Some(group) => collect_group_members_map(&group, &member_ids, &start_at, limit)?.into(),
+            Some(group) => {
+                collect_group_members_map(&group, &member_ids, &start_at_member_id, limit)?.into()
+            }
             None => JsValue::UNDEFINED,
         };
 
@@ -555,20 +950,20 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getIdentityGroupsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityGroupsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityGroupInfo>>"
+    )]
     pub async fn get_identity_groups_with_proof_info(
         &self,
-        identity_id: &str,
-        member_data_contracts: Option<Vec<String>>,
-        owner_data_contracts: Option<Vec<String>>,
-        moderator_data_contracts: Option<Vec<String>>,
+        query: IdentityGroupsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        // Parse identity ID
-        let id = Identifier::from_string(
+        let IdentityGroupsQueryParsed {
             identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+            member_data_contracts,
+            owner_data_contracts,
+            moderator_data_contracts,
+        } = parse_identity_groups_query(query)?;
 
         let groups_array = Array::new();
         let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
@@ -576,18 +971,8 @@ impl WasmSdk {
 
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
-            for contract_id_str in contracts {
-                let contract_id = Identifier::from_string(
-                    &contract_id_str,
-                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                )
-                .map_err(|e| {
-                    WasmSdkError::invalid_argument(format!(
-                        "Invalid contract ID '{}': {}",
-                        contract_id_str, e
-                    ))
-                })?;
-
+            for contract_id in contracts {
+                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
                 // Fetch all groups for this contract with proof
                 let query = GroupInfosQuery {
                     contract_id,
@@ -607,7 +992,7 @@ impl WasmSdk {
                 // Check each group for the identity
                 for (position, group_opt) in groups_result {
                     if let Some(group) = group_opt {
-                        if let Ok(power) = group.member_power(id) {
+                        if let Ok(power) = group.member_power(identity_id) {
                             let entry = IdentityGroupInfoWasm::new(
                                 contract_id_str.clone(),
                                 position as u32,
@@ -637,62 +1022,23 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActionsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupActionsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, GroupAction | undefined>>"
+    )]
     pub async fn get_group_actions_with_proof_info(
         &self,
-        contract_id: &str,
-        group_contract_position: u32,
-        status: &str,
-        start_at_info: JsValue,
-        count: Option<u32>,
+        query: GroupActionsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        // Parse contract ID
-        let contract_id = Identifier::from_string(
-            contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
-
-        // Parse status
-        let status = match status {
-            "ACTIVE" => GroupActionStatus::ActionActive,
-            "CLOSED" => GroupActionStatus::ActionClosed,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid status: {}. Must be ACTIVE or CLOSED",
-                    status
-                )))
-            }
-        };
-
-        // Parse start action ID if provided
-        let start_at_action_id = if !start_at_info.is_null() && !start_at_info.is_undefined() {
-            let action_id_value = Reflect::get(&start_at_info, &JsValue::from_str("actionId"))
-                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
-            let action_id_str = action_id_value
-                .as_string()
-                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid action ID"))?;
-            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
-                .ok()
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false);
-            let identifier = Identifier::from_string(
-                &action_id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e)))?;
-            Some((identifier, included))
-        } else {
-            None
-        };
+        let params = parse_group_actions_query(query)?;
 
         // Create query
         let query = GroupActionsQuery {
-            contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
-            status,
-            start_at_action_id,
-            limit: count.map(|c| c as u16),
+            contract_id: params.contract_id,
+            group_contract_position: params.group_contract_position,
+            status: params.status,
+            start_at_action_id: params.start_at,
+            limit: params.limit,
         };
 
         // Fetch actions with proof
@@ -711,46 +1057,20 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActionSignersWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupActionSignersWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_group_action_signers_with_proof_info(
         &self,
-        contract_id: &str,
-        group_contract_position: u32,
-        status: &str,
-        action_id: &str,
+        query: GroupActionSignersQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        // Parse contract ID
-        let contract_id = Identifier::from_string(
-            contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
-
-        // Parse action ID
-        let action_id = Identifier::from_string(
-            action_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e)))?;
-
-        // Parse status
-        let status = match status {
-            "ACTIVE" => GroupActionStatus::ActionActive,
-            "CLOSED" => GroupActionStatus::ActionClosed,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid status: {}. Must be ACTIVE or CLOSED",
-                    status
-                )))
-            }
-        };
-
-        // Create query
+        let params = parse_group_action_signers_query(query)?;
         let query = GroupActionSignersQuery {
-            contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
-            status,
-            action_id,
+            contract_id: params.contract_id,
+            group_contract_position: params.group_contract_position,
+            status: params.status,
+            action_id: params.action_id,
         };
 
         // Fetch signers with proof
@@ -772,26 +1092,23 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupsDataContractsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupsDataContractsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, Map<number, Group | undefined>>>"
+    )]
     pub async fn get_groups_data_contracts_with_proof_info(
         &self,
-        data_contract_ids: Vec<String>,
+        #[wasm_bindgen(js_name = "dataContractIds")]
+        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
+        data_contract_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let contracts_map = Map::new();
         let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
         let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
-        for contract_id_str in data_contract_ids {
-            let contract_id = Identifier::from_string(
-                &contract_id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid contract ID '{}': {}",
-                    contract_id_str, e
-                ))
-            })?;
+        let contract_identifiers = identifiers_from_js(data_contract_ids, "contract ID")?;
+
+        for contract_id in contract_identifiers {
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
             // Fetch all groups for this contract with proof
@@ -840,38 +1157,20 @@ fn insert_member(
 
 fn collect_group_members_map(
     group: &Group,
-    member_ids: &Option<Vec<String>>,
-    start_at: &Option<String>,
-    limit: Option<u32>,
+    member_ids: &Option<Vec<Identifier>>,
+    start_at: &Option<Identifier>,
+    limit: Option<u16>,
 ) -> Result<Map, WasmSdkError> {
     let members_map = Map::new();
 
     if let Some(requested_ids) = member_ids {
-        for id_str in requested_ids {
-            let identifier = Identifier::from_string(
-                id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid member identity ID: {}", e))
-            })?;
-
-            if let Ok(power) = group.member_power(identifier) {
-                insert_member(&members_map, identifier, power)?;
+        for identifier in requested_ids {
+            if let Ok(power) = group.member_power(*identifier) {
+                insert_member(&members_map, *identifier, power)?;
             }
         }
     } else {
-        let mut start_identifier = None;
-        if let Some(start_id) = start_at {
-            let identifier = Identifier::from_string(
-                start_id,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid start identity ID: {}", e))
-            })?;
-            start_identifier = Some(identifier);
-        }
+        let start_identifier = *start_at;
 
         let mut added = 0usize;
         for (identifier, power) in group.members().iter() {

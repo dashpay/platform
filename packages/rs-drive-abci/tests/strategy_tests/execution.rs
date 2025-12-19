@@ -30,7 +30,7 @@ use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
 use drive_abci::platform_types::signature_verification_quorum_set::{Quorums, SigningQuorum};
 use drive_abci::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use drive_abci::rpc::core::MockCoreRPCLike;

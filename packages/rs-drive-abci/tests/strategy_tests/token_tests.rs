@@ -41,7 +41,7 @@ mod tests {
     use dpp::state_transition::batch_transition::BatchTransition;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType, OptionalSingleIdentityPublicKeyOutcome};
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::frequency::Frequency;

@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_status_response::{get_status_response_v0, GetStatusResponseV0};
@@ -15,9 +15,7 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
     ) -> Result<QueryValidationResult<GetStatusResponseV0>, Error> {
         let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
-        let next_epoch_version = match platform_state {
-            PlatformState::V0(state) => state.next_epoch_protocol_version(),
-        };
+        let next_epoch_version = platform_state.next_epoch_protocol_version();
 
         let version = get_status_response_v0::Version {
             protocol: Some(get_status_response_v0::version::Protocol {

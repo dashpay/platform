@@ -36,6 +36,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_identity_id: &JsValue,
         revision: Revision,
         nonce: IdentityNonce,
@@ -43,14 +44,14 @@ impl IdentityUpdateTransitionWasm {
         disable_public_keys: Vec<KeyID>,
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();
 
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_js_value(js_add_public_keys)?;
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
-                identity_id: identity_id.into(),
+                identity_id,
                 revision,
                 nonce,
                 add_public_keys: add_public_keys
@@ -138,9 +139,13 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
-    pub fn set_identity_identifier(&mut self, js_identity_id: &JsValue) -> WasmDppResult<()> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
-        self.0.set_identity_id(identity_id.into());
+    pub fn set_identity_identifier(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identity_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();
+        self.0.set_identity_id(identity_id);
         Ok(())
     }
 
