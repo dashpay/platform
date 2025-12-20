@@ -1867,6 +1867,7 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "reopen",
+ "rocksdb",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
