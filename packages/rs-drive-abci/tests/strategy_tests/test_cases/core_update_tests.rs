@@ -12,7 +12,7 @@ mod tests {
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
 
     #[test]
     fn run_chain_random_bans() {
@@ -21,6 +21,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -128,6 +129,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
@@ -221,6 +223,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,

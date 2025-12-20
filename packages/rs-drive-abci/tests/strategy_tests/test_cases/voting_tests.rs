@@ -36,7 +36,7 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType, ResourceVoteOp, VoteAction};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use strategy_tests::{StartIdentities, Strategy};
+    use strategy_tests::{StartIdentities, StartAddresses, Strategy};
     use crate::addresses_with_balance::AddressesWithBalance;
 
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
@@ -141,6 +141,7 @@ mod tests {
                     hard_coded: start_identities.clone(),
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer.clone()),
@@ -462,6 +463,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -733,6 +735,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -848,6 +851,7 @@ mod tests {
                         },
                     }],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
@@ -1084,6 +1088,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -1204,6 +1209,7 @@ mod tests {
                         },
                     }],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
@@ -1447,6 +1453,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -1579,6 +1586,7 @@ mod tests {
                         },
                     }],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
@@ -1842,6 +1850,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer),
@@ -1974,6 +1983,7 @@ mod tests {
                         },
                     }],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
@@ -2246,6 +2256,7 @@ mod tests {
                     hard_coded: start_identities,
                     ..Default::default()
                 },
+                start_addresses: StartAddresses::default(),
                 identity_inserts: Default::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(simple_signer.clone()),
@@ -2395,6 +2406,7 @@ mod tests {
                         },
                     }],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: voting_signer,
@@ -2592,6 +2604,7 @@ mod tests {
                     start_contracts: vec![],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: None,
@@ -2719,6 +2732,7 @@ mod tests {
                         },
                     ],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: Some(simple_signer),
@@ -2770,6 +2784,7 @@ mod tests {
                     start_contracts: vec![],
                     operations: vec![],
                     start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                     identity_inserts: Default::default(),
                     identity_contract_nonce_gaps: None,
                     signer: None,

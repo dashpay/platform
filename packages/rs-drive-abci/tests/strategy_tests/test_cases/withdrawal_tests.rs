@@ -30,7 +30,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
 
     fn asset_unlock_index(tx: &Transaction) -> u64 {
         let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {
@@ -60,6 +60,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -248,6 +249,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer.clone()),
@@ -271,6 +273,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer),
@@ -751,6 +754,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -937,6 +941,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer.clone()),
@@ -960,6 +965,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer),
@@ -1465,6 +1471,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 10..11,
@@ -1686,6 +1693,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer.clone()),
@@ -1709,6 +1717,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer),
@@ -2185,6 +2194,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 10..11,
@@ -2406,6 +2416,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer.clone()),
@@ -2429,6 +2440,7 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: Some(signer),

@@ -13,7 +13,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{IdentityUpdateOp, Operation, OperationType};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
     #[test]
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
@@ -29,6 +29,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -122,6 +123,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,

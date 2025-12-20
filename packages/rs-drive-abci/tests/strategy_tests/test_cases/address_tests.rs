@@ -15,7 +15,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_address_transitions() {
@@ -48,6 +48,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -131,6 +132,7 @@ mod tests {
                     },
                 }],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -262,6 +264,7 @@ mod tests {
                     },
                 ],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
                 identity_contract_nonce_gaps: None,
                 signer: None,
