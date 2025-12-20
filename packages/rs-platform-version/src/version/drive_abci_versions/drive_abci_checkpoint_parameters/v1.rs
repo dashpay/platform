@@ -3,5 +3,5 @@ use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::Drive
 pub const DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1: DriveAbciCheckpointParameters =
     DriveAbciCheckpointParameters {
         frequency_seconds: 600, // 10 minutes
-        num_checkpoints: 3,     //
+        num_checkpoints: 3,     // We keep at most 3 checkpoints at a time
     };
