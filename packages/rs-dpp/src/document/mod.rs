@@ -42,20 +42,26 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 
-#[cfg(feature = "document-serde-conversion")]
-use serde::{Deserialize, Serialize};
-
 use std::fmt;
 use std::fmt::Formatter;
 
 #[derive(Clone, Debug, PartialEq, From)]
 #[cfg_attr(
-    feature = "document-serde-conversion",
-    derive(Serialize, Deserialize),
+    any(
+        feature = "document-serde-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
+    derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$version")
 )]
 pub enum Document {
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "0")
+    )]
     V0(DocumentV0),
 }
 

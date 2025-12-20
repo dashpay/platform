@@ -242,6 +242,7 @@ data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
 data-contract-json-conversion = [
   "data-contract-value-conversion",
+  "data-contract-serde-conversion",
   "platform-value-json",
 ]
 data-contract-cbor-conversion = [

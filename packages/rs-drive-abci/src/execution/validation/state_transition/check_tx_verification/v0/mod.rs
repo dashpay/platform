@@ -23,9 +23,13 @@ use crate::execution::validation::state_transition::processor::identity_balance:
 use crate::execution::validation::state_transition::processor::identity_based_signature::StateTransitionIdentityBasedSignatureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::{StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityNonceValidationV0};
 use crate::execution::validation::state_transition::processor::is_allowed::StateTransitionIsAllowedValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 
+/// Changes the state transition to the execution event.
+/// As this is for check tx it normally does not need to be versioned.
+/// We keep the version here just in case for a future radical change.
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
@@ -255,6 +259,29 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
                 Some(action)
+            } else {
+                None
+            };
+
+            let action = if state_transition.validates_full_state_on_check_tx() {
+                // Validating structure
+                let result = state_transition.validate_state(
+                    action,
+                    platform,
+                    ValidationMode::CheckTx,
+                    platform.state.last_block_info(),
+                    &mut state_transition_execution_context,
+                    None,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+                result.data
             } else {
                 None
             };

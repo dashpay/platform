@@ -44,6 +44,13 @@ pub(crate) trait StateTransitionStateValidation: StateTransitionActionTransforme
     fn has_state_validation(&self) -> bool {
         true
     }
+
+    /// Validates full state on check tx, this is only the case for masternode voting.
+    /// This is because masternodes do not pay for the voting, so we need to make sure they can
+    /// actually vote
+    fn validates_full_state_on_check_tx(&self) -> bool {
+        false
+    }
 }
 
 impl StateTransitionStateValidation for StateTransition {

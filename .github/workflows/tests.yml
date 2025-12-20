@@ -7,7 +7,6 @@ on:
     branches:
       - master
       - "v*-dev"
-      - "feat/platformAddresses" # TODO: remove
   push:
     branches:
       - master

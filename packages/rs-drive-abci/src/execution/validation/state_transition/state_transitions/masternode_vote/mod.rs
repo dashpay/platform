@@ -86,6 +86,10 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
             })),
         }
     }
+
+    fn validates_full_state_on_check_tx(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
