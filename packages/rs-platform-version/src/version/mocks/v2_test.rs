@@ -405,6 +405,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                addresses_branch_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
             },
         },
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

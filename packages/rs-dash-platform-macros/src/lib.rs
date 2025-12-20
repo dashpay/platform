@@ -397,6 +397,85 @@ pub fn proof_only_versioned_grpc_response_derive(input: TokenStream) -> TokenStr
     TokenStream::from(expanded)
 }
 
+/// Implement versioning on gRPC responses for merk proof pattern
+///
+/// This adds implementation of [dapi_grpc::MerkProofVersionedGrpcResponse] to the message.
+/// Used for responses that contain a `merk_proof` field directly (as bytes) instead of a `Proof` message.
+///
+/// ## Requirements
+///
+/// The response must be versioned and contain `merk_proof` as a direct bytes field.
+#[proc_macro_derive(MerkProofVersionedGrpcResponse, attributes(grpc_versions))]
+pub fn merk_proof_versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = parse_macro_input!(input as DeriveInput);
+
+    // Extract attributes to find the number of versions
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
+
+    let name = input.ident;
+    // Generate the names of the nested message and enum types
+    let mod_name = AsSnakeCase(name.to_string()).to_string();
+    let mod_ident = syn::parse_str::<Ident>(&mod_name).expect("parse response ident");
+
+    // Generate match arms for merk_proof method - merk_proof is a direct bytes field
+    let merk_proof_arms = (0..=versions).map(|version| {
+        let version_ident = format_ident!("V{}", version);
+        quote! {
+            #mod_ident::Version::#version_ident(inner) => Ok(&inner.merk_proof),
+        }
+    });
+
+    // Generate match arms for merk_proof_owned method
+    let merk_proof_owned_arms = (0..=versions).map(|version| {
+        let version_ident = format_ident!("V{}", version);
+        quote! {
+            #mod_ident::Version::#version_ident(inner) => Ok(inner.merk_proof),
+        }
+    });
+
+    // Generate the implementation
+    let expanded = quote! {
+        impl crate::platform::MerkProofVersionedGrpcResponse for #name {
+            type Error = ::platform_version::error::PlatformVersionError;
+
+            fn merk_proof(&self) -> Result<&Vec<u8>, Self::Error> {
+                match &self.version {
+                    Some(version) => match version {
+                        #( #merk_proof_arms )*
+                    },
+                    _ => Err(::platform_version::error::PlatformVersionError::UnknownVersionError("result did not have a version".to_string())),
+                }
+            }
+
+            fn merk_proof_owned(self) -> Result<Vec<u8>, Self::Error> {
+                match self.version {
+                    Some(version) => match version {
+                        #( #merk_proof_owned_arms )*
+                    },
+                    _ => Err(::platform_version::error::PlatformVersionError::UnknownVersionError("result did not have a version".to_string())),
+                }
+            }
+        }
+    };
+
+    // Return the generated code
+    TokenStream::from(expanded)
+}
+
 /// Implement mocking on gRPC messages
 ///
 /// This adds implementation of [dapi_grpc::mock::Mockable] to the message.

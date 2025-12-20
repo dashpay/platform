@@ -13,22 +13,22 @@ use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
-    GetAddressInfoResponse, GetAddressesInfosRequest, GetAddressesInfosResponse,
-    GetAddressesTrunkStateRequest, GetAddressesTrunkStateResponse, GetConsensusParamsRequest,
-    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
-    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
-    GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
-    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
-    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
-    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
+    GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
+    GetAddressesTrunkStateResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
+    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -837,6 +837,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_addresses_trunk_state,
             "get_addresses_trunk_state",
+        )
+        .await
+    }
+
+    async fn get_addresses_branch_state(
+        &self,
+        request: Request<GetAddressesBranchStateRequest>,
+    ) -> Result<Response<GetAddressesBranchStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_addresses_branch_state,
+            "get_addresses_branch_state",
         )
         .await
     }

@@ -110,6 +110,8 @@ service Platform {
           returns (GetAddressesInfosResponse);
   rpc getAddressesTrunkState(GetAddressesTrunkStateRequest)
           returns (GetAddressesTrunkStateResponse);
+  rpc getAddressesBranchState(GetAddressesBranchStateRequest)
+          returns (GetAddressesBranchStateResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -2015,10 +2017,11 @@ message GetAddressesTrunkStateResponse {
 }
 
 message GetAddressesBranchStateRequest {
-  message GetAddressesInfosRequestV0 {
-    bytes leaf_address = 1;
+  message GetAddressesBranchStateRequestV0 {
+    bytes key = 1;
+    uint32 depth = 2;
   }
-  oneof version { GetAddressesInfosRequestV0 v0 = 1; }
+  oneof version { GetAddressesBranchStateRequestV0 v0 = 1; }
 }
 
 message GetAddressesBranchStateResponse {
