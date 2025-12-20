@@ -33,7 +33,7 @@ mod tests {
     use platform_version::version::INITIAL_PROTOCOL_VERSION;
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
     #[stack_size(4 * 1024 * 1024)]

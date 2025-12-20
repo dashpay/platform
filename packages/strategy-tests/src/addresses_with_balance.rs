@@ -253,7 +253,7 @@ impl AddressesWithBalance {
         let new_balance = available - taken;
 
         // Get current nonce (staged overrides committed)
-        let (current_nonce, nonce_source) =
+        let (current_nonce, _nonce_source) =
             if let Some((nonce, _)) = self.addresses_in_block_with_new_balance.get(&address) {
                 (*nonce, "in_block_staged")
             } else if let Some((nonce, _)) = self.addresses_with_balance.get(&address) {
@@ -449,14 +449,12 @@ impl AddressesWithBalance {
 
         // Update in staged map if present
         if let Some((nonce, _balance)) = self.addresses_in_block_with_new_balance.get_mut(address) {
-            let old_nonce = *nonce;
             *nonce = new_nonce;
             found = true;
         }
 
         // Also update in committed map if present (to keep them in sync)
         if let Some((nonce, _balance)) = self.addresses_with_balance.get_mut(address) {
-            let old_nonce = *nonce;
             *nonce = new_nonce;
             found = true;
         }

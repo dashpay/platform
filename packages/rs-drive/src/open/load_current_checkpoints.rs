@@ -6,7 +6,7 @@ use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
 use grovedb::GroveDb;
 
-use crate::drive::Checkpoint;
+use crate::drive::{Checkpoint, CheckpointsMap};
 use crate::error::Error;
 
 /// Loads existing checkpoints from the checkpoints directory.
@@ -20,9 +20,7 @@ use crate::error::Error;
 ///
 /// # Returns
 /// * An `ArcSwap` containing a `BTreeMap` of checkpoints keyed by block height
-pub fn load_current_checkpoints<P: AsRef<Path>>(
-    db_path: P,
-) -> Result<ArcSwap<BTreeMap<BlockHeight, (TimestampMillis, Arc<Checkpoint>)>>, Error> {
+pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<CheckpointsMap, Error> {
     let checkpoints_dir = db_path.as_ref().join("checkpoints");
 
     let mut checkpoints = BTreeMap::new();

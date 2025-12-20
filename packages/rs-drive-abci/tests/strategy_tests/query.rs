@@ -321,7 +321,7 @@ mod tests {
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 

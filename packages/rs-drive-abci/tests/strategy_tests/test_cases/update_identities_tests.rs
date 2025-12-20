@@ -13,7 +13,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{IdentityUpdateOp, Operation, OperationType};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
     #[test]
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {

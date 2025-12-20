@@ -21,7 +21,7 @@ mod tests {
     use itertools::Itertools;
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
     #[test]
     fn run_chain_core_height_randomly_increasing() {
         let strategy = NetworkStrategy {
