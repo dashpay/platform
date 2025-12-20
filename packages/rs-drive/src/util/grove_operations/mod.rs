@@ -520,3 +520,14 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
         }
     }
 }
+
+/// Specifies which GroveDB instance to use for a query
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroveDBToUse {
+    /// Use the current (main) GroveDB
+    Current,
+    /// Use the latest checkpoint
+    LatestCheckpoint,
+    /// Use a specific checkpoint at the given block height
+    Checkpoint(u64),
+}

@@ -34,11 +34,9 @@ impl Drive {
             .basic
             .grove_get_proved_branch_chunk_query
         {
-            0 => self.grove_get_proved_branch_chunk_query_v0(
-                query,
-                drive_operations,
-                drive_version,
-            ),
+            0 => {
+                self.grove_get_proved_branch_chunk_query_v0(query, drive_operations, drive_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_proved_branch_chunk_query".to_string(),
                 known_versions: vec![0],

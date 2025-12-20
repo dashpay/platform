@@ -16,7 +16,11 @@ impl Drive {
             .address_funds
             .address_funds_query_max_depth;
 
-        let query = PathTrunkChunkQuery { path, max_depth };
+        let query = PathTrunkChunkQuery {
+            path,
+            max_depth,
+            min_depth: None,
+        };
 
         let (root_hash, result) = GroveDb::verify_trunk_chunk_proof(
             proof,

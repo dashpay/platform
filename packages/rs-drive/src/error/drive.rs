@@ -205,4 +205,12 @@ pub enum DriveError {
     /// Invalid input provided
     #[error("invalid input: {0}")]
     InvalidInput(String),
+
+    /// No checkpoints available
+    #[error("no checkpoints available")]
+    NoCheckpointsAvailable,
+
+    /// Checkpoint not found for specified block height
+    #[error("checkpoint not found for block height: {0}")]
+    CheckpointNotFound(u64),
 }

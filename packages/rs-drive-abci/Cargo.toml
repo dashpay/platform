@@ -106,7 +106,7 @@ dash-platform-macros = { path = "../rs-dash-platform-macros" }
 libc = "0.2"
 
 # For tests of grovedb verify
-rocksdb = { version = "0.23.0" }
+#rocksdb = { version = "0.23.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]

@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::GroveDBToUse;
 use dpp::version::PlatformVersion;
 use grovedb::PathTrunkChunkQuery;
 
@@ -18,14 +19,28 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let path = Self::clear_addresses_path();
+        let min_depth = platform_version
+            .drive
+            .methods
+            .address_funds
+            .address_funds_query_min_depth;
         let max_depth = platform_version
             .drive
             .methods
             .address_funds
             .address_funds_query_max_depth;
 
-        let query = PathTrunkChunkQuery { path, max_depth };
+        let query = PathTrunkChunkQuery {
+            path,
+            min_depth: Some(min_depth),
+            max_depth,
+        };
 
-        self.grove_get_proved_trunk_chunk_query(&query, drive_operations, &platform_version.drive)
+        self.grove_get_proved_trunk_chunk_query(
+            &query,
+            GroveDBToUse::LatestCheckpoint,
+            drive_operations,
+            &platform_version.drive,
+        )
     }
 }

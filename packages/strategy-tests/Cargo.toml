@@ -44,6 +44,3 @@ platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
-
-# For tests of grovedb verify
-rocksdb = { version = "0.23.0" }

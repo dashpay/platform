@@ -1,8 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use grovedb::{GroveDb, GroveBranchQueryResult, PathBranchChunkQuery};
-use grovedb_merk::CryptoHash;
+use grovedb::{GroveBranchQueryResult, GroveDb, PathBranchChunkQuery};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -10,7 +9,7 @@ impl Drive {
         proof: &[u8],
         key: Vec<u8>,
         depth: u8,
-        expected_root_hash: CryptoHash,
+        expected_root_hash: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<GroveBranchQueryResult, Error> {
         let min_depth = platform_version

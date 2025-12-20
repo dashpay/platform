@@ -122,6 +122,8 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosRequest",
     ];
 
+    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
+
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
@@ -177,8 +179,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosResponse",
     ];
 
+    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
+
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
     check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
+    check_unique(&PROOF_ONLY_VERSIONED_REQUESTS).expect("PROOF_ONLY_VERSIONED_REQUESTS");
+    check_unique(&PROOF_ONLY_VERSIONED_RESPONSES).expect("PROOF_ONLY_VERSIONED_RESPONSES");
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
@@ -190,12 +196,32 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
+    // Derive ProofOnlyVersionedGrpcMessage on requests
+    for msg in PROOF_ONLY_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::ProofOnlyVersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
     // Derive VersionedGrpcMessage and VersionedGrpcResponse on responses
     for msg in VERSIONED_RESPONSES {
         platform = platform
             .message_attribute(
                 msg,
                 r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and VersionedGrpcResponse on responses
+    for msg in PROOF_ONLY_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::ProofOnlyVersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }

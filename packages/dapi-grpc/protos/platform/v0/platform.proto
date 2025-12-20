@@ -108,6 +108,8 @@ service Platform {
           returns (GetAddressInfoResponse);
   rpc getAddressesInfos(GetAddressesInfosRequest)
           returns (GetAddressesInfosResponse);
+  rpc getAddressesTrunkState(GetAddressesTrunkStateRequest)
+          returns (GetAddressesTrunkStateResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1997,3 +1999,33 @@ message GetAddressesInfosResponse {
   }
   oneof version { GetAddressesInfosResponseV0 v0 = 1; }
 }
+
+message GetAddressesTrunkStateRequest {
+  message GetAddressesTrunkStateRequestV0 {
+  }
+  oneof version { GetAddressesTrunkStateRequestV0 v0 = 1; }
+}
+
+message GetAddressesTrunkStateResponse {
+  message GetAddressesTrunkStateResponseV0 {
+    Proof proof = 2;
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetAddressesTrunkStateResponseV0 v0 = 1; }
+}
+
+message GetAddressesBranchStateRequest {
+  message GetAddressesInfosRequestV0 {
+    bytes leaf_address = 1;
+  }
+  oneof version { GetAddressesInfosRequestV0 v0 = 1; }
+}
+
+message GetAddressesBranchStateResponse {
+  message GetAddressesBranchStateResponseV0 {
+    bytes merk_proof = 2;
+  }
+  oneof version { GetAddressesBranchStateResponseV0 v0 = 1; }
+}
+
+

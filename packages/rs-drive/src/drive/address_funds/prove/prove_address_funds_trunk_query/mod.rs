@@ -70,10 +70,8 @@ impl Drive {
             .address_funds
             .prove_address_funds_trunk_query
         {
-            0 => self.prove_address_funds_trunk_query_operations_v0(
-                drive_operations,
-                platform_version,
-            ),
+            0 => self
+                .prove_address_funds_trunk_query_operations_v0(drive_operations, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_address_funds_trunk_query_operations".to_string(),
                 known_versions: vec![0],
