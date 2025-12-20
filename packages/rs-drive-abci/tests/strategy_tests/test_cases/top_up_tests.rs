@@ -14,7 +14,7 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_top_up_identities() {

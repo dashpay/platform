@@ -12,7 +12,7 @@ mod tests {
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use strategy_tests::frequency::Frequency;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_random_bans() {

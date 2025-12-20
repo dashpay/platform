@@ -36,7 +36,7 @@ mod tests {
     };
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use strategy_tests::transitions::create_state_transitions_for_identities;
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
     fn run_chain_one_identity_in_solitude_first_protocol_version() {

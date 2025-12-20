@@ -30,7 +30,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use strategy_tests::frequency::Frequency;
     use strategy_tests::operations::{Operation, OperationType};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     fn asset_unlock_index(tx: &Transaction) -> u64 {
         let Some(AssetUnlockPayloadType(ref payload)) = tx.special_transaction_payload else {

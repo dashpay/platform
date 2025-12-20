@@ -6,7 +6,7 @@ mod tests {
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,

@@ -116,6 +116,10 @@ impl Drop for Checkpoint {
     }
 }
 
+/// Type alias for the checkpoints map wrapped in ArcSwap for atomic updates
+#[cfg(feature = "server")]
+pub type CheckpointsMap = ArcSwap<BTreeMap<BlockHeight, (TimestampMillis, Arc<Checkpoint>)>>;
+
 /// Drive struct
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct Drive {
@@ -131,7 +135,7 @@ pub struct Drive {
 
     /// Drive Checkpoints
     #[cfg(feature = "server")]
-    pub checkpoints: ArcSwap<BTreeMap<BlockHeight, (TimestampMillis, Arc<Checkpoint>)>>,
+    pub checkpoints: CheckpointsMap,
 }
 
 // The root tree structure is very important!
