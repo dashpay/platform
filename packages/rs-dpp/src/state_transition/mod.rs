@@ -45,7 +45,6 @@ mod traits;
 
 // pub mod state_transition_fee;
 
-#[cfg(feature = "state-transition-validation")]
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;

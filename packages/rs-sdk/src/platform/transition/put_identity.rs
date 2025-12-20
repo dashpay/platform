@@ -105,7 +105,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
                 asset_lock_proof,
                 asset_lock_proof_private_key,
                 signer,
-                settings.clone(),
+                settings,
             )
             .await?;
 

@@ -215,6 +215,7 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
+    use std::ops::Div;
 
     #[test]
     fn test_identity_create_validation_first_protocol_version() {
@@ -1198,10 +1199,15 @@ mod tests {
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let base_cost = min_fees.identity_create_base_cost;
+        let keys_extra_cost = base_cost
+            .saturating_add(min_fees.identity_key_in_creation_cost.saturating_mul(2))
+            .div(1000);
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
             Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
-            Some(220000),
+            Some(220000 + keys_extra_cost),
         );
 
         let identifier = asset_lock_proof

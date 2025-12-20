@@ -251,8 +251,10 @@ mod tests {
         assert_matches!(
             result.errors.as_slice(),
             [crate::consensus::ConsensusError::BasicError(
-                BasicError::OverflowError(err)
-            )] if err.message() == "Input sum overflow"
+                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(
+                    InvalidCreditWithdrawalTransitionCoreFeeError { .. }
+                )
+            )]
         );
     }
 }

@@ -24,7 +24,7 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "8f97c4b7599849ba048cdd7ef98276966b71e1fd", features = [
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", features = [
   "std",
   "secp-recovery",
   "rand",
@@ -32,10 +32,10 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "8f97c4b759
   "serde",
   "eddsa",
 ], default-features = false }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "8f97c4b7599849ba048cdd7ef98276966b71e1fd", optional = true }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "8f97c4b7599849ba048cdd7ef98276966b71e1fd", optional = true }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "8f97c4b7599849ba048cdd7ef98276966b71e1fd", optional = true }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "8f97c4b7599849ba048cdd7ef98276966b71e1fd", optional = true }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
 
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
@@ -131,7 +131,6 @@ all_features = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",
@@ -186,7 +185,6 @@ all_features_without_client = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",

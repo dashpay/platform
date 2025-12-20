@@ -17,7 +17,6 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::identity::signer::Signer;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
     use dpp::serialization::PlatformSerializable;

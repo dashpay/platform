@@ -17,7 +17,6 @@ mod tests {
 
     use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
-    use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
 
     use crate::addresses_with_balance::AddressesWithBalance;
