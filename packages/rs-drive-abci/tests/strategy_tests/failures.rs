@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
+    use dash_platform_macros::stack_size;
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
 
@@ -21,6 +22,7 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
+    #[stack_size(4*1024*1024)]
     fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
