@@ -1,11 +1,15 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
+use crate::config::DriveConfig;
+#[cfg(feature = "server")]
+use arc_swap::ArcSwap;
+use dpp::prelude::{BlockHeight, TimestampMillis};
+#[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 use std::fmt;
-
-#[cfg(any(feature = "server", feature = "verify"))]
-use crate::config::DriveConfig;
 
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
@@ -69,6 +73,49 @@ use crate::cache::DriveCache;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
+/// A checkpoint wrapping a GroveDb instance that can optionally clean up its directory on drop.
+#[cfg(feature = "server")]
+pub struct Checkpoint {
+    /// The GroveDb instance for this checkpoint
+    pub grove_db: GroveDb,
+    /// The path to the checkpoint directory (for cleanup on drop)
+    path: PathBuf,
+    /// Whether to delete the checkpoint directory when this checkpoint is dropped
+    marked_for_deletion: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(feature = "server")]
+impl Checkpoint {
+    /// Creates a new Checkpoint with the given GroveDb and path.
+    /// By default, the checkpoint is not marked for deletion.
+    pub fn new(grove_db: GroveDb, path: PathBuf) -> Self {
+        Self {
+            grove_db,
+            path,
+            marked_for_deletion: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// Marks this checkpoint for deletion when it is dropped.
+    pub fn mark_for_deletion(&self) {
+        self.marked_for_deletion
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+#[cfg(feature = "server")]
+impl Drop for Checkpoint {
+    fn drop(&mut self) {
+        // Only clean up the checkpoint directory if marked for deletion
+        if self
+            .marked_for_deletion
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
 /// Drive struct
 #[cfg(any(feature = "server", feature = "verify"))]
 pub struct Drive {
@@ -81,6 +128,10 @@ pub struct Drive {
     /// Drive Cache
     #[cfg(feature = "server")]
     pub cache: DriveCache,
+
+    /// Drive Checkpoints
+    #[cfg(feature = "server")]
+    pub checkpoints: ArcSwap<BTreeMap<BlockHeight, (TimestampMillis, Arc<Checkpoint>)>>,
 }
 
 // The root tree structure is very important!

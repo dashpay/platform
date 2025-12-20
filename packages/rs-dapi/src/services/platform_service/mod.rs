@@ -531,4 +531,16 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetAddressesInfosRequest,
         dapi_grpc::platform::v0::GetAddressesInfosResponse
     );
+
+    drive_method!(
+        get_addresses_trunk_state,
+        dapi_grpc::platform::v0::GetAddressesTrunkStateRequest,
+        dapi_grpc::platform::v0::GetAddressesTrunkStateResponse
+    );
+
+    drive_method!(
+        get_addresses_branch_state,
+        dapi_grpc::platform::v0::GetAddressesBranchStateRequest,
+        dapi_grpc::platform::v0::GetAddressesBranchStateResponse
+    );
 }

@@ -19,6 +19,10 @@ pub struct DriveAddressFundsMethodVersions {
     pub fetch_balances_with_nonces: FeatureVersion,
     pub prove_balance_and_nonce: FeatureVersion,
     pub prove_balances_with_nonces: FeatureVersion,
+    pub prove_address_funds_trunk_query: FeatureVersion,
+    pub prove_address_funds_branch_query: FeatureVersion,
+    pub address_funds_query_min_depth: u8,
+    pub address_funds_query_max_depth: u8,
     pub cost_estimation: DriveAddressFundsCostEstimationMethodVersions,
 }
 

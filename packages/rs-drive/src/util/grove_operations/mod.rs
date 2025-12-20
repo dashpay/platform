@@ -48,6 +48,12 @@ pub mod grove_get_raw_path_query;
 /// Proved path query in grove
 pub mod grove_get_proved_path_query;
 
+/// Proved branch chunk query in grove
+pub mod grove_get_proved_branch_chunk_query;
+
+/// Proved trunk chunk query in grove
+pub mod grove_get_proved_trunk_chunk_query;
+
 /// Get total value from sum tree in grove
 pub mod grove_get_sum_tree_total_value;
 
@@ -513,4 +519,15 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
             }
         }
     }
+}
+
+/// Specifies which GroveDB instance to use for a query
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroveDBToUse {
+    /// Use the current (main) GroveDB
+    Current,
+    /// Use the latest checkpoint
+    LatestCheckpoint,
+    /// Use a specific checkpoint at the given block height
+    Checkpoint(u64),
 }

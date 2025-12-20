@@ -122,6 +122,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosRequest",
     ];
 
+    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
+
+    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesBranchStateRequest"];
+
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
@@ -177,8 +181,16 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosResponse",
     ];
 
+    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
+
+    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesBranchStateResponse"];
+
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
     check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
+    check_unique(&PROOF_ONLY_VERSIONED_REQUESTS).expect("PROOF_ONLY_VERSIONED_REQUESTS");
+    check_unique(&PROOF_ONLY_VERSIONED_RESPONSES).expect("PROOF_ONLY_VERSIONED_RESPONSES");
+    check_unique(&MERK_PROOF_VERSIONED_REQUESTS).expect("MERK_PROOF_VERSIONED_REQUESTS");
+    check_unique(&MERK_PROOF_VERSIONED_RESPONSES).expect("MERK_PROOF_VERSIONED_RESPONSES");
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
@@ -190,12 +202,52 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
+    // Derive ProofOnlyVersionedGrpcMessage on requests
+    for msg in PROOF_ONLY_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::ProofOnlyVersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
     // Derive VersionedGrpcMessage and VersionedGrpcResponse on responses
     for msg in VERSIONED_RESPONSES {
         platform = platform
             .message_attribute(
                 msg,
                 r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and ProofOnlyVersionedGrpcResponse on responses
+    for msg in PROOF_ONLY_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::ProofOnlyVersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage on merk proof requests
+    for msg in MERK_PROOF_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and MerkProofVersionedGrpcResponse on responses
+    for msg in MERK_PROOF_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::MerkProofVersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
