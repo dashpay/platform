@@ -1325,7 +1325,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             options.platform.drive.abci.docker.image = 'dashpay/drive:3';
             if (options.platform?.dapi?.api) {
-                options.platform.dapi.api.docker.image = 'dashpay/dapi:3';
+              options.platform.dapi.api.docker.image = 'dashpay/dapi:3';
             }
             options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:3';
 
