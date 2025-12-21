@@ -15,6 +15,7 @@ authors = [
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
 base64 = "0.22.1"
+bech32 = "0.11"
 bs58 = "0.5"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
@@ -23,17 +24,18 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", features = [
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", features = [
   "std",
   "secp-recovery",
   "rand",
   "signer",
   "serde",
+  "eddsa",
 ], default-features = false }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
 
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
@@ -54,7 +56,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
-thiserror = { version = "2.0.12" }
+thiserror = { version = "2.0.17" }
 data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
@@ -129,7 +131,6 @@ all_features = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",
@@ -184,7 +185,6 @@ all_features_without_client = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",

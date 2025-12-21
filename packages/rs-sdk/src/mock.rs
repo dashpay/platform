@@ -29,7 +29,7 @@ mod requests;
 pub mod sdk;
 
 // Mockable reexport is needed even if mocks feature is disabled - it just does nothing.
-// Otherwise  dapi_grpc_macros::Mockable fails.
+// Otherwise  dash_platform_macros::Mockable fails.
 // TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and dash-sdk
 pub use dapi_grpc::mock::Mockable;
 // MockResponse is needed even if mocks feature is disabled - it just does nothing.

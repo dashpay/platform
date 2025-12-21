@@ -11,7 +11,7 @@ use crate::platform::Identifier;
 use crate::Error;
 
 /// Request that is used to query identities' contract keys
-#[derive(Debug, Clone, dapi_grpc_macros::Mockable)]
+#[derive(Debug, Clone, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentitiesContractKeysQuery {
     /// The identities' identifiers that we want to query

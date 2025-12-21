@@ -78,7 +78,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(200000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(228000);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
       const assetLockProof = await client.platform.dpp.identity.createInstantAssetLockProof(
@@ -117,7 +117,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(200000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(228000);
 
       const account = await client.getWalletAccount();
 
@@ -168,7 +168,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(210000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(238000);
 
       const account = await client.getWalletAccount();
 
@@ -261,7 +261,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(228000);
 
         const account = await client.getWalletAccount();
 
@@ -341,7 +341,7 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(200000);
+        const lowBalanceIdentity = await client.platform.identities.register(228000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();
@@ -376,7 +376,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(228000);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await client.platform.dpp.identity
@@ -457,7 +457,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(200000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(228000);
 
         const account = await client.getWalletAccount();
 
@@ -474,7 +474,7 @@ describe('Platform', () => {
 
         // Creating ST that tries to spend the same output
 
-        const anotherIdentity = await client.platform.identities.register(200000);
+        const anotherIdentity = await client.platform.identities.register(228000);
 
         // Additional wait time to mitigate testnet latency
         await waitForSTPropagated();

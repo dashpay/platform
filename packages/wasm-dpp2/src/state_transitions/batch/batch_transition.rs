@@ -19,7 +19,10 @@ use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransiti
 use dpp::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV0, BatchTransitionV1,
 };
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::state_transition::{
+    StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionOwned,
+    StateTransitionSingleSigned,
+};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Debug, Clone, PartialEq)]

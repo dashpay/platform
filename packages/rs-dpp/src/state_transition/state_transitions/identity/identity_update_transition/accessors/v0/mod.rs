@@ -17,5 +17,4 @@ pub trait IdentityUpdateTransitionAccessorsV0 {
     fn public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation];
     fn set_public_key_ids_to_disable(&mut self, disable_public_keys: Vec<KeyID>);
     fn public_key_ids_to_disable(&self) -> &[KeyID];
-    fn owner_id(&self) -> Identifier;
 }

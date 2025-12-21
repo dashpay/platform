@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -15,8 +15,17 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionHasNonceValidationV0, StateTransitionStateValidationV0};
+use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
+use crate::execution::validation::state_transition::processor::addresses_minimum_balance::StateTransitionAddressesMinimumBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_balance::StateTransitionIdentityBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::identity_based_signature::StateTransitionIdentityBasedSignatureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_nonces::{StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityNonceValidationV0};
+use crate::execution::validation::state_transition::processor::is_allowed::StateTransitionIsAllowedValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 
 /// Changes the state transition to the execution event.
 /// As this is for check tx it normally does not need to be versioned.
@@ -35,7 +44,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
-            if state_transition.has_is_allowed_validation(platform_version)? {
+            if state_transition.has_is_allowed_validation()? {
                 let result = state_transition.validate_is_allowed(platform, platform_version)?;
 
                 if !result.is_valid() {
@@ -47,9 +56,51 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
+            if state_transition.has_address_witness_validation(platform_version)? {
+                let result = state_transition.validate_address_witnesses(
+                    &mut state_transition_execution_context,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    // If the witnesses are not valid
+                    // Proposers should remove such transactions from the block
+                    // Other validators should reject blocks with such transactions
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
+            // Start by validating addresses if the transition has input addresses
+            let remaining_address_balances =
+                if state_transition.has_addresses_balances_and_nonces_validation() {
+                    // Here we validate that all input addresses have enough balance
+                    // We also validate that nonces are bumped
+                    let result = state_transition.validate_address_balances_and_nonces(
+                        platform.drive,
+                        &mut state_transition_execution_context,
+                        None,
+                        platform_version,
+                    )?;
+                    if !result.is_valid() {
+                        // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                        // isn't enough balance, either way the transaction should be rejected.
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                    Some(result.into_data()?)
+                } else {
+                    None
+                };
+
             // Only identity top up and identity create do not have nonces validation
-            if state_transition.has_nonce_validation(platform_version)? {
-                let result = state_transition.validate_nonces(
+            if state_transition.has_identity_nonce_validation(platform_version)? {
+                let result = state_transition.validate_identity_nonces(
                     &platform.into(),
                     platform.state.last_block_info(),
                     None,
@@ -118,12 +169,65 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
+            // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
+            // processing amount and the transfer amount.
+            // For other state transitions we only check a min balance for an amount set per version.
+            // This is not done for identity create and identity top up who don't have this check here
+            if state_transition.has_identity_minimum_balance_pre_check_validation() {
+                // Validating that we have sufficient balance for a transfer or withdrawal,
+                // this must happen after validating the signature
+                let identity =
+                    maybe_identity
+                        .as_mut()
+                        .ok_or(ProtocolError::CorruptedCodeExecution(
+                            "identity must be known to validate the balance".to_string(),
+                        ))?;
+
+                let result = state_transition
+                    .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
+            // For address-based state transitions that transfer or withdraw, we have a balance pre-check
+            // that validates addresses have enough remaining balance after the input amounts to cover fees.
+            if state_transition.has_addresses_minimum_balance_pre_check_validation() {
+                // Validating that addresses have sufficient remaining balance for fees,
+                // this must happen after validating the address balances and nonces
+
+                let address_balances = remaining_address_balances.as_ref().ok_or(
+                    ProtocolError::CorruptedCodeExecution(
+                        "address balances must be known to validate the minimum balance"
+                            .to_string(),
+                    ),
+                )?;
+                let result = state_transition.validate_addresses_minimum_balance_pre_check(
+                    address_balances,
+                    platform_version,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
             let action = if state_transition
                 .requires_advanced_structure_validation_with_state_on_check_tx()
             {
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
                     platform.state.last_block_info(),
+                    &remaining_address_balances,
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
                     None,
@@ -159,32 +263,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
-            // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
-            // processing amount and the transfer amount.
-            // For other state transitions we only check a min balance for an amount set per version.
-            // This is not done for identity create and identity top up who don't have this check here
-            if state_transition.has_balance_pre_check_validation() {
-                // Validating that we have sufficient balance for a transfer or withdrawal,
-                // this must happen after validating the signature
-                let identity =
-                    maybe_identity
-                        .as_mut()
-                        .ok_or(ProtocolError::CorruptedCodeExecution(
-                            "identity must be known to validate the balance".to_string(),
-                        ))?;
-
-                let result = state_transition
-                    .validate_minimum_balance_pre_check(identity, platform_version)?;
-
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-            }
-
             let action = if state_transition.validates_full_state_on_check_tx() {
                 // Validating structure
                 let result = state_transition.validate_state(
@@ -214,6 +292,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
                     platform.state.last_block_info(),
+                    &remaining_address_balances,
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
                     None,
@@ -252,7 +331,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         platform,
                         &mut signable_bytes_hasher,
                         state_transition
-                            .required_asset_lock_balance_for_processing_start(platform_version),
+                            .required_asset_lock_balance_for_processing_start(platform_version)?,
                         None,
                         platform_version,
                     )?;
@@ -267,8 +346,33 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
-                if state_transition.has_nonce_validation(platform_version)? {
-                    let result = state_transition.validate_nonces(
+                // Start by validating addresses if the transition has input addresses
+                let remaining_address_balances =
+                    if state_transition.has_addresses_balances_and_nonces_validation() {
+                        // Here we validate that all input addresses have enough balance
+                        // We also validate that nonces are bumped
+                        let result = state_transition.validate_address_balances_and_nonces(
+                            platform.drive,
+                            &mut state_transition_execution_context,
+                            None,
+                            platform_version,
+                        )?;
+                        if !result.is_valid() {
+                            // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                            // isn't enough balance, either way the transaction should be rejected.
+                            return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                        }
+                        Some(result.into_data()?)
+                    } else {
+                        None
+                    };
+
+                if state_transition.has_identity_nonce_validation(platform_version)? {
+                    let result = state_transition.validate_identity_nonces(
                         &platform.into(),
                         platform.state.last_block_info(),
                         None,
@@ -288,6 +392,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
                     platform.state.last_block_info(),
+                    &remaining_address_balances,
                     ValidationMode::RecheckTx,
                     &mut state_transition_execution_context,
                     None,
@@ -302,11 +407,19 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
-                let maybe_identity = platform.drive.fetch_identity_with_balance(
-                    state_transition.owner_id().to_buffer(),
-                    None,
-                    platform_version,
-                )?;
+                let maybe_identity = if state_transition.uses_identity_in_state() {
+                    if let Some(owner_id) = state_transition.owner_id() {
+                        platform.drive.fetch_identity_with_balance(
+                            owner_id.to_buffer(),
+                            None,
+                            platform_version,
+                        )?
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,

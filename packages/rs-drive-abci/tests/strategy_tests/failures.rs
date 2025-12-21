@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
+    use dash_platform_macros::stack_size;
     use std::collections::{BTreeMap, HashMap};
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
@@ -21,6 +22,7 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
+    #[stack_size(4*1024*1024)]
     fn run_chain_insert_one_new_identity_and_a_contract_with_bad_update() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
@@ -47,6 +49,7 @@ mod tests {
                 start_contracts: vec![(contract, Some(BTreeMap::from([(3, contract_update_1)])))],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
                         times_per_block_range: 1..2,
@@ -54,7 +57,6 @@ mod tests {
                     },
                     ..Default::default()
                 },
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -83,7 +85,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,
@@ -136,8 +137,8 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -166,7 +167,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 3000,

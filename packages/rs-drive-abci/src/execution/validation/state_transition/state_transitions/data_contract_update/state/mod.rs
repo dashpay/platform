@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -15,7 +15,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 pub(crate) mod v0;
 
-impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
+impl StateTransitionStateValidation for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,

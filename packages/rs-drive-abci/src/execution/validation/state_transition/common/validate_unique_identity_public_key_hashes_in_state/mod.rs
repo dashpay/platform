@@ -7,8 +7,10 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_not_in_state_v0;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v1::validate_unique_identity_public_key_hashes_not_in_state_v1;
 
 pub mod v0;
+pub mod v1;
 
 pub(crate) fn validate_unique_identity_public_key_hashes_not_in_state(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
@@ -31,9 +33,16 @@ pub(crate) fn validate_unique_identity_public_key_hashes_not_in_state(
             transaction,
             platform_version,
         ),
+        1 => validate_unique_identity_public_key_hashes_not_in_state_v1(
+            identity_public_keys_with_witness,
+            drive,
+            execution_context,
+            transaction,
+            platform_version,
+        ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "validate_unique_identity_public_key_hashes_in_state".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         })),
     }

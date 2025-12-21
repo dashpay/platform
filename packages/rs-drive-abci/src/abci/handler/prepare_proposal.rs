@@ -192,10 +192,17 @@ where
     let mut tx_results = Vec::new();
     let mut tx_records = Vec::new();
 
-    for (state_transition_execution_result, raw_state_transition) in state_transitions_result
-        .into_execution_results()
-        .into_iter()
-        .zip(request.txs)
+    let execution_results = state_transitions_result.into_execution_results();
+    // sanity check
+    if execution_results.len() != request.txs.len() {
+        return Err(Error::Execution(
+            crate::error::execution::ExecutionError::CorruptedCodeExecution(
+                "Size of execution results must match number of transactions in request",
+            ),
+        ));
+    }
+    for (state_transition_execution_result, raw_state_transition) in
+        execution_results.into_iter().zip(request.txs)
     {
         let tx_action = match &state_transition_execution_result {
             StateTransitionExecutionResult::SuccessfulExecution(..) => TxAction::Unmodified,

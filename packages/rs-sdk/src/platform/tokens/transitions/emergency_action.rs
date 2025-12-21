@@ -48,7 +48,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - The group authorization is insufficient
-    pub async fn token_emergency_action<S: Signer>(
+    pub async fn token_emergency_action<S: Signer<IdentityPublicKey>>(
         &self,
         emergency_action_transition_builder: TokenEmergencyActionTransitionBuilder,
         signing_key: &IdentityPublicKey,

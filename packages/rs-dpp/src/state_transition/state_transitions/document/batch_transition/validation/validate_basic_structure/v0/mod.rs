@@ -32,8 +32,8 @@ use crate::state_transition::batch_transition::token_set_price_for_direct_purcha
 use crate::state_transition::batch_transition::token_transfer_transition::validate_structure::TokenTransferTransitionStructureValidation;
 use crate::state_transition::batch_transition::token_unfreeze_transition::validate_structure::TokenUnfreezeTransitionStructureValidation;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::{DocumentTransition, DocumentTransitionV0Methods};
-use crate::state_transition::StateTransitionLike;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_burn_transition::validate_structure::TokenBurnTransitionStructureValidation;
+use crate::state_transition::StateTransitionOwned;
 
 impl BatchTransition {
     #[inline(always)]

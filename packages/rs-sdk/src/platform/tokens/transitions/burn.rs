@@ -56,7 +56,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - Insufficient token balance for burning
-    pub async fn token_burn<S: Signer>(
+    pub async fn token_burn<S: Signer<IdentityPublicKey>>(
         &self,
         burn_tokens_transition_builder: TokenBurnTransitionBuilder,
         signing_key: &IdentityPublicKey,
