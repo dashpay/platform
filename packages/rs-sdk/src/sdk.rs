@@ -282,7 +282,7 @@ impl Sdk {
     }
 
     /// Verify response metadata against the current state of the SDK.
-    fn verify_response_metadata(&self, metadata: &ResponseMetadata) -> Result<(), Error> {
+    pub fn verify_response_metadata(&self, metadata: &ResponseMetadata) -> Result<(), Error> {
         if let Some(height_tolerance) = self.metadata_height_tolerance {
             verify_metadata_height(
                 metadata,
@@ -632,7 +632,7 @@ impl Sdk {
 /// - `metadata`: Metadata of the received response
 /// - `now_ms`: Current local time in milliseconds
 /// - `tolerance_ms`: Tolerance in milliseconds
-fn verify_metadata_time(
+pub(crate) fn verify_metadata_time(
     metadata: &ResponseMetadata,
     now_ms: u64,
     tolerance_ms: u64,
