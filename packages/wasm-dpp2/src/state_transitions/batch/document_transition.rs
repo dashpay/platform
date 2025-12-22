@@ -7,7 +7,7 @@ use crate::state_transitions::batch::document_transitions::update_price::Documen
 use crate::enums::batch::batch_enum::BatchTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use dpp::prelude::{Identifier, IdentityNonce, Revision};
+use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
@@ -183,24 +183,3 @@ impl DocumentTransitionWasm {
     }
 }
 
-impl DocumentTransitionWasm {
-    pub fn rs_get_data_contract_id(&self) -> Identifier {
-        self.0.data_contract_id()
-    }
-
-    pub fn rs_get_id(&self) -> Identifier {
-        self.0.get_id()
-    }
-
-    pub fn rs_get_entropy(&self) -> Option<Vec<u8>> {
-        self.0.entropy()
-    }
-
-    pub fn rs_get_revision(&self) -> Option<Revision> {
-        self.0.revision()
-    }
-
-    pub fn rs_get_identity_contract_nonce(&self) -> IdentityNonce {
-        self.0.identity_contract_nonce()
-    }
-}

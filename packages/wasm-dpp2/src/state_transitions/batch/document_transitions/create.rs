@@ -72,7 +72,7 @@ impl DocumentCreateTransitionWasm {
             };
 
         let rs_create_transition = generate_create_transition(
-            document.clone(),
+            &document,
             identity_contract_nonce,
             document.get_document_type_name().to_string(),
             prefunded_voting_balance,

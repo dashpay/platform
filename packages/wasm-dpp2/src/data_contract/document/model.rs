@@ -17,7 +17,6 @@ use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
 use serde_json::json;
-use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -67,26 +66,6 @@ impl DocumentWasm {
     /// Mutable access to the inner document
     pub fn inner_mut(&mut self) -> &mut Document {
         &mut self.document
-    }
-
-    pub fn rs_get_owner_id(&self) -> Identifier {
-        self.document.owner_id()
-    }
-
-    pub fn rs_get_id(&self) -> Identifier {
-        self.document.id()
-    }
-
-    pub fn rs_get_data_contract_id(&self) -> Identifier {
-        self.data_contract_id.into()
-    }
-
-    pub fn rs_get_entropy(&self) -> Option<[u8; 32]> {
-        self.entropy
-    }
-
-    pub fn rs_get_properties(&self) -> BTreeMap<String, Value> {
-        self.document.properties().clone()
     }
 
     pub fn set_data_contract_id(&mut self, data_contract_id: &IdentifierWasm) {
