@@ -54,7 +54,7 @@ pub type FrozenIdentifier = Identifier;
 /// involved identities, and amounts. It is **externally versioned** and marked as `unversioned` in platform serialization,
 /// meaning each variant is self-contained without requiring version dispatching logic.
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize, serde::Serialize, serde::Deserialize,
 )]
 #[platform_serialize(unversioned)]
 pub enum TokenEvent {
