@@ -41,9 +41,9 @@ pub use identity::{
     IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
     MasternodeVoteTransitionWasm, PartialIdentityWasm,
 };
+pub use platform_address::PlatformAddressWasm;
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
-pub use platform_address::PlatformAddressWasm;
 pub use voting::{
     ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
     ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,

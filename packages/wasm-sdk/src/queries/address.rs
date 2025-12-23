@@ -115,7 +115,9 @@ impl WasmSdk {
     )]
     pub async fn get_addresses_infos(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Array<PlatformAddressLike>")] addresses: Vec<JsValue>,
+        #[wasm_bindgen(unchecked_param_type = "Array<PlatformAddressLike>")] addresses: Vec<
+            JsValue,
+        >,
     ) -> Result<Map, WasmSdkError> {
         let platform_addresses: BTreeSet<PlatformAddress> = addresses
             .into_iter()
@@ -156,7 +158,9 @@ impl WasmSdk {
     )]
     pub async fn get_addresses_infos_with_proof_info(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Array<PlatformAddressLike>")] addresses: Vec<JsValue>,
+        #[wasm_bindgen(unchecked_param_type = "Array<PlatformAddressLike>")] addresses: Vec<
+            JsValue,
+        >,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let platform_addresses: BTreeSet<PlatformAddress> = addresses
             .into_iter()

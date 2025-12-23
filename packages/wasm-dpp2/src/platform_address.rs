@@ -264,7 +264,7 @@ impl PlatformAddressWasm {
     pub fn from_bech32m(address: &str) -> WasmDppResult<PlatformAddressWasm> {
         PlatformAddress::from_bech32m_string(address)
             .map(|(addr, _)| PlatformAddressWasm(addr))
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()).into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
     }
 
     /// Creates a PlatformAddress from raw bytes (21 bytes: type byte + 20-byte hash).
@@ -272,7 +272,7 @@ impl PlatformAddressWasm {
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<PlatformAddressWasm> {
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()).into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
     }
 
     /// Creates a PlatformAddress from a hex-encoded string.
@@ -282,7 +282,7 @@ impl PlatformAddressWasm {
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid hex: {}", e)))?;
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()).into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
     }
 
     /// Creates a P2PKH address from a 20-byte public key hash.
@@ -292,8 +292,7 @@ impl PlatformAddressWasm {
             return Err(WasmDppError::invalid_argument(format!(
                 "P2PKH hash must be 20 bytes, got {}",
                 hash.len()
-            ))
-            .into());
+            )));
         }
         let mut arr = [0u8; 20];
         arr.copy_from_slice(&hash);
@@ -307,8 +306,7 @@ impl PlatformAddressWasm {
             return Err(WasmDppError::invalid_argument(format!(
                 "P2SH hash must be 20 bytes, got {}",
                 hash.len()
-            ))
-            .into());
+            )));
         }
         let mut arr = [0u8; 20];
         arr.copy_from_slice(&hash);
