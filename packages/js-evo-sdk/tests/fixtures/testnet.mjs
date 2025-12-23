@@ -17,6 +17,14 @@ export const TEST_IDS = {
   username: 'alice',
   existingUsername: 'therealslimshaddy5',
   epoch: 8635,
+  // Platform address fixtures (21 bytes: type byte + 20-byte hash)
+  // Type 0x00 = P2PKH, Type 0x01 = P2SH
+  // These are test addresses with zero hashes - queries will return undefined if not funded
+  platformAddressBytes: new Uint8Array([0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+  platformAddressesBytesArray: [
+    new Uint8Array([0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    new Uint8Array([0x00, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+  ],
 };
 
 // Optional environment-driven secrets for state-transition tests (skipped by default).

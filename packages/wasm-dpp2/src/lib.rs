@@ -21,6 +21,7 @@ pub mod group;
 pub mod identifier;
 pub mod identity;
 pub mod mock_bls;
+pub mod platform_address;
 pub mod private_key;
 pub mod public_key;
 pub mod state_transitions;
@@ -42,6 +43,7 @@ pub use identity::{
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
+pub use platform_address::PlatformAddressWasm;
 pub use voting::{
     ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
     ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,

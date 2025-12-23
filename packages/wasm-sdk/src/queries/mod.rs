@@ -1,3 +1,4 @@
+pub mod address;
 pub mod data_contract;
 pub mod document;
 pub mod epoch;
@@ -10,6 +11,7 @@ pub(crate) mod utils;
 pub mod voting;
 
 // Re-export all query functions for easy access
+pub use address::AddressInfoWasm;
 pub use group::*;
 
 use js_sys::Uint8Array;
