@@ -75,7 +75,7 @@ impl TryFrom<JsValue> for PlatformAddressWasm {
         }
 
         // Try parsing as bytes
-        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
+        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() {
             let uint8_array = Uint8Array::from(value.clone());
             let bytes = uint8_array.to_vec();
 
