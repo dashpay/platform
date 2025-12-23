@@ -18,6 +18,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Required for NPM publish
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   release-npm:
     name: Release NPM packages
@@ -120,8 +125,10 @@ jobs:
           echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
-      - name: Configure NPM auth token
-        run: yarn config set npmAuthToken ${{ secrets.NPM_TOKEN }}
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+        with:
+          node-version: 24
 
       - name: Publish NPM packages
         run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}
