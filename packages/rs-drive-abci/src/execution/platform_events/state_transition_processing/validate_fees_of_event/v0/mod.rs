@@ -150,7 +150,7 @@ where
                         vec![StateError::IdentityInsufficientBalanceError(
                             IdentityInsufficientBalanceError::new(
                                 identity.id,
-                                balance,
+                                balance_after_principal_operation,
                                 required_balance,
                             ),
                         )
