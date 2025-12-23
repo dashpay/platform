@@ -5,7 +5,6 @@ use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{IntoWasm, JsValueExt, ToSerdeJSONExt};
-use dpp::dashcore::hashes::serde::Serialize;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -18,7 +17,7 @@ use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
-use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
+use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::platform_value::{Value, ValueMap};
 use dpp::prelude::{Identifier, IdentityNonce};
@@ -28,7 +27,6 @@ use dpp::serialization::{
 };
 use dpp::version::PlatformVersion;
 use js_sys::{Object, Reflect};
-use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -106,14 +104,10 @@ impl DataContractWasm {
         full_validation: bool,
         js_platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
         let owner_id: IdentifierWasm = js_owner_id.clone().try_into()?;
 
-        let owner_id_value = Value::from(owner_id.to_base58());
-
-        let schema: Value = serde_wasm_bindgen::from_value(js_schema)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        // Use object format deserializer (handles BigInt/Uint8Array)
+        let schema: Value = serialization::platform_value_from_object(js_schema)?;
 
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
             match js_tokens.is_undefined() {
@@ -134,24 +128,21 @@ impl DataContractWasm {
                 .to_string(),
         );
 
-        let definitions = js_definitions
-            .map(|definitions| serde_wasm_bindgen::from_value(definitions.into()))
-            .transpose()
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        let definitions: Option<Value> = js_definitions
+            .map(|definitions| serialization::platform_value_from_object(definitions.into()))
+            .transpose()?;
 
         let definitions_value = Value::from(definitions);
 
         let data_contract_id =
             DataContract::generate_data_contract_id_v0(owner_id.to_bytes(), identity_nonce);
 
-        let data_contract_id_value = Value::from(data_contract_id.to_string(Base58));
+        let data_contract_id_value = Value::Identifier(data_contract_id.to_buffer());
 
         let config = DataContractConfig::default_for_version(&platform_version.clone())?;
 
-        let config_value = config
-            .serialize(&serializer)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?
-            .with_serde_to_platform_value_map()?;
+        let config_value: Value = dpp::platform_value::to_value(&config)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         let mut contract_value = Value::Map(ValueMap::new());
 
@@ -164,15 +155,20 @@ impl DataContractWasm {
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         contract_value
-            .set_value("config", Value::from(config_value))
+            .set_value("config", config_value)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         contract_value
             .set_value("version", Value::from(1u16))
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
+        let owner_id_bytes: [u8; 32] = owner_id
+            .to_bytes()
+            .try_into()
+            .map_err(|_| WasmDppError::invalid_argument("Invalid owner ID length"))?;
+
         contract_value
-            .set_value("ownerId", owner_id_value)
+            .set_value("ownerId", Value::Identifier(owner_id_bytes))
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         contract_value

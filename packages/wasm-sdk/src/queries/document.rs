@@ -341,7 +341,7 @@ impl WasmSdk {
             match doc_opt {
                 Some(doc) => {
                     let wasm_doc =
-                        DocumentWasm::from_batch(doc, contract_id, doc_type_name.clone(), None);
+                        DocumentWasm::new(doc, contract_id, doc_type_name.clone(), None);
                     documents_map.set(&key, &JsValue::from(wasm_doc));
                 }
                 None => {
@@ -377,7 +377,7 @@ impl WasmSdk {
             match doc_opt {
                 Some(doc) => {
                     let wasm_doc =
-                        DocumentWasm::from_batch(doc, contract_id, doc_type_name.clone(), None);
+                        DocumentWasm::new(doc, contract_id, doc_type_name.clone(), None);
                     documents_map.set(&key, &JsValue::from(wasm_doc));
                 }
                 None => {
@@ -435,7 +435,7 @@ impl WasmSdk {
         // Execute query
         let document = Document::fetch(self.as_ref(), query)
             .await?
-            .map(|doc| DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None));
+            .map(|doc| DocumentWasm::new(doc, contract_id, document_type.to_string(), None));
 
         Ok(document)
     }
@@ -487,7 +487,7 @@ impl WasmSdk {
             Document::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         let document_js = document_result
-            .map(|doc| DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None));
+            .map(|doc| DocumentWasm::new(doc, contract_id, document_type.to_string(), None));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             JsValue::from(document_js),

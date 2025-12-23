@@ -9,25 +9,38 @@ use dpp::document::serialization_traits::{
 };
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::identifier::Identifier;
-use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
+use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::encode;
-use dpp::platform_value::Value;
+use dpp::platform_value::{Value, ValueMapHelper};
 use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
-use serde_json::json;
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// DocumentWasm wraps a Document and adds metadata fields that are not part of the core Document.
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, Deserialize)]
 #[wasm_bindgen(js_name = Document)]
 pub struct DocumentWasm {
+    #[serde(skip_serializing, skip_deserializing, default = "default_document")]
     pub(crate) document: Document,
+    #[serde(rename = "$dataContractId")]
     pub(crate) data_contract_id: IdentifierWasm,
+    #[serde(rename = "$type")]
     pub(crate) document_type_name: String,
+    #[serde(
+        rename = "$entropy",
+        with = "serialization::bytes_b64::option",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub(crate) entropy: Option<[u8; 32]>,
+}
+
+fn default_document() -> Document {
+    Document::V0(DocumentV0::default())
 }
 
 impl From<&DocumentWasm> for Document {
@@ -367,31 +380,33 @@ impl DocumentWasm {
             map.insert("$entropy".to_string(), Value::Bytes(entropy.to_vec()));
         }
         serialization::platform_value_to_object(&Value::Map(
-            map.into_iter()
-                .map(|(k, v)| (Value::Text(k), v))
-                .collect(),
+            map.into_iter().map(|(k, v)| (Value::Text(k), v)).collect(),
         ))
     }
 
     /// Create a Document from a JS object.
     #[wasm_bindgen(js_name = fromObject)]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<DocumentWasm> {
-        let mut map = js_value.with_serde_to_platform_value_map()?;
+        let platform_value = serialization::js_value_to_platform_value(&js_value)?;
 
-        // Extract metadata fields
+        let Value::Map(mut map) = platform_value else {
+            return Err(WasmDppError::invalid_argument("Expected an object"));
+        };
+
+        // Extract metadata fields using ValueMapHelper trait methods
         let data_contract_id = map
-            .remove("$dataContractId")
+            .remove_optional_key("$dataContractId")
             .ok_or_else(|| WasmDppError::invalid_argument("Missing $dataContractId"))?
             .into_identifier()
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let document_type_name = map
-            .remove("$type")
+            .remove_optional_key("$type")
             .ok_or_else(|| WasmDppError::invalid_argument("Missing $type"))?
             .into_text()
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        let entropy = map.remove("$entropy").and_then(|v| {
+        let entropy = map.remove_optional_key("$entropy").and_then(|v| {
             v.into_bytes().ok().and_then(|bytes| {
                 if bytes.len() == 32 {
                     let mut arr = [0u8; 32];
@@ -404,10 +419,7 @@ impl DocumentWasm {
         });
 
         // Create Document from remaining fields
-        let document = Document::from_platform_value(
-            Value::Map(map.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()),
-            PlatformVersion::latest(),
-        )?;
+        let document = Document::from_platform_value(Value::Map(map), PlatformVersion::latest())?;
 
         Ok(DocumentWasm::new(
             document,
@@ -420,68 +432,48 @@ impl DocumentWasm {
     /// Convert to a JSON-compatible JS object with binary fields as strings.
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Use Document's to_json which handles proper JSON serialization
+        // Get document fields as JSON
         let mut json_value = self.document.to_json(PlatformVersion::latest())?;
 
-        // Add metadata fields not in core Document
+        // Serialize wrapper fields using serde and merge into document JSON
+        let wrapper_json = serde_json::to_value(self)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
         let obj = json_value.as_object_mut().ok_or_else(|| {
             WasmDppError::serialization("Expected JSON object from Document::to_json")
         })?;
 
-        let data_contract_id: Identifier = self.data_contract_id.into();
-        obj.insert("$dataContractId".to_string(), json!(data_contract_id));
-        obj.insert("$type".to_string(), json!(self.document_type_name));
-
-        if let Some(entropy) = self.entropy {
-            // Use base58 encoding for entropy (consistent with Identifier encoding)
-            obj.insert("$entropy".to_string(), json!(encode(&entropy, Base58)));
+        if let serde_json::Value::Object(wrapper_obj) = wrapper_json {
+            for (key, value) in wrapper_obj {
+                obj.insert(key, value);
+            }
         }
 
         serialization::json_to_js_value(&json_value)
     }
 
     /// Create a Document from a JSON object.
+    /// JSON format has identifiers as base58 strings.
     #[wasm_bindgen(js_name = fromJSON)]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<DocumentWasm> {
-        let mut map = js_value.with_serde_to_platform_value_map()?;
+        let mut json_value = serialization::js_value_to_json(&js_value)?;
 
-        // Extract metadata fields
-        let data_contract_id = map
-            .remove("$dataContractId")
-            .ok_or_else(|| WasmDppError::invalid_argument("Missing $dataContractId"))?
-            .into_identifier()
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+        // Deserialize wrapper fields using serde
+        let mut wrapper: DocumentWasm = serde_json::from_value(json_value.clone())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let document_type_name = map
-            .remove("$type")
-            .ok_or_else(|| WasmDppError::invalid_argument("Missing $type"))?
-            .into_text()
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        let entropy = map.remove("$entropy").and_then(|v| {
-            v.into_bytes().ok().and_then(|bytes| {
-                if bytes.len() == 32 {
-                    let mut arr = [0u8; 32];
-                    arr.copy_from_slice(&bytes);
-                    Some(arr)
-                } else {
-                    None
-                }
-            })
-        });
+        // Remove wrapper fields from JSON before passing to Document::from_json_value
+        if let serde_json::Value::Object(ref mut obj) = json_value {
+            obj.remove("$dataContractId");
+            obj.remove("$type");
+            obj.remove("$entropy");
+        }
 
         // Create Document from remaining fields
-        let document = Document::from_platform_value(
-            Value::Map(map.into_iter().map(|(k, v)| (Value::Text(k), v)).collect()),
-            PlatformVersion::latest(),
-        )?;
+        wrapper.document =
+            Document::from_json_value::<String, _>(json_value, PlatformVersion::latest())?;
 
-        Ok(DocumentWasm::new(
-            document,
-            data_contract_id,
-            document_type_name,
-            entropy,
-        ))
+        Ok(wrapper)
     }
 
     #[wasm_bindgen(js_name=toBytes)]

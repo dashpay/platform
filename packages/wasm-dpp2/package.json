@@ -41,6 +41,7 @@
   },
   "devDependencies": {
     "assert": "^2.0.0",
+    "bs58": "^6.0.0",
     "buffer": "^6.0.3",
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",

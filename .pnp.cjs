@@ -3128,6 +3128,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/wasm-dpp2", "workspace:packages/wasm-dpp2"],\
           ["assert", "npm:2.0.0"],\
+          ["bs58", "npm:6.0.0"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -6930,6 +6931,13 @@ const RAW_RUNTIME_STATE =
           ["safe-buffer", "npm:5.2.1"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:5.0.1", {\
+        "packageLocation": "./.yarn/cache/base-x-npm-5.0.1-6bc62b5139-6e4f847ef8.zip/node_modules/base-x/",\
+        "packageDependencies": [\
+          ["base-x", "npm:5.0.1"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["base64-js", [\
@@ -7275,6 +7283,14 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["bs58", "npm:4.0.1"],\
           ["base-x", "npm:3.0.11"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:6.0.0", {\
+        "packageLocation": "./.yarn/cache/bs58-npm-6.0.0-cefe3ba27b-7c9bb2b2d9.zip/node_modules/bs58/",\
+        "packageDependencies": [\
+          ["bs58", "npm:6.0.0"],\
+          ["base-x", "npm:5.0.1"]\
         ],\
         "linkType": "HARD"\
       }]\

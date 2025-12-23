@@ -1,6 +1,5 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 
-// bytes_b64 is provided by wasm_dpp2::bytes_b64
 pub mod context_provider;
 pub mod dpns;
 pub mod error;

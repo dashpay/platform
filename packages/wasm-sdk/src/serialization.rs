@@ -24,22 +24,22 @@ macro_rules! impl_wasm_serde_conversions {
         impl $ty {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toObject)]
             pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::to_object(self).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::to_object(self).map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
             pub fn from_object(obj: wasm_bindgen::JsValue) -> Result<$ty, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::from_object(obj).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::from_object(obj).map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
             pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::to_json(self).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::to_json(self).map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
             pub fn from_json(js: wasm_bindgen::JsValue) -> Result<$ty, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::from_json(js).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::from_json(js).map_err($crate::WasmSdkError::from)
             }
         }
     };
@@ -49,22 +49,22 @@ macro_rules! impl_wasm_serde_conversions {
         impl $ty {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toObject)]
             pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::to_object(self).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::to_object(self).map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
             pub fn from_object(obj: wasm_bindgen::JsValue) -> Result<$ty, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::from_object(obj).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::from_object(obj).map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
             pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::to_json(self).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::to_json(self).map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
             pub fn from_json(js: wasm_bindgen::JsValue) -> Result<$ty, $crate::WasmSdkError> {
-                wasm_dpp2::serde_format::from_json(js).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::from_json(js).map_err($crate::WasmSdkError::from)
             }
         }
     };

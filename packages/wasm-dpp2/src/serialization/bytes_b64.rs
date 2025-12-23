@@ -47,3 +47,72 @@ where
         deserializer.deserialize_bytes(BytesVisitor)
     }
 }
+
+/// Generic serde helper for `Option<[u8; N]>` as base64
+pub mod option {
+    use super::*;
+
+    pub fn serialize<S, const N: usize>(
+        value: &Option<[u8; N]>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(bytes) => super::serialize(bytes.as_slice(), serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D, const N: usize>(
+        deserializer: D,
+    ) -> Result<Option<[u8; N]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OptionVisitor<const N: usize>;
+
+        impl<'de, const N: usize> Visitor<'de> for OptionVisitor<N> {
+            type Value = Option<[u8; N]>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "optional {} bytes", N)
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let bytes = super::deserialize(deserializer)?;
+                if bytes.len() == N {
+                    let mut arr = [0u8; N];
+                    arr.copy_from_slice(&bytes);
+                    Ok(Some(arr))
+                } else {
+                    Err(de::Error::custom(format!(
+                        "expected {} bytes, got {}",
+                        N,
+                        bytes.len()
+                    )))
+                }
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+        }
+
+        deserializer.deserialize_option(OptionVisitor::<N>)
+    }
+}

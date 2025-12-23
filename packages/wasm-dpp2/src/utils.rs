@@ -1,50 +1,16 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use anyhow::{Context, anyhow, bail};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use anyhow::{anyhow, bail};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
-use js_sys::{Error as JsError, Function};
+use js_sys::Error as JsError;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use wasm_bindgen::convert::RefFromWasmAbi;
 use wasm_bindgen::{JsCast, JsValue};
 
-#[deprecated(
-    since = "0.1.0",
-    note = "Use serialization::normalize_js_value_for_serde with serde_wasm_bindgen instead"
-)]
-pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
-    // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
-    // so subsequent serde_json parsing can treat them as byte sequences.
-    // Also convert BigInt to strings since JSON.stringify doesn't support BigInt natively.
-    let replacer_func = Function::new_with_args(
-        "key, value",
-        r#"
-        if (typeof value === 'bigint') {
-            return value.toString();
-        }
-        if (value != undefined && value.type === 'Buffer') {
-            return value.data;
-        }
-        if (ArrayBuffer.isView(value)) {
-            return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
-        }
-        if (value instanceof ArrayBuffer) {
-            return Array.from(new Uint8Array(value));
-        }
-        return value;
-    "#,
-    );
-
-    let data_string = js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
-        .map_err(|_| WasmDppError::serialization("Failed to stringify value"))?;
-
-    Ok(data_string.into())
-}
-
+/// Extension trait for extracting error messages from JsValue
 pub trait JsValueExt {
     fn error_message(&self) -> String;
 }
@@ -70,38 +36,22 @@ impl JsValueExt for JsValue {
     }
 }
 
-pub fn with_serde_to_json_value_wasm(data: JsValue) -> WasmDppResult<JsonValue> {
-    // Use direct serde_wasm_bindgen conversion with normalization for BigInt, Buffer, etc.
-    crate::serialization::js_value_to_json(&data)
-}
-
-pub fn with_serde_to_platform_value_wasm(data: &JsValue) -> WasmDppResult<Value> {
-    Ok(with_serde_to_json_value_wasm(data.clone())?.into())
-}
-
+/// Extension trait for converting JsValue to serde/platform values
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> WasmDppResult<JsonValue>;
     fn with_serde_to_platform_value(&self) -> WasmDppResult<Value>;
-    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> WasmDppResult<BTreeMap<String, Value>>;
 }
 
 impl ToSerdeJSONExt for JsValue {
-    /// Converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_json_value(&self) -> WasmDppResult<JsonValue> {
-        with_serde_to_json_value(self.clone())
+        crate::serialization::js_value_to_json(self)
     }
 
-    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value(&self) -> WasmDppResult<Value> {
-        with_serde_to_platform_value(self)
+        Ok(self.with_serde_to_json_value()?.into())
     }
 
-    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> WasmDppResult<BTreeMap<String, Value>> {
         self.with_serde_to_platform_value()?
             .into_btree_string_map()
@@ -109,112 +59,7 @@ impl ToSerdeJSONExt for JsValue {
     }
 }
 
-pub fn to_vec_js<T>(iter: impl IntoIterator<Item = T>) -> Vec<JsValue>
-where
-    T: Into<JsValue>,
-{
-    iter.into_iter().map(|v| v.into()).collect()
-}
-
-#[allow(dead_code)]
-#[deprecated(note = "This function is marked as unused.")]
-#[allow(deprecated)]
-pub fn to_vec_of_serde_values(
-    values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> WasmDppResult<Vec<JsonValue>> {
-    values
-        .into_iter()
-        .map(|v| v.as_ref().with_serde_to_json_value())
-        .collect()
-}
-
-pub fn to_vec_of_platform_values(
-    values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> WasmDppResult<Vec<Value>> {
-    values
-        .into_iter()
-        .map(|v| v.as_ref().with_serde_to_platform_value())
-        .collect()
-}
-
-pub fn with_serde_to_json_value(data: JsValue) -> WasmDppResult<JsonValue> {
-    // Use direct serde_wasm_bindgen conversion with normalization for BigInt, Buffer, etc.
-    crate::serialization::js_value_to_json(&data)
-}
-
-pub fn with_serde_to_platform_value(data: &JsValue) -> WasmDppResult<Value> {
-    Ok(with_serde_to_json_value(data.clone())?.into())
-}
-
-/// Recursively convert byte-array JSON values into base64 strings so they can be deserialized
-/// into human-readable serde types that expect strings for binary fields.
-pub fn normalize_json_bytes_to_strings(value: JsValue) -> WasmDppResult<JsonValue> {
-    fn normalize(val: JsonValue) -> JsonValue {
-        match val {
-            JsonValue::Array(arr) => {
-                if arr.iter().all(|v| v.is_u64()) {
-                    let bytes: Vec<u8> = arr
-                        .into_iter()
-                        .filter_map(|v| v.as_u64().map(|n| n as u8))
-                        .collect();
-                    JsonValue::String(BASE64_ENGINE.encode(bytes))
-                } else {
-                    JsonValue::Array(arr.into_iter().map(normalize).collect())
-                }
-            }
-            JsonValue::Object(map) => {
-                JsonValue::Object(map.into_iter().map(|(k, v)| (k, normalize(v))).collect())
-            }
-            other => other,
-        }
-    }
-
-    // Use direct serde_wasm_bindgen conversion with normalization
-    let json = crate::serialization::js_value_to_json(&value)?;
-    Ok(normalize(json))
-}
-
-#[deprecated(
-    since = "0.1.0",
-    note = "Use serialization::normalize_js_value_for_serde with serde_wasm_bindgen instead"
-)]
-pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
-    // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
-    // so subsequent serde_json parsing can treat them as byte sequences.
-    // Also convert BigInt to strings since JSON.stringify doesn't support BigInt natively.
-    let replacer_func = Function::new_with_args(
-        "key, value",
-        r#"
-        if (typeof value === 'bigint') {
-            return value.toString();
-        }
-        if (value != undefined && value.type === 'Buffer') {
-            return value.data;
-        }
-        if (ArrayBuffer.isView(value)) {
-            return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
-        }
-        if (value instanceof ArrayBuffer) {
-            return Array.from(new Uint8Array(value));
-        }
-        return value;
-    "#,
-    );
-
-    let data_string: String =
-        js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
-            .map_err(|err| {
-                let message = err.error_message();
-                WasmDppError::serialization(format!(
-                    "unable to stringify value to JSON: {}",
-                    message
-                ))
-            })?
-            .into();
-
-    Ok(data_string)
-}
-
+/// Trait for converting JsValue to a WASM type by reading its internal pointer
 pub trait IntoWasm {
     fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str) -> WasmDppResult<T::Anchor>;
 }
@@ -225,6 +70,7 @@ impl IntoWasm for JsValue {
     }
 }
 
+/// Convert a JsValue to a WASM type by reading its internal pointer
 pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     js_value: &JsValue,
     class_name: &str,
@@ -262,6 +108,7 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     }
 }
 
+/// Get the `__type` property from a JsValue (used for WASM class identification)
 pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     let class_type = js_sys::Reflect::get(value, &JsValue::from_str("__type")).map_err(|err| {
         let message = err.error_message();
@@ -274,6 +121,7 @@ pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     Ok(class_type.as_string().unwrap_or_default())
 }
 
+/// Convert a JS Number or BigInt to u64
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     if value.is_bigint() {
         js_sys::BigInt::new(&value)
@@ -288,19 +136,20 @@ pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     }
 }
 
-pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
+/// Convert a JS Number to u64 with validation
+fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
     if let Some(float_number) = js_number.as_f64() {
         if float_number.is_nan() || float_number.is_infinite() {
-            bail!("received an invalid timestamp: the number is either NaN or Inf")
+            bail!("received an invalid number: the number is either NaN or Inf")
         }
         if float_number < 0. {
-            bail!("received an invalid timestamp: the number is negative");
+            bail!("received an invalid number: the number is negative");
         }
         if float_number.fract() != 0. {
-            bail!("received an invalid timestamp: the number is fractional")
+            bail!("received an invalid number: the number is fractional")
         }
         if float_number > u64::MAX as f64 {
-            bail!("received an invalid timestamp: the number is > u64::max")
+            bail!("received an invalid number: the number is > u64::max")
         }
 
         return Ok(float_number as u64);
@@ -308,40 +157,7 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
     bail!("the value is not a number")
 }
 
-/// Extracts bytes from a base64 string, Uint8Array, or array of numbers.
-pub fn js_value_to_vec_u8(value: &JsValue) -> WasmDppResult<Vec<u8>> {
-    if let Some(s) = value.as_string() {
-        return BASE64_ENGINE.decode(s).map_err(|e| {
-            WasmDppError::invalid_argument(format!("unable to decode base64 string: {}", e))
-        });
-    }
-
-    if value.is_instance_of::<js_sys::Uint8Array>() {
-        return Ok(js_sys::Uint8Array::new(value).to_vec());
-    }
-
-    if js_sys::Array::is_array(value) {
-        let array = js_sys::Array::from(value);
-        let mut bytes = Vec::with_capacity(array.length() as usize);
-        for item in array.iter() {
-            let n = item.as_f64().ok_or_else(|| {
-                WasmDppError::invalid_argument("expected array items to be numbers".to_string())
-            })?;
-            if n < 0.0 || n > u8::MAX as f64 {
-                return Err(WasmDppError::invalid_argument(
-                    "byte array item must be between 0 and 255".to_string(),
-                ));
-            }
-            bytes.push(n as u8);
-        }
-        return Ok(bytes);
-    }
-
-    Err(WasmDppError::invalid_argument(
-        "expected a base64 string, Uint8Array or numeric array for binary data".to_string(),
-    ))
-}
-
+/// Generate a document ID using the v0 algorithm
 pub fn generate_document_id_v0(
     contract_id: &Identifier,
     owner_id: &Identifier,

@@ -241,7 +241,7 @@ impl WasmSdk {
         });
 
         // Convert serde_json::Value to JsValue
-        let data_js = wasm_dpp2::serde_format::to_json(&data)
+        let data_js = wasm_dpp2::serialization::to_json(&data)
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize votes: {}", e)))?;
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
