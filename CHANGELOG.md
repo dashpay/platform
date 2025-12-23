@@ -1,3 +1,10 @@
+## [3.0.0-dev.4](///compare/v3.0.0-dev.3...v3.0.0-dev.4) (2025-12-23)
+
+
+### Continuous Integration
+
+* fix NPM publish in release ([#2923](undefined/undefined/undefined/issues/2923))
+
 ## [2.2.0-dev.2](https://github.com/dashpay/platform/compare/v2.1.2...v2.2.0-dev.2) (2025-11-28)
 
 
