@@ -41,8 +41,9 @@ where
             .block_end
             .update_checkpoints
         {
-            0 => self.update_checkpoints_v0(block_execution_context, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            None => Ok(()),
+            Some(0) => self.update_checkpoints_v0(block_execution_context, platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_checkpoints".to_string(),
                 known_versions: vec![0],
                 received: version,
