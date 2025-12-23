@@ -22,6 +22,12 @@ where
         block_execution_context: &BlockExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Check if checkpoints are disabled in testing config
+        #[cfg(feature = "testing-config")]
+        if self.config.testing_configs.disable_checkpoints {
+            return Ok(());
+        }
+
         // How often we want a checkpoint
         let checkpoint_interval_milliseconds =
             platform_version.drive_abci.checkpoints.frequency_seconds as u64 * 1000;

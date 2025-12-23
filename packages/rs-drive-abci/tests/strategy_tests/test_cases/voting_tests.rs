@@ -53,6 +53,7 @@ mod tests {
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
                 disable_contested_documents_is_allowed_validation: false,
+                disable_checkpoints: true,
             },
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
