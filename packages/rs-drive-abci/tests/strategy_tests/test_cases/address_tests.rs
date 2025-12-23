@@ -6,6 +6,7 @@ mod tests {
     use dpp::dash_to_credits;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
+    use drive::drive::Drive;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
@@ -437,5 +438,40 @@ mod tests {
             })
             .count();
         assert!(executed > 0, "expected at least one address transfer");
+
+        // Drop outcome to release the mutable borrow of platform
+        drop(outcome);
+
+        // Test prove_address_funds_trunk_query
+        let platform_version = PlatformVersion::latest();
+
+        let proof = platform
+            .drive
+            .prove_address_funds_trunk_query(platform_version)
+            .expect("should generate trunk query proof");
+
+        assert!(!proof.is_empty(), "proof should not be empty");
+
+        // Verify the proof
+        let (root_hash, trunk_result) =
+            Drive::verify_address_funds_trunk_query(&proof, platform_version)
+                .expect("should verify trunk query proof");
+
+        // The root hash should be valid (32 bytes)
+        assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
+
+        // Check that we got some elements or leaf keys from the trunk query
+        let total_items = trunk_result.elements.len() + trunk_result.leaf_keys.len();
+        assert!(
+            total_items > 0,
+            "trunk query should return elements or leaf keys"
+        );
+
+        println!(
+            "Trunk query result: {} elements, {} leaf keys, chunk_depths: {:?}",
+            trunk_result.elements.len(),
+            trunk_result.leaf_keys.len(),
+            trunk_result.chunk_depths
+        );
     }
 }

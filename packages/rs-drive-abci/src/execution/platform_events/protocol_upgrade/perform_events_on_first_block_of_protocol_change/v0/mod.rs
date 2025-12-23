@@ -547,7 +547,7 @@ impl<C> Platform<C> {
         self.drive.grove_insert_if_not_exists(
             path.as_slice().into(),
             &[CLEAR_ADDRESS_POOL_U8],
-            Element::empty_sum_tree(),
+            Element::empty_provable_count_sum_tree(),
             Some(transaction),
             None,
             &platform_version.drive,
