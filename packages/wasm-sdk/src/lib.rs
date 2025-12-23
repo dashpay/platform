@@ -13,7 +13,9 @@ pub mod wallet;
 // Re-export commonly used items
 pub use dpns::*;
 pub use error::{WasmSdkError, WasmSdkErrorKind};
-pub use queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
+pub use queries::{
+    PlatformAddressInfoWasm, ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm,
+};
 pub use state_transitions::identity as state_transition_identity;
 pub use wallet::*;
 pub use wasm_dpp2::*;
