@@ -125,6 +125,7 @@ jobs:
           echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
+      # We need NodeJS 24 for https://docs.npmjs.com/trusted-publishers
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
         with:
