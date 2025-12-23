@@ -45,5 +45,5 @@ pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionW
 pub use tokens::*;
 pub use voting::{
     ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
-    ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,
+    ResourceVoteChoiceWasm, ResourceVoteWasm, VotePollWasm, VoteWasm,
 };

@@ -3,18 +3,16 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use dash_sdk::dpp::voting::vote_polls::VotePoll;
-use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::platform::FetchMany;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive_proof_verifier::types::ResourceVotesByIdentity;
-use js_sys::Array;
-use platform_value::string_encoding::Encoding;
-use serde::{Deserialize, Serialize};
+use js_sys::Map;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::voting::resource_vote::ResourceVoteWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTESTED_RESOURCE_IDENTITY_VOTES_QUERY_TS: &'static str = r#"
@@ -128,102 +126,44 @@ fn parse_contested_resource_identity_votes_query(
     build_contested_resource_identity_votes_query(input)
 }
 
-fn resource_votes_to_json(
-    votes: ResourceVotesByIdentity,
-) -> Result<Vec<serde_json::Value>, WasmSdkError> {
-    let mut results = Vec::new();
+/// Convert ResourceVotesByIdentity to a Map<Identifier, ResourceVote>.
+fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
+    let map = Map::new();
 
     for (vote_id, vote_opt) in votes.into_iter() {
         let Some(vote) = vote_opt else {
             continue;
         };
 
-        let ResourceVote::V0(ResourceVoteV0 {
-            vote_poll,
-            resource_vote_choice,
-        }) = vote;
+        let key = JsValue::from(IdentifierWasm::from(vote_id));
+        let value = JsValue::from(ResourceVoteWasm::from(vote));
 
-        let VotePoll::ContestedDocumentResourceVotePoll(vote_poll) = vote_poll;
-
-        let poll_unique_id = vote_poll.unique_id().map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to derive vote poll unique id: {}", e))
-        })?;
-
-        let index_values_json = vote_poll
-            .index_values
-            .into_iter()
-            .map(|value| {
-                serde_json::to_value(value).map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to serialize vote poll index value: {}",
-                        e
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, WasmSdkError>>()?;
-
-        let poll_json = serde_json::json!({
-            "type": "contestedDocumentResource",
-            "uniqueId": poll_unique_id.to_string(Encoding::Base58),
-            "contractId": vote_poll.contract_id.to_string(Encoding::Base58),
-            "documentTypeName": vote_poll.document_type_name,
-            "indexName": vote_poll.index_name,
-            "indexValues": index_values_json,
-        });
-
-        let choice_json = match resource_vote_choice {
-            ResourceVoteChoice::TowardsIdentity(identifier) => serde_json::json!({
-                "type": "towardsIdentity",
-                "identityId": identifier.to_string(Encoding::Base58),
-            }),
-            ResourceVoteChoice::Abstain => serde_json::json!({ "type": "abstain" }),
-            ResourceVoteChoice::Lock => serde_json::json!({ "type": "lock" }),
-        };
-
-        results.push(serde_json::json!({
-            "voteId": vote_id.to_string(Encoding::Base58),
-            "votePoll": poll_json,
-            "choice": choice_json,
-        }));
+        map.set(&key, &value);
     }
 
-    Ok(results)
+    map
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getContestedResourceIdentityVotes",
-        unchecked_return_type = "Array<any>"
+        unchecked_return_type = "Map<Identifier, ResourceVote>"
     )]
     pub async fn get_contested_resource_identity_votes(
         &self,
         query: ContestedResourceIdentityVotesQueryJs,
-    ) -> Result<Array, WasmSdkError> {
+    ) -> Result<Map, WasmSdkError> {
         let drive_query = parse_contested_resource_identity_votes_query(query)?;
 
         let votes = ResourceVote::fetch_many(self.as_ref(), drive_query).await?;
 
-        let votes_json = resource_votes_to_json(votes)?;
-        let array = Array::new();
-        for vote in votes_json {
-            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            let js_value = vote.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!(
-                    "Failed to serialize contested resource identity vote: {}",
-                    e
-                ))
-            })?;
-            array.push(&js_value);
-        }
-
-        Ok(array)
+        Ok(resource_votes_to_map(votes))
     }
 
     #[wasm_bindgen(
         js_name = "getContestedResourceIdentityVotesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<{ votes: Array<any> }>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, ResourceVote>>"
     )]
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,
@@ -234,18 +174,12 @@ impl WasmSdk {
             ResourceVote::fetch_many_with_metadata_and_proof(self.as_ref(), drive_query, None)
                 .await?;
 
-        let votes_json = resource_votes_to_json(votes)?;
-
-        let data = serde_json::json!({
-            "votes": votes_json
-        });
-
-        // Convert serde_json::Value to JsValue
-        let data_js = wasm_dpp2::serialization::to_json(&data)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize votes: {}", e)))?;
+        let votes_map = resource_votes_to_map(votes);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            data_js, metadata, proof,
+            votes_map,
+            metadata,
+            proof,
         ))
     }
 }

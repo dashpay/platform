@@ -4,11 +4,11 @@ use crate::queries::utils::identifier_from_js;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use js_sys::{Array, BigInt};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::identifier::IdentifierWasm;
 
 #[wasm_bindgen(js_name = "StatusSoftware")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -384,13 +384,12 @@ impl CurrentQuorumsInfoWasm {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrefundedSpecializedBalanceWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub identity_id: String,
+    identity_id: IdentifierWasm,
     balance: u64,
 }
 
 impl PrefundedSpecializedBalanceWasm {
-    fn new(identity_id: String, balance: u64) -> Self {
+    fn new(identity_id: IdentifierWasm, balance: u64) -> Self {
         Self {
             identity_id,
             balance,
@@ -400,6 +399,11 @@ impl PrefundedSpecializedBalanceWasm {
 
 #[wasm_bindgen(js_class = PrefundedSpecializedBalance)]
 impl PrefundedSpecializedBalanceWasm {
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> IdentifierWasm {
+        self.identity_id
+    }
+
     #[wasm_bindgen(getter = "balance")]
     pub fn balance(&self) -> BigInt {
         BigInt::from(self.balance)
@@ -800,7 +804,6 @@ impl WasmSdk {
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
-        let identity_id_base58 = identity_identifier.to_string(Encoding::Base58);
 
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
@@ -808,7 +811,7 @@ impl WasmSdk {
         let balance_value = balance_result.map(|b| b.0).unwrap_or(0);
 
         Ok(PrefundedSpecializedBalanceWasm::new(
-            identity_id_base58,
+            IdentifierWasm::from(identity_identifier),
             balance_value,
         ))
     }
@@ -982,7 +985,6 @@ impl WasmSdk {
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
-        let identity_id_base58 = identity_identifier.to_string(Encoding::Base58);
 
         // Fetch prefunded specialized balance with proof
         let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(
@@ -995,7 +997,7 @@ impl WasmSdk {
         let data = balance_result
             .map(|balance| {
                 JsValue::from(PrefundedSpecializedBalanceWasm::new(
-                    identity_id_base58.clone(),
+                    IdentifierWasm::from(identity_identifier),
                     balance.0,
                 ))
             })

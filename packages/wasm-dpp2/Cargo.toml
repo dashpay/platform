@@ -23,7 +23,8 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "bls-signatures",
     "platform-value",
     "state-transitions",
-    "state-transition-serde-conversion"
+    "state-transition-serde-conversion",
+    "vote-serde-conversion"
 ] }
 serde-wasm-bindgen = { git = "https://github.com/dashpay/serde-wasm-bindgen", branch = "fix/uint8array-to-bytes" }
 serde = { version = "1.0.197", features = ["derive"] }

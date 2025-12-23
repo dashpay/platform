@@ -9,7 +9,7 @@ use dash_sdk::platform::FetchMany;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive_proof_verifier::types::Voter;
 use js_sys::Array;
-use platform_value::{string_encoding::Encoding, Identifier};
+use platform_value::Identifier;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -163,7 +163,7 @@ fn parse_contested_resource_voters_query(
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getContestedResourceVotersForIdentity",
-        unchecked_return_type = "Array<string>"
+        unchecked_return_type = "Array<Identifier>"
     )]
     pub async fn get_contested_resource_voters_for_identity(
         &self,
@@ -177,8 +177,7 @@ impl WasmSdk {
 
         let array = Array::new();
         for voter in voters.0.into_iter() {
-            let identifier_js = IdentifierWasm::from(voter.0);
-            array.push(&JsValue::from(identifier_js));
+            array.push(&JsValue::from(IdentifierWasm::from(voter.0)));
         }
 
         Ok(array)
@@ -186,7 +185,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getContestedResourceVotersForIdentityWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Array<string>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<Identifier>>"
     )]
     pub async fn get_contested_resource_voters_for_identity_with_proof_info(
         &self,
@@ -197,15 +196,9 @@ impl WasmSdk {
         let (voters, metadata, proof) =
             Voter::fetch_many_with_metadata_and_proof(self.as_ref(), drive_query, None).await?;
 
-        let voters_list: Vec<String> = voters
-            .0
-            .into_iter()
-            .map(|voter| voter.0.to_string(Encoding::Base58))
-            .collect();
-
         let voters_array = Array::new();
-        for voter in voters_list {
-            voters_array.push(&JsValue::from_str(&voter));
+        for voter in voters.0.into_iter() {
+            voters_array.push(&JsValue::from(IdentifierWasm::from(voter.0)));
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
