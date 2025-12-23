@@ -4,7 +4,7 @@ use dpp::identity::core_script::CoreScript;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionSingleSigned};
 use dpp::withdrawal::Pooling;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 use serde::Deserialize;

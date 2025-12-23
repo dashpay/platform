@@ -151,7 +151,7 @@ mod tests {
         util::test_helpers::setup::setup_drive,
     };
     use assert_matches::assert_matches;
-    use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery};
+    use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TreeType};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
 
@@ -175,6 +175,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -186,6 +187,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"new_root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -324,6 +326,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -371,6 +374,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -391,6 +395,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"new_root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],

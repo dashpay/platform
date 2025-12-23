@@ -58,22 +58,28 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError,
     InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditTransferAmountError, InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityKeySignatureError,
-    InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
-    InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError,
-    InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
-    InvalidKeyPurposeForContractBoundsError, MissingMasterPublicKeyError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
-    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidIdentityKeySignatureError, InvalidIdentityPublicKeyDataError,
+    InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError,
+    InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError,
+    InvalidInstantAssetLockProofSignatureError, InvalidKeyPurposeForContractBoundsError,
+    MissingMasterPublicKeyError, NotImplementedCreditWithdrawalTransitionPoolingError,
+    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
-    StateTransitionMaxSizeExceededError,
+    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
+    FeeStrategyTooManyStepsError, InputBelowMinimumError, InputOutputBalanceMismatchError,
+    InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
+    InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
+    MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
+    OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
+    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -358,8 +364,8 @@ pub enum BasicError {
     InvalidIdentityCreditTransferAmountError(InvalidIdentityCreditTransferAmountError),
 
     #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
-        InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+    InvalidCreditWithdrawalTransitionOutputScriptError(
+        InvalidCreditWithdrawalTransitionOutputScriptError,
     ),
 
     #[error(transparent)]
@@ -368,9 +374,7 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError(
-        InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    ),
+    InvalidCreditWithdrawalTransitionCoreFeeError(InvalidCreditWithdrawalTransitionCoreFeeError),
 
     #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionAmountError(
@@ -386,8 +390,8 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
-        NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    NotImplementedCreditWithdrawalTransitionPoolingError(
+        NotImplementedCreditWithdrawalTransitionPoolingError,
     ),
 
     // State Transition
@@ -592,6 +596,63 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
+
+    #[error(transparent)]
+    StateTransitionNotActiveError(StateTransitionNotActiveError),
+
+    #[error(transparent)]
+    TransitionOverMaxInputsError(TransitionOverMaxInputsError),
+
+    #[error(transparent)]
+    TransitionOverMaxOutputsError(TransitionOverMaxOutputsError),
+
+    #[error(transparent)]
+    InputWitnessCountMismatchError(InputWitnessCountMismatchError),
+
+    #[error(transparent)]
+    TransitionNoInputsError(TransitionNoInputsError),
+
+    #[error(transparent)]
+    TransitionNoOutputsError(TransitionNoOutputsError),
+
+    #[error(transparent)]
+    InvalidRemainderOutputCountError(InvalidRemainderOutputCountError),
+
+    #[error(transparent)]
+    FeeStrategyEmptyError(FeeStrategyEmptyError),
+
+    #[error(transparent)]
+    FeeStrategyDuplicateError(FeeStrategyDuplicateError),
+
+    #[error(transparent)]
+    FeeStrategyIndexOutOfBoundsError(FeeStrategyIndexOutOfBoundsError),
+
+    #[error(transparent)]
+    FeeStrategyTooManyStepsError(FeeStrategyTooManyStepsError),
+
+    #[error(transparent)]
+    InputBelowMinimumError(InputBelowMinimumError),
+
+    #[error(transparent)]
+    OutputBelowMinimumError(OutputBelowMinimumError),
+
+    #[error(transparent)]
+    InputOutputBalanceMismatchError(InputOutputBalanceMismatchError),
+
+    #[error(transparent)]
+    OutputsNotGreaterThanInputsError(OutputsNotGreaterThanInputsError),
+
+    #[error(transparent)]
+    WithdrawalBalanceMismatchError(WithdrawalBalanceMismatchError),
+
+    #[error(transparent)]
+    InsufficientFundingAmountError(InsufficientFundingAmountError),
+
+    #[error(transparent)]
+    InputsNotLessThanOutputsError(InputsNotLessThanOutputsError),
+
+    #[error(transparent)]
+    OutputAddressAlsoInputError(OutputAddressAlsoInputError),
 }
 
 impl From<BasicError> for ConsensusError {

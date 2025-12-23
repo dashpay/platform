@@ -43,13 +43,6 @@ struct TenderdashWsMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EventData {
-    #[serde(rename = "type")]
-    event_type: String,
-    value: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 struct TxEvent {
     #[serde(deserialize_with = "deserialize_string_or_number")]
     height: u64,

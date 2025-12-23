@@ -134,7 +134,7 @@ pub fn verify_single_document_proof_keep_serialized(
     // Verify the proof keeping it serialized
     match query
         .inner
-        .verify_proof_keep_serialized(is_subset, &proof, &platform_version)
+        .verify_proof_keep_serialized(is_subset, &proof, platform_version)
     {
         Ok((root_hash, maybe_serialized_document)) => Ok(SingleDocumentProofResult {
             root_hash: root_hash.to_vec(),

@@ -147,6 +147,15 @@ fn get_path_elements(
                                 Element::CountSumTree(_, count, sum, _) => {
                                     format!("count_sum_tree:{}:{}", count, sum)
                                 }
+                                Element::ItemWithSumItem(data, sum, _) => {
+                                    format!("item_with_sum_item:{}:{}", hex::encode(data), sum)
+                                }
+                                Element::ProvableCountTree(_, count, _) => {
+                                    format!("provable_count_tree:{}", count)
+                                }
+                                Element::ProvableCountSumTree(_, count, sum, _) => {
+                                    format!("provable_count_sum_tree:{}:{}", count, sum)
+                                }
                             };
 
                             format!(
@@ -162,6 +171,11 @@ fn get_path_elements(
                                     Element::BigSumTree(_, _, _) => "big_sum_tree",
                                     Element::CountTree(_, _, _) => "count_tree",
                                     Element::CountSumTree(_, _, _, _) => "count_sum_tree",
+                                    Element::ItemWithSumItem(_, _, _) => "item_with_sum_item",
+                                    Element::ProvableCountTree(_, _, _) => "provable_count_tree",
+                                    Element::ProvableCountSumTree(_, _, _, _) => {
+                                        "provable_count_sum_tree"
+                                    }
                                 }
                             )
                         })

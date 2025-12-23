@@ -1,0 +1,9 @@
+use crate::state_transition::state_transitions;
+
+pub use state_transitions::common_fields::property_names::{
+    SIGNATURE, STATE_TRANSITION_PROTOCOL_VERSION,
+};
+
+pub const IDENTIFIER_FIELDS: [&str; 0] = [];
+pub const BINARY_FIELDS: [&str; 1] = [SIGNATURE];
+pub const U32_FIELDS: [&str; 1] = [STATE_TRANSITION_PROTOCOL_VERSION];

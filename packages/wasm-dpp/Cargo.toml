@@ -21,7 +21,7 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 wasm-bindgen = { version = "=0.2.103" }
 js-sys = "0.3.64"
 web-sys = { version = "0.3.64", features = ["console"] }
-thiserror = { version = "2.0.12" }
+thiserror = { version = "2.0.17" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-serde-conversion",

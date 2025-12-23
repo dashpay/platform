@@ -47,7 +47,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - A group action result is missing the expected document
-    pub async fn token_claim<S: Signer>(
+    pub async fn token_claim<S: Signer<IdentityPublicKey>>(
         &self,
         claim_tokens_transition_builder: TokenClaimTransitionBuilder,
         signing_key: &IdentityPublicKey,

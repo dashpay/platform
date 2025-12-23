@@ -1,8 +1,8 @@
 use dpp::consensus::basic::identity::{
+    InvalidCreditWithdrawalTransitionCoreFeeError,
+    InvalidCreditWithdrawalTransitionOutputScriptError,
     InvalidIdentityCreditWithdrawalTransitionAmountError,
-    InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
-    InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
-    NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+    NotImplementedCreditWithdrawalTransitionPoolingError,
 };
 use dpp::consensus::ConsensusError;
 
@@ -45,18 +45,16 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
         // currently we do not support pooling, so we must validate that pooling is `Never`
 
         if self.pooling() != Pooling::Never {
-            result.add_error(
-                NotImplementedIdentityCreditWithdrawalTransitionPoolingError::new(
-                    self.pooling() as u8
-                ),
-            );
+            result.add_error(NotImplementedCreditWithdrawalTransitionPoolingError::new(
+                self.pooling() as u8,
+            ));
 
             return Ok(result);
         }
 
         // validate core_fee is in fibonacci sequence
         if !is_fibonacci_number(self.core_fee_per_byte() as u64) {
-            result.add_error(InvalidIdentityCreditWithdrawalTransitionCoreFeeError::new(
+            result.add_error(InvalidCreditWithdrawalTransitionCoreFeeError::new(
                 self.core_fee_per_byte(),
                 MIN_CORE_FEE_PER_BYTE,
             ));
@@ -67,11 +65,9 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
         if let Some(output_script) = self.output_script() {
             // validate output_script types
             if !output_script.is_p2pkh() && !output_script.is_p2sh() {
-                result.add_error(
-                    InvalidIdentityCreditWithdrawalTransitionOutputScriptError::new(
-                        output_script.clone(),
-                    ),
-                );
+                result.add_error(InvalidCreditWithdrawalTransitionOutputScriptError::new(
+                    output_script.clone(),
+                ));
             }
         }
 
@@ -193,7 +189,7 @@ mod tests {
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(
-                    BasicError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(err),
+                    BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(err),
                 )] if err.pooling() == Pooling::Standard as u8
             );
         }
@@ -222,7 +218,7 @@ mod tests {
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(
-                    BasicError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(err)
+                    BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(err)
                 )] if err.min_core_fee_per_byte() == 1 && err.core_fee_per_byte() == 0
             );
         }
@@ -253,7 +249,7 @@ mod tests {
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(
-                    BasicError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(err)
+                    BasicError::InvalidCreditWithdrawalTransitionOutputScriptError(err)
                 )] if err.output_script() == output_script
             );
         }

@@ -2,7 +2,8 @@ use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
     MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
-    SignatureShouldNotBePresentError, WrongPublicKeyPurposeError,
+    SignatureShouldNotBePresentError, UncompressedPublicKeyNotAllowedError,
+    WrongPublicKeyPurposeError,
 };
 use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
@@ -56,6 +57,9 @@ pub enum SignatureError {
 
     #[error(transparent)]
     BasicBLSError(BasicBLSError),
+
+    #[error(transparent)]
+    UncompressedPublicKeyNotAllowedError(UncompressedPublicKeyNotAllowedError),
 }
 
 impl From<SignatureError> for ConsensusError {

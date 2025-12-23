@@ -10,6 +10,7 @@ use fee::FeeError;
 use grovedb_epoch_based_storage_flags::error::StorageFlagsError;
 use identity::IdentityError;
 use query::QuerySyntaxError;
+use std::io;
 
 /// Cache errors
 pub mod cache;
@@ -70,6 +71,9 @@ pub enum Error {
     /// Protocol error
     #[error("protocol: {0} ({1})")]
     ProtocolWithInfoString(Box<ProtocolError>, String),
+    /// IO error
+    #[error("io: {0} ({1})")]
+    IOErrorWithInfoString(Box<io::Error>, String),
 }
 
 impl From<ProtocolDataContractError> for Error {
@@ -87,5 +91,11 @@ impl From<ProtocolError> for Error {
 impl From<grovedb::Error> for Error {
     fn from(value: grovedb::Error) -> Self {
         Self::GroveDB(Box::new(value))
+    }
+}
+
+impl From<grovedb::element::error::ElementError> for Error {
+    fn from(value: grovedb::element::error::ElementError) -> Self {
+        Self::GroveDB(Box::new(grovedb::Error::ElementError(value)))
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/evo-sdk",
-  "version": "2.2.0-dev.2",
+  "version": "3.0.0-dev.5",
   "type": "module",
   "main": "./dist/evo-sdk.module.js",
   "types": "./dist/sdk.d.ts",

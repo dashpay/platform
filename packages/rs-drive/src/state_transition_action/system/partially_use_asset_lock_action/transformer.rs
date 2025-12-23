@@ -1,3 +1,4 @@
+use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
@@ -190,6 +191,40 @@ impl PartiallyUseAssetLockAction {
         match value {
             IdentityTopUpTransitionAction::V0(v0) => {
                 PartiallyUseAssetLockActionV0::from_borrowed_identity_top_up_transition_action(
+                    v0,
+                    used_credits,
+                )
+                .into()
+            }
+        }
+    }
+
+    /// from address funding from asset lock transition action
+    /// This includes the inputs and fee strategy for prioritized fee deduction
+    pub fn from_address_funding_from_asset_lock_transition_action(
+        value: AddressFundingFromAssetLockTransitionAction,
+        used_credits: Credits,
+    ) -> Self {
+        match value {
+            AddressFundingFromAssetLockTransitionAction::V0(v0) => {
+                PartiallyUseAssetLockActionV0::from_address_funding_from_asset_lock_transition_action(
+                    v0,
+                    used_credits,
+                )
+                .into()
+            }
+        }
+    }
+
+    /// from borrowed address funding from asset lock transition action
+    /// This includes the inputs and fee strategy for prioritized fee deduction
+    pub fn from_borrowed_address_funding_from_asset_lock_transition_action(
+        value: &AddressFundingFromAssetLockTransitionAction,
+        used_credits: Credits,
+    ) -> Self {
+        match value {
+            AddressFundingFromAssetLockTransitionAction::V0(v0) => {
+                PartiallyUseAssetLockActionV0::from_borrowed_address_funding_from_asset_lock_transition_action(
                     v0,
                     used_credits,
                 )

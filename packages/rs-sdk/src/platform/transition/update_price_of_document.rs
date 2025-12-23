@@ -1,6 +1,7 @@
 use crate::{Error, Sdk};
 
 use super::broadcast::BroadcastStateTransition;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -16,7 +17,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for updating the price of a document on Platform
-pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
+pub trait UpdatePriceOfDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Updates the price of a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +47,7 @@ pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> UpdatePriceOfDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
     async fn update_price_of_document(
         &self,
         price: Credits,
@@ -80,6 +81,7 @@ impl<S: Signer> UpdatePriceOfDocument<S> for Document {
             sdk.version(),
             settings.state_transition_creation_options,
         )?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         transition.broadcast(sdk, Some(settings)).await?;

@@ -25,6 +25,7 @@ pub enum WasmSdkErrorKind {
     EpochNotFound,
     TimeoutReached,
     AlreadyExists,
+    InvalidCreditTransfer,
     Generic,
     ContextProviderError,
     Cancelled,
@@ -138,6 +139,12 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            InvalidCreditTransfer(msg) => Self::new(
+                WasmSdkErrorKind::InvalidCreditTransfer,
+                msg,
+                None,
+                retriable,
+            ),
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),
@@ -231,6 +238,7 @@ impl WasmSdkError {
             K::EpochNotFound => "EpochNotFound",
             K::TimeoutReached => "TimeoutReached",
             K::AlreadyExists => "AlreadyExists",
+            K::InvalidCreditTransfer => "InvalidCreditTransfer",
             K::Generic => "Generic",
             K::ContextProviderError => "ContextProviderError",
             K::Cancelled => "Cancelled",

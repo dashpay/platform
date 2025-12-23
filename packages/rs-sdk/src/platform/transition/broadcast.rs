@@ -84,7 +84,9 @@ impl BroadcastStateTransition for StateTransition {
             Ok(_) => trace!("broadcast: completed successfully"),
             Err(e) => {
                 warn!(error = ?e, "broadcast: failed after retries");
-                sdk.refresh_identity_nonce(&self.owner_id()).await;
+                if let Some(owner_id) = self.owner_id() {
+                    sdk.refresh_identity_nonce(&owner_id).await;
+                }
             }
         }
         result

@@ -27,9 +27,16 @@
 
 CF_EXTERN_C_BEGIN
 
+@class AddressInfoEntries;
+@class AddressInfoEntry;
 @class AllKeys;
+@class BalanceAndNonce;
 @class GPBBytesValue;
 @class GPBUInt32Value;
+@class GetAddressInfoRequest_GetAddressInfoRequestV0;
+@class GetAddressInfoResponse_GetAddressInfoResponseV0;
+@class GetAddressesInfosRequest_GetAddressesInfosRequestV0;
+@class GetAddressesInfosResponse_GetAddressesInfosResponseV0;
 @class GetConsensusParamsRequest_GetConsensusParamsRequestV0;
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
@@ -7770,6 +7777,246 @@ GPB_FINAL @interface GetGroupActionSignersResponse_GetGroupActionSignersResponse
 @property(nonatomic, readonly) NSUInteger signersArray_Count;
 
 @end
+
+#pragma mark - GetAddressInfoRequest
+
+typedef GPB_ENUM(GetAddressInfoRequest_FieldNumber) {
+  GetAddressInfoRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressInfoRequest_Version_OneOfCase) {
+  GetAddressInfoRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressInfoRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressInfoRequest : GPBMessage
+
+@property(nonatomic, readonly) GetAddressInfoRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressInfoRequest_GetAddressInfoRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressInfoRequest_ClearVersionOneOfCase(GetAddressInfoRequest *message);
+
+#pragma mark - GetAddressInfoRequest_GetAddressInfoRequestV0
+
+typedef GPB_ENUM(GetAddressInfoRequest_GetAddressInfoRequestV0_FieldNumber) {
+  GetAddressInfoRequest_GetAddressInfoRequestV0_FieldNumber_Address = 1,
+  GetAddressInfoRequest_GetAddressInfoRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetAddressInfoRequest_GetAddressInfoRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *address;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - AddressInfoEntry
+
+typedef GPB_ENUM(AddressInfoEntry_FieldNumber) {
+  AddressInfoEntry_FieldNumber_Address = 1,
+  AddressInfoEntry_FieldNumber_BalanceAndNonce = 2,
+};
+
+GPB_FINAL @interface AddressInfoEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *address;
+
+@property(nonatomic, readwrite, strong, null_resettable) BalanceAndNonce *balanceAndNonce;
+/** Test to see if @c balanceAndNonce has been set. */
+@property(nonatomic, readwrite) BOOL hasBalanceAndNonce;
+
+@end
+
+#pragma mark - BalanceAndNonce
+
+typedef GPB_ENUM(BalanceAndNonce_FieldNumber) {
+  BalanceAndNonce_FieldNumber_Balance = 1,
+  BalanceAndNonce_FieldNumber_Nonce = 2,
+};
+
+GPB_FINAL @interface BalanceAndNonce : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t balance;
+
+@property(nonatomic, readwrite) uint32_t nonce;
+
+@end
+
+#pragma mark - AddressInfoEntries
+
+typedef GPB_ENUM(AddressInfoEntries_FieldNumber) {
+  AddressInfoEntries_FieldNumber_AddressInfoEntriesArray = 1,
+};
+
+GPB_FINAL @interface AddressInfoEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<AddressInfoEntry*> *addressInfoEntriesArray;
+/** The number of items in @c addressInfoEntriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger addressInfoEntriesArray_Count;
+
+@end
+
+#pragma mark - GetAddressInfoResponse
+
+typedef GPB_ENUM(GetAddressInfoResponse_FieldNumber) {
+  GetAddressInfoResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressInfoResponse_Version_OneOfCase) {
+  GetAddressInfoResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressInfoResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressInfoResponse : GPBMessage
+
+@property(nonatomic, readonly) GetAddressInfoResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressInfoResponse_GetAddressInfoResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressInfoResponse_ClearVersionOneOfCase(GetAddressInfoResponse *message);
+
+#pragma mark - GetAddressInfoResponse_GetAddressInfoResponseV0
+
+typedef GPB_ENUM(GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber) {
+  GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber_AddressInfoEntry = 1,
+  GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber_Proof = 2,
+  GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetAddressInfoResponse_GetAddressInfoResponseV0_Result_OneOfCase) {
+  GetAddressInfoResponse_GetAddressInfoResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressInfoResponse_GetAddressInfoResponseV0_Result_OneOfCase_AddressInfoEntry = 1,
+  GetAddressInfoResponse_GetAddressInfoResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetAddressInfoResponse_GetAddressInfoResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetAddressInfoResponse_GetAddressInfoResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) AddressInfoEntry *addressInfoEntry;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetAddressInfoResponse_GetAddressInfoResponseV0_ClearResultOneOfCase(GetAddressInfoResponse_GetAddressInfoResponseV0 *message);
+
+#pragma mark - GetAddressesInfosRequest
+
+typedef GPB_ENUM(GetAddressesInfosRequest_FieldNumber) {
+  GetAddressesInfosRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressesInfosRequest_Version_OneOfCase) {
+  GetAddressesInfosRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesInfosRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressesInfosRequest : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesInfosRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressesInfosRequest_GetAddressesInfosRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressesInfosRequest_ClearVersionOneOfCase(GetAddressesInfosRequest *message);
+
+#pragma mark - GetAddressesInfosRequest_GetAddressesInfosRequestV0
+
+typedef GPB_ENUM(GetAddressesInfosRequest_GetAddressesInfosRequestV0_FieldNumber) {
+  GetAddressesInfosRequest_GetAddressesInfosRequestV0_FieldNumber_AddressesArray = 1,
+  GetAddressesInfosRequest_GetAddressesInfosRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetAddressesInfosRequest_GetAddressesInfosRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *addressesArray;
+/** The number of items in @c addressesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger addressesArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetAddressesInfosResponse
+
+typedef GPB_ENUM(GetAddressesInfosResponse_FieldNumber) {
+  GetAddressesInfosResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressesInfosResponse_Version_OneOfCase) {
+  GetAddressesInfosResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesInfosResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressesInfosResponse : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesInfosResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressesInfosResponse_GetAddressesInfosResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressesInfosResponse_ClearVersionOneOfCase(GetAddressesInfosResponse *message);
+
+#pragma mark - GetAddressesInfosResponse_GetAddressesInfosResponseV0
+
+typedef GPB_ENUM(GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber) {
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber_AddressInfoEntries = 1,
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber_Proof = 2,
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetAddressesInfosResponse_GetAddressesInfosResponseV0_Result_OneOfCase) {
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0_Result_OneOfCase_AddressInfoEntries = 1,
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetAddressesInfosResponse_GetAddressesInfosResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesInfosResponse_GetAddressesInfosResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) AddressInfoEntries *addressInfoEntries;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetAddressesInfosResponse_GetAddressesInfosResponseV0_ClearResultOneOfCase(GetAddressesInfosResponse_GetAddressesInfosResponseV0 *message);
 
 NS_ASSUME_NONNULL_END
 

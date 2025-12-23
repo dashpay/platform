@@ -1,0 +1,13 @@
+/// Address balance and nonce validation trait.
+pub mod address_balances_and_nonces;
+pub(crate) mod address_witnesses;
+pub(crate) mod addresses_minimum_balance;
+pub(crate) mod advanced_structure_with_state;
+pub(crate) mod advanced_structure_without_state;
+pub(crate) mod basic_structure;
+pub(crate) mod identity_balance;
+pub(crate) mod identity_based_signature;
+pub(crate) mod identity_nonces;
+pub(crate) mod is_allowed;
+pub(crate) mod prefunded_specialized_balance;
+pub(crate) mod state;
