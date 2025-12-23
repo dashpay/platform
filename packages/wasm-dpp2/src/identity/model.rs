@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt};
+use crate::utils::{try_to_u64, IntoWasm, JsValueExt};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::fields::IDENTIFIER_FIELDS_RAW_OBJECT;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -16,12 +16,11 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::PlatformVersion;
-use js_sys::{Array, BigInt, Object, RangeError, Reflect};
+use js_sys::{Array, Object, Reflect};
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::from_value;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -216,23 +215,6 @@ fn identity_from_platform_value(mut value: Value) -> WasmDppResult<IdentityWasm>
     Ok(IdentityWasm(Identity::from(identity_v0)))
 }
 
-fn js_big_int_to_u64(value: &JsValue) -> WasmDppResult<u64> {
-    let bigint: BigInt = value.clone().dyn_into().map_err(|_| {
-        WasmDppError::invalid_argument("expected balance/revision to be a BigInt".to_string())
-    })?;
-
-    let js_string = BigInt::to_string(&bigint, 10).map_err(|err: RangeError| {
-        WasmDppError::serialization(format!("unable to stringify BigInt: {}", err.message()))
-    })?;
-
-    let string = js_string.as_string().ok_or_else(|| {
-        WasmDppError::serialization("unable to convert BigInt to string".to_string())
-    })?;
-
-    string
-        .parse::<u64>()
-        .map_err(|err| WasmDppError::serialization(err.to_string()))
-}
 
 impl IdentityWasm {
     pub fn get_rs_public_keys(&self) -> BTreeMap<KeyID, IdentityPublicKey> {
@@ -296,7 +278,8 @@ impl IdentityWasm {
                 let balance = if balance_js.is_undefined() || balance_js.is_null() {
                     0
                 } else {
-                    js_big_int_to_u64(&balance_js)?
+                    try_to_u64(balance_js)
+                        .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
                 };
 
                 let revision_js =
@@ -309,7 +292,8 @@ impl IdentityWasm {
                 let revision = if revision_js.is_undefined() || revision_js.is_null() {
                     0
                 } else {
-                    js_big_int_to_u64(&revision_js)?
+                    try_to_u64(revision_js)
+                        .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
                 };
 
                 let identity_v0 = IdentityV0 {
@@ -374,7 +358,8 @@ impl IdentityWasm {
             let balance = if balance_js.is_undefined() || balance_js.is_null() {
                 0
             } else {
-                js_big_int_to_u64(&balance_js)?
+                try_to_u64(balance_js)
+                    .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
             };
 
             let revision_js =
@@ -387,7 +372,8 @@ impl IdentityWasm {
             let revision = if revision_js.is_undefined() || revision_js.is_null() {
                 0
             } else {
-                js_big_int_to_u64(&revision_js)?
+                try_to_u64(revision_js)
+                    .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
             };
 
             let identity_v0 = IdentityV0 {
