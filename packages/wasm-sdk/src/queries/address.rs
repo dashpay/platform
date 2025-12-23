@@ -94,15 +94,13 @@ impl WasmSdk {
             AddressInfo::fetch_with_metadata_and_proof(self.as_ref(), platform_address, None)
                 .await?;
 
-        address_info
-            .map(|info| {
-                ProofMetadataResponseWasm::from_sdk_parts(
-                    JsValue::from(AddressInfoWasm::from_address_info(info)),
-                    metadata,
-                    proof,
-                )
-            })
-            .ok_or_else(|| WasmSdkError::not_found("Address info not found"))
+        let data = address_info
+            .map(|info| JsValue::from(AddressInfoWasm::from_address_info(info)))
+            .unwrap_or(JsValue::UNDEFINED);
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            data, metadata, proof,
+        ))
     }
 
     /// Fetches information about multiple Platform addresses.
