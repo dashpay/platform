@@ -52,7 +52,7 @@ jobs:
             const milestone = milestones.data.find(m => m.title === milestoneName);
 
             if (!milestone) {
-              console.log(`Milestone ${milestoneName} not found`);
+              core.warning(`Milestone ${milestoneName} not found. Create it to enable automatic assignment.`);
               return;
             }
 
