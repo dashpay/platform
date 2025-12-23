@@ -14,7 +14,7 @@ pub mod wallet;
 pub use dpns::*;
 pub use error::{WasmSdkError, WasmSdkErrorKind};
 pub use queries::{
-    AddressInfoWasm, ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm,
+    PlatformAddressInfoWasm, ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm,
 };
 pub use state_transitions::identity as state_transition_identity;
 pub use wallet::*;

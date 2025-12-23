@@ -11,7 +11,7 @@ pub(crate) mod utils;
 pub mod voting;
 
 // Re-export all query functions for easy access
-pub use address::AddressInfoWasm;
+pub use address::PlatformAddressInfoWasm;
 pub use group::*;
 
 use js_sys::Uint8Array;

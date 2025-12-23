@@ -11,17 +11,17 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::platform_address::PlatformAddressWasm;
 
 /// Information about a Platform address including its nonce and balance.
-#[wasm_bindgen(js_name = "AddressInfo")]
+#[wasm_bindgen(js_name = "PlatformAddressInfo")]
 #[derive(Clone)]
-pub struct AddressInfoWasm {
+pub struct PlatformAddressInfoWasm {
     address: PlatformAddressWasm,
     nonce: u32,
     balance: u64,
 }
 
-impl AddressInfoWasm {
+impl PlatformAddressInfoWasm {
     fn from_address_info(info: AddressInfo) -> Self {
-        AddressInfoWasm {
+        PlatformAddressInfoWasm {
             address: info.address.into(),
             nonce: info.nonce,
             balance: info.balance,
@@ -29,8 +29,8 @@ impl AddressInfoWasm {
     }
 }
 
-#[wasm_bindgen(js_class = AddressInfo)]
-impl AddressInfoWasm {
+#[wasm_bindgen(js_class = PlatformAddressInfo)]
+impl PlatformAddressInfoWasm {
     /// Returns the platform address.
     #[wasm_bindgen(getter = "address")]
     pub fn address(&self) -> PlatformAddressWasm {
@@ -55,12 +55,12 @@ impl WasmSdk {
     /// Fetches information about a Platform address including its nonce and balance.
     ///
     /// @param address - The platform address to query (PlatformAddress, Uint8Array, or bech32m string)
-    /// @returns AddressInfo containing address, nonce, and balance
+    /// @returns PlatformAddressInfo containing address, nonce, and balance
     #[wasm_bindgen(js_name = "getAddressInfo")]
     pub async fn get_address_info(
         &self,
         #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: JsValue,
-    ) -> Result<Option<AddressInfoWasm>, WasmSdkError> {
+    ) -> Result<Option<PlatformAddressInfoWasm>, WasmSdkError> {
         let platform_address: PlatformAddress = PlatformAddressWasm::try_from(&address)
             .map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
@@ -69,16 +69,16 @@ impl WasmSdk {
 
         let address_info = AddressInfo::fetch(self.as_ref(), platform_address).await?;
 
-        Ok(address_info.map(AddressInfoWasm::from_address_info))
+        Ok(address_info.map(PlatformAddressInfoWasm::from_address_info))
     }
 
     /// Fetches information about a Platform address including its nonce and balance, with proof.
     ///
     /// @param address - The platform address to query (PlatformAddress, Uint8Array, or bech32m string)
-    /// @returns ProofMetadataResponse containing AddressInfo with proof information
+    /// @returns ProofMetadataResponse containing PlatformAddressInfo with proof information
     #[wasm_bindgen(
         js_name = "getAddressInfoWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<AddressInfo>"
+        unchecked_return_type = "ProofMetadataResponseTyped<PlatformAddressInfo>"
     )]
     pub async fn get_address_info_with_proof_info(
         &self,
@@ -95,7 +95,7 @@ impl WasmSdk {
                 .await?;
 
         let data = address_info
-            .map(|info| JsValue::from(AddressInfoWasm::from_address_info(info)))
+            .map(|info| JsValue::from(PlatformAddressInfoWasm::from_address_info(info)))
             .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
@@ -106,10 +106,10 @@ impl WasmSdk {
     /// Fetches information about multiple Platform addresses.
     ///
     /// @param addresses - Array of platform addresses to query
-    /// @returns Map of PlatformAddress to AddressInfo (or undefined for unfunded addresses)
+    /// @returns Map of PlatformAddress to PlatformAddressInfo (or undefined for unfunded addresses)
     #[wasm_bindgen(
         js_name = "getAddressesInfos",
-        unchecked_return_type = "Map<PlatformAddress, AddressInfo | undefined>"
+        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo | undefined>"
     )]
     pub async fn get_addresses_infos(
         &self,
@@ -138,7 +138,7 @@ impl WasmSdk {
             let value = address_infos
                 .get(&address)
                 .and_then(|opt| opt.as_ref())
-                .map(|info| JsValue::from(AddressInfoWasm::from_address_info(info.clone())))
+                .map(|info| JsValue::from(PlatformAddressInfoWasm::from_address_info(info.clone())))
                 .unwrap_or(JsValue::UNDEFINED);
             results_map.set(&key, &value);
         }
@@ -149,10 +149,10 @@ impl WasmSdk {
     /// Fetches information about multiple Platform addresses with proof.
     ///
     /// @param addresses - Array of platform addresses to query
-    /// @returns ProofMetadataResponse containing Map of PlatformAddress to AddressInfo
+    /// @returns ProofMetadataResponse containing Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "getAddressesInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<PlatformAddress, AddressInfo | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<PlatformAddress, PlatformAddressInfo | undefined>>"
     )]
     pub async fn get_addresses_infos_with_proof_info(
         &self,
@@ -186,7 +186,7 @@ impl WasmSdk {
             let value = address_infos
                 .get(&address)
                 .and_then(|opt| opt.as_ref())
-                .map(|info| JsValue::from(AddressInfoWasm::from_address_info(info.clone())))
+                .map(|info| JsValue::from(PlatformAddressInfoWasm::from_address_info(info.clone())))
                 .unwrap_or(JsValue::UNDEFINED);
             results_map.set(&key, &value);
         }

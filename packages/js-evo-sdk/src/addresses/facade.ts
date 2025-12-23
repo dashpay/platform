@@ -12,9 +12,9 @@ export class AddressesFacade {
    * Fetches information about a Platform address including its nonce and balance.
    *
    * @param address - The platform address to query (PlatformAddress, Uint8Array, or bech32m string)
-   * @returns AddressInfo containing address, nonce, and balance, or undefined if not found
+   * @returns PlatformAddressInfo containing address, nonce, and balance, or undefined if not found
    */
-  async get(address: wasm.PlatformAddressLike): Promise<wasm.AddressInfo | undefined> {
+  async get(address: wasm.PlatformAddressLike): Promise<wasm.PlatformAddressInfo | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressInfo(address);
   }
@@ -23,9 +23,9 @@ export class AddressesFacade {
    * Fetches information about a Platform address with proof.
    *
    * @param address - The platform address to query (PlatformAddress, Uint8Array, or bech32m string)
-   * @returns ProofMetadataResponse containing AddressInfo with proof information
+   * @returns ProofMetadataResponse containing PlatformAddressInfo with proof information
    */
-  async getWithProof(address: wasm.PlatformAddressLike): Promise<wasm.ProofMetadataResponseTyped<wasm.AddressInfo>> {
+  async getWithProof(address: wasm.PlatformAddressLike): Promise<wasm.ProofMetadataResponseTyped<wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressInfoWithProofInfo(address);
   }
@@ -34,10 +34,11 @@ export class AddressesFacade {
    * Fetches information about multiple Platform addresses.
    *
    * @param addresses - Array of platform addresses to query
-   * @returns Map of PlatformAddress to AddressInfo (or undefined for unfunded addresses)
+   * @returns Map of PlatformAddress to PlatformAddressInfo (or undefined for unfunded addresses)
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getMany(addresses: wasm.PlatformAddressLike[]): Promise<Map<any, any>> {
+  async getMany(
+    addresses: wasm.PlatformAddressLike[],
+  ): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressesInfos(addresses);
   }
@@ -46,10 +47,11 @@ export class AddressesFacade {
    * Fetches information about multiple Platform addresses with proof.
    *
    * @param addresses - Array of platform addresses to query
-   * @returns ProofMetadataResponse containing Map of PlatformAddress to AddressInfo
+   * @returns ProofMetadataResponse containing Map of PlatformAddress to PlatformAddressInfo
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getManyWithProof(addresses: wasm.PlatformAddressLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<any, any>>> {
+  async getManyWithProof(
+    addresses: wasm.PlatformAddressLike[],
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressesInfosWithProofInfo(addresses);
   }
