@@ -6,7 +6,7 @@ describe('serde conversions (unit)', () => {
   });
 
   describe('ProofMetadataResponse BigInt serialization', () => {
-    it('should serialize BigInt data to JSON as string', function () {
+    it('should serialize BigInt data to JSON as string', () => {
       const chainId = new Uint8Array([1, 2, 3, 4]);
       const metadata = new sdk.ResponseMetadata(1n, 2, 3, 4n, 5, chainId);
       const proof = new sdk.ProofInfo(
@@ -15,7 +15,7 @@ describe('serde conversions (unit)', () => {
         new Uint8Array([7, 8, 9]),
         1,
         new Uint8Array([10, 11, 12]),
-        100
+        100,
       );
 
       // Create ProofMetadataResponse with BigInt data (simulating large credit balance)
@@ -32,7 +32,7 @@ describe('serde conversions (unit)', () => {
       expect(json.data).to.equal('23522425453263151');
     });
 
-    it('should serialize object with BigInt properties to JSON', function () {
+    it('should serialize object with BigInt properties to JSON', () => {
       const chainId = new Uint8Array([1, 2, 3, 4]);
       const metadata = new sdk.ResponseMetadata(1n, 2, 3, 4n, 5, chainId);
       const proof = new sdk.ProofInfo(
@@ -41,7 +41,7 @@ describe('serde conversions (unit)', () => {
         new Uint8Array([7, 8, 9]),
         1,
         new Uint8Array([10, 11, 12]),
-        100
+        100,
       );
 
       // Create ProofMetadataResponse with object containing BigInt
@@ -49,8 +49,8 @@ describe('serde conversions (unit)', () => {
         totalCredits: 23522425453263151n,
         count: 42,
         nested: {
-          balance: 9007199254740992n // Exactly MAX_SAFE_INTEGER + 1
-        }
+          balance: 9007199254740992n, // Exactly MAX_SAFE_INTEGER + 1
+        },
       };
       const response = new sdk.ProofMetadataResponse(dataWithBigInt, metadata, proof);
 
@@ -61,7 +61,7 @@ describe('serde conversions (unit)', () => {
       expect(json.data.nested.balance).to.equal('9007199254740992');
     });
 
-    it('should serialize array with BigInt values to JSON', function () {
+    it('should serialize array with BigInt values to JSON', () => {
       const chainId = new Uint8Array([1, 2, 3, 4]);
       const metadata = new sdk.ResponseMetadata(1n, 2, 3, 4n, 5, chainId);
       const proof = new sdk.ProofInfo(
@@ -70,7 +70,7 @@ describe('serde conversions (unit)', () => {
         new Uint8Array([7, 8, 9]),
         1,
         new Uint8Array([10, 11, 12]),
-        100
+        100,
       );
 
       // Create ProofMetadataResponse with array containing BigInt
@@ -83,7 +83,7 @@ describe('serde conversions (unit)', () => {
     });
   });
 
-  it('ResponseMetadata: getter returns Uint8Array, toJSON returns base64', function () {
+  it('ResponseMetadata: getter returns Uint8Array, toJSON returns base64', () => {
     const chainId = new Uint8Array([1, 2, 3, 4]);
     const meta = new sdk.ResponseMetadata(1n, 2, 3, 4n, 5, chainId);
 
@@ -100,7 +100,7 @@ describe('serde conversions (unit)', () => {
   });
 
   describe('ProofMetadataResponse with Identity data', () => {
-    it('should serialize Identity as data with full JSON including metadata, proof, and identity', function () {
+    it('should serialize Identity as data with full JSON including metadata, proof, and identity', () => {
       // Create metadata and proof
       const chainId = new Uint8Array([1, 2, 3, 4]);
       const metadata = new sdk.ResponseMetadata(100n, 50, 10, 1234567890n, 1, chainId);
@@ -110,7 +110,7 @@ describe('serde conversions (unit)', () => {
         new Uint8Array([70, 80, 90]), // signature
         5, // round
         new Uint8Array([100, 110, 120]), // blockIdHash
-        200 // quorumType
+        200, // quorumType
       );
 
       // Create an Identity
@@ -120,7 +120,8 @@ describe('serde conversions (unit)', () => {
       identity.revision = 5n;
 
       // Create ProofMetadataResponse with Identity.toJSON() as data
-      // Using toJSON() ensures all nested objects (like Identifier) are converted to JSON-safe values
+      // Using toJSON() ensures all nested objects (like Identifier)
+      // are converted to JSON-safe values
       const identityJson = identity.toJSON();
       const response = new sdk.ProofMetadataResponse(identityJson, metadata, proof);
 
@@ -157,7 +158,7 @@ describe('serde conversions (unit)', () => {
       expect(json.data.publicKeys).to.be.an('array');
     });
 
-    it('should round-trip ProofMetadataResponse with Identity data through JSON', function () {
+    it('should round-trip ProofMetadataResponse with Identity data through JSON', () => {
       const chainId = new Uint8Array([5, 6, 7, 8]);
       const metadata = new sdk.ResponseMetadata(200n, 100, 20, 9876543210n, 2, chainId);
       const proof = new sdk.ProofInfo(
@@ -166,7 +167,7 @@ describe('serde conversions (unit)', () => {
         new Uint8Array([11, 12, 13, 14, 15]),
         10,
         new Uint8Array([16, 17, 18, 19, 20]),
-        300
+        300,
       );
 
       const identifierId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
@@ -193,7 +194,7 @@ describe('serde conversions (unit)', () => {
     });
   });
 
-  it('Identifier-backed structs: toObject returns bytes, toJSON returns Base58', function () {
+  it('Identifier-backed structs: toObject returns bytes, toJSON returns Base58', () => {
     const bytes = new Uint8Array(32).fill(7);
     const expectedBase58 = sdk.Identifier.fromBytes(Array.from(bytes)).toBase58();
     const identifier = sdk.Identifier.fromBase58(expectedBase58);
@@ -219,5 +220,4 @@ describe('serde conversions (unit)', () => {
     expect(roundtrip.identityId.toBase58()).to.equal(expectedBase58);
     expect(roundtrip.documentId.toBase58()).to.equal(expectedBase58);
   });
-
 });
