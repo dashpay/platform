@@ -97,6 +97,7 @@ describe('DPNSFacade', () => {
         expect.fail('Should have thrown an error');
       } catch (error) {
         expect(error.message).to.include('publicKeyId is required');
+        expect(error.message).to.include('CRITICAL or HIGH security level');
       }
     });
 
