@@ -102,7 +102,7 @@ impl CoreScriptWasm {
         encode(self.0.to_bytes().as_slice(), Base64)
     }
 
-    #[wasm_bindgen(js_name = "ASMString")]
+    #[wasm_bindgen(js_name = "toASMString")]
     pub fn to_asm_string(&self) -> String {
         self.0.to_asm_string()
     }
