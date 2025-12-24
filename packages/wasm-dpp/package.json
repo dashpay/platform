@@ -34,7 +34,7 @@
   "license": "MIT",
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
-    "bs58": "^6.0.0",
+    "bs58": "^4.0.1",
     "lodash": "^4.17.21",
     "varint": "^6.0.0"
   },
@@ -45,6 +45,7 @@
     "@babel/preset-env": "^7.26.9",
     "@dashevo/dashcore-lib": "~0.22.0",
     "@dashevo/dpns-contract": "workspace:*",
+    "@types/bs58": "^4.0.1",
     "@types/node": "^14.6.0",
     "@yarnpkg/pnpify": "^4.0.0-rc.42",
     "ajv": "^8.6.0",

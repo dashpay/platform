@@ -1450,7 +1450,7 @@ __metadata:
     assert-browserify: "npm:^2.0.0"
     babel-loader: "npm:^9.1.3"
     browserify-zlib: "npm:^0.2.0"
-    bs58: "npm:^6.0.0"
+    bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
     cbor: "npm:^8.0.0"
     chai: "npm:^4.3.10"
@@ -1534,7 +1534,7 @@ __metadata:
     "@grpc/grpc-js": "npm:1.4.4"
     "@pshenmic/zeromq": "npm:6.0.0-beta.22"
     ajv: "npm:^8.6.0"
-    bs58: "npm:^6.0.0"
+    bs58: "npm:^4.0.1"
     cbor: "npm:^8.0.0"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -2005,7 +2005,7 @@ __metadata:
   resolution: "@dashevo/wasm-dpp2@workspace:packages/wasm-dpp2"
   dependencies:
     assert: "npm:^2.0.0"
-    bs58: "npm:^6.0.0"
+    bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -2044,11 +2044,12 @@ __metadata:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
+    "@types/bs58": "npm:^4.0.1"
     "@types/node": "npm:^14.6.0"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
     ajv: "npm:^8.6.0"
     assert: "npm:^2.0.0"
-    bs58: "npm:^6.0.0"
+    bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -3362,6 +3363,16 @@ __metadata:
     "@tufjs/canonical-json": "npm:1.0.0"
     minimatch: "npm:^9.0.0"
   checksum: 10/2c63e9cfc04a4ce8888e9cc9668a7207e3047d64c50dccc3d2c30057d8bd6c4e89256b6094d2109549278da72c75e20cd8717bb5f4b544dc2323288a2a96607f
+  languageName: node
+  linkType: hard
+
+"@types/bs58@npm:^4.0.1":
+  version: 4.0.4
+  resolution: "@types/bs58@npm:4.0.4"
+  dependencies:
+    "@types/node": "npm:*"
+    base-x: "npm:^3.0.6"
+  checksum: 10/9cac5a00343756f887ad906c10c71464620d352af40ff61373dcede434880a769be8b78380b890e9b13506851af4611ab59e7d4b7159af04f445e1fd5c34e3d0
   languageName: node
   linkType: hard
 
@@ -4922,19 +4933,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"base-x@npm:^3.0.2":
+"base-x@npm:^3.0.2, base-x@npm:^3.0.6":
   version: 3.0.11
   resolution: "base-x@npm:3.0.11"
   dependencies:
     safe-buffer: "npm:^5.0.1"
   checksum: 10/c2e3c443fd07cb9b9d3e179a9e9c581daa31881005841fe8d6a834e534505890fedf03465ccf14512da60e3f7be00fe66167806b159ba076d2c03952ae7460c4
-  languageName: node
-  linkType: hard
-
-"base-x@npm:^5.0.0":
-  version: 5.0.1
-  resolution: "base-x@npm:5.0.1"
-  checksum: 10/6e4f847ef842e0a71c6b6020a6ec482a2a5e727f5a98534dbfd5d5a4e8afbc0d1bdf1fd57174b3f0455d107f10a932c3c7710bec07e2878f80178607f8f605c8
   languageName: node
   linkType: hard
 
@@ -5249,21 +5253,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"bs58@npm:=4.0.1":
+"bs58@npm:=4.0.1, bs58@npm:^4.0.1":
   version: 4.0.1
   resolution: "bs58@npm:4.0.1"
   dependencies:
     base-x: "npm:^3.0.2"
   checksum: 10/b3c5365bb9e0c561e1a82f1a2d809a1a692059fae016be233a6127ad2f50a6b986467c3a50669ce4c18929dcccb297c5909314dd347a25a68c21b68eb3e95ac2
-  languageName: node
-  linkType: hard
-
-"bs58@npm:^6.0.0":
-  version: 6.0.0
-  resolution: "bs58@npm:6.0.0"
-  dependencies:
-    base-x: "npm:^5.0.0"
-  checksum: 10/7c9bb2b2d93d997a8c652de3510d89772007ac64ee913dc4e16ba7ff47624caad3128dcc7f360763eb6308760c300b3e9fd91b8bcbd489acd1a13278e7949c4e
   languageName: node
   linkType: hard
 
@@ -6658,7 +6653,7 @@ __metadata:
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
     assert: "npm:^2.0.0"
     browserify-zlib: "npm:^0.2.0"
-    bs58: "npm:^6.0.0"
+    bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -6726,7 +6721,7 @@ __metadata:
     ajv-formats: "npm:^2.1.1"
     awilix: "npm:^4.2.6"
     begoo: "npm:^2.0.2"
-    bs58: "npm:^6.0.0"
+    bs58: "npm:^4.0.1"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
     chalk: "npm:^4.1.0"

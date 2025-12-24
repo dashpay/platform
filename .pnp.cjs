@@ -2477,7 +2477,7 @@ const RAW_RUNTIME_STATE =
           ["@grpc/grpc-js", "npm:1.4.4"],\
           ["@pshenmic/zeromq", "npm:6.0.0-beta.22"],\
           ["ajv", "npm:8.12.0"],\
-          ["bs58", "npm:6.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -2520,7 +2520,7 @@ const RAW_RUNTIME_STATE =
           ["assert-browserify", "npm:2.0.0"],\
           ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:9.1.3"],\
           ["browserify-zlib", "npm:0.2.0"],\
-          ["bs58", "npm:6.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
@@ -3076,11 +3076,12 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
+          ["@types/bs58", "npm:4.0.4"],\
           ["@types/node", "npm:14.17.34"],\
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
           ["ajv", "npm:8.12.0"],\
           ["assert", "npm:2.0.0"],\
-          ["bs58", "npm:6.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -3130,7 +3131,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/wasm-dpp2", "workspace:packages/wasm-dpp2"],\
           ["assert", "npm:2.0.0"],\
-          ["bs58", "npm:6.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -4624,6 +4625,17 @@ const RAW_RUNTIME_STATE =
           ["@tufjs/canonical-json", "npm:1.0.0"],\
           ["@tufjs/models", "npm:1.0.4"],\
           ["minimatch", "npm:9.0.5"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@types/bs58", [\
+      ["npm:4.0.4", {\
+        "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.4-61d579b54c-9cac5a0034.zip/node_modules/@types/bs58/",\
+        "packageDependencies": [\
+          ["@types/bs58", "npm:4.0.4"],\
+          ["@types/node", "npm:18.16.1"],\
+          ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -6923,13 +6935,6 @@ const RAW_RUNTIME_STATE =
           ["safe-buffer", "npm:5.2.1"]\
         ],\
         "linkType": "HARD"\
-      }],\
-      ["npm:5.0.1", {\
-        "packageLocation": "./.yarn/cache/base-x-npm-5.0.1-6bc62b5139-6e4f847ef8.zip/node_modules/base-x/",\
-        "packageDependencies": [\
-          ["base-x", "npm:5.0.1"]\
-        ],\
-        "linkType": "HARD"\
       }]\
     ]],\
     ["base64-js", [\
@@ -7275,14 +7280,6 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["base-x", "npm:3.0.11"],\
           ["bs58", "npm:4.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:6.0.0", {\
-        "packageLocation": "./.yarn/cache/bs58-npm-6.0.0-cefe3ba27b-7c9bb2b2d9.zip/node_modules/bs58/",\
-        "packageDependencies": [\
-          ["base-x", "npm:5.0.1"],\
-          ["bs58", "npm:6.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -8861,7 +8858,7 @@ const RAW_RUNTIME_STATE =
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
           ["assert", "npm:2.0.0"],\
           ["browserify-zlib", "npm:0.2.0"],\
-          ["bs58", "npm:6.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1"],\
@@ -8931,7 +8928,7 @@ const RAW_RUNTIME_STATE =
           ["ajv-formats", "virtual:e822c5b02ef2b3c5fb9c8d88d5e0ca208365bff76f80510f4ccf9b1de44e2078264bcb00d3cdd5e193c256e9ab81e27c34fcfb1ad3a0e8c1dc8fa0066c78c468#npm:2.1.1"],\
           ["awilix", "npm:4.3.4"],\
           ["begoo", "npm:2.0.2"],\
-          ["bs58", "npm:6.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
           ["chalk", "npm:4.1.2"],\

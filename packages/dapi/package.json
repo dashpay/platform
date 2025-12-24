@@ -42,7 +42,7 @@
     "@grpc/grpc-js": "1.4.4",
     "@pshenmic/zeromq": "6.0.0-beta.22",
     "ajv": "^8.6.0",
-    "bs58": "^6.0.0",
+    "bs58": "^4.0.1",
     "cbor": "^8.0.0",
     "dotenv": "^8.6.0",
     "dotenv-expand": "^5.1.0",
