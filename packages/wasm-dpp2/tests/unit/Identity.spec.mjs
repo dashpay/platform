@@ -44,7 +44,9 @@ describe('Identity', () => {
       const identity = new wasm.Identity(identifier);
       const identityObject = identity.toObject();
 
-      expect(identityObject.id.constructor.name).to.equal('Identifier');
+      // toObject returns plain JS values (Uint8Array for id, not Identifier instance)
+      expect(identityObject.id.constructor.name).to.equal('Uint8Array');
+      expect(identityObject.id.length).to.equal(32);
       expect(Array.isArray(identityObject.publicKeys)).to.equal(true);
       expect(identityObject.balance).to.equal(BigInt(0));
       expect(identityObject.revision).to.equal(BigInt(0));

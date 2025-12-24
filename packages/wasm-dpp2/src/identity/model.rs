@@ -2,24 +2,13 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt, try_to_u64};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dpp::identity::fields::IDENTIFIER_FIELDS_RAW_OBJECT;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::identity_public_key::fields::BINARY_DATA_FIELDS;
-use dpp::identity::v0::IdentityV0;
-use dpp::identity::{self, Identity, KeyID};
-use dpp::platform_value::ReplacementType;
-use dpp::platform_value::Value;
+use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::prelude::{Identifier, IdentityPublicKey};
+use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
-use dpp::version::PlatformVersion;
-use js_sys::{Array, Object, Reflect};
-use serde_json::Value as JsonValue;
-use serde_wasm_bindgen::from_value;
-use std::collections::BTreeMap;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use std::convert::TryFrom;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -149,12 +138,6 @@ impl IdentityWasm {
         Ok(encode(bytes.as_slice(), Base64))
     }
 
-    /// Serialize Identity to a plain JS object (non-human-readable).
-    ///
-    /// Returns a POJO with:
-    /// - `id` as Uint8Array (32 bytes)
-    /// - `publicKeys` as an array of plain JS objects
-    /// - `balance` and `revision` as BigInt
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
         // Use platform_value conversion which handles BigInt for balance/revision
@@ -175,209 +158,14 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        IdentityWasm::from_js_value(js_value)
+        let value = serialization::js_value_to_platform_value(&js_value)?;
+        let identity = Identity::try_from_platform_versioned(value, PlatformVersion::latest())?;
+        Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityWasm> {
         let identity = Identity::deserialize_from_bytes(bytes.as_slice())?;
         Ok(IdentityWasm(identity))
-    }
-}
-
-fn identity_from_platform_value(mut value: Value) -> WasmDppResult<IdentityWasm> {
-    value
-        .replace_at_paths(IDENTIFIER_FIELDS_RAW_OBJECT, ReplacementType::Identifier)
-        .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-
-    if let Some(public_keys) = value
-        .get_optional_array_mut_ref(identity::property_names::PUBLIC_KEYS)
-        .map_err(|err| WasmDppError::serialization(err.to_string()))?
-    {
-        for public_key in public_keys.iter_mut() {
-            public_key
-                .replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)
-                .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        }
-    }
-
-    let identity_v0 = IdentityV0::try_from(value).map_err(WasmDppError::from)?;
-
-    Ok(IdentityWasm(Identity::from(identity_v0)))
-}
-
-impl IdentityWasm {
-    pub fn get_rs_public_keys(&self) -> BTreeMap<KeyID, IdentityPublicKey> {
-        self.0.public_keys().clone()
-    }
-
-    fn from_js_value(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        // First check if it's already an IdentityWasm instance
-        if let Ok(identity_wasm) = js_value.to_wasm::<IdentityWasm>("Identity") {
-            return Ok(identity_wasm.clone());
-        }
-
-        // Check if it's an object with an Identifier instance as id (from toObject())
-        // We need to try this before serde conversion because toObject() returns
-        // an object with id as IdentifierWasm which serde can't properly deserialize
-        if js_value.is_object() {
-            let object = Object::from(js_value.clone());
-
-            let id_js = Reflect::get(&object, &JsValue::from_str("id")).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "unable to read identity id: {}",
-                    err.error_message()
-                ))
-            })?;
-
-            // Check if id is an Identifier instance (from toObject())
-            if id_js.to_wasm::<IdentifierWasm>("Identifier").is_ok() {
-                let identifier: Identifier = IdentifierWasm::try_from(&id_js)?.into();
-
-                let js_public_keys = Reflect::get(&object, &JsValue::from_str("publicKeys"))
-                    .map_err(|err| {
-                        WasmDppError::invalid_argument(format!(
-                            "unable to read identity publicKeys: {}",
-                            err.error_message()
-                        ))
-                    })?;
-                let mut public_keys: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
-                if !js_public_keys.is_undefined() && !js_public_keys.is_null() {
-                    let array = Array::from(&js_public_keys);
-                    for value in array.iter() {
-                        let public_key_wasm = value
-                            .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
-                            .map_err(|err| {
-                                WasmDppError::invalid_argument(format!(
-                                    "identity publicKeys must contain IdentityPublicKey instances: {}",
-                                    err
-                                ))
-                            })?;
-                        let public_key: IdentityPublicKey = public_key_wasm.clone().into();
-                        public_keys.insert(public_key.id(), public_key);
-                    }
-                }
-
-                let balance_js =
-                    Reflect::get(&object, &JsValue::from_str("balance")).map_err(|err| {
-                        WasmDppError::invalid_argument(format!(
-                            "unable to read identity balance: {}",
-                            err.error_message()
-                        ))
-                    })?;
-                let balance = if balance_js.is_undefined() || balance_js.is_null() {
-                    0
-                } else {
-                    try_to_u64(balance_js)
-                        .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
-                };
-
-                let revision_js =
-                    Reflect::get(&object, &JsValue::from_str("revision")).map_err(|err| {
-                        WasmDppError::invalid_argument(format!(
-                            "unable to read identity revision: {}",
-                            err.error_message()
-                        ))
-                    })?;
-                let revision = if revision_js.is_undefined() || revision_js.is_null() {
-                    0
-                } else {
-                    try_to_u64(revision_js)
-                        .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
-                };
-
-                let identity_v0 = IdentityV0 {
-                    id: identifier,
-                    public_keys,
-                    balance,
-                    revision,
-                };
-
-                return Ok(IdentityWasm(Identity::from(identity_v0)));
-            }
-        }
-
-        // Try serde conversion for plain objects (without WASM class instances)
-        if let Ok(value) = serde_wasm_bindgen::from_value::<Value>(js_value.clone()) {
-            return identity_from_platform_value(value);
-        }
-
-        // Fallback: try to parse as a plain object with string id
-        if js_value.is_object() {
-            let object = Object::from(js_value.clone());
-
-            let id_js = Reflect::get(&object, &JsValue::from_str("id")).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "unable to read identity id: {}",
-                    err.error_message()
-                ))
-            })?;
-            let identifier: Identifier = IdentifierWasm::try_from(&id_js)?.into();
-
-            let js_public_keys =
-                Reflect::get(&object, &JsValue::from_str("publicKeys")).map_err(|err| {
-                    WasmDppError::invalid_argument(format!(
-                        "unable to read identity publicKeys: {}",
-                        err.error_message()
-                    ))
-                })?;
-            let mut public_keys: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
-            if !js_public_keys.is_undefined() && !js_public_keys.is_null() {
-                let array = Array::from(&js_public_keys);
-                for value in array.iter() {
-                    let public_key_wasm = value
-                        .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
-                        .map_err(|err| {
-                            WasmDppError::invalid_argument(format!(
-                                "identity publicKeys must contain IdentityPublicKey instances: {}",
-                                err
-                            ))
-                        })?;
-                    let public_key: IdentityPublicKey = public_key_wasm.clone().into();
-                    public_keys.insert(public_key.id(), public_key);
-                }
-            }
-
-            let balance_js =
-                Reflect::get(&object, &JsValue::from_str("balance")).map_err(|err| {
-                    WasmDppError::invalid_argument(format!(
-                        "unable to read identity balance: {}",
-                        err.error_message()
-                    ))
-                })?;
-            let balance = if balance_js.is_undefined() || balance_js.is_null() {
-                0
-            } else {
-                try_to_u64(balance_js).map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
-            };
-
-            let revision_js =
-                Reflect::get(&object, &JsValue::from_str("revision")).map_err(|err| {
-                    WasmDppError::invalid_argument(format!(
-                        "unable to read identity revision: {}",
-                        err.error_message()
-                    ))
-                })?;
-            let revision = if revision_js.is_undefined() || revision_js.is_null() {
-                0
-            } else {
-                try_to_u64(revision_js)
-                    .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?
-            };
-
-            let identity_v0 = IdentityV0 {
-                id: identifier,
-                public_keys,
-                balance,
-                revision,
-            };
-
-            return Ok(IdentityWasm(Identity::from(identity_v0)));
-        }
-
-        let json_value: JsonValue = from_value(js_value.clone())
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-
-        identity_from_platform_value(Value::from(json_value))
     }
 }
