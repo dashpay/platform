@@ -11,15 +11,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug,
-    PartialEq,
-    PartialOrd,
-    Clone,
-    Eq,
-    Encode,
-    Decode,
-    PlatformDeserialize,
-    PlatformSerialize,
+    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
