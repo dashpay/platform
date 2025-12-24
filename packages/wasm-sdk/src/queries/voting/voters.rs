@@ -202,7 +202,9 @@ impl WasmSdk {
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            voters_array, metadata, proof,
+            voters_array,
+            metadata,
+            proof,
         ))
     }
 }

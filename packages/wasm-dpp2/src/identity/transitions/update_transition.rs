@@ -261,7 +261,6 @@ impl IdentityUpdateTransitionWasm {
             )),
         }
     }
-
 }
 
 impl_wasm_conversions!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);

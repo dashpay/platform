@@ -176,7 +176,6 @@ impl VotePollWasm {
 
         Ok(())
     }
-
 }
 
 impl_wasm_conversions!(VotePollWasm, VotePoll);

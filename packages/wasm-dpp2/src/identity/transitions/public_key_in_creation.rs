@@ -235,7 +235,6 @@ impl IdentityPublicKeyInCreationWasm {
 
         Ok(())
     }
-
 }
 
 impl IdentityPublicKeyInCreationWasm {

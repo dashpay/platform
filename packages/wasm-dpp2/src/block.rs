@@ -63,7 +63,7 @@ impl From<BlockInfoWasm> for BlockInfo {
 
 impl From<&BlockInfoWasm> for BlockInfo {
     fn from(wasm: &BlockInfoWasm) -> Self {
-        wasm.0.clone()
+        wasm.0
     }
 }
 

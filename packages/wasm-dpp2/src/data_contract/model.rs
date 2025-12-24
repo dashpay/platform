@@ -141,7 +141,7 @@ impl DataContractWasm {
 
         let config = DataContractConfig::default_for_version(&platform_version.clone())?;
 
-        let config_value: Value = dpp::platform_value::to_value(&config)
+        let config_value: Value = dpp::platform_value::to_value(config)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         let mut contract_value = Value::Map(ValueMap::new());

@@ -182,4 +182,3 @@ impl DocumentTransitionWasm {
         self.0.set_identity_contract_nonce(identity_contract_nonce)
     }
 }
-

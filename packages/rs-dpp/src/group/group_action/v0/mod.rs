@@ -8,7 +8,17 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize, Serialize, Deserialize,
+    Debug,
+    PartialEq,
+    PartialOrd,
+    Clone,
+    Eq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    Serialize,
+    Deserialize,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub struct GroupActionV0 {

@@ -134,7 +134,6 @@ impl ContractBoundsWasm {
             }
         }
     }
-
 }
 
 impl_wasm_conversions!(ContractBoundsWasm, ContractBounds);

@@ -36,8 +36,7 @@ mod outpoint_serde {
         if deserializer.is_human_readable() {
             // JSON: deserialize from "txid:vout" string
             let s = String::deserialize(deserializer)?;
-            OutPoint::from_str(&s)
-                .map_err(|e| D::Error::custom(format!("invalid outpoint: {}", e)))
+            OutPoint::from_str(&s).map_err(|e| D::Error::custom(format!("invalid outpoint: {}", e)))
         } else {
             // Binary: deserialize from 36 bytes
             struct OutPointVisitor;

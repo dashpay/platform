@@ -287,7 +287,6 @@ impl FinalizedEpochInfoWasm {
     pub fn set_protocol_version(&mut self, protocol_version: u32) {
         self.v0_mut().protocol_version = protocol_version;
     }
-
 }
 
 crate::impl_wasm_conversions!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

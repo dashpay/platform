@@ -76,7 +76,6 @@ impl VoteWasm {
             })),
         }
     }
-
 }
 
 impl_wasm_conversions!(VoteWasm, Vote);

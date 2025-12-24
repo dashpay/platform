@@ -58,7 +58,7 @@ impl DocumentReplaceTransitionWasm {
             };
 
         let rs_update_transition = generate_replace_transition(
-            &document,
+            document,
             identity_contract_nonce,
             document.get_document_type_name().to_string(),
             token_payment_info,

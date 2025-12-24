@@ -436,8 +436,8 @@ impl DocumentWasm {
         let mut json_value = self.document.to_json(PlatformVersion::latest())?;
 
         // Serialize wrapper fields using serde and merge into document JSON
-        let wrapper_json = serde_json::to_value(self)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let wrapper_json =
+            serde_json::to_value(self).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         let obj = json_value.as_object_mut().ok_or_else(|| {
             WasmDppError::serialization("Expected JSON object from Document::to_json")

@@ -205,7 +205,6 @@ impl IdentityCreditTransferWasm {
             )),
         }
     }
-
 }
 
 impl IdentityCreditTransferWasm {

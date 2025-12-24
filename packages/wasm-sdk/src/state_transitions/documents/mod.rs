@@ -25,7 +25,7 @@ use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
 use js_sys;
-use serde::{Serialize};
+use serde::Serialize;
 use serde_json;
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;

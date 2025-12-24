@@ -55,7 +55,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "getOutput")]
     pub fn get_output(&self) -> Option<Vec<u8>> {
-        self.0.output().map(|output| serialize(output))
+        self.0.output().map(serialize)
     }
 
     #[wasm_bindgen(js_name = "getOutPoint")]

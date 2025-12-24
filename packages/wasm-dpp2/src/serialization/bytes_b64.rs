@@ -65,9 +65,7 @@ pub mod option {
         }
     }
 
-    pub fn deserialize<'de, D, const N: usize>(
-        deserializer: D,
-    ) -> Result<Option<[u8; N]>, D::Error>
+    pub fn deserialize<'de, D, const N: usize>(deserializer: D) -> Result<Option<[u8; N]>, D::Error>
     where
         D: Deserializer<'de>,
     {

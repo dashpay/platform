@@ -181,7 +181,6 @@ impl IdentityTopUpTransitionWasm {
             )),
         }
     }
-
 }
 
 impl_wasm_conversions!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);

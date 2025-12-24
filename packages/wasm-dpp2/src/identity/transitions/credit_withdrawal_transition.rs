@@ -277,7 +277,9 @@ impl IdentityCreditWithdrawalTransitionWasm {
             )),
         }
     }
-
 }
 
-impl_wasm_conversions!(IdentityCreditWithdrawalTransitionWasm, IdentityCreditWithdrawalTransition);
+impl_wasm_conversions!(
+    IdentityCreditWithdrawalTransitionWasm,
+    IdentityCreditWithdrawalTransition
+);

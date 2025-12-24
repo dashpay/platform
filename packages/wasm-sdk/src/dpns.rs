@@ -365,7 +365,7 @@ impl WasmSdk {
         if let Some((_, Some(document))) = documents.into_iter().next() {
             Ok(DpnsUsernameInfo {
                 username: username.to_string(),
-                identity_id: IdentifierWasm::from(document.owner_id().clone()),
+                identity_id: IdentifierWasm::from(document.owner_id()),
                 document_id: IdentifierWasm::from(document.id()),
             })
         } else {

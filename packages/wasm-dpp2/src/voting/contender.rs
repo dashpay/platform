@@ -62,7 +62,6 @@ impl ContenderWithSerializedDocumentWasm {
     pub fn vote_tally(&self) -> Option<u32> {
         self.0.vote_tally()
     }
-
 }
 
 impl ContenderWithSerializedDocumentWasm {
@@ -75,4 +74,7 @@ impl ContenderWithSerializedDocumentWasm {
     }
 }
 
-impl_wasm_conversions!(ContenderWithSerializedDocumentWasm, ContenderWithSerializedDocument);
+impl_wasm_conversions!(
+    ContenderWithSerializedDocumentWasm,
+    ContenderWithSerializedDocument
+);

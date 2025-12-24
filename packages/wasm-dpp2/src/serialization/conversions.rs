@@ -23,11 +23,11 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::platform_value;
 use js_sys::Object;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::*;
 
 /// Convert JsValue to serde_json::Value, handling BigInt values and WASM objects.
 ///
@@ -37,22 +37,24 @@ use wasm_bindgen::JsValue;
 /// - Falls back to serde_wasm_bindgen conversion for plain objects
 pub fn js_value_to_json(value: &JsValue) -> WasmDppResult<JsonValue> {
     // Check if the value has a toJSON method (WASM objects like DataContractWasm, IdentityWasm)
-    if value.is_object() && !value.is_null() && !js_sys::Array::is_array(value) {
-        if let Ok(to_json_fn) = js_sys::Reflect::get(value, &JsValue::from_str("toJSON")) {
-            if to_json_fn.is_function() {
-                let func: js_sys::Function = to_json_fn.unchecked_into();
-                // Call toJSON() on the object
-                if let Ok(json_result) = func.call0(value) {
-                    // Recursively convert the result (it might contain BigInt or nested WASM objects)
-                    return js_value_to_json(&json_result);
-                }
-            }
+    if value.is_object()
+        && !value.is_null()
+        && !js_sys::Array::is_array(value)
+        && let Ok(to_json_fn) = js_sys::Reflect::get(value, &JsValue::from_str("toJSON"))
+        && to_json_fn.is_function()
+    {
+        let func: js_sys::Function = to_json_fn.unchecked_into();
+        // Call toJSON() on the object
+        if let Ok(json_result) = func.call0(value) {
+            // Recursively convert the result (it might contain BigInt or nested WASM objects)
+            return js_value_to_json(&json_result);
         }
     }
 
     let normalized = normalize_js_value_for_json(value)?;
-    serde_wasm_bindgen::from_value(normalized)
-        .map_err(|e| WasmDppError::serialization(format!("Failed to convert JsValue to JSON: {}", e)))
+    serde_wasm_bindgen::from_value(normalized).map_err(|e| {
+        WasmDppError::serialization(format!("Failed to convert JsValue to JSON: {}", e))
+    })
 }
 
 /// Convert serde_json::Value to JsValue using JSON-compatible serialization.
@@ -60,8 +62,9 @@ pub fn js_value_to_json(value: &JsValue) -> WasmDppResult<JsonValue> {
 /// This ensures objects become plain JS objects (not Maps).
 pub fn json_to_js_value(value: &JsonValue) -> WasmDppResult<JsValue> {
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    value.serialize(&serializer)
-        .map_err(|e| WasmDppError::serialization(format!("Failed to convert JSON to JsValue: {}", e)))
+    value.serialize(&serializer).map_err(|e| {
+        WasmDppError::serialization(format!("Failed to convert JSON to JsValue: {}", e))
+    })
 }
 
 /// Recursively normalizes a JsValue for JSON conversion.
@@ -161,8 +164,8 @@ pub fn from_object<T: DeserializeOwned>(value: JsValue) -> WasmDppResult<T> {
 /// Uses `serialize_human_readable(true)` so types like Identifier serialize as base58 strings,
 /// BinaryData as base64 strings, etc.
 pub fn to_json<T: Serialize>(value: &T) -> WasmDppResult<JsValue> {
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible()
-        .serialize_human_readable(true);
+    let serializer =
+        serde_wasm_bindgen::Serializer::json_compatible().serialize_human_readable(true);
     value
         .serialize(&serializer)
         .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))
@@ -206,7 +209,7 @@ pub fn platform_value_to_json(value: &platform_value::Value) -> WasmDppResult<Js
 /// Convert platform_value::Value for JSON serialization.
 /// Transforms binary types to their string representations.
 fn convert_value_for_json(value: &platform_value::Value) -> platform_value::Value {
-    use dpp::platform_value::string_encoding::{encode, Encoding};
+    use dpp::platform_value::string_encoding::{Encoding, encode};
 
     match value {
         platform_value::Value::Identifier(bytes) => {
@@ -346,11 +349,10 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
     }
 
     // Fallback
-    Err(WasmDppError::serialization(format!(
-        "Unsupported JsValue type for platform_value conversion"
-    )))
+    Err(WasmDppError::serialization(
+        "Unsupported JsValue type for platform_value conversion".to_string(),
+    ))
 }
-
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
 /// for a wasm_bindgen newtype wrapper using the serialization::conversions module.
@@ -377,7 +379,9 @@ macro_rules! impl_wasm_conversions {
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
-            pub fn from_object(obj: wasm_bindgen::JsValue) -> Result<$wrapper, $crate::error::WasmDppError> {
+            pub fn from_object(
+                obj: wasm_bindgen::JsValue,
+            ) -> Result<$wrapper, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::from_object(obj).map(Self)
             }
 
@@ -387,7 +391,9 @@ macro_rules! impl_wasm_conversions {
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
-            pub fn from_json(js: wasm_bindgen::JsValue) -> Result<$wrapper, $crate::error::WasmDppError> {
+            pub fn from_json(
+                js: wasm_bindgen::JsValue,
+            ) -> Result<$wrapper, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::from_json(js).map(Self)
             }
         }

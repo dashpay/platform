@@ -1,9 +1,9 @@
 use crate::impl_wasm_conversions;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
+use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
-use dpp::voting::votes::resource_vote::ResourceVote;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]

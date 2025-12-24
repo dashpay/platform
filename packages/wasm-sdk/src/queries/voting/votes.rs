@@ -177,9 +177,7 @@ impl WasmSdk {
         let votes_map = resource_votes_to_map(votes);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            votes_map,
-            metadata,
-            proof,
+            votes_map, metadata, proof,
         ))
     }
 }

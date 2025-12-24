@@ -194,7 +194,9 @@ impl DataContractCreateTransitionWasm {
             _ => Err(WasmDppError::invalid_argument("Incorrect transition type")),
         }
     }
-
 }
 
-impl_wasm_conversions!(DataContractCreateTransitionWasm, DataContractCreateTransition);
+impl_wasm_conversions!(
+    DataContractCreateTransitionWasm,
+    DataContractCreateTransition
+);

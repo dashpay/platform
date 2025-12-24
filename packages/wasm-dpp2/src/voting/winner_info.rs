@@ -87,7 +87,10 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
     }
 }
 
-impl_wasm_conversions!(ContestedDocumentVotePollWinnerInfoWasm, ContestedDocumentVotePollWinnerInfo);
+impl_wasm_conversions!(
+    ContestedDocumentVotePollWinnerInfoWasm,
+    ContestedDocumentVotePollWinnerInfo
+);
 
 impl ContestedDocumentVotePollWinnerInfoWasm {
     pub fn into_inner(self) -> ContestedDocumentVotePollWinnerInfo {

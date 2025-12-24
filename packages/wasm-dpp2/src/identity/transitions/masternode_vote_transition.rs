@@ -246,7 +246,6 @@ impl MasternodeVoteTransitionWasm {
         let bytes = self.0.serialize_to_bytes()?;
         Ok(encode(bytes.as_slice(), Base64))
     }
-
 }
 
 impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);

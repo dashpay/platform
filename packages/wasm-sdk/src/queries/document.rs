@@ -340,8 +340,7 @@ impl WasmSdk {
 
             match doc_opt {
                 Some(doc) => {
-                    let wasm_doc =
-                        DocumentWasm::new(doc, contract_id, doc_type_name.clone(), None);
+                    let wasm_doc = DocumentWasm::new(doc, contract_id, doc_type_name.clone(), None);
                     documents_map.set(&key, &JsValue::from(wasm_doc));
                 }
                 None => {
@@ -376,8 +375,7 @@ impl WasmSdk {
 
             match doc_opt {
                 Some(doc) => {
-                    let wasm_doc =
-                        DocumentWasm::new(doc, contract_id, doc_type_name.clone(), None);
+                    let wasm_doc = DocumentWasm::new(doc, contract_id, doc_type_name.clone(), None);
                     documents_map.set(&key, &JsValue::from(wasm_doc));
                 }
                 None => {
