@@ -71,6 +71,7 @@ describe('PlatformAddress', () => {
 
   it('can be created from bytes', () => {
     // Create P2PKH address from bytes (type 0x00)
+    // eslint-disable-next-line max-len
     const p2pkhBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     const p2pkhAddr = PlatformAddress.fromBytes(Array.from(p2pkhBytes));
     expect(p2pkhAddr).to.exist();
@@ -79,6 +80,7 @@ describe('PlatformAddress', () => {
     expect(p2pkhAddr.isP2sh).to.be.false();
 
     // Create P2SH address from bytes (type 0x01)
+    // eslint-disable-next-line max-len
     const p2shBytes = new Uint8Array([0x01, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     const p2shAddr = PlatformAddress.fromBytes(Array.from(p2shBytes));
     expect(p2shAddr).to.exist();
@@ -89,6 +91,7 @@ describe('PlatformAddress', () => {
 
   it('converts to bech32m and back', () => {
     // Create address from bytes
+    // eslint-disable-next-line max-len
     const originalBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     const addr = PlatformAddress.fromBytes(Array.from(originalBytes));
 
