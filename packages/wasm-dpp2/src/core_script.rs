@@ -45,7 +45,7 @@ impl CoreScriptWasm {
     pub fn new_p2pkh(key_hash: Vec<u8>) -> Self {
         let mut key_hash_bytes = [0u8; 20];
         let bytes = key_hash.as_slice();
-        let len = bytes.len().min(32);
+        let len = bytes.len().min(key_hash_bytes.len());
         key_hash_bytes[..len].copy_from_slice(&bytes[..len]);
 
         CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes))
@@ -55,7 +55,7 @@ impl CoreScriptWasm {
     pub fn new_p2sh(script_hash: Vec<u8>) -> Self {
         let mut script_hash_bytes = [0u8; 20];
         let bytes = script_hash.as_slice();
-        let len = bytes.len().min(32);
+        let len = bytes.len().min(script_hash_bytes.len());
         script_hash_bytes[..len].copy_from_slice(&bytes[..len]);
 
         let mut bytes = vec![
