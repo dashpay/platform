@@ -1,5 +1,5 @@
-use dashcore_rpc::json::AssetUnlockStatus;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::json::AssetUnlockStatus;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -188,7 +188,7 @@ mod tests {
     use super::*;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dashcore_rpc::json::{AssetUnlockStatus, AssetUnlockStatusResult};
+    use dpp::dashcore_rpc::json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;

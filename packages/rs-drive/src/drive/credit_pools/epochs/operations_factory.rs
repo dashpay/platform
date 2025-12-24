@@ -121,7 +121,11 @@ impl EpochOperations for Epoch {
                     platform_version,
                 )
                 .or_else(|e| match e {
-                    Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => Ok(0u64),
+                    Error::GroveDB(inner)
+                        if matches!(inner.as_ref(), grovedb::Error::PathKeyNotFound(_)) =>
+                    {
+                        Ok(0u64)
+                    }
                     _ => Err(e),
                 })?
         };
@@ -444,7 +448,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::InvalidPath(_)))
+                Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::InvalidPath(_))
             ));
         }
 
@@ -615,7 +619,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+                Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
             ));
 
             let result = drive.get_epoch_storage_credits_for_distribution(
@@ -626,7 +630,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+                Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
             ));
         }
     }
@@ -764,7 +768,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::InvalidPath(_)))
+                Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::InvalidPath(_))
             ));
         }
 
@@ -820,7 +824,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::InvalidPath(_)))
+                Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::InvalidPath(_))
             ));
         }
 

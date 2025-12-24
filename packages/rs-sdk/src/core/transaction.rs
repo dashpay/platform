@@ -84,12 +84,10 @@ impl Sdk {
                 let message = stream
                     .message()
                     .await
-                    .map_err(|e| Error::DapiClientError(format!("can't receive message: {e}")))?;
+                    .map_err(|e| Error::Generic(format!("can't receive message: {e}")))?;
 
                 let Some(TransactionsWithProofsResponse { responses }) = message else {
-                    return Err(Error::DapiClientError(
-                        "stream closed unexpectedly".to_string(),
-                    ));
+                    return Err(Error::Generic("stream closed unexpectedly".to_string()));
                 };
 
                 match responses {

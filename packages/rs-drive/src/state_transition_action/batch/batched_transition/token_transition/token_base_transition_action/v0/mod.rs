@@ -101,11 +101,11 @@ impl TokenBaseTransitionActionAccessorsV0 for TokenBaseTransitionActionV0 {
             .contract
             .tokens()
             .get(&self.token_contract_position)
-            .ok_or(Error::Protocol(ProtocolError::CorruptedCodeExecution(
-                format!(
+            .ok_or(Error::Protocol(Box::new(
+                ProtocolError::CorruptedCodeExecution(format!(
                     "data contract does not have a token at position {}",
                     self.token_contract_position
-                ),
+                )),
             )))
     }
 

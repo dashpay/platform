@@ -1,5 +1,6 @@
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
@@ -38,10 +39,11 @@ impl TopUpIdentity for Identity {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
         let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
 
-        identity.balance.ok_or(Error::DapiClientError(
-            "expected an identity balance".to_string(),
-        ))
+        identity
+            .balance
+            .ok_or(Error::Generic("expected an identity balance".to_string()))
     }
 }

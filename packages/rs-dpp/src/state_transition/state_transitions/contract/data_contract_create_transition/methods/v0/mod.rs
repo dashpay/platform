@@ -1,6 +1,6 @@
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
-use crate::identity::{KeyID, PartialIdentity};
+use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 
 use crate::prelude::IdentityNonce;
 use crate::state_transition::StateTransition;
@@ -20,13 +20,13 @@ pub trait DataContractCreateTransitionMethodsV0 {
     /// * `signer` - A reference to an object implementing the `Signer` trait.
     /// * `platform_version` - The current platform version that should be used.
     /// * `feature_version` - You can set the feature version to a different version than the default for the current
-    ///     protocol version.
+    ///   protocol version.
     ///
     /// # Returns
     ///
     /// If successful, returns a `Result<Self, ProtocolError>` containing a `StateTransition`
     /// object. Otherwise, returns `ProtocolError`.
-    fn new_from_data_contract<S: Signer>(
+    fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         data_contract: DataContract,
         identity_nonce: IdentityNonce,
         identity: &PartialIdentity,

@@ -30,6 +30,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
         rpc: {
           port: 20002,
         },
+        zmq: {
+          port: 49998,
+        },
       },
       platform: {
         gateway: {
@@ -43,6 +46,13 @@ export default function getLocalConfigFactory(getBaseConfig) {
           },
           rateLimiter: {
             enabled: false,
+          },
+        },
+        dapi: {
+          rsDapi: {
+            metrics: {
+              port: 29091,
+            },
           },
         },
         drive: {

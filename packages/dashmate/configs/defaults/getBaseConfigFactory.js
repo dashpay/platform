@@ -105,6 +105,10 @@ export default function getBaseConfigFactory() {
           },
           allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
         },
+        zmq: {
+          host: '127.0.0.1',
+          port: 29998,
+        },
         spork: {
           address: null,
           privateKey: null,
@@ -156,10 +160,7 @@ export default function getBaseConfigFactory() {
             driveGrpc: {
               maxRequests: 100,
             },
-            dapiApi: {
-              maxRequests: 100,
-            },
-            dapiCoreStreams: {
+            rsDapi: {
               maxRequests: 100,
             },
             dapiJsonRpc: {
@@ -226,9 +227,9 @@ export default function getBaseConfigFactory() {
           },
         },
         dapi: {
-          api: {
+          rsDapi: {
             docker: {
-              image: `dashpay/dapi:${dockerImageVersion}`,
+              image: `dashpay/rs-dapi:${dockerImageVersion}`,
               deploy: {
                 replicas: 1,
               },
@@ -236,8 +237,19 @@ export default function getBaseConfigFactory() {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
-                target: 'dapi',
+                target: 'rs-dapi',
               },
+            },
+            metrics: {
+              enabled: false,
+              host: '127.0.0.1',
+              port: 9091,
+            },
+            logs: {
+              level: 'debug',
+              jsonFormat: false,
+              accessLogPath: null,
+              accessLogFormat: 'combined',
             },
             waitForStResultTimeout: 120000,
           },
@@ -309,7 +321,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1',
+              image: 'dashpay/tenderdash:1.5',
             },
             p2p: {
               host: '0.0.0.0',

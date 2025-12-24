@@ -22,17 +22,42 @@ impl ConfigurationForSystemContract for SystemDataContract {
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
         match self {
-            SystemDataContract::Withdrawals
-            | SystemDataContract::MasternodeRewards
-            | SystemDataContract::FeatureFlags
-            | SystemDataContract::DPNS
-            | SystemDataContract::Dashpay
-            | SystemDataContract::WalletUtils => {
+            SystemDataContract::Withdrawals => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;
                 config.set_sized_integer_types_enabled(false);
                 Ok(config)
             }
-            SystemDataContract::TokenHistory | SystemDataContract::KeywordSearch => {
+            SystemDataContract::MasternodeRewards => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::FeatureFlags => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::DPNS => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::Dashpay => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::WalletUtils => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(false);
+                Ok(config)
+            }
+            SystemDataContract::TokenHistory => {
+                let mut config = DataContractConfig::default_for_version(platform_version)?;
+                config.set_sized_integer_types_enabled(true);
+                Ok(config)
+            }
+            SystemDataContract::KeywordSearch => {
                 let mut config = DataContractConfig::default_for_version(platform_version)?;
                 config.set_sized_integer_types_enabled(true);
                 Ok(config)
@@ -135,35 +160,35 @@ mod tests {
         assert_ne!(contract_1, contract_2);
         let v1_ser: DataContractInSerializationFormat = contract_1
             .clone()
-            .try_into_platform_versioned(&PlatformVersion::get(1).unwrap())
+            .try_into_platform_versioned(PlatformVersion::get(1).unwrap())
             .expect("expected to serialize");
         let v2_ser: DataContractInSerializationFormat = contract_2
             .clone()
-            .try_into_platform_versioned(&PlatformVersion::get(1).unwrap())
+            .try_into_platform_versioned(PlatformVersion::get(1).unwrap())
             .expect("expected to serialize");
         assert_eq!(v1_ser, v2_ser);
 
         let v1_bytes = contract_1
-            .serialize_to_bytes_with_platform_version(&PlatformVersion::get(1).unwrap())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::get(1).unwrap())
             .expect("expected to serialize");
         let v8_bytes = contract_1
-            .serialize_to_bytes_with_platform_version(&PlatformVersion::get(8).unwrap())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::get(8).unwrap())
             .expect("expected to serialize");
         let v9_bytes = contract_1
-            .serialize_to_bytes_with_platform_version(&PlatformVersion::get(9).unwrap())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::get(9).unwrap())
             .expect("expected to serialize");
         assert_eq!(v1_bytes.len(), 1747);
         assert_eq!(v8_bytes.len(), 1747);
         assert_eq!(v9_bytes.len(), 1757); // this will still use a config v0 without sized_integer_types
 
         let v1_bytes = contract_2
-            .serialize_to_bytes_with_platform_version(&PlatformVersion::get(8).unwrap())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::get(8).unwrap())
             .expect("expected to serialize");
         let v8_bytes = contract_2
-            .serialize_to_bytes_with_platform_version(&PlatformVersion::get(8).unwrap())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::get(8).unwrap())
             .expect("expected to serialize");
         let v9_bytes = contract_2
-            .serialize_to_bytes_with_platform_version(&PlatformVersion::get(9).unwrap())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::get(9).unwrap())
             .expect("expected to serialize");
         assert_eq!(v1_bytes.len(), 1747);
         assert_eq!(v8_bytes.len(), 1747);

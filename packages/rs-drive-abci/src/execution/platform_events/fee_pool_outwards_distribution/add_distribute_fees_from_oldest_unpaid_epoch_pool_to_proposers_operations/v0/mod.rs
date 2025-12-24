@@ -270,9 +270,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(DriveError::GroveDB(
-                grovedb::Error::PathParentLayerNotFound(_)
-            ))
+            Err(DriveError::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathParentLayerNotFound(_))
         ));
     }
 }

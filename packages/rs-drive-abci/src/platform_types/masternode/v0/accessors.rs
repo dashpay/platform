@@ -1,5 +1,5 @@
-use dashcore_rpc::json::MasternodeType;
 use dpp::dashcore::{ProTxHash, Txid};
+use dpp::dashcore_rpc::json::MasternodeType;
 
 /// The masternode accessors for version 0
 pub trait MasternodeAccessorsV0 {

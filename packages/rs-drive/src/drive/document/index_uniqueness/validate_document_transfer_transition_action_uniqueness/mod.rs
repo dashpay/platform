@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -60,9 +61,16 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.validate_document_transfer_transition_action_uniqueness_v1(
+                contract,
+                document_type,
+                document_transfer_transition,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "validate_document_transfer_transition_action_uniqueness".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -9,15 +9,17 @@ use super::LimitQuery;
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::{error::Error, mock::MockResponse, platform::query::Query, sync::retry, Sdk};
 use dapi_grpc::platform::v0::{
-    GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
-    GetDataContractsRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetFinalizedEpochInfosRequest,
-    GetIdentitiesBalancesRequest, GetIdentityKeysRequest, GetPathElementsRequest,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetTokenDirectPurchasePricesRequest, GetVotePollsByEndDateRequest, Proof, ResponseMetadata,
+    GetAddressesInfosRequest, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourcesRequest, GetDataContractsRequest, GetEpochsInfoRequest,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetFinalizedEpochInfosRequest, GetIdentitiesBalancesRequest, GetIdentityKeysRequest,
+    GetPathElementsRequest, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetTokenDirectPurchasePricesRequest,
+    GetVotePollsByEndDateRequest, Proof, ResponseMetadata,
 };
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::address_funds::PlatformAddress;
+use dpp::dashcore_rpc::dashcore::ProTxHash;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
@@ -32,11 +34,11 @@ use dpp::{document::Document, voting::contender_structs::ContenderWithSerialized
 use drive::grovedb::query_result_type::Key;
 use drive::grovedb::Element;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResource, ContestedResources, DataContracts, Elements, ExtendedEpochInfos,
-    FinalizedEpochInfos, IdentityBalances, IdentityPublicKeys, MasternodeProtocolVote,
-    MasternodeProtocolVotes, ProposerBlockCountById, ProposerBlockCountByRange,
-    ProposerBlockCounts, ProtocolVersionUpgrades, ResourceVotesByIdentity,
-    TokenDirectPurchasePrices, VotePollsGroupedByTimestamp, Voter, Voters,
+    AddressInfos, Contenders, ContestedResource, ContestedResources, DataContracts, Elements,
+    ExtendedEpochInfos, FinalizedEpochInfos, IdentityBalances, IdentityPublicKeys,
+    MasternodeProtocolVote, MasternodeProtocolVotes, ProposerBlockCountById,
+    ProposerBlockCountByRange, ProposerBlockCounts, ProtocolVersionUpgrades,
+    ResourceVotesByIdentity, TokenDirectPurchasePrices, VotePollsGroupedByTimestamp, Voter, Voters,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{
@@ -539,6 +541,10 @@ impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
 /// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
 impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
     type Request = GetIdentitiesBalancesRequest;
+}
+
+impl FetchMany<PlatformAddress, AddressInfos> for drive_proof_verifier::types::AddressInfo {
+    type Request = GetAddressesInfosRequest;
 }
 
 //

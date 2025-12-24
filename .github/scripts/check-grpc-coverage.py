@@ -170,6 +170,28 @@ def save_cache(cache_file, cache_data):
         json.dump(cache_data, f, indent=2)
 
 
+def check_wasm_sdk_documentation():
+    """Check WASM SDK documentation completeness"""
+    wasm_sdk_path = Path(__file__).parent.parent.parent / 'packages' / 'wasm-sdk'
+    check_script = wasm_sdk_path / 'check_documentation.py'
+    
+    if not check_script.exists():
+        return True, []  # Skip if WASM SDK doesn't have the check script
+    
+    # Run the documentation check
+    import subprocess
+    result = subprocess.run(['python3', str(check_script)], cwd=wasm_sdk_path, capture_output=True, text=True)
+    
+    # Parse the output to find errors
+    errors = []
+    if result.returncode != 0:
+        output_lines = result.stdout.strip().split('\n')
+        for line in output_lines:
+            if line.startswith('ERROR:'):
+                errors.append(line)
+    
+    return result.returncode == 0, errors
+
 def main():
     """Main function to check gRPC coverage."""
     # Get paths
@@ -313,12 +335,29 @@ def main():
     
     print("\n" + report_content)
     
-    # Exit with error only if there are missing NEW queries
-    if missing_new_queries:
-        print(f"\nERROR: {len(missing_new_queries)} NEW queries are not implemented in rs-sdk")
+    # Check WASM SDK documentation
+    print("\n" + "=" * 80)
+    print("Checking WASM SDK Documentation...")
+    print("=" * 80)
+    
+    wasm_docs_ok, wasm_errors = check_wasm_sdk_documentation()
+    
+    if wasm_docs_ok:
+        print("✅ WASM SDK documentation is up to date")
+    else:
+        print(f"❌ WASM SDK documentation has {len(wasm_errors)} errors:")
+        for error in wasm_errors:
+            print(f"  {error}")
+        print("\nTo fix WASM SDK documentation errors, run:")
+        print("  cd packages/wasm-sdk && python3 generate_docs.py")
+    
+    # Exit with error if there are missing NEW queries or documentation errors
+    if missing_new_queries or not wasm_docs_ok:
+        if missing_new_queries:
+            print(f"\nERROR: {len(missing_new_queries)} NEW queries are not implemented in rs-sdk")
         sys.exit(1)
     else:
-        print("\nSUCCESS: All NEW gRPC queries are implemented in rs-sdk (or excluded)")
+        print("\nSUCCESS: All NEW gRPC queries are implemented in rs-sdk (or excluded) and documentation is up to date")
         sys.exit(0)
 
 

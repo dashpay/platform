@@ -94,7 +94,14 @@ impl Drive {
         ) {
             Ok(Some(SumItem(balance, _))) if balance >= 0 => Ok(Some(balance as Credits)),
 
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => {
+            Ok(None) => {
+                if apply {
+                    Ok(None)
+                } else {
+                    Ok(Some(0))
+                }
+            }
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_)) => {
                 if apply {
                     Ok(None)
                 } else {

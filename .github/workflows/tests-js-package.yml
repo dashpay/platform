@@ -5,6 +5,10 @@ on:
         description: The package name to run tests for
         type: string
         required: true
+      direct-packages:
+        description: JSON array of JS packages that changed directly
+        type: string
+        default: '[]'
       skip-tests:
         description: Skip running tests
         type: boolean
@@ -19,6 +23,7 @@ jobs:
     name: Linting
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    if: contains(fromJSON(inputs.direct-packages), inputs.package)
     permissions:
       id-token: write
       contents: read

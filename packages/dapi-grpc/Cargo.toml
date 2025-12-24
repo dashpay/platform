@@ -1,7 +1,7 @@
 [package]
 name = "dapi-grpc"
 description = "GRPC client for Dash Platform"
-version = "2.0.1"
+version.workspace = true
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Igor Markin <igor.markin@dash.org>",
@@ -39,28 +39,24 @@ serde = ["dep:serde", "dep:serde_bytes", "tenderdash-proto/serde"]
 mocks = ["serde", "dep:serde_json"]
 
 [dependencies]
-tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.4.0", tag = "v1.4.0", default-features = false }
+tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.5.0-dev.2", default-features = false }
 
-prost = { version = "0.13" }
+prost = { version = "0.14" }
 futures-core = "0.3.30"
-tonic = { version = "0.13.0", features = [
-  "codegen",
-  "prost",
-  "tls-ring",
-], default-features = false }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11.12", optional = true }
 serde_json = { version = "1.0", optional = true }
-dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
+dash-platform-macros = { path = "../rs-dash-platform-macros" }
 platform-version = { path = "../rs-platform-version" }
+tonic-prost = { version = "0.14.2" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+tonic = { version = "0.14.2", features = ["codegen"], default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tonic = { version = "0.13.0", features = [
+tonic = { version = "0.14.2", features = [
   "codegen",
-  "prost",
   "channel",
   "transport",
   "tls-native-roots",
@@ -69,7 +65,7 @@ tonic = { version = "0.13.0", features = [
 ], default-features = false }
 
 [build-dependencies]
-tonic-build = { version = "0.13.0" }
+tonic-prost-build = { version = "0.14.2" }
 
 [lib]
 
@@ -85,7 +81,8 @@ path = "clients/platform/v0/rust/platform_example.rs"
 [package.metadata.cargo-machete]
 ignored = [
   "platform-version",
-  "serde_bytes",
   "futures-core",
-  "dapi-grpc-macros",
+  "tonic-prost-build",
+  "getrandom", # Ignore getrandom as we need it to enable `js` feature
+  "dash-platform-macros", # used in build.rs
 ]

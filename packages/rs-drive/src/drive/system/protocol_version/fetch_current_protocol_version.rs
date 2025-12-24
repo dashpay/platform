@@ -42,7 +42,7 @@ impl Drive {
         grove
             .get_aux(PROTOCOL_VERSION_AUX_KEY, transaction)
             .unwrap()
-            .map_err(Error::GroveDB)
+            .map_err(Error::from)
             .map(|bytes| {
                 bytes
                     .map(|bytes| {

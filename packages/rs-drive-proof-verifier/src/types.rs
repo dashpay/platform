@@ -11,17 +11,20 @@ pub mod evonode_status;
 pub mod groups;
 /// Identity token balance
 pub mod identity_token_balance;
+/// Token contract info
+pub mod token_contract_info;
 /// Token info
 pub mod token_info;
 /// Token status
 pub mod token_status;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
-use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::prelude::{AddressNonce, IdentityNonce, TimestampMillis};
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
@@ -109,6 +112,26 @@ pub type DataContractHistory = RetrievedValues<u64, DataContract>;
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
+
+/// Information about a Platform address including its nonce and balance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
+    platform_serialize(unversioned)
+)]
+pub struct AddressInfo {
+    /// Address that owns the balance.
+    pub address: PlatformAddress,
+    /// Nonce associated with the address.
+    pub nonce: AddressNonce,
+    /// Balance stored for the address.
+    pub balance: Credits,
+}
+
+/// Mapping between platform addresses and their balance/nonce information.
+/// Missing entries are represented as `None`.
+pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 
 /// Multiple contenders for a vote resolution.
 ///

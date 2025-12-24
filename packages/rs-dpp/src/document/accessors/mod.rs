@@ -110,6 +110,12 @@ impl DocumentV0Getters for Document {
             Document::V0(v0) => v0.transferred_at_core_block_height,
         }
     }
+
+    fn creator_id(&self) -> Option<Identifier> {
+        match self {
+            Document::V0(v0) => v0.creator_id,
+        }
+    }
 }
 
 impl DocumentV0Setters for Document {
@@ -199,6 +205,12 @@ impl DocumentV0Setters for Document {
             Document::V0(v0) => {
                 v0.transferred_at_core_block_height = transferred_at_core_block_height
             }
+        }
+    }
+
+    fn set_creator_id(&mut self, creator_id: Option<Identifier>) {
+        match self {
+            Document::V0(v0) => v0.creator_id = creator_id,
         }
     }
 }

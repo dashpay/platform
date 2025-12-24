@@ -10,8 +10,6 @@ x-default-logging: &default-logging
 services:
   gateway:
     depends_on:
-      - dapi_api
-      - dapi_core_streams
       - drive_abci
       - gateway_rate_limiter
 

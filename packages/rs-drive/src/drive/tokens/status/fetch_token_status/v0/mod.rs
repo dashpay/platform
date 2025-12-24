@@ -58,7 +58,10 @@ impl Drive {
                 Ok(Some(TokenStatus::deserialize_from_bytes(info.as_slice())?))
             }
 
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+            Ok(None) => Ok(None),
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_)) => {
+                Ok(None)
+            }
 
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "token status was present but was not an item",

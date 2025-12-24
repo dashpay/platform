@@ -30,6 +30,7 @@ use crate::state_transition_action::batch::batched_transition::document_transiti
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 
 /// action
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, From)]
 pub enum DocumentTransitionAction {
     /// create

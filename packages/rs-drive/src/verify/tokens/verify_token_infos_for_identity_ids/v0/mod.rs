@@ -47,7 +47,7 @@ impl Drive {
                     match maybe_element {
                         None => Ok((key.into(), None)),
                         Some(element) => {
-                            let info_bytes = element.as_item_bytes().map_err(Error::GroveDB)?;
+                            let info_bytes = element.as_item_bytes().map_err(Error::from)?;
                             let info = IdentityTokenInfo::deserialize_from_bytes(info_bytes)?;
                             Ok((key.into(), Some(info)))
                         }

@@ -1,6 +1,6 @@
 [package]
 name = "json-schema-compatibility-validator"
-version = "2.0.1"
+version.workspace = true
 edition = "2021"
 rust-version.workspace = true
 authors = ["Ivan Shumkov <ivan@shumkov.ru>"]
@@ -18,3 +18,9 @@ assert_matches = "1.5.0"
 
 [features]
 examples = []
+
+[package.metadata.cargo-machete]
+ignored=[
+    "assert_matches", # used in doctests
+]
+

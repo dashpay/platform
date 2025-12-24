@@ -7,7 +7,7 @@ use crate::execution::types::block_execution_context::v0::{
 };
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
@@ -192,10 +192,17 @@ where
     let mut tx_results = Vec::new();
     let mut tx_records = Vec::new();
 
-    for (state_transition_execution_result, raw_state_transition) in state_transitions_result
-        .into_execution_results()
-        .into_iter()
-        .zip(request.txs)
+    let execution_results = state_transitions_result.into_execution_results();
+    // sanity check
+    if execution_results.len() != request.txs.len() {
+        return Err(Error::Execution(
+            crate::error::execution::ExecutionError::CorruptedCodeExecution(
+                "Size of execution results must match number of transactions in request",
+            ),
+        ));
+    }
+    for (state_transition_execution_result, raw_state_transition) in
+        execution_results.into_iter().zip(request.txs)
     {
         let tx_action = match &state_transition_execution_result {
             StateTransitionExecutionResult::SuccessfulExecution(..) => TxAction::Unmodified,

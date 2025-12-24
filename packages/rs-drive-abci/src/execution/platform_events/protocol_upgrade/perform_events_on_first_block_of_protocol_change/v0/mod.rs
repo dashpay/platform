@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::data_contracts::SystemDataContract;
@@ -13,6 +13,7 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
@@ -31,8 +32,8 @@ use drive::drive::tokens::paths::{
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
-use drive::drive::RootTree;
-use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction};
+use drive::drive::{Drive, RootTree};
+use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
 use std::collections::HashSet;
@@ -99,6 +100,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 9 && platform_version.protocol_version >= 9 {
             self.transition_to_version_9(block_info, transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 11 && platform_version.protocol_version >= 11 {
+            self.transition_to_version_11(transaction, platform_version)?;
         }
 
         Ok(())
@@ -287,7 +292,7 @@ impl<C> Platform<C> {
             .map(|element| {
                 let contested_document_resource_vote_poll_bytes = element
                     .into_item_bytes()
-                    .map_err(drive::error::Error::GroveDB)?;
+                    .map_err(drive::error::Error::from)?;
                 let vote_poll =
                     VotePoll::deserialize_from_bytes(&contested_document_resource_vote_poll_bytes)?;
                 match vote_poll {
@@ -361,6 +366,7 @@ impl<C> Platform<C> {
         self.drive.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::GroupActions as u8],
+            TreeType::NormalTree,
             Some(transaction),
             None,
             &mut vec![],
@@ -519,6 +525,33 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        Ok(())
+    }
+
+    /// We introduced in version 11 Addresses
+    fn transition_to_version_11(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.grove_insert_if_not_exists(
+            SubtreePath::empty(),
+            &[RootTree::AddressBalances as u8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        let path = Drive::addresses_path();
+        self.drive.grove_insert_if_not_exists(
+            path.as_slice().into(),
+            &[CLEAR_ADDRESS_POOL_U8],
+            Element::empty_provable_count_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
         Ok(())
     }
 }

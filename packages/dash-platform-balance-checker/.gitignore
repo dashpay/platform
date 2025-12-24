@@ -1,0 +1,25 @@
+# Build artifacts
+/target/
+Cargo.lock
+
+# Output files
+*_output.txt
+*.out
+
+# Temporary documentation and analysis
+ACTUAL_FINDINGS.md
+BALANCE_RESULT.md
+FINAL_RESULT.md
+FINAL_SUMMARY.md
+SUMMARY.md
+TECHNICAL_FINDINGS.md
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

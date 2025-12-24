@@ -2,7 +2,7 @@ use dpp::identity::KeyID;
 
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionSingleSigned};
 use dpp::voting::votes::Vote;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 use serde::Deserialize;

@@ -17,6 +17,13 @@ pub(in crate::document) trait DocumentPlatformSerializationMethodsV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     /// Serialize v1 will encode integers normally with their known size
     fn serialize_v1(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError>;
+
+    /// Serializes the document.
+    ///
+    /// The serialization of a document follows the pattern:
+    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
+    /// Serialize v2 will serialize the creator id if the document can be transferred or sold
+    fn serialize_v2(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError>;
 }
 
 #[cfg(feature = "extended-document")]

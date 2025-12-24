@@ -103,6 +103,7 @@ impl DocumentPurchaseTransitionBuilder {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         });
 
         Self::new(
@@ -189,7 +190,7 @@ impl DocumentPurchaseTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -258,7 +259,7 @@ impl Sdk {
     /// - Insufficient funds to complete the purchase
     /// - Price mismatch (document price changed)
     /// - Invalid purchaser identity
-    pub async fn document_purchase<S: Signer>(
+    pub async fn document_purchase<S: Signer<IdentityPublicKey>>(
         &self,
         purchase_document_transition_builder: DocumentPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,

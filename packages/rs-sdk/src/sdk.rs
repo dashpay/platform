@@ -7,11 +7,14 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{Fetch, Identifier};
-use arc_swap::{ArcSwapAny, ArcSwapOption};
+use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
+use dash_context_provider::ContextProvider;
+#[cfg(feature = "mocks")]
+use dash_context_provider::MockContextProvider;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
@@ -20,9 +23,7 @@ use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
-#[cfg(feature = "mocks")]
-use drive_proof_verifier::MockContextProvider;
-use drive_proof_verifier::{ContextProvider, FromProof};
+use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
@@ -35,10 +36,12 @@ use std::collections::btree_map::Entry;
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
+use std::path::Path;
 #[cfg(feature = "mocks")]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
@@ -52,7 +55,7 @@ pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
-pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 mins
+pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 minutes
 
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
@@ -204,6 +207,24 @@ enum SdkInstance {
     },
 }
 
+/// Helper function to get current timestamp in seconds
+/// Works in both native and WASM environments
+fn get_current_time_seconds() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(n) => n.as_secs(),
+            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // In WASM, we use JavaScript's Date.now() which returns milliseconds
+        // We need to convert to seconds
+        (js_sys::Date::now() / 1000.0) as u64
+    }
+}
+
 impl Sdk {
     /// Initialize Dash Platform  SDK in mock mode.
     ///
@@ -313,7 +334,9 @@ impl Sdk {
             }
         }?;
 
+        // TODO: We should verify freshness (light check) before we validate proofs (heavy check)
         self.verify_response_metadata(&metadata)?;
+
         Ok((object, metadata, proof))
     }
 
@@ -336,14 +359,14 @@ impl Sdk {
     /// * the `self` instance is not a `Mock` variant,
     /// * the `self` instance is in use by another thread.
     #[cfg(feature = "mocks")]
-    pub fn mock(&mut self) -> MutexGuard<MockDashPlatformSdk> {
+    pub fn mock(&mut self) -> MutexGuard<'_, MockDashPlatformSdk> {
         if let Sdk {
             inner: SdkInstance::Mock { ref mock, .. },
             ..
         } = self
         {
             mock.try_lock()
-                .expect("mock sdk is in use by another thread and connot be reconfigured")
+                .expect("mock sdk is in use by another thread and cannot be reconfigured")
         } else {
             panic!("not a mock")
         }
@@ -359,10 +382,7 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        };
+        let current_time_s = get_current_time_seconds();
 
         // we start by only using a read lock, as this speeds up the system
         let mut identity_nonce_counter = self.internal_cache.identity_nonce_counter.lock().await;
@@ -381,7 +401,7 @@ impl Sdk {
             }
         };
 
-        if should_query_platform {
+        let nonce = if should_query_platform {
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
                 self,
                 identity_id,
@@ -433,7 +453,16 @@ impl Sdk {
                     }
                 }
             }
-        }
+        };
+
+        tracing::trace!(
+            identity_id = %identity_id,
+            bump_first,
+            nonce = ?nonce,
+            "Fetched identity nonce"
+        );
+
+        nonce
     }
 
     // TODO: Move to a separate struct
@@ -448,10 +477,7 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let current_time_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        };
+        let current_time_s = get_current_time_seconds();
 
         // we start by only using a read lock, as this speeds up the system
         let mut identity_contract_nonce_counter = self
@@ -529,6 +555,24 @@ impl Sdk {
         }
     }
 
+    /// Forces reload of the identity nonce from Platform on the next call to `get_identity_nonce`.
+    pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
+        {
+            let mut identity_nonce_counter =
+                self.internal_cache.identity_nonce_counter.lock().await;
+            identity_nonce_counter.remove(identity_id);
+        }
+        {
+            let mut identity_contract_nonce_counter = self
+                .internal_cache
+                .identity_contract_nonce_counter
+                .lock()
+                .await;
+            identity_contract_nonce_counter
+                .retain(|(cached_identity_id, _), _| cached_identity_id != identity_id);
+        }
+    }
+
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
     ///
@@ -561,8 +605,8 @@ impl Sdk {
             .swap(Some(Arc::new(Box::new(context_provider))));
     }
 
-    /// Returns a future that resolves when the Sdk is cancelled (eg. shutdown was requested).
-    pub fn cancelled(&self) -> WaitForCancellationFuture {
+    /// Returns a future that resolves when the Sdk is cancelled (e.g. shutdown was requested).
+    pub fn cancelled(&self) -> WaitForCancellationFuture<'_> {
         self.cancel_token.cancelled()
     }
 
@@ -711,7 +755,7 @@ impl DapiRequestExecutor for Sdk {
 /// 2. Configure the builder with [`SdkBuilder::with_core()`]
 /// 3. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
 pub struct SdkBuilder {
-    /// List of addressses to connect to.
+    /// List of addresses to connect to.
     ///
     /// If `None`, a mock client will be created.
     addresses: Option<AddressList>,
@@ -811,6 +855,14 @@ impl Default for SdkBuilder {
 }
 
 impl SdkBuilder {
+    /// Enable or disable proofs on requests.
+    ///
+    /// In mock/offline testing with recorded vectors, set to false to match dumps
+    /// that were captured without proofs.
+    pub fn with_proofs(mut self, proofs: bool) -> Self {
+        self.proofs = proofs;
+        self
+    }
     /// Create a new SdkBuilder with provided address list.
     pub fn new(addresses: AddressList) -> Self {
         Self {
@@ -879,7 +931,7 @@ impl SdkBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate_file(
         self,
-        certificate_file_path: impl AsRef<std::path::Path>,
+        certificate_file_path: impl AsRef<Path>,
     ) -> std::io::Result<Self> {
         let pem = std::fs::read(certificate_file_path)?;
 
@@ -937,7 +989,7 @@ impl SdkBuilder {
 
     /// Set cancellation token that will be used by the Sdk.
     ///
-    /// Once that cancellation token is cancelled, all pending requests shall teriminate.
+    /// Once that cancellation token is cancelled, all pending requests shall terminate.
     pub fn with_cancellation_token(mut self, cancel_token: CancellationToken) -> Self {
         self.cancel_token = cancel_token;
         self
@@ -1003,7 +1055,7 @@ impl SdkBuilder {
     /// * retrieved data contracts - in files named `data_contract-*.json`
     ///
     /// These files can be used together with [MockDashPlatformSdk] to replay the requests and responses.
-    /// See [MockDashPlatformSdk::load_expectations()] for more information.
+    /// See [MockDashPlatformSdk::load_expectations_sync()] for more information.
     ///
     /// Available only when `mocks` feature is enabled.
     #[cfg(feature = "mocks")]
@@ -1049,14 +1101,14 @@ impl SdkBuilder {
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     internal_cache: Default::default(),
-                    // Note: in future, we need to securely initialize initial height during Sdk bootstrap or first request.
+                    // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
-                // if context provider is not set correctly (is None), it means we need to fallback to core wallet
+                // if context provider is not set correctly (is None), it means we need to fall back to core wallet
                 if  sdk.context_provider.load().is_none() {
                     #[cfg(feature = "mocks")]
                     if !self.core_ip.is_empty() {
@@ -1092,7 +1144,7 @@ impl SdkBuilder {
             #[cfg(feature = "mocks")]
             // mock mode
             None => {
-                let dapi =Arc::new(tokio::sync::Mutex::new(  MockDapiClient::new()));
+                let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
                 // We create mock context provider that will use the mock DAPI client to retrieve data contracts.
                 let  context_provider = self.context_provider.unwrap_or_else(||{
                     let mut cp=MockContextProvider::new();
@@ -1116,13 +1168,13 @@ impl SdkBuilder {
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
                     internal_cache: Default::default(),
-                    context_provider:ArcSwapAny::new( Some(Arc::new(context_provider))),
+                    context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                 };
-                let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and connot be reconfigured");
+                let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
                 guard.set_sdk(sdk.clone());
                 if let Some(ref dump_dir) = self.dump_dir {
                     guard.load_expectations_sync(dump_dir)?;
@@ -1189,8 +1241,7 @@ mod test {
             ..Default::default()
         };
 
-        let last_seen_height =
-            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
+        let last_seen_height = Arc::new(std::sync::atomic::AtomicU64::new(expected_height));
 
         let result =
             super::verify_metadata_height(&metadata, tolerance, Arc::clone(&last_seen_height));

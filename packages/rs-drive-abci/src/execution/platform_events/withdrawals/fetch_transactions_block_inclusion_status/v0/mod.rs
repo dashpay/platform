@@ -1,5 +1,5 @@
 use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
-use dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
+use dpp::dashcore_rpc::dashcore_rpc_json::AssetUnlockStatus;
 use dpp::withdrawal::WithdrawalTransactionIndex;
 use std::collections::BTreeMap;
 

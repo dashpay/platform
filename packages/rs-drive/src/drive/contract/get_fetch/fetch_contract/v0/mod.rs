@@ -83,7 +83,7 @@ impl Drive {
                         false,
                         platform_version
                     )
-                    .map_err(Error::Protocol)
+                    .map_err(Error::from)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
@@ -140,7 +140,7 @@ impl Drive {
                                 false,
                                 platform_version
                             )
-                            .map_err(Error::Protocol)
+                            .map_err(Error::from)
                         );
                         let drive_operation = CalculatedCostOperation(cost.clone());
                         let fee = if let Some(epoch) = epoch {
@@ -183,7 +183,7 @@ impl Drive {
                         | grovedb::Error::PathParentLayerNotFound(_)
                         | grovedb::Error::PathNotFound(_),
                     ) => Ok(None).wrap_with_cost(cost),
-                    Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),
+                    Err(e) => Err(Error::from(e)).wrap_with_cost(cost),
                 }
             }
             Ok(_) => Err(Error::Drive(DriveError::CorruptedContractPath(
@@ -195,7 +195,7 @@ impl Drive {
                 | grovedb::Error::PathParentLayerNotFound(_)
                 | grovedb::Error::PathNotFound(_),
             ) => Ok(None).wrap_with_cost(cost),
-            Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),
+            Err(e) => Err(Error::from(e)).wrap_with_cost(cost),
         }
     }
 

@@ -25,7 +25,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         let Element::Item(encoded_proposer_block_count, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(
@@ -117,7 +117,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathParentLayerNotFound(_))
         ));
     }
 }

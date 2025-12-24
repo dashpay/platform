@@ -37,7 +37,11 @@ impl<C> Platform<C> {
             )
             .or_else(|e| match e {
                 // Handle epoch change when storage fees are not set yet
-                error::Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => Ok(0u64),
+                error::Error::GroveDB(inner)
+                    if matches!(inner.as_ref(), grovedb::Error::PathKeyNotFound(_)) =>
+                {
+                    Ok(0u64)
+                }
                 _ => Err(e),
             })?;
 

@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::masternode_vote::nonce::v0::MasternodeVoteTransitionIdentityNonceV0;
 use crate::execution::validation::state_transition::masternode_vote::nonce::v1::MasternodeVoteTransitionIdentityNonceV1;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionNonceValidationV0;
+use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -14,8 +14,8 @@ use drive::grovedb::TransactionArg;
 pub(crate) mod v0;
 pub(crate) mod v1;
 
-impl StateTransitionNonceValidationV0 for MasternodeVoteTransition {
-    fn validate_nonces(
+impl StateTransitionIdentityNonceValidationV0 for MasternodeVoteTransition {
+    fn validate_identity_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,

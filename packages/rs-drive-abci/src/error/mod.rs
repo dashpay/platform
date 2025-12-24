@@ -2,15 +2,14 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
-use dashcore_rpc::Error as CoreRpcError;
 use dpp::bls_signatures::BlsError;
+use dpp::dashcore_rpc::Error as CoreRpcError;
 use dpp::data_contract::errors::DataContractError;
 use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
-use tracing::error;
 
 /// Execution errors module
 pub mod execution;

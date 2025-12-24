@@ -1,9 +1,9 @@
 /// Accessors for Masternode
 pub mod accessors;
 
-use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
-use dashcore_rpc::json::MasternodeListItem;
 use dpp::bincode::{Decode, Encode};
+use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
+use dpp::dashcore_rpc::json::MasternodeListItem;
 use std::fmt::{Debug, Formatter};
 
 use dpp::dashcore::{ProTxHash, Txid};

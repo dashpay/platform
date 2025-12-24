@@ -1,17 +1,13 @@
+mod accessors;
+mod masternode_list_changes;
 mod patch_platform_version;
-/// Version 0
-pub mod v0;
+mod platform_state_for_saving;
 
 use crate::error::Error;
-use crate::platform_types::platform_state::v0::{
-    MasternodeListChanges, PlatformStateForSavingV0, PlatformStateForSavingV1, PlatformStateV0,
-    PlatformStateV0Methods, PlatformStateV0PrivateMethods,
-};
 
 use crate::platform_types::validator_set::ValidatorSet;
 use derive_more::From;
-use dpp::bincode::{config, Decode, Encode};
-use dpp::block::epoch::Epoch;
+use dpp::bincode::config;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{PlatformDeserializableFromVersionedStructure, PlatformSerializable};
@@ -23,27 +19,147 @@ use indexmap::IndexMap;
 
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
+pub use crate::platform_types::platform_state::accessors::PlatformStateV0Methods;
+use crate::platform_types::platform_state::platform_state_for_saving::v1::PlatformStateForSavingV1;
+use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSet;
-use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore_rpc::json::MasternodeListItem;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Formatter};
 
 /// Platform state
-#[derive(Clone, Debug, From)]
-pub enum PlatformState {
-    /// Version 0
-    V0(PlatformStateV0),
+#[derive(Clone)]
+pub struct PlatformState {
+    /// Information about the genesis block
+    pub genesis_block_info: Option<BlockInfo>, // TODO: we already have it in epoch 0
+    /// Information about the last block
+    pub last_committed_block_info: Option<ExtendedBlockInfo>,
+    /// Current Version
+    pub current_protocol_version_in_consensus: ProtocolVersion,
+    /// upcoming protocol version
+    pub next_epoch_protocol_version: ProtocolVersion,
+    /// current quorum
+    pub current_validator_set_quorum_hash: QuorumHash,
+    /// next quorum
+    pub next_validator_set_quorum_hash: Option<QuorumHash>,
+    /// This is a modified current platform version based on
+    /// `current_protocol_version_in_consensus` with some function versions
+    /// changed to fix an urgent bug that is not a part of normal upgrade process
+    pub patched_platform_version: Option<&'static PlatformVersion>,
+    /// current validator set quorums
+    /// The validator set quorums are a subset of the quorums, but they also contain the list of
+    /// all members
+    pub validator_sets: IndexMap<QuorumHash, ValidatorSet>,
+
+    /// Quorums used for validating chain locks (400 60 for mainnet)
+    pub chain_lock_validating_quorums: SignatureVerificationQuorumSet,
+
+    /// Quorums used for validating instant locks
+    pub instant_lock_validating_quorums: SignatureVerificationQuorumSet,
+
+    /// current full masternode list
+    pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
+
+    /// current HPMN masternode list
+    pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
+
+    /// previous FeeVersions
+    pub previous_fee_versions: CachedEpochIndexFeeVersions,
 }
 
-/// Platform state
-#[derive(Clone, Debug, Encode, Decode, From)]
-pub enum PlatformStateForSaving {
-    /// Version 0
-    V0(PlatformStateForSavingV0),
-    /// Version 1
-    V1(PlatformStateForSavingV1),
+fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
+    let entries = validator_sets
+        .iter()
+        .map(|(k, v)| format!("{:?}: {:?}", k.to_string(), v))
+        .collect::<Vec<_>>();
+    format!("{:?}", entries)
+}
+
+impl Debug for PlatformState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlatformState")
+            .field("genesis_block_info", &self.genesis_block_info)
+            .field("last_committed_block_info", &self.last_committed_block_info)
+            .field(
+                "current_protocol_version_in_consensus",
+                &self.current_protocol_version_in_consensus,
+            )
+            .field(
+                "next_epoch_protocol_version",
+                &self.next_epoch_protocol_version,
+            )
+            .field(
+                "current_validator_set_quorum_hash",
+                &self.current_validator_set_quorum_hash.to_string(),
+            )
+            .field(
+                "next_validator_set_quorum_hash",
+                &self
+                    .next_validator_set_quorum_hash
+                    .as_ref()
+                    .map_or(String::from("None"), |h| format!("Some({})", h)),
+            )
+            .field(
+                "validator_sets",
+                &hex_encoded_validator_sets(&self.validator_sets),
+            )
+            .field("full_masternode_list", &self.full_masternode_list)
+            .field("hpmn_masternode_list", &self.hpmn_masternode_list)
+            .field("patched_platform_version", &self.patched_platform_version)
+            .field("previous_fee_versions", &self.previous_fee_versions)
+            .field(
+                "chain_lock_validating_quorums",
+                &self.chain_lock_validating_quorums,
+            )
+            .field(
+                "instant_lock_validating_quorums",
+                &self.instant_lock_validating_quorums,
+            )
+            .finish()
+    }
+}
+
+impl PlatformState {
+    /// Get the state fingerprint
+    pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
+        Ok(hash_double(self.serialize_to_bytes()?))
+    }
+    /// The default state at init chain
+    pub fn default_with_protocol_versions(
+        current_protocol_version_in_consensus: ProtocolVersion,
+        next_epoch_protocol_version: ProtocolVersion,
+        config: &PlatformConfig,
+    ) -> Result<PlatformState, Error> {
+        let platform_version = PlatformVersion::get(current_protocol_version_in_consensus)?;
+
+        let state = PlatformState {
+            last_committed_block_info: None,
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
+            current_validator_set_quorum_hash: QuorumHash::all_zeros(),
+            next_validator_set_quorum_hash: None,
+            patched_platform_version: None,
+            validator_sets: Default::default(),
+            chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
+                &config.chain_lock,
+                platform_version,
+            )?,
+            instant_lock_validating_quorums: SignatureVerificationQuorumSet::new(
+                &config.instant_lock,
+                platform_version,
+            )?,
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
+            genesis_block_info: None,
+            previous_fee_versions: Default::default(),
+        };
+
+        Ok(state)
+    }
 }
 
 impl PlatformSerializable for PlatformState {
@@ -89,70 +205,27 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
     }
 }
 
-impl PlatformState {
-    /// Get the state fingerprint
-    pub fn fingerprint(&self) -> Result<[u8; 32], Error> {
-        Ok(hash_double(self.serialize_to_bytes()?))
-    }
-
-    /// The default state at platform start
-    pub fn default_with_protocol_versions(
-        current_protocol_version_in_consensus: ProtocolVersion,
-        next_epoch_protocol_version: ProtocolVersion,
-        config: &PlatformConfig,
-    ) -> Result<PlatformState, Error> {
-        //todo find the current Platform state for the protocol version
-        let state = PlatformStateV0::default_with_protocol_versions(
-            current_protocol_version_in_consensus,
-            next_epoch_protocol_version,
-            config,
-        )?
-        .into();
-
-        Ok(state)
-    }
-
-    /// Retrieve version 0, or an error if not currently on version 0
-    pub fn v0(&self) -> Result<&PlatformStateV0, Error> {
-        match self {
-            PlatformState::V0(v) => Ok(v),
-        }
-    }
-
-    /// Retrieve version 0 as mutable, or an error if not currently on version 0
-    pub fn v0_mut(&mut self) -> Result<&mut PlatformStateV0, Error> {
-        match self {
-            PlatformState::V0(v) => Ok(v),
-        }
-    }
-}
-
 impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
     type Error = Error;
     fn try_from_platform_versioned(
         value: PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
-        match value {
-            PlatformState::V0(v0) => {
-                match platform_version
-                    .drive_abci
-                    .structs
-                    .platform_state_for_saving_structure_default
-                {
-                    0 => {
-                        let saving_v1: PlatformStateForSavingV1 = v0.try_into()?;
-                        Ok(saving_v1.into())
-                    }
-                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method:
-                            "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
-                                .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
-                }
+        match platform_version
+            .drive_abci
+            .structs
+            .platform_state_for_saving_structure_default
+        {
+            0 => {
+                let saving_v1: PlatformStateForSavingV1 = value.try_into()?;
+                Ok(saving_v1.into())
             }
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
         }
     }
 }
@@ -167,11 +240,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
         match value {
             PlatformStateForSaving::V0(v0) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
-                    0 => {
-                        let platform_state_v0 = PlatformStateV0::from(v0);
-
-                        Ok(platform_state_v0.into())
-                    }
+                    0 => Ok(PlatformState::from(v0)),
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV0)"
@@ -183,11 +252,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             }
             PlatformStateForSaving::V1(v1) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
-                    0 => {
-                        let platform_state_v0 = PlatformStateV0::from(v1);
-
-                        Ok(platform_state_v0.into())
-                    }
+                    0 => Ok(PlatformState::from(v1)),
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
@@ -197,354 +262,6 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
                     })),
                 }
             }
-        }
-    }
-}
-
-impl PlatformStateV0PrivateMethods for PlatformState {
-    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
-        match self {
-            PlatformState::V0(v0) => v0.patched_platform_version = version,
-        }
-    }
-}
-
-impl PlatformStateV0Methods for PlatformState {
-    fn last_committed_block_height(&self) -> u64 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_height(),
-        }
-    }
-
-    fn last_committed_known_block_height_or(&self, default: u64) -> u64 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_known_block_height_or(default),
-        }
-    }
-
-    fn last_committed_core_height(&self) -> u32 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_core_height(),
-        }
-    }
-
-    fn last_committed_known_core_height_or(&self, default: u32) -> u32 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_known_core_height_or(default),
-        }
-    }
-
-    fn last_committed_block_time_ms(&self) -> Option<u64> {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_time_ms(),
-        }
-    }
-
-    fn last_committed_quorum_hash(&self) -> [u8; 32] {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_quorum_hash(),
-        }
-    }
-
-    fn last_committed_block_proposer_pro_tx_hash(&self) -> [u8; 32] {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_proposer_pro_tx_hash(),
-        }
-    }
-
-    fn last_committed_block_signature(&self) -> [u8; 96] {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_signature(),
-        }
-    }
-
-    fn last_committed_block_app_hash(&self) -> Option<[u8; 32]> {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_app_hash(),
-        }
-    }
-
-    fn last_committed_block_round(&self) -> u32 {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_round(),
-        }
-    }
-
-    fn last_committed_block_epoch(&self) -> Epoch {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_epoch(),
-        }
-    }
-
-    fn hpmn_list_len(&self) -> usize {
-        match self {
-            PlatformState::V0(v0) => v0.hpmn_list_len(),
-        }
-    }
-
-    fn hpmn_active_list_len(&self) -> usize {
-        match self {
-            PlatformState::V0(v0) => v0.hpmn_active_list_len(),
-        }
-    }
-
-    fn current_validator_set(&self) -> Result<&ValidatorSet, Error> {
-        match self {
-            PlatformState::V0(v0) => v0.current_validator_set(),
-        }
-    }
-
-    fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo> {
-        match self {
-            PlatformState::V0(v0) => &v0.last_committed_block_info,
-        }
-    }
-
-    fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
-        match self {
-            PlatformState::V0(v0) => v0.current_protocol_version_in_consensus(),
-        }
-    }
-
-    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
-        match self {
-            PlatformState::V0(v0) => v0.patched_platform_version,
-        }
-    }
-
-    fn next_epoch_protocol_version(&self) -> ProtocolVersion {
-        match self {
-            PlatformState::V0(v0) => v0.next_epoch_protocol_version,
-        }
-    }
-
-    fn current_validator_set_quorum_hash(&self) -> QuorumHash {
-        match self {
-            PlatformState::V0(v0) => v0.current_validator_set_quorum_hash,
-        }
-    }
-
-    fn next_validator_set_quorum_hash(&self) -> &Option<QuorumHash> {
-        match self {
-            PlatformState::V0(v0) => &v0.next_validator_set_quorum_hash,
-        }
-    }
-
-    fn take_next_validator_set_quorum_hash(&mut self) -> Option<QuorumHash> {
-        match self {
-            PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
-        }
-    }
-
-    fn validator_sets(&self) -> &IndexMap<QuorumHash, ValidatorSet> {
-        match self {
-            PlatformState::V0(v0) => &v0.validator_sets,
-        }
-    }
-
-    fn chain_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
-        match self {
-            PlatformState::V0(v0) => &v0.chain_lock_validating_quorums,
-        }
-    }
-
-    fn instant_lock_validating_quorums(&self) -> &SignatureVerificationQuorumSet {
-        match self {
-            PlatformState::V0(v0) => v0.instant_lock_validating_quorums(),
-        }
-    }
-
-    fn full_masternode_list(&self) -> &BTreeMap<ProTxHash, MasternodeListItem> {
-        match self {
-            PlatformState::V0(v0) => &v0.full_masternode_list,
-        }
-    }
-
-    fn hpmn_masternode_list(&self) -> &BTreeMap<ProTxHash, MasternodeListItem> {
-        match self {
-            PlatformState::V0(v0) => &v0.hpmn_masternode_list,
-        }
-    }
-
-    fn genesis_block_info(&self) -> Option<&BlockInfo> {
-        match self {
-            PlatformState::V0(v0) => v0.genesis_block_info.as_ref(),
-        }
-    }
-
-    fn last_block_info(&self) -> &BlockInfo {
-        match self {
-            PlatformState::V0(v0) => v0.last_block_info(),
-        }
-    }
-
-    fn set_last_committed_block_info(&mut self, info: Option<ExtendedBlockInfo>) {
-        match self {
-            PlatformState::V0(v0) => v0.set_last_committed_block_info(info),
-        }
-    }
-
-    fn set_current_protocol_version_in_consensus(&mut self, version: ProtocolVersion) {
-        match self {
-            PlatformState::V0(v0) => v0.set_current_protocol_version_in_consensus(version),
-        }
-    }
-
-    fn set_next_epoch_protocol_version(&mut self, version: ProtocolVersion) {
-        match self {
-            PlatformState::V0(v0) => v0.set_next_epoch_protocol_version(version),
-        }
-    }
-
-    fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash) {
-        match self {
-            PlatformState::V0(v0) => v0.set_current_validator_set_quorum_hash(hash),
-        }
-    }
-
-    fn set_next_validator_set_quorum_hash(&mut self, hash: Option<QuorumHash>) {
-        match self {
-            PlatformState::V0(v0) => v0.set_next_validator_set_quorum_hash(hash),
-        }
-    }
-
-    fn set_validator_sets(&mut self, sets: IndexMap<QuorumHash, ValidatorSet>) {
-        match self {
-            PlatformState::V0(v0) => v0.set_validator_sets(sets),
-        }
-    }
-
-    fn set_chain_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
-        match self {
-            PlatformState::V0(v0) => v0.set_chain_lock_validating_quorums(quorums),
-        }
-    }
-
-    fn set_instant_lock_validating_quorums(&mut self, quorums: SignatureVerificationQuorumSet) {
-        match self {
-            PlatformState::V0(v0) => v0.set_instant_lock_validating_quorums(quorums),
-        }
-    }
-
-    fn set_full_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
-        match self {
-            PlatformState::V0(v0) => v0.set_full_masternode_list(list),
-        }
-    }
-
-    fn set_hpmn_masternode_list(&mut self, list: BTreeMap<ProTxHash, MasternodeListItem>) {
-        match self {
-            PlatformState::V0(v0) => v0.set_hpmn_masternode_list(list),
-        }
-    }
-
-    fn set_genesis_block_info(&mut self, info: Option<BlockInfo>) {
-        match self {
-            PlatformState::V0(v0) => v0.set_genesis_block_info(info),
-        }
-    }
-
-    fn last_committed_block_info_mut(&mut self) -> &mut Option<ExtendedBlockInfo> {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_info_mut(),
-        }
-    }
-
-    fn current_protocol_version_in_consensus_mut(&mut self) -> &mut ProtocolVersion {
-        match self {
-            PlatformState::V0(v0) => v0.current_protocol_version_in_consensus_mut(),
-        }
-    }
-
-    fn next_epoch_protocol_version_mut(&mut self) -> &mut ProtocolVersion {
-        match self {
-            PlatformState::V0(v0) => v0.next_epoch_protocol_version_mut(),
-        }
-    }
-
-    fn current_validator_set_quorum_hash_mut(&mut self) -> &mut QuorumHash {
-        match self {
-            PlatformState::V0(v0) => v0.current_validator_set_quorum_hash_mut(),
-        }
-    }
-
-    fn next_validator_set_quorum_hash_mut(&mut self) -> &mut Option<QuorumHash> {
-        match self {
-            PlatformState::V0(v0) => v0.next_validator_set_quorum_hash_mut(),
-        }
-    }
-
-    fn validator_sets_mut(&mut self) -> &mut IndexMap<QuorumHash, ValidatorSet> {
-        match self {
-            PlatformState::V0(v0) => v0.validator_sets_mut(),
-        }
-    }
-
-    fn chain_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
-        match self {
-            PlatformState::V0(v0) => v0.chain_lock_validating_quorums_mut(),
-        }
-    }
-
-    fn instant_lock_validating_quorums_mut(&mut self) -> &mut SignatureVerificationQuorumSet {
-        match self {
-            PlatformState::V0(v0) => v0.instant_lock_validating_quorums_mut(),
-        }
-    }
-
-    fn full_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
-        match self {
-            PlatformState::V0(v0) => v0.full_masternode_list_mut(),
-        }
-    }
-
-    fn hpmn_masternode_list_mut(&mut self) -> &mut BTreeMap<ProTxHash, MasternodeListItem> {
-        match self {
-            PlatformState::V0(v0) => v0.hpmn_masternode_list_mut(),
-        }
-    }
-
-    fn last_committed_block_epoch_ref(&self) -> &Epoch {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_epoch_ref(),
-        }
-    }
-
-    fn last_committed_block_id_hash(&self) -> [u8; 32] {
-        match self {
-            PlatformState::V0(v0) => v0.last_committed_block_id_hash(),
-        }
-    }
-
-    fn full_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
-        match (self, previous) {
-            (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {
-                v0.full_masternode_list_changes(v0_previous)
-            }
-        }
-    }
-
-    fn hpmn_masternode_list_changes(&self, previous: &PlatformState) -> MasternodeListChanges {
-        match (self, previous) {
-            (PlatformState::V0(v0), PlatformState::V0(v0_previous)) => {
-                v0.hpmn_masternode_list_changes(v0_previous)
-            }
-        }
-    }
-
-    fn previous_fee_versions(&self) -> &CachedEpochIndexFeeVersions {
-        match self {
-            PlatformState::V0(v0) => v0.previous_fee_versions(),
-        }
-    }
-
-    fn previous_fee_versions_mut(&mut self) -> &mut CachedEpochIndexFeeVersions {
-        match self {
-            PlatformState::V0(v0) => v0.previous_fee_versions_mut(),
         }
     }
 }

@@ -16,6 +16,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 /// Operations on Identities
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum IdentityOperationType {
     /// Inserts a new identity to the `Identities` subtree.

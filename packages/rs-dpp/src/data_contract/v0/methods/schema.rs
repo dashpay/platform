@@ -1,3 +1,4 @@
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -20,6 +21,8 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
     ) -> Result<(), ProtocolError> {
         self.document_types = DocumentType::create_document_types_from_document_schemas(
             self.id,
+            self.system_version_type(),
+            self.config.version(),
             schemas,
             defs.as_ref(),
             &BTreeMap::new(),
@@ -43,6 +46,8 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
     ) -> Result<(), ProtocolError> {
         let document_type = DocumentType::try_from_schema(
             self.id,
+            self.system_version_type(),
+            self.config.version(),
             name,
             schema,
             self.schema_defs.as_ref(),

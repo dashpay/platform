@@ -1,12 +1,17 @@
 //! Definitions of errors
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
+pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::state_transition::{
+    OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
+};
+use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersionError;
-use dpp::ProtocolError;
-pub use drive_proof_verifier::error::ContextProviderError;
+use dpp::{dashcore_rpc, ProtocolError};
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
@@ -14,6 +19,7 @@ use std::time::Duration;
 
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// SDK is not configured properly
@@ -36,7 +42,7 @@ pub enum Error {
     InvalidProvedResponse(String),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
-    DapiClientError(String),
+    DapiClientError(rs_dapi_client::DapiClientError),
     #[cfg(feature = "mocks")]
     /// DAPI mocks error
     #[error("Dapi mocks error: {0}")]
@@ -66,6 +72,9 @@ pub enum Error {
     /// Returned when an attempt is made to create an object that already exists in the system
     #[error("Object already exists: {0}")]
     AlreadyExists(String),
+    /// Invalid credit transfer configuration
+    #[error("Invalid credit transfer: {0}")]
+    InvalidCreditTransfer(String),
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
@@ -160,7 +169,8 @@ impl From<DapiClientError> for Error {
             }
         }
 
-        Self::DapiClientError(value.to_string())
+        // Preserve the original DAPI client error for structured inspection
+        Self::DapiClientError(value)
     }
 }
 
@@ -170,19 +180,74 @@ impl From<PlatformVersionError> for Error {
     }
 }
 
+impl From<ConsensusError> for Error {
+    fn from(value: ConsensusError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value)))
+    }
+}
+
+impl From<TransitionNoInputsError> for Error {
+    fn from(value: TransitionNoInputsError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<TransitionNoOutputsError> for Error {
+    fn from(value: TransitionNoOutputsError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<OutputBelowMinimumError> for Error {
+    fn from(value: OutputBelowMinimumError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<SimpleConsensusValidationResult> for Error {
+    fn from(value: SimpleConsensusValidationResult) -> Self {
+        value
+            .errors
+            .into_iter()
+            .next()
+            .map(Error::from)
+            .unwrap_or_else(|| {
+                Error::Protocol(ProtocolError::CorruptedCodeExecution(
+                    "state transition structure validation failed without an error".to_string(),
+                ))
+            })
+    }
+}
+
+impl From<AddressDoesNotExistError> for Error {
+    fn from(value: AddressDoesNotExistError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<AddressNotEnoughFundsError> for Error {
+    fn from(value: AddressNotEnoughFundsError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+// Retain legacy behavior for generic execution errors that are not DapiClientError
 impl<T> From<ExecutionError<T>> for Error
 where
     ExecutionError<T>: ToString,
 {
     fn from(value: ExecutionError<T>) -> Self {
-        // TODO: Improve error handling
-        Self::DapiClientError(value.to_string())
+        // Fallback to a generic string representation
+        Self::Generic(value.to_string())
     }
 }
 
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
-        matches!(self, Error::StaleNode(..) | Error::TimeoutReached(_, _))
+        matches!(
+            self,
+            Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_)
+        )
     }
 }
 

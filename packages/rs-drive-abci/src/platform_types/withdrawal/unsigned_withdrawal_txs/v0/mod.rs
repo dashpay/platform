@@ -15,7 +15,7 @@ pub struct UnsignedWithdrawalTxs(Vec<Transaction>);
 
 impl UnsignedWithdrawalTxs {
     /// Returns iterator over borrowed withdrawal transactions
-    pub fn iter(&self) -> std::slice::Iter<Transaction> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Transaction> {
         self.0.iter()
     }
     /// Returns a number of withdrawal transactions

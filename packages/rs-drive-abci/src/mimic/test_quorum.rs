@@ -1,11 +1,11 @@
 use crate::platform_types::validator::v0::ValidatorV0;
 use crate::platform_types::validator_set::v0::ValidatorSetV0;
-use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures::{
     Bls12381G2Impl, PublicKey as BlsPublicKey, PublicKey, SecretKey as BlsPrivateKey, SecretKey,
 };
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
+use dpp::dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::BTreeMap;
@@ -139,6 +139,11 @@ impl TestQuorumInfo {
         // We test on purpose with the bls library that Dash Core uses
         let private_keys = bls_signatures::PrivateKey::generate_dash_many(pro_tx_hashes.len(), rng)
             .expect("expected to generate private keys");
+        assert_eq!(
+            private_keys.len(),
+            pro_tx_hashes.len(),
+            "zipped private keys and pro_tx_hashes must have the same length"
+        );
         let bls_id_private_key_pairs = private_keys
             .into_iter()
             .zip(pro_tx_hashes)

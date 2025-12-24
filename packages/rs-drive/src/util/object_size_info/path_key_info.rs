@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Internal helpers return drive::Error; size acceptable here
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::object_size_info::path_key_info::PathKeyInfo::{

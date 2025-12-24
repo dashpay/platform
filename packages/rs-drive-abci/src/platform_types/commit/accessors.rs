@@ -1,6 +1,6 @@
 use crate::platform_types::commit::v0::accessors::CommitAccessorsV0;
 use crate::platform_types::commit::Commit;
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 
 impl CommitAccessorsV0 for Commit {
     fn inner(&self) -> &tenderdash_abci::proto::types::Commit {

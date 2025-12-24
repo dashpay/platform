@@ -1,24 +1,28 @@
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 pub mod context_provider;
-pub mod dpp;
+pub mod dpns;
 pub mod error;
+pub mod logging;
+pub mod queries;
 pub mod sdk;
 pub mod state_transitions;
-pub mod verify;
+pub mod utils;
+pub mod wallet;
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+// Re-export commonly used items
+pub use dpns::*;
+pub use error::{WasmSdkError, WasmSdkErrorKind};
+pub use queries::{
+    PlatformAddressInfoWasm, ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm,
+};
+pub use state_transitions::identity as state_transition_identity;
+pub use wallet::*;
+pub use wasm_dpp2::*;
 
 #[wasm_bindgen(start)]
-pub async fn start() -> Result<(), JsValue> {
-    // We use tracing-wasm together with console_error_panic_hook to get logs from the wasm module.
-    // Other alternatives are:
-    // * https://github.com/jquesada2016/tracing_subscriber_wasm
-    // * https://crates.io/crates/tracing-web
+pub async fn start() -> Result<(), WasmSdkError> {
     console_error_panic_hook::set_once();
-
-    tracing_wasm::set_as_global_default();
 
     Ok(())
 }

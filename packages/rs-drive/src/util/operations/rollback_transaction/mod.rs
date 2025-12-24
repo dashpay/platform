@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Transaction helpers bubble up drive::Error
 mod v0;
 
 use crate::drive::Drive;

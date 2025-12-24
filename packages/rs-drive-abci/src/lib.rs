@@ -9,6 +9,8 @@
 // Coding conventions
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![allow(clippy::result_large_err)]
+#![allow(clippy::large_enum_variant)]
 
 /// ABCI module
 pub mod abci;

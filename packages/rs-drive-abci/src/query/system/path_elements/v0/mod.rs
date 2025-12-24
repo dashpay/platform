@@ -57,7 +57,7 @@ impl<C> Platform<C> {
                 .map(|element| {
                     element
                         .serialize(&platform_version.drive.grove_version)
-                        .map_err(|e| Error::Drive(drive::error::Error::GroveDB(e)))
+                        .map_err(|e| Error::Drive(drive::error::Error::from(e)))
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 

@@ -42,7 +42,7 @@ pub trait DocumentInfoV0Methods {
     /// Gets the borrowed document
     fn get_borrowed_document(&self) -> Option<&Document>;
     /// Makes the document ID the key.
-    fn id_key_value_info(&self) -> KeyValueInfo;
+    fn id_key_value_info(&self) -> KeyValueInfo<'_>;
     /// Gets the raw path for the given document type
     fn get_estimated_size_for_document_type(
         &self,
@@ -58,7 +58,7 @@ pub trait DocumentInfoV0Methods {
         owner_id: Option<[u8; 32]>,
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<DriveKeyInfo>, Error>;
+    ) -> Result<Option<DriveKeyInfo<'_>>, Error>;
     /// Gets the borrowed document
     fn get_borrowed_document_and_storage_flags(&self)
         -> Option<(&Document, Option<&StorageFlags>)>;
@@ -91,7 +91,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
     }
 
     /// Makes the document ID the key.
-    fn id_key_value_info(&self) -> KeyValueInfo {
+    fn id_key_value_info(&self) -> KeyValueInfo<'_> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => {
@@ -115,7 +115,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
-            "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$ownerId" | "$id" | "$creatorId" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
                 Ok(U64_SIZE_U16)
@@ -151,7 +151,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         owner_id: Option<[u8; 32]>,
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<DriveKeyInfo>, Error> {
+    ) -> Result<Option<DriveKeyInfo<'_>>, Error> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
             | DocumentInfo::DocumentRefInfo((document, _)) => {
@@ -184,7 +184,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
                 ))?;
                 match key_path {
-                    "$ownerId" | "$id" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                    "$ownerId" | "$id" | "$creatorId" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
                         unique_id: document_type
                             .unique_id_for_document_field(index_level, base_event)
                             .to_vec(),

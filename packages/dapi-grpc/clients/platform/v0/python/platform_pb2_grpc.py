@@ -94,6 +94,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityByPublicKeyHashRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityByPublicKeyHashResponse.FromString,
                 )
+        self.getIdentityByNonUniquePublicKeyHash = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityByNonUniquePublicKeyHash',
+                request_serializer=platform__pb2.GetIdentityByNonUniquePublicKeyHashRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityByNonUniquePublicKeyHashResponse.FromString,
+                )
         self.waitForStateTransitionResult = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult',
                 request_serializer=platform__pb2.WaitForStateTransitionResultRequest.SerializeToString,
@@ -118,6 +123,11 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
                 request_serializer=platform__pb2.GetEpochsInfoRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetEpochsInfoResponse.FromString,
+                )
+        self.getFinalizedEpochInfos = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getFinalizedEpochInfos',
+                request_serializer=platform__pb2.GetFinalizedEpochInfosRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetFinalizedEpochInfosResponse.FromString,
                 )
         self.getContestedResources = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getContestedResources',
@@ -199,10 +209,20 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetTokenDirectPurchasePricesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetTokenDirectPurchasePricesResponse.FromString,
                 )
+        self.getTokenContractInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenContractInfo',
+                request_serializer=platform__pb2.GetTokenContractInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenContractInfoResponse.FromString,
+                )
         self.getTokenPreProgrammedDistributions = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getTokenPreProgrammedDistributions',
                 request_serializer=platform__pb2.GetTokenPreProgrammedDistributionsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetTokenPreProgrammedDistributionsResponse.FromString,
+                )
+        self.getTokenPerpetualDistributionLastClaim = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getTokenPerpetualDistributionLastClaim',
+                request_serializer=platform__pb2.GetTokenPerpetualDistributionLastClaimRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetTokenPerpetualDistributionLastClaimResponse.FromString,
                 )
         self.getTokenTotalSupply = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getTokenTotalSupply',
@@ -228,6 +248,16 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getGroupActionSigners',
                 request_serializer=platform__pb2.GetGroupActionSignersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetGroupActionSignersResponse.FromString,
+                )
+        self.getAddressInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAddressInfo',
+                request_serializer=platform__pb2.GetAddressInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAddressInfoResponse.FromString,
+                )
+        self.getAddressesInfos = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAddressesInfos',
+                request_serializer=platform__pb2.GetAddressesInfosRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAddressesInfosResponse.FromString,
                 )
 
 
@@ -330,6 +360,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getIdentityByNonUniquePublicKeyHash(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def waitForStateTransitionResult(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -355,6 +391,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getEpochsInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getFinalizedEpochInfos(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -461,7 +503,19 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getTokenContractInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getTokenPreProgrammedDistributions(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getTokenPerpetualDistributionLastClaim(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -492,6 +546,18 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getGroupActionSigners(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getAddressInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getAddressesInfos(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -580,6 +646,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetIdentityByPublicKeyHashRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityByPublicKeyHashResponse.SerializeToString,
             ),
+            'getIdentityByNonUniquePublicKeyHash': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityByNonUniquePublicKeyHash,
+                    request_deserializer=platform__pb2.GetIdentityByNonUniquePublicKeyHashRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityByNonUniquePublicKeyHashResponse.SerializeToString,
+            ),
             'waitForStateTransitionResult': grpc.unary_unary_rpc_method_handler(
                     servicer.waitForStateTransitionResult,
                     request_deserializer=platform__pb2.WaitForStateTransitionResultRequest.FromString,
@@ -604,6 +675,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getEpochsInfo,
                     request_deserializer=platform__pb2.GetEpochsInfoRequest.FromString,
                     response_serializer=platform__pb2.GetEpochsInfoResponse.SerializeToString,
+            ),
+            'getFinalizedEpochInfos': grpc.unary_unary_rpc_method_handler(
+                    servicer.getFinalizedEpochInfos,
+                    request_deserializer=platform__pb2.GetFinalizedEpochInfosRequest.FromString,
+                    response_serializer=platform__pb2.GetFinalizedEpochInfosResponse.SerializeToString,
             ),
             'getContestedResources': grpc.unary_unary_rpc_method_handler(
                     servicer.getContestedResources,
@@ -685,10 +761,20 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetTokenDirectPurchasePricesRequest.FromString,
                     response_serializer=platform__pb2.GetTokenDirectPurchasePricesResponse.SerializeToString,
             ),
+            'getTokenContractInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenContractInfo,
+                    request_deserializer=platform__pb2.GetTokenContractInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenContractInfoResponse.SerializeToString,
+            ),
             'getTokenPreProgrammedDistributions': grpc.unary_unary_rpc_method_handler(
                     servicer.getTokenPreProgrammedDistributions,
                     request_deserializer=platform__pb2.GetTokenPreProgrammedDistributionsRequest.FromString,
                     response_serializer=platform__pb2.GetTokenPreProgrammedDistributionsResponse.SerializeToString,
+            ),
+            'getTokenPerpetualDistributionLastClaim': grpc.unary_unary_rpc_method_handler(
+                    servicer.getTokenPerpetualDistributionLastClaim,
+                    request_deserializer=platform__pb2.GetTokenPerpetualDistributionLastClaimRequest.FromString,
+                    response_serializer=platform__pb2.GetTokenPerpetualDistributionLastClaimResponse.SerializeToString,
             ),
             'getTokenTotalSupply': grpc.unary_unary_rpc_method_handler(
                     servicer.getTokenTotalSupply,
@@ -714,6 +800,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getGroupActionSigners,
                     request_deserializer=platform__pb2.GetGroupActionSignersRequest.FromString,
                     response_serializer=platform__pb2.GetGroupActionSignersResponse.SerializeToString,
+            ),
+            'getAddressInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddressInfo,
+                    request_deserializer=platform__pb2.GetAddressInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetAddressInfoResponse.SerializeToString,
+            ),
+            'getAddressesInfos': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddressesInfos,
+                    request_deserializer=platform__pb2.GetAddressesInfosRequest.FromString,
+                    response_serializer=platform__pb2.GetAddressesInfosResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -998,6 +1094,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getIdentityByNonUniquePublicKeyHash(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityByNonUniquePublicKeyHash',
+            platform__pb2.GetIdentityByNonUniquePublicKeyHashRequest.SerializeToString,
+            platform__pb2.GetIdentityByNonUniquePublicKeyHashResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def waitForStateTransitionResult(request,
             target,
             options=(),
@@ -1079,6 +1192,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
             platform__pb2.GetEpochsInfoRequest.SerializeToString,
             platform__pb2.GetEpochsInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getFinalizedEpochInfos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getFinalizedEpochInfos',
+            platform__pb2.GetFinalizedEpochInfosRequest.SerializeToString,
+            platform__pb2.GetFinalizedEpochInfosResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1355,6 +1485,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getTokenContractInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenContractInfo',
+            platform__pb2.GetTokenContractInfoRequest.SerializeToString,
+            platform__pb2.GetTokenContractInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getTokenPreProgrammedDistributions(request,
             target,
             options=(),
@@ -1368,6 +1515,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenPreProgrammedDistributions',
             platform__pb2.GetTokenPreProgrammedDistributionsRequest.SerializeToString,
             platform__pb2.GetTokenPreProgrammedDistributionsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getTokenPerpetualDistributionLastClaim(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getTokenPerpetualDistributionLastClaim',
+            platform__pb2.GetTokenPerpetualDistributionLastClaimRequest.SerializeToString,
+            platform__pb2.GetTokenPerpetualDistributionLastClaimResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1453,5 +1617,39 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupActionSigners',
             platform__pb2.GetGroupActionSignersRequest.SerializeToString,
             platform__pb2.GetGroupActionSignersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAddressInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressInfo',
+            platform__pb2.GetAddressInfoRequest.SerializeToString,
+            platform__pb2.GetAddressInfoResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAddressesInfos(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressesInfos',
+            platform__pb2.GetAddressesInfosRequest.SerializeToString,
+            platform__pb2.GetAddressesInfosResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

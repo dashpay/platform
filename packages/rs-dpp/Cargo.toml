@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "2.0.1"
+version.workspace = true
 edition = "2021"
 rust-version.workspace = true
 authors = [
@@ -15,6 +15,7 @@ authors = [
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
 base64 = "0.22.1"
+bech32 = "0.11"
 bs58 = "0.5"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
@@ -23,15 +24,22 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", features = [
   "std",
   "secp-recovery",
   "rand",
   "signer",
   "serde",
-], default-features = false, tag = "v0.39.6" }
+  "eddsa",
+], default-features = false }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c431c55c0d28efb0344b3a1948f576be5ce", optional = true }
+
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
+
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.13" }
@@ -48,8 +56,8 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
-thiserror = { version = "2.0.12" }
-data-contracts = { path = "../data-contracts", optional = true }
+thiserror = { version = "2.0.17" }
+data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
@@ -63,12 +71,15 @@ indexmap = { version = "2.7.0", features = ["serde"] }
 strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
+tracing = { version = "0.1.41" }
 
 [dev-dependencies]
-test-case = { version = "3.3" }
 tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
-dpp = { path = ".", default-features = false, features = ["all_features_without_client", "token-reward-explanations"] }
+dpp = { path = ".", default-features = false, features = [
+  "all_features_without_client",
+  "token-reward-explanations",
+] }
 assert_matches = "1.5.0"
 once_cell = "1.7"
 env_logger = { version = "0.11.8" }
@@ -76,13 +87,21 @@ log = { version = "0.4.27" }
 
 [features]
 default = ["state-transitions"]
+core_bincode = ["dashcore/bincode"]
 core_verification = ["dashcore/message_verification"]
 core_quorum_validation = ["dashcore/quorum_validation"]
+core_key_wallet = ["dep:key-wallet"]
+core_key_wallet_bincode = ["dep:key-wallet", "key-wallet/bincode"]
+core_key_wallet_bip_38 = ["dep:key-wallet", "key-wallet/bip38"]
+core_key_wallet_manager = ["dep:key-wallet-manager"]
+core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
+core_spv = ["dep:dash-spv"]
+core_rpc_client = ["dep:dashcore-rpc"]
 bls-signatures = ["dashcore/bls"]
 ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
   "json-object",
-  "system_contracts",
+  "all-system_contracts",
   "state-transitions",
   "extended-document",
   "bls-signatures",
@@ -112,7 +131,6 @@ all_features = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",
@@ -122,38 +140,23 @@ all_features = [
   "fee-distribution",
   "client",
   "vote-serialization",
-  "token-reward-explanations"
+  "token-reward-explanations",
 ]
 
 dash-sdk-features = [
-  #  "json-object",
-  #  "platform-value",
-  #  "system_contracts",
-  # "validation", # TODO: This one is big
   "identity-hashing",
   "data-contract-json-conversion",
-  #  "identity-serialization",
-  #  "vote-serialization",
-  #  "document-value-conversion",
-  #  "data-contract-value-conversion",
   "identity-value-conversion",
-  #  "core-types",
-  #  "core-types-serialization",
-  #  "core-types-serde-conversion",
-  #  "state-transition-serde-conversion",
   "state-transition-value-conversion",
-  #  "state-transition-json-conversion",
-  #  "state-transition-validation",
   "state-transition-signing",
-  #  "state-transitions",
-  #  "fee-distribution",
   "client",
   "platform-value-cbor",
+  "core_rpc_client",
 ]
 all_features_without_client = [
   "json-object",
   "platform-value",
-  "system_contracts",
+  "all-system_contracts",
   "state-transitions",
   "extended-document",
   "cbor",
@@ -182,7 +185,6 @@ all_features_without_client = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",
@@ -204,6 +206,7 @@ abci = [
   "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
+  "core_rpc_client",
 ]
 cbor = ["ciborium"]
 validation = [
@@ -239,6 +242,7 @@ data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
 data-contract-json-conversion = [
   "data-contract-value-conversion",
+  "data-contract-serde-conversion",
   "platform-value-json",
 ]
 data-contract-cbor-conversion = [
@@ -286,8 +290,32 @@ core-types = ["bls-signatures"]
 core-types-serialization = ["core-types"]
 core-types-serde-conversion = ["core-types"]
 state-transitions = []
-system_contracts = ["factories", "data-contracts", "platform-value-json"]
-fixtures-and-mocks = ["system_contracts", "platform-value/json"]
+system_contracts = ["data-contracts", "factories", "platform-value-json"]
+# All system data contracts
+all-system_contracts = [
+  "system_contracts",
+  "data-contracts/all-contracts",
+  "dpns-contract",
+  "dashpay-contract",
+  "withdrawals-contract",
+  "masternode-rewards-contract",
+  "wallet-utils-contract",
+  "token-history-contract",
+  "keywords-contract",
+]
+
+# Individual data contract features
+dpns-contract = ["data-contracts", "data-contracts/dpns"]
+dashpay-contract = ["data-contracts", "data-contracts/dashpay"]
+withdrawals-contract = ["data-contracts", "data-contracts/withdrawals"]
+masternode-rewards-contract = [
+  "data-contracts",
+  "data-contracts/masternode-rewards",
+]
+wallet-utils-contract = ["data-contracts", "data-contracts/wallet-utils"]
+token-history-contract = ["data-contracts", "data-contracts/token-history"]
+keywords-contract = ["data-contracts", "data-contracts/keyword-search"]
+fixtures-and-mocks = ["all-system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]
 random-documents = []

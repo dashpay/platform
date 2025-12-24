@@ -1,6 +1,7 @@
 use super::MockDashPlatformSdk;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::bincode::config::standard;
+use dpp::address_funds::PlatformAddress;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::data_contract::group::Group;
 use dpp::group::group_action::GroupAction;
@@ -14,7 +15,7 @@ use dpp::{
     dashcore::{hashes::Hash as CoreHash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
-    identity::IdentityPublicKey,
+    identity::{identities_contract_keys::IdentitiesContractKeys, IdentityPublicKey},
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
@@ -32,7 +33,7 @@ use drive_proof_verifier::types::identity_token_balance::{
 use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive_proof_verifier::types::{
-    Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
+    AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
     ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
     Voters,
@@ -187,6 +188,24 @@ impl MockResponse for DataContract {
         Self: Sized,
     {
         DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data")
+    }
+}
+
+// FIXME: Seems that DataContract doesn't implement PlatformVersionedDecode + PlatformVersionEncode,
+// so we just use some methods implemented directly on these objects.
+impl MockResponse for (DataContract, Vec<u8>) {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        self.1.clone()
+    }
+
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        (
+            DataContract::versioned_deserialize(buf, true, sdk.version()).expect("decode data"),
+            buf.to_vec(),
+        )
     }
 }
 
@@ -442,6 +461,21 @@ impl MockResponse for GroupActions {
     }
 }
 
+impl MockResponse for IdentitiesContractKeys {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode IdentitiesContractKeys")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode IdentitiesContractKeys")
+            .0
+    }
+}
+
 impl_mock_response!(Identity);
 impl_mock_response!(IdentityPublicKey);
 impl_mock_response!(Identifier);
@@ -467,3 +501,5 @@ impl_mock_response!(CurrentQuorumsInfo);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
+impl_mock_response!(PlatformAddress);
+impl_mock_response!(AddressInfo);

@@ -26,7 +26,7 @@ impl Drive {
     /// * `estimated_costs_only_with_layer_info` - Optional parameter that contains the estimated costs.
     /// * `transaction` - The transaction information related to the operation.
     /// * `drive_version` - The drive version configuration, which determines the version of
-    ///                      the method to be used.
+    ///   the method to be used.
     ///
     /// # Returns
     ///

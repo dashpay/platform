@@ -81,8 +81,7 @@ impl Drive {
     ) -> Result<PathQuery, Error> {
         let revision_query = Self::revision_for_identity_id_path_query(identity_id);
         let balance_query = Self::balance_for_identity_id_query(identity_id);
-        PathQuery::merge(vec![&revision_query, &balance_query], grove_version)
-            .map_err(Error::GroveDB)
+        PathQuery::merge(vec![&revision_query, &balance_query], grove_version).map_err(Error::from)
     }
 
     /// The query for proving an identity id from a public key hash.
@@ -138,7 +137,7 @@ impl Drive {
             vec![&balance_query, &revision_query, &all_keys_query],
             grove_version,
         )
-        .map_err(Error::GroveDB)
+        .map_err(Error::from)
     }
 
     /// The query getting all keys and revision
@@ -149,8 +148,7 @@ impl Drive {
         let revision_query = Self::identity_revision_query(identity_id);
         let key_request = IdentityKeysRequest::new_all_keys_query(identity_id, None);
         let all_keys_query = key_request.into_path_query();
-        PathQuery::merge(vec![&revision_query, &all_keys_query], grove_version)
-            .map_err(Error::GroveDB)
+        PathQuery::merge(vec![&revision_query, &all_keys_query], grove_version).map_err(Error::from)
     }
 
     /// The query getting all balances and revision
@@ -214,7 +212,7 @@ impl Drive {
             .iter()
             .map(|identity_id| Self::full_identity_query(identity_id, grove_version))
             .collect::<Result<Vec<PathQuery>, Error>>()?;
-        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(Error::GroveDB)
+        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(Error::from)
     }
 
     /// This query gets the full identity and the public key hash
@@ -230,7 +228,7 @@ impl Drive {
             vec![&full_identity_query, &identity_id_by_public_key_hash_query],
             grove_version,
         )
-        .map_err(Error::GroveDB)
+        .map_err(Error::from)
     }
 
     /// This query gets the full identity and the public key hash
@@ -247,7 +245,7 @@ impl Drive {
             vec![&full_identity_query, &identity_id_by_public_key_hash_query],
             grove_version,
         )
-        .map_err(Error::GroveDB)
+        .map_err(Error::from)
     }
 
     /// The query full identities with key hashes too
@@ -264,7 +262,7 @@ impl Drive {
             vec![&identities_path_query, &key_hashes_to_identity_ids_query],
             grove_version,
         )
-        .map_err(Error::GroveDB)
+        .map_err(Error::from)
     }
 
     /// The query for the identity balance

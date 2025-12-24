@@ -76,6 +76,7 @@ pub trait DocumentFromReplaceTransitionV0 {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -112,6 +113,7 @@ pub trait DocumentFromReplaceTransitionV0 {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -130,6 +132,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -191,6 +194,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
+                creator_id,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -210,6 +214,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -270,6 +275,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
+                creator_id,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

@@ -1,8 +1,8 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::dashcore::hashes::Hash;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;

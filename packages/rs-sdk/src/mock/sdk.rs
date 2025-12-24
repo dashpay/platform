@@ -16,9 +16,10 @@ use dapi_grpc::{
     mock::Mockable,
     platform::v0::{self as proto},
 };
+use dash_context_provider::{ContextProvider, ContextProviderError};
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{error::ContextProviderError, ContextProvider, FromProof};
+use drive_proof_verifier::FromProof;
 use rs_dapi_client::mock::MockError;
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
@@ -159,6 +160,12 @@ impl MockDashPlatformSdk {
                 "GetIdentityBalanceAndRevisionRequest" => load_expectation::<
                     proto::GetIdentityBalanceAndRevisionRequest,
                 >(&mut dapi, filename)?,
+                "GetAddressInfoRequest" => {
+                    load_expectation::<proto::GetAddressInfoRequest>(&mut dapi, filename)?
+                }
+                "GetAddressesInfosRequest" => {
+                    load_expectation::<proto::GetAddressesInfosRequest>(&mut dapi, filename)?
+                }
                 "GetIdentityKeysRequest" => {
                     load_expectation::<proto::GetIdentityKeysRequest>(&mut dapi, filename)?
                 }
@@ -314,6 +321,19 @@ impl MockDashPlatformSdk {
         Ok(self)
     }
 
+    /// Remove previously defined expectation for a [Fetch] request.
+    ///
+    /// Returns `true` if any expectation was removed.
+    pub async fn remove_fetch_expectation<O, Q>(&mut self, query: Q) -> bool
+    where
+        O: Fetch,
+        Q: Query<<O as Fetch>::Request>,
+        <O as Fetch>::Request: TransportRequest,
+    {
+        let grpc_request = query.query(self.prove()).expect("query must be correct");
+        self.remove(grpc_request).await
+    }
+
     /// Expect a [FetchMany] request and return provided object.
     ///
     /// This method is used to define mock expectations for [FetchMany] requests.
@@ -410,6 +430,17 @@ impl MockDashPlatformSdk {
         )?;
 
         Ok(())
+    }
+
+    /// Remove expectations for a request.
+    async fn remove<I: TransportRequest>(&mut self, grpc_request: I) -> bool {
+        let key = Key::new(&grpc_request);
+        let removed_from_proof = self.from_proof_expectations.remove(&key).is_some();
+
+        let mut dapi_guard = self.dapi.lock().await;
+        let removed_from_dapi = dapi_guard.remove(&grpc_request);
+
+        removed_from_proof || removed_from_dapi
     }
 
     /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.

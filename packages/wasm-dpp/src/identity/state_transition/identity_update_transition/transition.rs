@@ -18,8 +18,8 @@ use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use dpp::version::PlatformVersion;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 use serde::{Deserialize, Serialize};
@@ -157,7 +157,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        StateTransitionLike::owner_id(&self.0).to_owned().into()
+        self.0.owner_id().to_owned().into()
     }
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
@@ -408,7 +408,8 @@ impl IdentityUpdateTransitionWasm {
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
             .with_js_error()?;
 
-        self.0.set_signature(wrapper.signature().to_owned());
+        self.0
+            .set_signature(wrapper.signature().unwrap().to_owned());
 
         Ok(())
     }
@@ -462,7 +463,7 @@ impl IdentityUpdateTransitionWasm {
             )
             .with_js_error()?;
 
-        let signature = state_transition.signature().to_owned();
+        let signature = state_transition.signature().unwrap().to_owned();
         let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
 
         self.0.set_signature(signature);
@@ -480,7 +481,7 @@ impl IdentityUpdateTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         let verification_result = StateTransition::IdentityUpdate(self.0.clone())
-            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+            .verify_identity_signed_signature(&identity_public_key.to_owned().into(), &bls_adapter);
 
         match verification_result {
             Ok(()) => Ok(true),

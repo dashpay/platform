@@ -10,6 +10,7 @@ use fee::FeeError;
 use grovedb_epoch_based_storage_flags::error::StorageFlagsError;
 use identity::IdentityError;
 use query::QuerySyntaxError;
+use std::io;
 
 /// Cache errors
 pub mod cache;
@@ -45,10 +46,10 @@ pub enum Error {
     Proof(#[from] ProofError),
     /// GroveDB error
     #[error("grovedb: {0}")]
-    GroveDB(#[from] grovedb::Error),
+    GroveDB(Box<grovedb::Error>),
     /// Protocol error
     #[error("protocol: {0}")]
-    Protocol(#[from] ProtocolError),
+    Protocol(Box<ProtocolError>),
     /// Identity error
     #[error("identity: {0}")]
     Identity(#[from] IdentityError),
@@ -69,11 +70,32 @@ pub enum Error {
     Cache(#[from] CacheError),
     /// Protocol error
     #[error("protocol: {0} ({1})")]
-    ProtocolWithInfoString(ProtocolError, String),
+    ProtocolWithInfoString(Box<ProtocolError>, String),
+    /// IO error
+    #[error("io: {0} ({1})")]
+    IOErrorWithInfoString(Box<io::Error>, String),
 }
 
 impl From<ProtocolDataContractError> for Error {
     fn from(value: ProtocolDataContractError) -> Self {
-        Self::Protocol(ProtocolError::DataContractError(value))
+        Self::Protocol(Box::new(ProtocolError::DataContractError(value)))
+    }
+}
+
+impl From<ProtocolError> for Error {
+    fn from(value: ProtocolError) -> Self {
+        Self::Protocol(Box::new(value))
+    }
+}
+
+impl From<grovedb::Error> for Error {
+    fn from(value: grovedb::Error) -> Self {
+        Self::GroveDB(Box::new(value))
+    }
+}
+
+impl From<grovedb::element::error::ElementError> for Error {
+    fn from(value: grovedb::element::error::ElementError) -> Self {
+        Self::GroveDB(Box::new(grovedb::Error::ElementError(value)))
     }
 }

@@ -4,8 +4,7 @@ use dpp::identity::identity_nonce::{validate_identity_nonce_update, validate_new
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::StateTransitionLike;
-
+use dpp::state_transition::StateTransitionOwned;
 use dpp::validation::SimpleConsensusValidationResult;
 
 use crate::execution::types::execution_operation::ValidationOperation;

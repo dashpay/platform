@@ -29,7 +29,8 @@ pub use factory::*;
 #[cfg(any(
     feature = "data-contract-value-conversion",
     feature = "data-contract-cbor-conversion",
-    feature = "data-contract-json-conversion"
+    feature = "data-contract-json-conversion",
+    feature = "data-contract-serde-conversion"
 ))]
 pub mod conversion;
 #[cfg(feature = "client")]
@@ -69,6 +70,7 @@ pub type DocumentName = String;
 pub type TokenName = String;
 pub type GroupContractPosition = u16;
 pub type TokenContractPosition = u16;
+pub type DataContractWithSerialization = (DataContract, Vec<u8>);
 type PropertyPath = String;
 
 pub const INITIAL_DATA_CONTRACT_VERSION: u32 = 1;

@@ -1,6 +1,6 @@
 use crate::BlsPrivateKey;
-use dashcore_rpc::json::MasternodeListItem;
 use dpp::bls_signatures::Bls12381G2Impl;
+use dpp::dashcore_rpc::json::MasternodeListItem;
 use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -74,9 +74,9 @@ impl UpdateMasternodeListItem for MasternodeListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{ProTxHash, Txid};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 
     use rand::SeedableRng;
     use std::net::SocketAddr;

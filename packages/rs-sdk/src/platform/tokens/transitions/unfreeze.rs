@@ -54,7 +54,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_unfreeze_identity<S: Signer>(
+    pub async fn token_unfreeze_identity<S: Signer<IdentityPublicKey>>(
         &self,
         unfreeze_tokens_transition_builder: TokenUnfreezeTransitionBuilder,
         signing_key: &IdentityPublicKey,

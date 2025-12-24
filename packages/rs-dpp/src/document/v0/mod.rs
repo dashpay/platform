@@ -17,8 +17,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use platform_value::Value;
-#[cfg(feature = "document-serde-conversion")]
-use serde::{Deserialize, Serialize};
 
 use crate::document::document_methods::{
     DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
@@ -31,77 +29,140 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Identifier};
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Clone, Debug, PartialEq, Default)]
-#[cfg_attr(feature = "document-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    any(
+        feature = "document-serde-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct DocumentV0 {
     /// The unique document ID.
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$id"))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "$id")
+    )]
     pub id: Identifier,
     /// The ID of the document's owner.
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$ownerId"))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "$ownerId")
+    )]
     pub owner_id: Identifier,
     /// The document's properties (data).
-    #[cfg_attr(feature = "document-serde-conversion", serde(flatten))]
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(flatten)
+    )]
     pub properties: BTreeMap<String, Value>,
     /// The document revision, if the document is mutable.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$revision", default)
     )]
     pub revision: Option<Revision>,
     /// The time in milliseconds that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$createdAt", default)
     )]
     pub created_at: Option<TimestampMillis>,
     /// The time in milliseconds that the document was last updated, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$updatedAt", default)
     )]
     pub updated_at: Option<TimestampMillis>,
     /// The time in milliseconds that the document was last transferred, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$transferredAt", default)
     )]
     pub transferred_at: Option<TimestampMillis>,
     /// The block that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$createdAtBlockHeight", default)
     )]
     pub created_at_block_height: Option<BlockHeight>,
     /// The block that the document was last updated, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$updatedAtBlockHeight", default)
     )]
     pub updated_at_block_height: Option<BlockHeight>,
     /// The block that the document was last transferred to a new identity, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$transferredAtBlockHeight", default)
     )]
     pub transferred_at_block_height: Option<BlockHeight>,
     /// The core block that the document was created, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$createdAtCoreBlockHeight", default)
     )]
     pub created_at_core_block_height: Option<CoreBlockHeight>,
     /// The core block that the document was last updated, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$updatedAtCoreBlockHeight", default)
     )]
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
     /// The core block that the document was last transferred to a new identity, if it is set as required by the document type schema.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(rename = "$transferredAtCoreBlockHeight", default)
     )]
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
+    /// The creator id.
+    #[cfg_attr(
+        any(
+            feature = "document-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "$creatorId", default)
+    )]
+    pub creator_id: Option<Identifier>,
 }
 
 impl DocumentGetRawForContractV0 for DocumentV0 {
@@ -132,12 +193,28 @@ impl fmt::Display for DocumentV0 {
             let datetime = DateTime::from_timestamp_millis(updated_at as i64).unwrap_or_default();
             write!(f, "updated_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
         }
+        if let Some(transferred_at) = self.transferred_at {
+            let datetime =
+                DateTime::from_timestamp_millis(transferred_at as i64).unwrap_or_default();
+            write!(
+                f,
+                "transferred_at:{} ",
+                datetime.format("%Y-%m-%d %H:%M:%S")
+            )?;
+        }
 
         if let Some(created_at_block_height) = self.created_at_block_height {
             write!(f, "created_at_block_height:{} ", created_at_block_height)?;
         }
         if let Some(updated_at_block_height) = self.updated_at_block_height {
             write!(f, "updated_at_block_height:{} ", updated_at_block_height)?;
+        }
+        if let Some(transferred_at_block_height) = self.transferred_at_block_height {
+            write!(
+                f,
+                "transferred_at_block_height:{} ",
+                transferred_at_block_height
+            )?;
         }
         if let Some(created_at_core_block_height) = self.created_at_core_block_height {
             write!(
@@ -152,6 +229,17 @@ impl fmt::Display for DocumentV0 {
                 "updated_at_core_block_height:{} ",
                 updated_at_core_block_height
             )?;
+        }
+        if let Some(transferred_at_core_block_height) = self.transferred_at_core_block_height {
+            write!(
+                f,
+                "transferred_at_core_block_height:{} ",
+                transferred_at_core_block_height
+            )?;
+        }
+
+        if let Some(creator_id) = self.creator_id {
+            write!(f, "creator_id:{} ", creator_id)?;
         }
 
         if self.properties.is_empty() {

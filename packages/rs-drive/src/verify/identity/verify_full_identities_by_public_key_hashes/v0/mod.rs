@@ -19,12 +19,12 @@ impl Drive {
     ///
     /// - `proof`: A byte slice representing the proof of authentication from the users.
     /// - `public_key_hashes`: A reference to a slice of 20-byte arrays, each representing
-    ///    a hash of a public key of a user.
+    ///   a hash of a public key of a user.
     ///
     /// # Generic Parameters
     ///
     /// - `T`: The type of the collection to hold the results, which must be constructible
-    ///    from an iterator of tuples of a 20-byte array and an optional `Identity`.
+    ///   from an iterator of tuples of a 20-byte array and an optional `Identity`.
     ///
     /// # Returns
     ///

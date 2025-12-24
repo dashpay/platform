@@ -44,7 +44,7 @@ impl Drive {
                 &drive_version.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         // Merge with existing pending updates
         for (epoch_index_key, element) in query_result.to_key_elements() {

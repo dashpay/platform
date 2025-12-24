@@ -154,6 +154,16 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     data.retain(|key, _| !transient_fields.contains(key));
                 }
 
+                let creator_id = if document_type.should_use_creator_id(
+                    data_contract.contract.system_version_type(),
+                    data_contract.contract.config().version(),
+                    platform_version,
+                )? {
+                    Some(owner_id)
+                } else {
+                    None
+                };
+
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);
                 let is_transferred_at_required = required_fields.contains(TRANSFERRED_AT);
@@ -228,6 +238,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                             } else {
                                 None
                             },
+                        creator_id,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -274,6 +285,16 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                 if !transient_fields.is_empty() {
                     data.retain(|key, _| !transient_fields.contains(key));
                 }
+
+                let creator_id = if document_type.should_use_creator_id(
+                    data_contract.contract.system_version_type(),
+                    data_contract.contract.config().version(),
+                    platform_version,
+                )? {
+                    Some(owner_id)
+                } else {
+                    None
+                };
 
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);
@@ -349,6 +370,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                             } else {
                                 None
                             },
+                        creator_id,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

@@ -15,7 +15,7 @@ impl Drive {
     /// # Arguments
     ///
     /// * `start_protx_hash` - The first identifier to get votes from. If none is set start from the
-    ///     first item by ordered hash.
+    ///   first item by ordered hash.
     /// * `count` - How many max items to retrieve.
     /// * `transaction` - A `TransactionArg` object representing the transaction.
     ///

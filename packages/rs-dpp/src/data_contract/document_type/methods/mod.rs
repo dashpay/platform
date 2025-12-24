@@ -212,15 +212,15 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// - `id`: An identifier for the document. Unique within the context of the document's type.
     /// - `owner_id`: The identifier of the entity that will own this document.
     /// - `block_height`: The block height at which this document is considered to have been created.
-    ///    While this value is recorded in the document, it is ignored when the document is broadcasted
-    ///    to the network. This is because the actual block height at the time of broadcast may differ.
-    ///    This parameter is included to fulfill schema requirements that specify a block height; you may
-    ///    use the current block height, a placeholder value of 0, or any other value as necessary.
+    ///   While this value is recorded in the document, it is ignored when the document is broadcasted
+    ///   to the network. This is because the actual block height at the time of broadcast may differ.
+    ///   This parameter is included to fulfill schema requirements that specify a block height; you may
+    ///   use the current block height, a placeholder value of 0, or any other value as necessary.
     /// - `core_block_height`: Similar to `block_height`, this represents the core network's block height
-    ///    at the document's creation time. It is handled the same way as `block_height` regarding broadcast
-    ///    and schema requirements.
+    ///   at the document's creation time. It is handled the same way as `block_height` regarding broadcast
+    ///   and schema requirements.
     /// - `properties`: A collection of properties for the document, structured as a `BTreeMap<String, Value>`.
-    ///    These must be pre-validated to match the document's schema definitions.
+    ///   These must be pre-validated to match the document's schema definitions.
     /// - `platform_version`: A reference to the current version of the platform for which the document is created.
     ///
     /// # Returns:
@@ -328,6 +328,19 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
                 known_versions: vec![0],
                 received: version,
             }),
+        }
+    }
+
+    fn sanitize_document_properties(&self, properties: &mut BTreeMap<String, Value>) {
+        // Iterate through each property in the document
+        for (field_name, field_value) in properties.iter_mut() {
+            // Get the property definition from the document type schema
+            if let Some(property_def) = self.properties().get(field_name) {
+                // Sanitize the value based on its property type
+                property_def.property_type.sanitize_value_mut(field_value);
+            }
+            // If the property is not in the schema, leave it as is
+            // (validation will catch unknown properties later)
         }
     }
 }

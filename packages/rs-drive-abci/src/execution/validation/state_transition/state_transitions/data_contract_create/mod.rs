@@ -5,13 +5,16 @@ mod state;
 
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
@@ -22,16 +25,14 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
-
-use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionAdvancedStructureValidationV0, StateTransitionBasicStructureValidationV0,
-    StateTransitionStateValidationV0,
-};
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::rpc::core::CoreRPCLike;
 
 impl ValidationMode {
     /// Returns if we should validate the contract when we transform it from its serialized form
@@ -45,11 +46,14 @@ impl ValidationMode {
     }
 }
 
-impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
+impl StateTransitionActionTransformer for DataContractCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -138,7 +142,7 @@ impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransiti
     }
 }
 
-impl StateTransitionStateValidationV0 for DataContractCreateTransition {
+impl StateTransitionStateValidation for DataContractCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         _action: Option<StateTransitionAction>,
@@ -4605,6 +4609,151 @@ mod tests {
                     .to_string(Encoding::Base58),
                 data_contract_id_str
             );
+        }
+    }
+
+    #[cfg(test)]
+    mod creator_id {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::setup_identity;
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use assert_matches::assert_matches;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::dash_to_credits;
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+        use dpp::tests::json_document::json_document_to_contract_with_ids;
+        use platform_version::version::PlatformVersion;
+
+        #[test]
+        fn test_data_contract_creation_with_creator_id_index() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable.json",
+                None,
+                None,
+                false, //no need to validate the data contracts in tests for drive
+                platform_version,
+            )
+                .expect("expected to get json based contract");
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
+
+        #[test]
+        fn test_data_contract_creation_with_creator_id_index_not_available_on_protocol_version_9() {
+            let platform_version = PlatformVersion::get(9).unwrap();
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(9)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable.json",
+                None,
+                None,
+                false, //no need to validate the data contracts in tests for drive
+                platform_version,
+            )
+                .expect("expected to get json based contract");
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create documents batch transition");
+
+            let data_contract_create_serialized_transition = data_contract_create_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[data_contract_create_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError(
+                    ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_)),
+                    _
+                )]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
         }
     }
 }

@@ -7,7 +7,6 @@ use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versio
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
@@ -27,13 +26,13 @@ impl Drive {
     /// # Arguments
     ///
     /// * `validator_pro_tx_hashes` - A vector of ProTx hashes representing the validators
-    ///                                whose proposed app versions should be removed.
+    ///   whose proposed app versions should be removed.
     /// * `transaction` - A transaction argument to interact with the underlying storage.
     ///
     /// # Returns
     ///
     /// * `Result<Vec<[u8; 32]>, Error>` - Returns the pro_tx_hashes of validators that were removed,
-    ///                             or an error if an issue was encountered.
+    ///   or an error if an issue was encountered.
     ///
     /// # Errors
     ///
@@ -81,15 +80,15 @@ impl Drive {
     /// # Arguments
     ///
     /// * `validator_pro_tx_hashes` - An into iterator generic of ProTx hashes representing the validators
-    ///                                whose proposed app versions should be removed.
+    ///   whose proposed app versions should be removed.
     /// * `transaction` - A transaction argument to interact with the underlying storage.
     /// * `drive_operations` - A mutable reference to a vector of low-level drive operations
-    ///                        that will be populated with the required changes.
+    ///   that will be populated with the required changes.
     ///
     /// # Returns
     ///
     /// * `Result<Vec<[u8; 32]>, Error>` - Returns the pro_tx_hashes of validators that were removed,
-    ///                             or an error if an issue was encountered.
+    ///   or an error if an issue was encountered.
     ///
     /// # Errors
     ///
@@ -131,7 +130,8 @@ impl Drive {
             if let Some(removed_element) = removed_element {
                 removed_pro_tx_hashes.push(validator_pro_tx_hash);
 
-                let previous_version_bytes = removed_element.as_item_bytes().map_err(GroveDB)?;
+                let previous_version_bytes =
+                    removed_element.as_item_bytes().map_err(Error::from)?;
                 let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
                     .ok_or(Error::Drive(DriveError::CorruptedElementType(
                         "encoded value could not be decoded",

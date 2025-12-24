@@ -4,6 +4,7 @@
 //! into dash-platform-sdk.
 
 use crate::error::Error;
+use dash_context_provider::ContextProviderError;
 use dashcore_rpc::{
     dashcore::{hashes::Hash, Amount, QuorumHash},
     dashcore_rpc_json as json,
@@ -11,8 +12,8 @@ use dashcore_rpc::{
     Auth, Client, RpcApi,
 };
 use dpp::dashcore::ProTxHash;
+use dpp::dashcore_rpc;
 use dpp::prelude::CoreBlockHeight;
-use drive_proof_verifier::error::ContextProviderError;
 use std::{fmt::Debug, sync::Mutex};
 use zeroize::Zeroizing;
 

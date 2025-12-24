@@ -160,7 +160,7 @@ impl DocumentDeleteTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -192,6 +192,7 @@ impl DocumentDeleteTransitionBuilder {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         });
 
         let state_transition = BatchTransition::new_document_deletion_transition_from_document(
@@ -241,7 +242,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     /// - Document not found or already deleted
     /// - Insufficient permissions to delete the document
-    pub async fn document_delete<S: Signer>(
+    pub async fn document_delete<S: Signer<IdentityPublicKey>>(
         &self,
         delete_document_transition_builder: DocumentDeleteTransitionBuilder,
         signing_key: &IdentityPublicKey,

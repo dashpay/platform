@@ -1,0 +1,31 @@
+[package]
+
+edition = "2024"
+name = "rs-dash-event-bus"
+version.workspace = true
+license = "MIT"
+description = "Shared event bus and Platform events multiplexer for Dash Platform (rs-dapi, rs-drive-abci, rs-sdk)"
+
+[lib]
+name = "dash_event_bus"
+path = "src/lib.rs"
+
+[features]
+default = []
+metrics = ["dep:metrics"]
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tracing = "0.1"
+
+
+# Optional metrics
+metrics = { version = "0.24.2", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }

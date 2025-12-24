@@ -38,6 +38,13 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn system_version_type(&self) -> u16 {
+        match self {
+            DataContract::V0(_) => 0,
+            DataContract::V1(_) => 1,
+        }
+    }
+
     fn version(&self) -> u32 {
         match self {
             DataContract::V0(v0) => v0.version(),
@@ -69,14 +76,14 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef<'_>, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
             DataContract::V1(v1) => v1.document_type_for_name(name),
         }
     }
 
-    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef<'_>> {
         match self {
             DataContract::V0(v0) => v0.document_type_optional_for_name(name),
             DataContract::V1(v1) => v1.document_type_optional_for_name(name),

@@ -7,13 +7,10 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
-#[cfg(feature = "identity-value-conversion")]
-use platform_value::Value;
-#[cfg(feature = "identity-serde-conversion")]
-use serde::{Deserialize, Serialize};
-
 use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::Revision;
+#[cfg(feature = "identity-value-conversion")]
+use platform_value::Value;
 
 #[cfg(feature = "identity-value-conversion")]
 use crate::errors::ProtocolError;
@@ -26,15 +23,20 @@ use bincode::{Decode, Encode};
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
-    feature = "identity-serde-conversion",
-    derive(Serialize, Deserialize),
+    any(
+        feature = "identity-serde-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
+    derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(
-        feature = "identity-serde-conversion",
+        any(
+            feature = "identity-serde-conversion",
+            feature = "state-transition-serde-conversion"
+        ),
         serde(with = "public_key_serialization")
     )]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,

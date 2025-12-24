@@ -26,7 +26,7 @@ impl Drive {
                 .grove
                 .root_hash(transaction, &drive_version.grove_version)
                 .unwrap()
-                .map_err(Error::GroveDB)?;
+                .map_err(Error::from)?;
 
             Some((path.clone(), root_hash))
         } else {
@@ -43,7 +43,7 @@ impl Drive {
                 transaction,
                 &drive_version.grove_version,
             )
-            .map_err(Error::GroveDB)
+            .map_err(Error::from)
             .map(|_| ());
 
         #[cfg(feature = "grovedb_operations_logging")]
@@ -54,7 +54,7 @@ impl Drive {
                 .grove
                 .root_hash(transaction, &drive_version.grove_version)
                 .unwrap()
-                .map_err(Error::GroveDB)?;
+                .map_err(Error::from)?;
 
             let (path, previous_root_hash) =
                 maybe_params_for_logs.expect("log params should be set above");

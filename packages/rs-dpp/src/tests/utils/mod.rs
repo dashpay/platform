@@ -2,7 +2,6 @@ use anyhow::Result;
 use dashcore::block::Version;
 use dashcore::hashes::Hash;
 use dashcore::{Block, BlockHash, CompactTarget, Header, TxMerkleNode};
-use getrandom::getrandom;
 use platform_value::Value;
 #[cfg(test)]
 use serde_json::Value as JsonValue;
@@ -60,7 +59,7 @@ where
 
 pub fn generate_random_identifier_struct() -> Identifier {
     let mut buffer = [0u8; 32];
-    let _ = getrandom(&mut buffer);
+    getrandom::getrandom(&mut buffer).unwrap();
     Identifier::from_bytes(&buffer).unwrap()
 }
 

@@ -194,7 +194,7 @@ fn translate_error(kind: PatchErrorKind, operation: usize, path: &str) -> PatchE
     }
 }
 
-fn unescape(s: &str) -> Cow<str> {
+fn unescape(s: &str) -> Cow<'_, str> {
     if s.contains('~') {
         Cow::Owned(s.replace("~1", "/").replace("~0", "~"))
     } else {

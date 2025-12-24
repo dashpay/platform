@@ -48,6 +48,11 @@ wasm-dpp:
   - packages/wasm-dpp/**
   - *dpp
 
+wasm-dpp2:
+  - .github/workflows/tests*
+  - packages/wasm-dpp2/**
+  - *dpp
+
 drive: &drive
   - .github/workflows/tests*
   - packages/rs-drive/**
@@ -61,7 +66,7 @@ drive-abci:
 dapi-grpc: &dapi_grpc
   - .github/workflows/tests*
   - packages/rs-platform-version/**
-  - packages/rs-dapi-grpc-macros/**
+  - packages/rs-dash-platform-macros/**
   - packages/dapi-grpc/**
 
 rs-dapi-client: &dapi_client
@@ -69,9 +74,28 @@ rs-dapi-client: &dapi_client
   - packages/rs-dapi-client/**
   - *dapi_grpc
 
-dash-sdk:
+rs-dapi:
+  - .github/workflows/tests*
+  - packages/rs-dapi/**
+  - *dapi_grpc
+  - *dpp
+
+dash-sdk: &sdk
   - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
   - *dapi_client
   - *drive
+
+rs-sdk-ffi:
+  - .github/workflows/tests*
+  - packages/rs-sdk-ffi/**
+  - packages/rs-sdk/**
+  - packages/rs-drive-proof-verifier/**
+  - *dapi_client
+  - *drive
+
+wasm-sdk:
+  - .github/workflows/tests*
+  - packages/wasm-sdk/**
+  - *sdk

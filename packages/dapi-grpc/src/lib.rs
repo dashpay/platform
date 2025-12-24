@@ -43,7 +43,9 @@ pub mod platform {
     #[cfg(any(feature = "server", feature = "client", target_arch = "wasm32"))]
     mod versioning;
     #[cfg(any(feature = "server", feature = "client", target_arch = "wasm32"))]
-    pub use versioning::{VersionedGrpcMessage, VersionedGrpcResponse};
+    pub use versioning::{
+        MerkProofVersionedGrpcResponse, VersionedGrpcMessage, VersionedGrpcResponse,
+    };
 }
 
 #[cfg(all(feature = "drive", feature = "platform"))]
@@ -78,3 +80,5 @@ pub mod mock;
 
 // Re-export tonic to ensure everyone uses the same version
 pub use tonic;
+// Ensure the prost codec crate is linked and available to generated code
+pub use tonic_prost;

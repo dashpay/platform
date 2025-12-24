@@ -2,14 +2,14 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 
-use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::json::DMNStateDiff;
 
 use dpp::identity::accessors::IdentityGettersV0;
 

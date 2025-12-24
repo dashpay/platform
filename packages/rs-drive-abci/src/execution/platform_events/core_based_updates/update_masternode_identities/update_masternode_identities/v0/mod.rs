@@ -3,17 +3,17 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 
-use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::ProTxHash;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use dpp::dashcore_rpc::json::MasternodeListItem;
 
 use dpp::version::PlatformVersion;
 
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::AddNewIdentity;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 use dpp::dashcore::hashes::Hash;
 use drive::grovedb::Transaction;

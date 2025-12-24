@@ -6,6 +6,7 @@ pub mod v3;
 pub mod v4;
 pub mod v5;
 pub mod v6;
+pub mod v7;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciMethodVersions {
@@ -131,6 +132,7 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
+    pub update_checkpoints: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

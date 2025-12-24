@@ -93,6 +93,8 @@ impl DataContractV0 {
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
+            0,
+            data_contract_data.config.version(),
             document_schemas,
             schema_defs.as_ref(),
             &BTreeMap::new(),
@@ -134,6 +136,8 @@ impl DataContractV0 {
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
+            0,
+            data_contract_data.config.version(),
             document_schemas,
             schema_defs.as_ref(),
             &BTreeMap::new(),

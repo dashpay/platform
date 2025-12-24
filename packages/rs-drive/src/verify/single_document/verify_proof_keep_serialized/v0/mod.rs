@@ -61,7 +61,7 @@ impl SingleDocumentDriveQuery {
         let element = proved_key_values.remove(0).2;
 
         let serialized = element
-            .map(|element| element.into_item_bytes().map_err(Error::GroveDB))
+            .map(|element| element.into_item_bytes().map_err(Error::from))
             .transpose()?;
 
         Ok((root_hash, serialized))

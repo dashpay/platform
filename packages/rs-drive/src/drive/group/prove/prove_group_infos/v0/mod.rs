@@ -162,8 +162,6 @@ mod tests {
             )
             .expect("should not error when proving group infos");
 
-        println!("{}", hex::encode(&proof));
-
         // Verify proof
         let proved_group_infos: BTreeMap<GroupContractPosition, Group> =
             Drive::verify_group_infos_in_contract(

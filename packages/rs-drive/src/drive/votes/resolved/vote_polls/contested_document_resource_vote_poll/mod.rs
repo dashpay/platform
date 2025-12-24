@@ -257,11 +257,11 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     ///
     /// This method returns an `Error::Protocol` variant with `ProtocolError::DataContractError`
     /// if there is an issue retrieving the document type.
-    pub fn document_type(&self) -> Result<DocumentTypeRef, Error> {
+    pub fn document_type(&self) -> Result<DocumentTypeRef<'_>, Error> {
         self.contract
             .as_ref()
             .document_type_for_name(self.document_type_name.as_str())
-            .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::DataContractError(e))))
     }
 
     /// Borrows a reference to the document type associated with the document type name.
@@ -279,7 +279,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
         self.contract
             .as_ref()
             .document_type_borrowed_for_name(self.document_type_name.as_str())
-            .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::DataContractError(e))))
     }
 }
 
@@ -317,11 +317,11 @@ impl ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
     ///
     /// This method returns an `Error::Protocol` variant with `ProtocolError::DataContractError`
     /// if there is an issue retrieving the document type.
-    pub fn document_type(&self) -> Result<DocumentTypeRef, Error> {
+    pub fn document_type(&self) -> Result<DocumentTypeRef<'_>, Error> {
         self.contract
             .as_ref()
             .document_type_for_name(self.document_type_name.as_str())
-            .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::DataContractError(e))))
     }
 
     /// Borrows a reference to the document type associated with the document type name.
@@ -339,6 +339,6 @@ impl ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
         self.contract
             .as_ref()
             .document_type_borrowed_for_name(self.document_type_name.as_str())
-            .map_err(|e| Error::Protocol(ProtocolError::DataContractError(e)))
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::DataContractError(e))))
     }
 }

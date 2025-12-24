@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Transaction helpers bubble up drive::Error
 use crate::drive::Drive;
 use crate::error::Error;
 use grovedb::Transaction;
@@ -9,6 +10,6 @@ impl Drive {
             .commit_transaction(transaction)
             .unwrap() // TODO: discuss what to do with transaction cost as costs are
             // returned in advance on transaction operations not on commit
-            .map_err(Error::GroveDB)
+            .map_err(Error::from)
     }
 }

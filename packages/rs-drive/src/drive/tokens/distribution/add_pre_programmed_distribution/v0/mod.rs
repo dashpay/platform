@@ -23,7 +23,7 @@ use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType;
+use grovedb::element::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
@@ -234,9 +234,9 @@ impl Drive {
 
             for (recipient, amount) in distribution {
                 if *amount > i64::MAX as u64 {
-                    return Err(Error::Protocol(ProtocolError::Overflow(
+                    return Err(Error::Protocol(Box::new(ProtocolError::Overflow(
                         "distribution amount over i64::Max",
-                    )));
+                    ))));
                 }
                 // We use a sum tree to be able to ask "at this time how much was distributed"
                 self.batch_insert(

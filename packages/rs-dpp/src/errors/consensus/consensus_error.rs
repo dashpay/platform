@@ -27,6 +27,7 @@ use crate::errors::consensus::basic::BasicError;
 )]
 #[platform_serialize(limit = 2000)]
 #[error(transparent)]
+#[allow(clippy::large_enum_variant)]
 pub enum ConsensusError {
     /*
 

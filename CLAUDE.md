@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## IMPORTANT: Tool Usage Rules
+
+**ALWAYS use the swift-rust-ffi-engineer agent for:**
+- Any Swift/Rust FFI integration work
+- Swift wrapper implementations over FFI functions
+- Debugging Swift/FFI type compatibility issues
+- iOS SDK and SwiftExampleApp development
+- Memory management across Swift/Rust boundaries
+- Refactoring Swift code to properly wrap FFI functions
+
 ## Commands
 
 ### Build and Development
@@ -97,6 +107,8 @@ yarn configure:tests:network
 
 **SDK** (`packages/js-dash-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform.
 
+**WASM SDK** (`packages/wasm-sdk`): WebAssembly bindings for browser-based applications. See [AI_REFERENCE.md](packages/wasm-sdk/AI_REFERENCE.md) for comprehensive API documentation.
+
 **Dashmate** (`packages/dashmate`): Node management tool for setting up and managing Dash Platform nodes.
 
 ### Data Contracts
@@ -114,6 +126,10 @@ Platform uses data contracts to define application data schemas:
 2. **Cross-language Integration**: WASM bindings connect Rust and JavaScript code
 3. **Local Development**: Docker Compose environment managed by dashmate
 4. **Testing**: Comprehensive test suites at unit, integration, and e2e levels
+5. **WASM SDK Development**: 
+   - Build with `./build.sh` in `packages/wasm-sdk`
+   - Test with web interface at `index.html`
+   - Keep docs in sync: `python3 generate_docs.py`
 
 ### Important Patterns
 
@@ -122,3 +138,45 @@ Platform uses data contracts to define application data schemas:
 - **Value Handling**: `rs-platform-value` for cross-language data representation
 - **Proof Verification**: `rs-drive-proof-verifier` for cryptographic proofs
 - **State Transitions**: Documents and data contracts use state transitions for updates
+
+## iOS Development
+
+### Building iOS SDK and SwiftExampleApp
+
+See [packages/swift-sdk/BUILD_GUIDE_FOR_AI.md](packages/swift-sdk/BUILD_GUIDE_FOR_AI.md) for detailed instructions on building the iOS components.
+
+For SwiftExampleApp-specific guidance including token querying and data models, see [packages/swift-sdk/SwiftExampleApp/CLAUDE.md](packages/swift-sdk/SwiftExampleApp/CLAUDE.md).
+
+Quick build commands:
+```bash
+# Build unified iOS framework (includes Core + Platform)
+cd packages/rs-sdk-ffi
+./build_ios.sh
+
+# Build SwiftExampleApp
+cd packages/swift-sdk
+xcodebuild -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
+  -scheme SwiftExampleApp \
+  -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 16,arch=arm64' \
+  -quiet clean build
+```
+
+### iOS Architecture
+
+**Unified SDK**: The iOS SDK combines both Core (SPV wallet) and Platform (identity/documents) functionality:
+- Core SDK functions: `dash_core_sdk_*` prefix
+- Platform SDK functions: `dash_sdk_*` prefix  
+- Unified SDK functions: `dash_unified_sdk_*` prefix
+
+**SwiftExampleApp**: Demonstrates integration of both layers:
+- Uses SwiftUI for UI and SwiftData for persistence
+- `UnifiedAppState` coordinates Core and Platform features
+- `WalletService` manages SPV wallet operations
+- `PlatformService` handles identity and document operations
+
+**Common iOS Build Issues**:
+- Missing xcframework: Create symlink or update Package.swift
+- Type visibility: Make DPP types public in Swift
+- C header issues: Use pointers for opaque FFI types
+- After merges: Always clean and rebuild from scratch

@@ -307,6 +307,19 @@ export default {
           required: ['host', 'port', 'users', 'allowIps'],
           additionalProperties: false,
         },
+        zmq: {
+          type: 'object',
+          properties: {
+            host: {
+              $ref: '#/definitions/host',
+            },
+            port: {
+              $ref: '#/definitions/port',
+            },
+          },
+          required: ['host', 'port'],
+          additionalProperties: false,
+        },
         spork: {
           type: 'object',
           properties: {
@@ -475,7 +488,7 @@ export default {
             + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
+      required: ['docker', 'p2p', 'rpc', 'zmq', 'spork', 'masternode', 'miner', 'devnet', 'log',
         'indexes', 'insight'],
       additionalProperties: false,
     },
@@ -514,10 +527,7 @@ export default {
                   required: ['maxRequests'],
                   additionalProperties: false,
                 },
-                dapiApi: {
-                  $ref: 'gatewayUpstream',
-                },
-                dapiCoreStreams: {
+                rsDapi: {
                   $ref: 'gatewayUpstream',
                 },
                 dapiJsonRpc: {
@@ -525,7 +535,7 @@ export default {
                 },
               },
               additionalProperties: false,
-              required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams', 'dapiJsonRpc'],
+              required: ['driveGrpc', 'rsDapi', 'dapiJsonRpc'],
             },
             metrics: {
               $ref: '#/definitions/enabledHostPort',
@@ -791,7 +801,7 @@ export default {
         dapi: {
           type: 'object',
           properties: {
-            api: {
+            rsDapi: {
               type: 'object',
               properties: {
                 docker: {
@@ -819,17 +829,46 @@ export default {
                   required: ['image', 'build', 'deploy'],
                   additionalProperties: false,
                 },
+                metrics: {
+                  $ref: '#/definitions/enabledHostPort',
+                },
+                logs: {
+                  type: 'object',
+                  properties: {
+                    level: {
+                      type: 'string',
+                      minLength: 1,
+                      description: 'error, warn, info, debug, trace, off or logging specification string in RUST_LOG format',
+                      enum: ['error', 'warn', 'info', 'debug', 'trace', 'off'],
+                    },
+                    jsonFormat: {
+                      type: 'boolean',
+                      description: 'Emit structured JSON application logs when true',
+                    },
+                    accessLogPath: {
+                      type: ['string', 'null'],
+                      description: 'Filesystem path for access logs; leave empty or null to disable access logging',
+                    },
+                    accessLogFormat: {
+                      type: 'string',
+                      description: 'Access log format',
+                      enum: ['combined', 'json'],
+                    },
+                  },
+                  required: ['level', 'jsonFormat', 'accessLogPath', 'accessLogFormat'],
+                  additionalProperties: false,
+                },
                 waitForStResultTimeout: {
                   type: 'integer',
                   minimum: 1,
                   description: 'How many millis to wait for state transition result before timeout',
                 },
               },
-              required: ['docker', 'waitForStResultTimeout'],
+              required: ['docker', 'metrics', 'logs', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
           },
-          required: ['api'],
+          required: ['rsDapi'],
           additionalProperties: false,
         },
         drive: {

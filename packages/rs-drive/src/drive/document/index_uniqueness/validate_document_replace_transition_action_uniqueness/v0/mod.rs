@@ -2,7 +2,7 @@ use dpp::data_contract::DataContract;
 
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
 use crate::error::Error;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -29,7 +29,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let request = UniquenessOfDataRequest {
+        let request = UniquenessOfDataRequestV0 {
             contract,
             document_type,
             owner_id,
@@ -49,6 +49,6 @@ impl Drive {
                 .transferred_at_core_block_height(),
             data: document_replace_transition.data(),
         };
-        self.validate_uniqueness_of_data(request, transaction, platform_version)
+        self.validate_uniqueness_of_data(request.into(), transaction, platform_version)
     }
 }

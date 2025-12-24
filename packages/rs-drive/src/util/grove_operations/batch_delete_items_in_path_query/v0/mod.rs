@@ -156,6 +156,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -227,7 +228,7 @@ mod tests {
         );
         assert_matches!(
             get_result,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
     }
 
@@ -243,6 +244,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -348,7 +350,7 @@ mod tests {
         );
         assert_matches!(
             get_result_1,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
 
         let get_result_2 = drive.grove_get(
@@ -361,7 +363,7 @@ mod tests {
         );
         assert_matches!(
             get_result_2,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
 
         // Verify that key 3 is still there
@@ -388,6 +390,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -448,7 +451,7 @@ mod tests {
         );
         assert_matches!(
             get_result,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
     }
 
@@ -484,7 +487,7 @@ mod tests {
         // Assert failure due to missing intermediate path
         assert_matches!(
             result,
-            Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathParentLayerNotFound(_))
         );
     }
 
@@ -505,6 +508,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -582,7 +586,7 @@ mod tests {
         );
         assert_matches!(
             get_result,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
     }
 }
