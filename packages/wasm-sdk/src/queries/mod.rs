@@ -14,18 +14,26 @@ pub mod voting;
 pub use address::PlatformAddressInfoWasm;
 pub use group::*;
 
+use crate::impl_wasm_serde_conversions;
+use crate::WasmSdkError;
 use js_sys::Uint8Array;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::serialization::bytes_b64;
+use wasm_dpp2::serialization::conversions as serialization;
 
 #[wasm_bindgen(js_name = "ResponseMetadata")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResponseMetadataWasm {
     height: u64,
     core_chain_locked_height: u32,
     epoch: u32,
     time_ms: u64,
     protocol_version: u32,
+    #[serde(with = "bytes_b64")]
     chain_id: Vec<u8>,
 }
 
@@ -85,6 +93,7 @@ impl ResponseMetadataWasm {
         self.chain_id = chain_id.to_vec();
     }
 }
+impl_wasm_serde_conversions!(ResponseMetadataWasm, ResponseMetadata);
 
 // Helper function to convert platform ResponseMetadata to our ResponseMetadata
 impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadataWasm {
@@ -101,12 +110,17 @@ impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadataWasm 
 }
 
 #[wasm_bindgen(js_name = "ProofInfo")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProofInfoWasm {
+    #[serde(with = "bytes_b64")]
     grovedb_proof: Vec<u8>,
+    #[serde(with = "bytes_b64")]
     quorum_hash: Vec<u8>,
+    #[serde(with = "bytes_b64")]
     signature: Vec<u8>,
     round: u32,
+    #[serde(with = "bytes_b64")]
     block_id_hash: Vec<u8>,
     quorum_type: u32,
 }
@@ -191,6 +205,7 @@ impl ProofInfoWasm {
         self.block_id_hash = block_id_hash.to_vec();
     }
 }
+impl_wasm_serde_conversions!(ProofInfoWasm, ProofInfo);
 
 // Helper function to convert platform Proof to our ProofInfo
 impl From<dash_sdk::platform::proto::Proof> for ProofInfoWasm {
@@ -221,8 +236,27 @@ export type ProofMetadataResponseTyped<T> = ProofMetadataResponse & { data: T };
 
 #[wasm_bindgen(js_class = ProofMetadataResponse)]
 impl ProofMetadataResponseWasm {
+    fn to_serde(&self) -> Result<ProofMetadataResponseSerde, WasmSdkError> {
+        Ok(ProofMetadataResponseSerde {
+            data: serialization::js_value_to_json(&self.data).map_err(WasmSdkError::from)?,
+            metadata: self.metadata.clone(),
+            proof: self.proof.clone(),
+        })
+    }
+
+    fn from_serde(serde: ProofMetadataResponseSerde) -> Result<Self, WasmSdkError> {
+        Ok(ProofMetadataResponseWasm {
+            data: serialization::json_to_js_value(&serde.data).map_err(WasmSdkError::from)?,
+            metadata: serde.metadata,
+            proof: serde.proof,
+        })
+    }
+
     #[wasm_bindgen(constructor)]
     pub fn new(data: JsValue, metadata: ResponseMetadataWasm, proof: ProofInfoWasm) -> Self {
+        // Store data as-is. Conversion to JSON happens in to_serde()/toJSON().
+        // This allows WASM objects (like DataContractWasm) to be stored directly
+        // and their toJSON() method will be called when serializing.
         ProofMetadataResponseWasm {
             data,
             metadata,
@@ -259,30 +293,56 @@ impl ProofMetadataResponseWasm {
     pub fn set_proof(&mut self, proof: ProofInfoWasm) {
         self.proof = proof;
     }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        let serde_value = self.to_serde()?;
+        serialization::to_json(&serde_value).map_err(WasmSdkError::from)
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js: JsValue) -> Result<Self, WasmSdkError> {
+        let serde_struct: ProofMetadataResponseSerde =
+            serialization::from_json(js).map_err(WasmSdkError::from)?;
+        ProofMetadataResponseWasm::from_serde(serde_struct)
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
+        let serde_value = self.to_serde()?;
+        serialization::to_object(&serde_value).map_err(WasmSdkError::from)
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(obj: JsValue) -> Result<Self, WasmSdkError> {
+        let serde_struct: ProofMetadataResponseSerde =
+            serialization::from_object(obj).map_err(WasmSdkError::from)?;
+        ProofMetadataResponseWasm::from_serde(serde_struct)
+    }
 }
 
 impl ProofMetadataResponseWasm {
-    pub(crate) fn from_parts(
-        data: JsValue,
-        metadata: ResponseMetadataWasm,
-        proof: ProofInfoWasm,
-    ) -> Self {
-        ProofMetadataResponseWasm {
-            data,
-            metadata,
-            proof,
-        }
-    }
-
+    /// Create from SDK response parts with a WASM wrapper object or JsValue as data.
+    ///
+    /// Use this for WASM wrapper types (e.g., `DataContractWasm`, `IdentityWasm`)
+    /// or JS values (Map, Array, or pre-serialized JsValue). The data is stored as-is,
+    /// and when `toJSON()` is called, WASM objects will have their `toJSON()` method
+    /// invoked automatically.
+    ///
+    /// This allows `response.data` to return the actual WASM object with all its methods.
     pub(crate) fn from_sdk_parts(
         data: impl Into<JsValue>,
         metadata: dash_sdk::platform::proto::ResponseMetadata,
         proof: dash_sdk::platform::proto::Proof,
     ) -> Self {
-        ProofMetadataResponseWasm {
-            data: data.into(),
-            metadata: metadata.into(),
-            proof: proof.into(),
-        }
+        ProofMetadataResponseWasm::new(data.into(), metadata.into(), proof.into())
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProofMetadataResponseSerde {
+    data: JsonValue,
+    metadata: ResponseMetadataWasm,
+    proof: ProofInfoWasm,
 }

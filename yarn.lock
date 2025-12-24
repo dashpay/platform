@@ -2005,6 +2005,7 @@ __metadata:
   resolution: "@dashevo/wasm-dpp2@workspace:packages/wasm-dpp2"
   dependencies:
     assert: "npm:^2.0.0"
+    bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -3366,11 +3367,12 @@ __metadata:
   linkType: hard
 
 "@types/bs58@npm:^4.0.1":
-  version: 4.0.1
-  resolution: "@types/bs58@npm:4.0.1"
+  version: 4.0.4
+  resolution: "@types/bs58@npm:4.0.4"
   dependencies:
+    "@types/node": "npm:*"
     base-x: "npm:^3.0.6"
-  checksum: 10/5063fed6bb3816f28eef3e689a05f8f85d03ce7c2e3ceefe77c349ed147023999eb024e863bf3fa81ba2bded690e5296efe4d34864c875097bd261614e37f786
+  checksum: 10/9cac5a00343756f887ad906c10c71464620d352af40ff61373dcede434880a769be8b78380b890e9b13506851af4611ab59e7d4b7159af04f445e1fd5c34e3d0
   languageName: node
   linkType: hard
 

@@ -12,6 +12,7 @@ describe('TokenConfiguration', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
+            $format_version: '0',
             shouldCapitalize: true,
             singularForm: 'TOKEN',
             pluralForm: 'TOKENS',
@@ -96,6 +97,7 @@ describe('TokenConfiguration', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
+            $format_version: '0',
             shouldCapitalize: true,
             singularForm: 'TOKEN',
             pluralForm: 'TOKENS',

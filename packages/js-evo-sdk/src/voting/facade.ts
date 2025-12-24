@@ -16,12 +16,12 @@ export class VotingFacade {
     return w.getContestedResourceVoteStateWithProofInfo(query);
   }
 
-  async contestedResourceIdentityVotes(query: wasm.ContestedResourceIdentityVotesQuery): Promise<any[]> {
+  async contestedResourceIdentityVotes(query: wasm.ContestedResourceIdentityVotesQuery): Promise<Map<wasm.Identifier, wasm.ResourceVote>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotes(query);
   }
 
-  async contestedResourceIdentityVotesWithProof(query: wasm.ContestedResourceIdentityVotesQuery): Promise<wasm.ProofMetadataResponseTyped<{ votes: Array<any> }>> {
+  async contestedResourceIdentityVotesWithProof(query: wasm.ContestedResourceIdentityVotesQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.ResourceVote>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotesWithProofInfo(query);
   }
