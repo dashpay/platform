@@ -69,7 +69,7 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(getter = "data")]
     pub fn get_data(&self) -> WasmDppResult<JsValue> {
-        serialization::to_json(self.0.data())
+        serialization::to_object(self.0.data())
     }
 
     #[wasm_bindgen(getter = "base")]

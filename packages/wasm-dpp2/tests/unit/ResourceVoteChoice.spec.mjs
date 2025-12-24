@@ -81,8 +81,8 @@ describe('ResourceVoteChoice', () => {
 
       const obj = choice.toObject();
       expect(obj).to.be.an('object');
-      expect(obj.type).to.equal('TowardsIdentity');
-      expect(obj.identityId).to.not.be.undefined;
+      // Serde serializes enum variants as { variantName: value } with camelCase
+      expect(obj.towardsIdentity).to.not.be.undefined;
 
       const restored = wasm.ResourceVoteChoice.fromObject(obj);
       expect(restored.getType()).to.equal(choice.getType());
@@ -93,8 +93,8 @@ describe('ResourceVoteChoice', () => {
       const choice = wasm.ResourceVoteChoice.Abstain();
 
       const obj = choice.toObject();
-      expect(obj).to.be.an('object');
-      expect(obj.type).to.equal('Abstain');
+      // Simple enum variants serialize to strings in serde
+      expect(obj).to.equal('abstain');
 
       const restored = wasm.ResourceVoteChoice.fromObject(obj);
       expect(restored.getType()).to.equal('Abstain');
@@ -104,8 +104,8 @@ describe('ResourceVoteChoice', () => {
       const choice = wasm.ResourceVoteChoice.Lock();
 
       const obj = choice.toObject();
-      expect(obj).to.be.an('object');
-      expect(obj.type).to.equal('Lock');
+      // Simple enum variants serialize to strings in serde
+      expect(obj).to.equal('lock');
 
       const restored = wasm.ResourceVoteChoice.fromObject(obj);
       expect(restored.getType()).to.equal('Lock');

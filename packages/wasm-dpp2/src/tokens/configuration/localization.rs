@@ -1,11 +1,11 @@
-use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{IntoWasm, JsValueExt};
+use crate::error::WasmDppResult;
+use crate::serialization;
+use crate::utils::IntoWasm;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_configuration_localization::accessors::v0::{
     TokenConfigurationLocalizationV0Getters, TokenConfigurationLocalizationV0Setters,
 };
 use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
-use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -84,28 +84,22 @@ impl TokenConfigurationLocalizationWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        // Custom toJSON that outputs only the data fields (without $format_version)
-        // to match expected API format
-        let obj = Object::new();
-        Reflect::set(&obj, &JsValue::from_str("shouldCapitalize"), &JsValue::from(self.0.should_capitalize()))
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-        Reflect::set(&obj, &JsValue::from_str("singularForm"), &JsValue::from(self.0.singular_form()))
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-        Reflect::set(&obj, &JsValue::from_str("pluralForm"), &JsValue::from(self.0.plural_form()))
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-        Ok(obj.into())
-    }
-
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
-        // Use manual parsing to accept objects without $format_version
-        localization_from_plain_js_value(&js_value).map(TokenConfigurationLocalizationWasm)
+        serialization::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
-        // Use manual parsing to accept objects without $format_version
-        localization_from_plain_js_value(&js_value).map(TokenConfigurationLocalizationWasm)
+        serialization::from_json(js_value).map(TokenConfigurationLocalizationWasm)
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        serialization::to_object(&self.0)
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+        serialization::from_object(js_value).map(TokenConfigurationLocalizationWasm)
     }
 }
 
@@ -113,79 +107,16 @@ impl TokenConfigurationLocalizationWasm {
     pub(crate) fn from_js_value(
         js_value: &JsValue,
     ) -> WasmDppResult<TokenConfigurationLocalization> {
-        match js_value
-            .to_wasm::<TokenConfigurationLocalizationWasm>("TokenConfigurationLocalization")
+        // First, check if it's already a WASM wrapper
+        if let Ok(wasm_localization) =
+            js_value.to_wasm::<TokenConfigurationLocalizationWasm>("TokenConfigurationLocalization")
         {
-            Ok(wasm_localization) => Ok(TokenConfigurationLocalization::from(
+            return Ok(TokenConfigurationLocalization::from(
                 wasm_localization.clone(),
-            )),
-            Err(err) => {
-                let message = err.message();
-
-                if message.contains("constructor name mismatch") {
-                    localization_from_plain_js_value(js_value)
-                } else {
-                    Err(err)
-                }
-            }
+            ));
         }
+
+        // Deserialize as a versioned object (with $format_version)
+        serialization::from_object(js_value.clone())
     }
-}
-
-fn localization_from_plain_js_value(
-    js_value: &JsValue,
-) -> WasmDppResult<TokenConfigurationLocalization> {
-    if !js_value.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "TokenConfigurationLocalization must be an object",
-        ));
-    }
-
-    let should_capitalize_value = Reflect::get(js_value, &JsValue::from_str("shouldCapitalize"))
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "TokenConfigurationLocalization.shouldCapitalize could not be read: {}",
-                message
-            ))
-        })?;
-    let should_capitalize = should_capitalize_value.as_bool().ok_or_else(|| {
-        WasmDppError::invalid_argument(
-            "TokenConfigurationLocalization.shouldCapitalize must be a boolean",
-        )
-    })?;
-
-    let singular_form_value =
-        Reflect::get(js_value, &JsValue::from_str("singularForm")).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "TokenConfigurationLocalization.singularForm could not be read: {}",
-                message
-            ))
-        })?;
-    let singular_form = singular_form_value.as_string().ok_or_else(|| {
-        WasmDppError::invalid_argument(
-            "TokenConfigurationLocalization.singularForm must be a string",
-        )
-    })?;
-
-    let plural_form_value =
-        Reflect::get(js_value, &JsValue::from_str("pluralForm")).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "TokenConfigurationLocalization.pluralForm could not be read: {}",
-                message
-            ))
-        })?;
-    let plural_form = plural_form_value.as_string().ok_or_else(|| {
-        WasmDppError::invalid_argument("TokenConfigurationLocalization.pluralForm must be a string")
-    })?;
-
-    Ok(TokenConfigurationLocalization::V0(
-        TokenConfigurationLocalizationV0 {
-            should_capitalize,
-            singular_form,
-            plural_form,
-        },
-    ))
 }

@@ -156,16 +156,10 @@ impl GroupWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        // Custom toObject because Group has BTreeMap<Identifier, u32> which can't be
-        // serialized with serialize_maps_as_objects(true) since Identifier is not a string.
-        // We convert identifiers to base58 strings for the keys.
-        let obj = Object::new();
-        let members = self.get_members()?;
-        Reflect::set(&obj, &JsValue::from_str("members"), &members)
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-        Reflect::set(&obj, &JsValue::from_str("requiredPower"), &JsValue::from(self.get_required_power()))
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-        Ok(obj.into())
+        // Use toJSON for serialization because it handles BTreeMap<Identifier, u32>
+        // correctly (Identifier becomes base58 string in human-readable mode).
+        // This ensures all fields are automatically included when new versions are added.
+        serialization::to_json(&self.0)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
