@@ -63,8 +63,10 @@ pub type FrozenIdentifier = Identifier;
     Decode,
     PlatformDeserialize,
     PlatformSerialize,
-    serde::Serialize,
-    serde::Deserialize,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(serde::Serialize, serde::Deserialize)
 )]
 #[platform_serialize(unversioned)]
 pub enum TokenEvent {

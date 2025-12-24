@@ -5,6 +5,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -17,8 +18,10 @@ use serde::{Deserialize, Serialize};
     Decode,
     PlatformDeserialize,
     PlatformSerialize,
-    Serialize,
-    Deserialize,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub struct GroupActionV0 {
