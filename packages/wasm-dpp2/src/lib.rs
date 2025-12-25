@@ -32,7 +32,7 @@ pub mod utils;
 pub mod voting;
 
 pub use core_script::CoreScriptWasm;
-pub use enums::withdrawal::PoolingWasm;
+pub use identity::transitions::pooling::PoolingWasm;
 pub use identity_signer::IdentitySignerWasm;
 
 pub use data_contract::{

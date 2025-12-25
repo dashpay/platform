@@ -86,7 +86,7 @@ describe('AddressesFacade', () => {
     signer.addKey(senderAddr, privateKey);
 
     // Create typed input and output objects (address, nonce, amount)
-    const input = new wasmSDKPackage.PlatformAddressInput(senderAddr, 0n, 100000n);
+    const input = new wasmSDKPackage.PlatformAddressInput(senderAddr, 0, 100000n);
     const output = new wasmSDKPackage.PlatformAddressOutput(recipientAddr, 90000n);
 
     const options = {
@@ -124,7 +124,7 @@ describe('AddressesFacade', () => {
     signer.addKey(senderAddr, privateKey);
 
     // Create typed input and output objects (address, nonce, amount)
-    const input = new wasmSDKPackage.PlatformAddressInput(senderAddr, 0n, 100000n);
+    const input = new wasmSDKPackage.PlatformAddressInput(senderAddr, 0, 100000n);
     const output = new wasmSDKPackage.PlatformAddressOutput(recipientAddr, 90000n);
 
     const options = {
