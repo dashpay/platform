@@ -3,11 +3,12 @@ use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
-use dpp::platform_value::string_encoding::decode;
+use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -169,6 +170,16 @@ impl IdentityCreateTransitionWasm {
         Ok(())
     }
 
+    #[wasm_bindgen(js_name = "toHex")]
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes()?.as_slice(), Hex))
+    }
+
+    #[wasm_bindgen(js_name = "toBase64")]
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes()?.as_slice(), Base64))
+    }
+
     #[wasm_bindgen(js_name = "toStateTransition")]
     pub fn to_state_transition(&self) -> StateTransitionWasm {
         StateTransitionWasm::from(StateTransition::IdentityCreate(self.clone().0))
@@ -188,3 +199,5 @@ impl IdentityCreateTransitionWasm {
         }
     }
 }
+
+impl_wasm_conversions!(IdentityCreateTransitionWasm, IdentityCreateTransition);

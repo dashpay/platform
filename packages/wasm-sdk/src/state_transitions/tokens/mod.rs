@@ -15,10 +15,16 @@ use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::tokens::calculate_token_id;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
+use serde::Serialize;
 use serde_json;
-use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+
+/// Helper function to serialize to JsValue using json_compatible()
+fn to_json_compatible<T: Serialize>(value: &T) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    value.serialize(&serializer)
+}
 
 // WasmSigner has been replaced with SingleKeySigner from simple-signer crate
 
@@ -89,7 +95,7 @@ impl WasmSdk {
     ) -> Result<JsValue, WasmSdkError> {
         match proof_result {
             StateTransitionProofResult::VerifiedTokenBalance(recipient_id, new_balance) => {
-                to_value(&serde_json::json!({
+                to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenBalance",
                     "recipientId": recipient_id.to_string(Encoding::Base58),
                     "newBalance": new_balance.to_string()
@@ -99,7 +105,7 @@ impl WasmSdk {
                 })
             }
             StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
-                to_value(&serde_json::json!({
+                to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenActionWithDocument",
                     "documentId": doc.id().to_string(Encoding::Base58),
                     "message": "Token operation recorded successfully"
@@ -109,7 +115,7 @@ impl WasmSdk {
                 })
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
-                to_value(&serde_json::json!({
+                to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenGroupActionWithDocument",
                     "groupPower": power,
                     "document": doc.is_some()
@@ -122,7 +128,7 @@ impl WasmSdk {
                 power,
                 status,
                 balance,
-            ) => to_value(&serde_json::json!({
+            ) => to_json_compatible(&serde_json::json!({
                 "type": "VerifiedTokenGroupActionWithTokenBalance",
                 "groupPower": power,
                 "status": format!("{:?}", status),
@@ -858,7 +864,7 @@ impl WasmSdk {
         // Format and return result based on the proof result type
         match proof_result {
             StateTransitionProofResult::VerifiedTokenPricingSchedule(owner_id, schedule) => {
-                to_value(&serde_json::json!({
+                to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenPricingSchedule",
                     "ownerId": owner_id.to_string(Encoding::Base58),
                     "pricingSchedule": schedule.map(|s| match s {
@@ -886,7 +892,7 @@ impl WasmSdk {
                 power,
                 status,
                 schedule,
-            ) => to_value(&serde_json::json!({
+            ) => to_json_compatible(&serde_json::json!({
                 "type": "VerifiedTokenGroupActionWithTokenPricingSchedule",
                 "groupPower": power,
                 "status": format!("{:?}", status),

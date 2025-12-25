@@ -38,13 +38,13 @@ describe('DocumentTransition', () => {
     it('should allow to get dataContractId', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
-      expect(documentTransition.dataContractId.base58()).to.deep.equal(documentInstance.dataContractId.base58());
+      expect(documentTransition.dataContractId.toBase58()).to.deep.equal(documentInstance.dataContractId.toBase58());
     });
 
     it('should allow to get id', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
-      expect(documentTransition.id.base58()).to.deep.equal(documentInstance.id.base58());
+      expect(documentTransition.id.toBase58()).to.deep.equal(documentInstance.id.toBase58());
     });
 
     it('should allow to get documentTypeName', () => {
