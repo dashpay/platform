@@ -126,6 +126,7 @@ pub struct CheckpointInfo {
     pub checkpoint: Arc<Checkpoint>,
 }
 
+#[cfg(feature = "server")]
 impl CheckpointInfo {
     /// Creates a new CheckpointInfo with the given timestamp and checkpoint
     pub fn new(timestamp_ms: TimestampMillis, checkpoint: Arc<Checkpoint>) -> Self {
