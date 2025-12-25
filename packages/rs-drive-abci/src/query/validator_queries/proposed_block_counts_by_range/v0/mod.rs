@@ -14,6 +14,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::error::query::QuerySyntaxError;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 impl<C> Platform<C> {
@@ -103,13 +105,12 @@ impl<C> Platform<C> {
                 platform_version
             ));
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetEvonodesProposedEpochBlocksResponseV0 {
-                result: Some(
-                    get_evonodes_proposed_epoch_blocks_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
-                    ),
-                ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_evonodes_proposed_epoch_blocks_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let evonodes_proposed_block_counts = self
@@ -133,7 +134,7 @@ impl<C> Platform<C> {
 
             GetEvonodesProposedEpochBlocksResponseV0 {
                 result: Some(get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(evonode_proposed_blocks)),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 
