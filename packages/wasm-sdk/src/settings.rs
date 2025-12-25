@@ -5,6 +5,7 @@
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use rs_dapi_client::RequestSettings;
+use serde::Deserialize;
 use std::time::Duration;
 use wasm_bindgen::prelude::*;
 
@@ -50,52 +51,39 @@ extern "C" {
     pub type RequestSettingsJs;
 }
 
+/// Internal struct for deserializing RequestSettings from JavaScript.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct RequestSettingsInput {
+    retries: Option<u32>,
+    timeout_ms: Option<u64>,
+    connect_timeout_ms: Option<u64>,
+    ban_failed_address: Option<bool>,
+}
+
+impl From<RequestSettingsInput> for RequestSettings {
+    fn from(input: RequestSettingsInput) -> Self {
+        RequestSettings {
+            retries: input.retries.map(|r| r as usize),
+            timeout: input.timeout_ms.map(Duration::from_millis),
+            connect_timeout: input.connect_timeout_ms.map(Duration::from_millis),
+            ban_failed_address: input.ban_failed_address,
+        }
+    }
+}
+
 /// Parse request settings from JavaScript into RequestSettings.
 ///
 /// Used for query operations.
 pub fn parse_request_settings(settings: Option<RequestSettingsJs>) -> Option<RequestSettings> {
-    let settings_js = settings?;
-    let settings_value: JsValue = settings_js.into();
+    let js_value: JsValue = settings?.into();
 
-    if settings_value.is_undefined() || settings_value.is_null() {
+    if js_value.is_undefined() || js_value.is_null() {
         return None;
     }
 
-    let mut request_settings = RequestSettings::default();
-
-    // Parse retries
-    if let Ok(retries_js) = js_sys::Reflect::get(&settings_value, &JsValue::from_str("retries")) {
-        if let Some(retries) = retries_js.as_f64() {
-            request_settings.retries = Some(retries as usize);
-        }
-    }
-
-    // Parse timeoutMs
-    if let Ok(timeout_js) = js_sys::Reflect::get(&settings_value, &JsValue::from_str("timeoutMs")) {
-        if let Some(ms) = timeout_js.as_f64() {
-            request_settings.timeout = Some(Duration::from_millis(ms as u64));
-        }
-    }
-
-    // Parse connectTimeoutMs
-    if let Ok(connect_timeout_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("connectTimeoutMs"))
-    {
-        if let Some(ms) = connect_timeout_js.as_f64() {
-            request_settings.connect_timeout = Some(Duration::from_millis(ms as u64));
-        }
-    }
-
-    // Parse banFailedAddress
-    if let Ok(ban_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("banFailedAddress"))
-    {
-        if let Some(ban) = ban_js.as_bool() {
-            request_settings.ban_failed_address = Some(ban);
-        }
-    }
-
-    Some(request_settings)
+    let input: RequestSettingsInput = serde_wasm_bindgen::from_value(js_value).ok()?;
+    Some(input.into())
 }
 
 // ============================================================================
@@ -174,111 +162,66 @@ extern "C" {
     pub type PutSettingsJs;
 }
 
+/// Internal struct for deserializing state transition creation options.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct StateTransitionCreationOptionsInput {
+    #[serde(default)]
+    allow_signing_with_any_security_level: bool,
+    #[serde(default)]
+    allow_signing_with_any_purpose: bool,
+}
+
+/// Internal struct for deserializing PutSettings from JavaScript.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PutSettingsInput {
+    #[serde(flatten)]
+    request: RequestSettingsInput,
+    // Put-specific fields
+    wait_timeout_ms: Option<u64>,
+    user_fee_increase: Option<u16>,
+    identity_nonce_stale_time_s: Option<u64>,
+    state_transition_creation_options: Option<StateTransitionCreationOptionsInput>,
+}
+
+impl From<PutSettingsInput> for PutSettings {
+    fn from(input: PutSettingsInput) -> Self {
+        use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+
+        let state_transition_creation_options =
+            input.state_transition_creation_options.map(|opts| {
+                let mut creation_options = StateTransitionCreationOptions::default();
+                creation_options
+                    .signing_options
+                    .allow_signing_with_any_security_level =
+                    opts.allow_signing_with_any_security_level;
+                creation_options
+                    .signing_options
+                    .allow_signing_with_any_purpose = opts.allow_signing_with_any_purpose;
+                creation_options
+            });
+
+        PutSettings {
+            request_settings: input.request.into(),
+            wait_timeout: input.wait_timeout_ms.map(Duration::from_millis),
+            user_fee_increase: input.user_fee_increase,
+            identity_nonce_stale_time_s: input.identity_nonce_stale_time_s,
+            state_transition_creation_options,
+        }
+    }
+}
+
 /// Parse put settings from JavaScript into PutSettings.
 ///
 /// Used for state transition broadcast operations.
 pub fn parse_put_settings(settings: Option<PutSettingsJs>) -> Option<PutSettings> {
-    let settings_js = settings?;
-    let settings_value: JsValue = settings_js.into();
+    let js_value: JsValue = settings?.into();
 
-    if settings_value.is_undefined() || settings_value.is_null() {
+    if js_value.is_undefined() || js_value.is_null() {
         return None;
     }
 
-    let mut put_settings = PutSettings::default();
-
-    // Parse retries
-    if let Ok(retries_js) = js_sys::Reflect::get(&settings_value, &JsValue::from_str("retries")) {
-        if let Some(retries) = retries_js.as_f64() {
-            put_settings.request_settings.retries = Some(retries as usize);
-        }
-    }
-
-    // Parse timeoutMs
-    if let Ok(timeout_js) = js_sys::Reflect::get(&settings_value, &JsValue::from_str("timeoutMs")) {
-        if let Some(ms) = timeout_js.as_f64() {
-            put_settings.request_settings.timeout = Some(Duration::from_millis(ms as u64));
-        }
-    }
-
-    // Parse connectTimeoutMs
-    if let Ok(connect_timeout_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("connectTimeoutMs"))
-    {
-        if let Some(ms) = connect_timeout_js.as_f64() {
-            put_settings.request_settings.connect_timeout = Some(Duration::from_millis(ms as u64));
-        }
-    }
-
-    // Parse banFailedAddress
-    if let Ok(ban_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("banFailedAddress"))
-    {
-        if let Some(ban) = ban_js.as_bool() {
-            put_settings.request_settings.ban_failed_address = Some(ban);
-        }
-    }
-
-    // Parse waitTimeoutMs
-    if let Ok(wait_timeout_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("waitTimeoutMs"))
-    {
-        if let Some(ms) = wait_timeout_js.as_f64() {
-            put_settings.wait_timeout = Some(Duration::from_millis(ms as u64));
-        }
-    }
-
-    // Parse userFeeIncrease
-    if let Ok(fee_increase_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("userFeeIncrease"))
-    {
-        if let Some(fee) = fee_increase_js.as_f64() {
-            put_settings.user_fee_increase = Some(fee as u16);
-        }
-    }
-
-    // Parse identityNonceStaleTimeS
-    if let Ok(nonce_stale_js) =
-        js_sys::Reflect::get(&settings_value, &JsValue::from_str("identityNonceStaleTimeS"))
-    {
-        if let Some(secs) = nonce_stale_js.as_f64() {
-            put_settings.identity_nonce_stale_time_s = Some(secs as u64);
-        }
-    }
-
-    // Parse stateTransitionCreationOptions
-    if let Ok(creation_options_js) = js_sys::Reflect::get(
-        &settings_value,
-        &JsValue::from_str("stateTransitionCreationOptions"),
-    ) {
-        if !creation_options_js.is_undefined() && !creation_options_js.is_null() {
-            use dash_sdk::dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
-
-            let mut creation_options = StateTransitionCreationOptions::default();
-
-            // Parse allowSigningWithAnySecurityLevel
-            if let Ok(allow_sec_level_js) = js_sys::Reflect::get(
-                &creation_options_js,
-                &JsValue::from_str("allowSigningWithAnySecurityLevel"),
-            ) {
-                if let Some(allow) = allow_sec_level_js.as_bool() {
-                    creation_options.signing_options.allow_signing_with_any_security_level = allow;
-                }
-            }
-
-            // Parse allowSigningWithAnyPurpose
-            if let Ok(allow_purpose_js) = js_sys::Reflect::get(
-                &creation_options_js,
-                &JsValue::from_str("allowSigningWithAnyPurpose"),
-            ) {
-                if let Some(allow) = allow_purpose_js.as_bool() {
-                    creation_options.signing_options.allow_signing_with_any_purpose = allow;
-                }
-            }
-
-            put_settings.state_transition_creation_options = Some(creation_options);
-        }
-    }
-
-    Some(put_settings)
+    let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value).ok()?;
+    Some(input.into())
 }
