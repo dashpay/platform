@@ -40,6 +40,17 @@ impl Drive {
             drive_version,
         )?;
 
+        // SavedBlockTransactions for address-based transaction sync
+        self.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::SavedBlockTransactions as u8],
+            TreeType::NormalTree,
+            transaction,
+            None,
+            &mut vec![],
+            drive_version,
+        )?;
+
         // On lower layers we can use batching
 
         let mut batch =
