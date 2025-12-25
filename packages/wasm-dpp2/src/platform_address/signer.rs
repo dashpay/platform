@@ -79,7 +79,7 @@ impl PlatformAddressSignerWasm {
     /// Returns all private keys as an array of {addressHash: Uint8Array, privateKey: Uint8Array}.
     /// This is used internally for cross-package access.
     #[wasm_bindgen(js_name = "getPrivateKeysBytes")]
-    pub fn get_private_keys_bytes(&self) -> js_sys::Array {
+    pub fn get_private_keys_bytes(&self) -> WasmDppResult<js_sys::Array> {
         let result = js_sys::Array::new();
         for (addr, key) in &self.private_keys {
             let entry = js_sys::Object::new();
@@ -87,11 +87,13 @@ impl PlatformAddressSignerWasm {
             let hash_array = js_sys::Uint8Array::from(addr_inner.hash().as_slice());
             let key_bytes = key.to_bytes();
             let key_array = js_sys::Uint8Array::from(key_bytes.as_slice());
-            let _ = js_sys::Reflect::set(&entry, &JsValue::from_str("addressHash"), &hash_array);
-            let _ = js_sys::Reflect::set(&entry, &JsValue::from_str("privateKey"), &key_array);
+            js_sys::Reflect::set(&entry, &JsValue::from_str("addressHash"), &hash_array)
+                .map_err(|_| WasmDppError::generic("Failed to set addressHash property"))?;
+            js_sys::Reflect::set(&entry, &JsValue::from_str("privateKey"), &key_array)
+                .map_err(|_| WasmDppError::generic("Failed to set privateKey property"))?;
             result.push(&entry);
         }
-        result
+        Ok(result)
     }
 }
 

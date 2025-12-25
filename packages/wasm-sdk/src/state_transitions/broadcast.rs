@@ -29,7 +29,7 @@ impl WasmSdk {
         settings: Option<PutSettingsJs>,
     ) -> Result<(), WasmSdkError> {
         let st: StateTransition = state_transition.into();
-        let put_settings = parse_put_settings(settings);
+        let put_settings = parse_put_settings(settings)?;
 
         st.broadcast(self.as_ref(), put_settings)
             .await
@@ -57,7 +57,7 @@ impl WasmSdk {
         settings: Option<PutSettingsJs>,
     ) -> Result<JsValue, WasmSdkError> {
         let st: StateTransition = state_transition.into();
-        let put_settings = parse_put_settings(settings);
+        let put_settings = parse_put_settings(settings)?;
 
         let result = st
             .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
@@ -88,7 +88,7 @@ impl WasmSdk {
         settings: Option<PutSettingsJs>,
     ) -> Result<JsValue, WasmSdkError> {
         let st: StateTransition = state_transition.into();
-        let put_settings = parse_put_settings(settings);
+        let put_settings = parse_put_settings(settings)?;
 
         let result = st
             .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)

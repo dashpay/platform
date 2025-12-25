@@ -9,7 +9,7 @@ pub use fee_strategy::{
     FeeStrategyStepWasm,
 };
 pub use input_output::{
-    extract_addresses, extract_amounts, inputs_to_btree_map, outputs_to_btree_map,
-    outputs_to_optional_btree_map, PlatformAddressInputWasm, PlatformAddressOutputWasm,
+    outputs_to_btree_map, outputs_to_optional_btree_map, PlatformAddressInputWasm,
+    PlatformAddressOutputWasm,
 };
 pub use signer::PlatformAddressSignerWasm;

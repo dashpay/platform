@@ -7,12 +7,14 @@ use crate::queries::address::PlatformAddressInfoWasm;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
+use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::identity::core_script::CoreScript;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
 use dash_sdk::platform::{Fetch, Identifier, Identity};
+use drive_proof_verifier::types::{AddressInfo, IndexMap};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -23,6 +25,31 @@ use wasm_dpp2::{
     CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, PlatformAddressOutputWasm,
     PlatformAddressSignerWasm, PlatformAddressWasm, PoolingWasm,
 };
+
+/// Converts address infos from SDK response to a JavaScript Map.
+///
+/// This helper handles the common pattern of converting IndexMap<PlatformAddress, Option<AddressInfo>>
+/// to Map<PlatformAddress, PlatformAddressInfo> for WASM bindings.
+fn address_infos_to_js_map(
+    address_infos: IndexMap<PlatformAddress, Option<AddressInfo>>,
+    operation_name: &str,
+) -> Result<Map, WasmSdkError> {
+    let map = Map::new();
+
+    for (address, info_opt) in address_infos {
+        let info = info_opt.ok_or_else(|| {
+            WasmSdkError::generic(format!(
+                "Address {} has no info after {}",
+                address, operation_name
+            ))
+        })?;
+        let key = JsValue::from(PlatformAddressWasm::from(address));
+        let value = JsValue::from(PlatformAddressInfoWasm::from(info));
+        map.set(&key, &value);
+    }
+
+    Ok(map)
+}
 
 /// Main input struct for address funds transfer options.
 /// Uses types from wasm-dpp2 for inputs, outputs, and fee strategy.
@@ -72,7 +99,7 @@ fn extract_settings_from_options(
 
     // Convert JsValue to PutSettingsJs and parse
     let settings_typed: PutSettingsJs = settings_js.into();
-    Ok(parse_put_settings(Some(settings_typed)))
+    parse_put_settings(Some(settings_typed))
 }
 
 /// TypeScript interface for address transfer options
@@ -165,19 +192,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to transfer funds: {}", e)))?;
 
-        // Convert to Map<PlatformAddress, PlatformAddressInfo>
-        let results_map = Map::new();
-
-        for (address, info_opt) in address_infos {
-            let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!("Address {} has no info after transfer", address))
-            })?;
-            let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = JsValue::from(PlatformAddressInfoWasm::from(info));
-            results_map.set(&key, &value);
-        }
-
-        Ok(results_map)
+        address_infos_to_js_map(address_infos, "transfer")
     }
 }
 
@@ -314,20 +329,8 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
 
-        // Convert to Map<PlatformAddress, PlatformAddressInfo>
-        let address_infos_map = Map::new();
-
-        for (address, info_opt) in address_infos {
-            let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!("Address {} has no info after top up", address))
-            })?;
-            let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = JsValue::from(PlatformAddressInfoWasm::from(info));
-            address_infos_map.set(&key, &value);
-        }
-
         Ok(IdentityTopUpFromAddressesResultWasm {
-            address_infos: address_infos_map,
+            address_infos: address_infos_to_js_map(address_infos, "top up")?,
             new_balance,
         })
     }
@@ -500,19 +503,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to withdraw funds: {}", e)))?;
 
-        // Convert to Map<PlatformAddress, PlatformAddressInfo>
-        let results_map = Map::new();
-
-        for (address, info_opt) in address_infos {
-            let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!("Address {} has no info after withdrawal", address))
-            })?;
-            let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = JsValue::from(PlatformAddressInfoWasm::from(info));
-            results_map.set(&key, &value);
-        }
-
-        Ok(results_map)
+        address_infos_to_js_map(address_infos, "withdrawal")
     }
 
     /// Transfer credits from an identity to Platform addresses.
@@ -579,20 +570,8 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to transfer credits to addresses: {}", e))
             })?;
 
-        // Convert to Map<PlatformAddress, PlatformAddressInfo>
-        let address_infos_map = Map::new();
-
-        for (address, info_opt) in address_infos {
-            let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!("Address {} has no info after transfer", address))
-            })?;
-            let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = JsValue::from(PlatformAddressInfoWasm::from(info));
-            address_infos_map.set(&key, &value);
-        }
-
         Ok(IdentityTransferToAddressesResultWasm {
-            address_infos: address_infos_map,
+            address_infos: address_infos_to_js_map(address_infos, "transfer")?,
             new_balance,
         })
     }
@@ -847,19 +826,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to fund addresses: {}", e)))?;
 
-        // Convert to Map<PlatformAddress, PlatformAddressInfo>
-        let results_map = Map::new();
-
-        for (address, info_opt) in address_infos {
-            let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!("Address {} has no info after funding", address))
-            })?;
-            let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = JsValue::from(PlatformAddressInfoWasm::from(info));
-            results_map.set(&key, &value);
-        }
-
-        Ok(results_map)
+        address_infos_to_js_map(address_infos, "funding")
     }
 }
 
@@ -1031,24 +998,9 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to create identity from addresses: {}", e))
             })?;
 
-        // Convert to Map<PlatformAddress, PlatformAddressInfo>
-        let address_infos_map = Map::new();
-
-        for (address, info_opt) in address_infos {
-            let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Address {} has no info after identity creation",
-                    address
-                ))
-            })?;
-            let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = JsValue::from(PlatformAddressInfoWasm::from(info));
-            address_infos_map.set(&key, &value);
-        }
-
         Ok(IdentityCreateFromAddressesResultWasm {
             identity: created_identity.into(),
-            address_infos: address_infos_map,
+            address_infos: address_infos_to_js_map(address_infos, "identity creation")?,
         })
     }
 }

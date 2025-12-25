@@ -3,6 +3,7 @@
 //! This module provides WASM bindings for settings used across various SDK methods
 //! including queries, broadcasts, and state transitions.
 
+use crate::error::WasmSdkError;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use rs_dapi_client::RequestSettings;
 use serde::Deserialize;
@@ -75,15 +76,28 @@ impl From<RequestSettingsInput> for RequestSettings {
 /// Parse request settings from JavaScript into RequestSettings.
 ///
 /// Used for query operations.
-pub fn parse_request_settings(settings: Option<RequestSettingsJs>) -> Option<RequestSettings> {
-    let js_value: JsValue = settings?.into();
+///
+/// Returns:
+/// - `Ok(None)` if no settings were provided
+/// - `Ok(Some(settings))` if valid settings were parsed
+/// - `Err(...)` if settings were provided but malformed
+pub fn parse_request_settings(
+    settings: Option<RequestSettingsJs>,
+) -> Result<Option<RequestSettings>, WasmSdkError> {
+    let Some(settings_js) = settings else {
+        return Ok(None);
+    };
+
+    let js_value: JsValue = settings_js.into();
 
     if js_value.is_undefined() || js_value.is_null() {
-        return None;
+        return Ok(None);
     }
 
-    let input: RequestSettingsInput = serde_wasm_bindgen::from_value(js_value).ok()?;
-    Some(input.into())
+    let input: RequestSettingsInput = serde_wasm_bindgen::from_value(js_value).map_err(|e| {
+        WasmSdkError::serialization(format!("Failed to parse request settings: {}", e))
+    })?;
+    Ok(Some(input.into()))
 }
 
 // ============================================================================
@@ -215,13 +229,26 @@ impl From<PutSettingsInput> for PutSettings {
 /// Parse put settings from JavaScript into PutSettings.
 ///
 /// Used for state transition broadcast operations.
-pub fn parse_put_settings(settings: Option<PutSettingsJs>) -> Option<PutSettings> {
-    let js_value: JsValue = settings?.into();
+///
+/// Returns:
+/// - `Ok(None)` if no settings were provided
+/// - `Ok(Some(settings))` if valid settings were parsed
+/// - `Err(...)` if settings were provided but malformed
+pub fn parse_put_settings(
+    settings: Option<PutSettingsJs>,
+) -> Result<Option<PutSettings>, WasmSdkError> {
+    let Some(settings_js) = settings else {
+        return Ok(None);
+    };
+
+    let js_value: JsValue = settings_js.into();
 
     if js_value.is_undefined() || js_value.is_null() {
-        return None;
+        return Ok(None);
     }
 
-    let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value).ok()?;
-    Some(input.into())
+    let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value).map_err(|e| {
+        WasmSdkError::serialization(format!("Failed to parse put settings: {}", e))
+    })?;
+    Ok(Some(input.into()))
 }

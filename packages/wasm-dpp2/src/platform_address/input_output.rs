@@ -75,21 +75,6 @@ impl PlatformAddressInputWasm {
     pub fn into_inner(self) -> (PlatformAddress, (AddressNonce, Credits)) {
         (self.address.into(), (self.nonce, self.amount))
     }
-
-    /// Returns a reference to the inner PlatformAddress.
-    pub fn platform_address(&self) -> PlatformAddress {
-        self.address.into()
-    }
-
-    /// Returns the nonce value.
-    pub fn nonce_value(&self) -> AddressNonce {
-        self.nonce
-    }
-
-    /// Returns the amount value.
-    pub fn amount_value(&self) -> Credits {
-        self.amount
-    }
 }
 
 /// Represents an output address for address-based state transitions.
@@ -142,23 +127,6 @@ impl PlatformAddressOutputWasm {
     pub fn into_inner(self) -> (PlatformAddress, Credits) {
         (self.address.into(), self.amount)
     }
-
-    /// Returns a reference to the inner PlatformAddress.
-    pub fn platform_address(&self) -> PlatformAddress {
-        self.address.into()
-    }
-
-    /// Returns the amount value.
-    pub fn amount_value(&self) -> Credits {
-        self.amount
-    }
-}
-
-/// Converts a vector of PlatformAddressInput into a BTreeMap.
-pub fn inputs_to_btree_map(
-    inputs: Vec<PlatformAddressInputWasm>,
-) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-    inputs.into_iter().map(|i| i.into_inner()).collect()
 }
 
 /// Converts a vector of PlatformAddressOutput into a BTreeMap.
@@ -182,14 +150,4 @@ pub fn outputs_to_optional_btree_map(
             (addr, Some(amount))
         })
         .collect()
-}
-
-/// Extracts addresses from a slice of PlatformAddressOutput.
-pub fn extract_addresses(outputs: &[PlatformAddressOutputWasm]) -> Vec<PlatformAddress> {
-    outputs.iter().map(|o| o.platform_address()).collect()
-}
-
-/// Extracts amounts from a slice of PlatformAddressOutput.
-pub fn extract_amounts(outputs: &[PlatformAddressOutputWasm]) -> Vec<Credits> {
-    outputs.iter().map(|o| o.amount_value()).collect()
 }
