@@ -10,9 +10,11 @@ use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
+use dpp::prelude::BlockHeight;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -29,6 +31,9 @@ pub struct Platform<C> {
     // for query and check tx and we don't want to block affect the
     // state update on finalize block, and vise versa.
     pub state: ArcSwap<PlatformState>,
+    /// Platform states corresponding to each checkpoint, keyed by block height.
+    /// This allows queries against checkpoints to return the correct platform state.
+    pub checkpoint_platform_states: ArcSwap<BTreeMap<BlockHeight, Arc<PlatformState>>>,
     /// block height guard
     pub committed_block_height_guard: AtomicU64,
     /// Configuration
@@ -207,6 +212,7 @@ impl<C> Platform<C> {
 
         let platform: Platform<C> = Platform {
             drive,
+            checkpoint_platform_states: ArcSwap::from_pointee(BTreeMap::new()),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
             config,
@@ -239,6 +245,7 @@ impl<C> Platform<C> {
 
         Ok(Platform {
             drive,
+            checkpoint_platform_states: ArcSwap::from_pointee(BTreeMap::new()),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
             config,

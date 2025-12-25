@@ -6,7 +6,7 @@ use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
 use grovedb::GroveDb;
 
-use crate::drive::{Checkpoint, CheckpointsMap};
+use crate::drive::{Checkpoint, CheckpointInfo, CheckpointsMap};
 use crate::error::Error;
 
 /// Loads existing checkpoints from the checkpoints directory.
@@ -71,7 +71,10 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<Checkpoint
             .unwrap_or(0);
 
         let checkpoint = Checkpoint::new(grove_db, path);
-        checkpoints.insert(block_height, (timestamp_ms, Arc::new(checkpoint)));
+        checkpoints.insert(
+            block_height,
+            CheckpointInfo::new(timestamp_ms, Arc::new(checkpoint)),
+        );
     }
 
     Ok(ArcSwap::from_pointee(checkpoints))

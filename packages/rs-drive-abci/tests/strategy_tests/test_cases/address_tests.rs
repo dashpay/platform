@@ -3,6 +3,11 @@ mod tests {
 
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::NetworkStrategy;
+    use dapi_grpc::platform::v0::get_addresses_trunk_state_request::{
+        GetAddressesTrunkStateRequestV0, Version as RequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_addresses_trunk_state_response::Version as ResponseVersion;
+    use dapi_grpc::platform::v0::GetAddressesTrunkStateRequest;
     use dpp::dash_to_credits;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::state_transition::StateTransition;
@@ -12,6 +17,7 @@ mod tests {
         ValidatorSetConfig,
     };
     use drive_abci::logging::LogLevel;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
@@ -420,7 +426,7 @@ mod tests {
 
         let outcome = run_chain_for_strategy(
             &mut platform,
-            12,
+            13,
             strategy,
             config,
             15,
@@ -442,36 +448,84 @@ mod tests {
         // Drop outcome to release the mutable borrow of platform
         drop(outcome);
 
-        // Test prove_address_funds_trunk_query
         let platform_version = PlatformVersion::latest();
 
-        let proof = platform
-            .drive
-            .prove_address_funds_trunk_query(platform_version)
-            .expect("should generate trunk query proof");
+        // Get current platform state for the query
+        let platform_state = platform.platform.state.load();
+        let current_height = platform_state.last_committed_block_height();
 
-        assert!(!proof.is_empty(), "proof should not be empty");
+        // Verify checkpoints exist
+        let checkpoints = platform.platform.drive.checkpoints.load();
+        assert!(
+            !checkpoints.is_empty(),
+            "expected at least one checkpoint to be created"
+        );
+
+        // Get the checkpoint height
+        let (&checkpoint_height, _) = checkpoints.last_key_value().unwrap();
+
+        // Verify expected heights
+        assert_eq!(current_height, 13, "expected current height to be 13");
+        assert_eq!(checkpoint_height, 12, "expected checkpoint height to be 12");
+
+        // Test the ABCI query layer for trunk state (uses LatestCheckpoint)
+        let request = GetAddressesTrunkStateRequest {
+            version: Some(RequestVersion::V0(GetAddressesTrunkStateRequestV0 {})),
+        };
+
+        let query_result = platform
+            .platform
+            .query_addresses_trunk_state(request, &platform_state, platform_version)
+            .expect("should execute trunk state query");
+
+        assert!(
+            query_result.errors.is_empty(),
+            "query should succeed: {:?}",
+            query_result.errors
+        );
+
+        let response = query_result.into_data().expect("expected data");
+        let response_v0 = match response.version.expect("expected version") {
+            ResponseVersion::V0(v0) => v0,
+        };
+
+        // Verify we got a proof
+        let proof = response_v0.proof.expect("expected proof");
+        assert!(
+            !proof.grovedb_proof.is_empty(),
+            "grovedb proof should not be empty"
+        );
+
+        // Verify the metadata shows we used the checkpoint (height should match checkpoint)
+        let metadata = response_v0.metadata.expect("expected metadata");
+        assert_eq!(
+            metadata.height, 12,
+            "trunk query should use checkpoint at height 12"
+        );
 
         // Verify the proof
         let (root_hash, trunk_result) =
-            Drive::verify_address_funds_trunk_query(&proof, platform_version)
+            Drive::verify_address_funds_trunk_query(&proof.grovedb_proof, platform_version)
                 .expect("should verify trunk query proof");
 
         // The root hash should be valid (32 bytes)
         assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
 
-        // Check that we got some elements or leaf keys from the trunk query
-        let total_items = trunk_result.elements.len() + trunk_result.leaf_keys.len();
-        assert!(
-            total_items > 0,
-            "trunk query should return elements or leaf keys"
-        );
-
-        println!(
-            "Trunk query result: {} elements, {} leaf keys, chunk_depths: {:?}",
+        // Verify trunk query results
+        assert_eq!(
             trunk_result.elements.len(),
+            29,
+            "trunk query should return 29 elements"
+        );
+        assert_eq!(
             trunk_result.leaf_keys.len(),
-            trunk_result.chunk_depths
+            0,
+            "trunk query should return 0 leaf keys"
+        );
+        assert_eq!(
+            trunk_result.chunk_depths,
+            vec![6],
+            "trunk query should have chunk_depths [6]"
         );
     }
 }

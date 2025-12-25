@@ -227,13 +227,14 @@ where
 
         self.update_drive_cache(&block_execution_context, platform_version)?;
 
-        self.update_checkpoints(&block_execution_context, platform_version)?;
+        let checkpointed = self.update_checkpoints(&block_execution_context, platform_version)?;
 
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
         self.update_state_cache(
             extended_block_info,
             block_platform_state,
+            checkpointed,
             transaction,
             platform_version,
         )?;

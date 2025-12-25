@@ -8,6 +8,7 @@ use dpp::serialization::PlatformDeserializable;
 
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
@@ -48,9 +49,12 @@ impl<C> Platform<C> {
 
         let proof = result.into_data()?;
 
+        let (grovedb_used, proof) =
+            self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
         let response = GetProofsResponse {
-            proof: Some(self.response_proof_v0(platform_state, proof)),
-            metadata: Some(self.response_metadata_v0(platform_state)),
+            proof: Some(proof),
+            metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
         };
 
         Ok(QueryValidationResult::new_with_data(response))
