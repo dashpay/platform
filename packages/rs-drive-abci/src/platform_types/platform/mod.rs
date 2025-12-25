@@ -11,6 +11,7 @@ use std::fmt::{Debug, Formatter};
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
+use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -167,11 +168,53 @@ impl<C> Platform<C> {
                     .reload_system_contracts(platform_version)?;
             }
 
+            // Load checkpoint platform states from disk
+            let mut checkpoint_platform_states = BTreeMap::new();
+            let checkpoints = drive.checkpoints.load();
+            for (&block_height, _checkpoint_info) in checkpoints.iter() {
+                let checkpoint_state_path = config
+                    .db_path
+                    .join("checkpoints")
+                    .join(block_height.to_string())
+                    .join("platform_state.bin");
+
+                if checkpoint_state_path.exists() {
+                    match std::fs::read(&checkpoint_state_path) {
+                        Ok(state_bytes) => {
+                            match PlatformState::versioned_deserialize(
+                                &state_bytes,
+                                platform_version,
+                            ) {
+                                Ok(state) => {
+                                    checkpoint_platform_states
+                                        .insert(block_height, Arc::new(state));
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to deserialize checkpoint platform state at height {}: {:?}",
+                                        block_height,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to read checkpoint platform state file at {:?}: {:?}",
+                                checkpoint_state_path,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+
             return Platform::open_with_client_saved_state::<P>(
                 drive,
                 core_rpc,
                 config,
                 execution_state,
+                checkpoint_platform_states,
             );
         }
 
@@ -190,6 +233,7 @@ impl<C> Platform<C> {
         core_rpc: C,
         config: PlatformConfig,
         mut platform_state: PlatformState,
+        checkpoint_platform_states: BTreeMap<BlockHeight, Arc<PlatformState>>,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
@@ -212,7 +256,7 @@ impl<C> Platform<C> {
 
         let platform: Platform<C> = Platform {
             drive,
-            checkpoint_platform_states: ArcSwap::from_pointee(BTreeMap::new()),
+            checkpoint_platform_states: ArcSwap::from_pointee(checkpoint_platform_states),
             state: ArcSwap::new(Arc::new(platform_state)),
             committed_block_height_guard: AtomicU64::from(height),
             config,
