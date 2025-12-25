@@ -9,8 +9,8 @@ use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::identity::core_script::CoreScript;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
-use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
+use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
 use dash_sdk::platform::{Fetch, Identifier, Identity};
 use js_sys::{BigInt, Map};
@@ -19,9 +19,9 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::utils::IntoWasm;
 use wasm_dpp2::{
-    fee_strategy_from_steps_or_default, outputs_to_btree_map, CoreScriptWasm, FeeStrategyStepWasm,
-    IdentitySignerWasm, PlatformAddressOutputWasm, PlatformAddressSignerWasm, PlatformAddressWasm,
-    PoolingWasm,
+    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
+    CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, PlatformAddressOutputWasm,
+    PlatformAddressSignerWasm, PlatformAddressWasm, PoolingWasm,
 };
 
 /// Main input struct for address funds transfer options.
@@ -170,10 +170,7 @@ impl WasmSdk {
 
         for (address, info_opt) in address_infos {
             let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Address {} has no info after transfer",
-                    address
-                ))
+                WasmSdkError::generic(format!("Address {} has no info after transfer", address))
             })?;
             let key = JsValue::from(PlatformAddressWasm::from(address));
             let value = JsValue::from(PlatformAddressInfoWasm::from(info));
@@ -463,11 +460,7 @@ impl WasmSdk {
         let inputs_map = outputs_to_btree_map(parsed.inputs);
 
         // Convert change output if provided
-        let change_output = parsed.change_output.map(|output| {
-            let address = output.address().clone().into();
-            let amount = output.amount_value();
-            (address, amount)
-        });
+        let change_output = parsed.change_output.map(|output| output.into_inner());
 
         // Extract output script from options
         let output_script_js =
@@ -512,10 +505,7 @@ impl WasmSdk {
 
         for (address, info_opt) in address_infos {
             let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Address {} has no info after withdrawal",
-                    address
-                ))
+                WasmSdkError::generic(format!("Address {} has no info after withdrawal", address))
             })?;
             let key = JsValue::from(PlatformAddressWasm::from(address));
             let value = JsValue::from(PlatformAddressInfoWasm::from(info));
@@ -594,10 +584,7 @@ impl WasmSdk {
 
         for (address, info_opt) in address_infos {
             let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Address {} has no info after transfer",
-                    address
-                ))
+                WasmSdkError::generic(format!("Address {} has no info after transfer", address))
             })?;
             let key = JsValue::from(PlatformAddressWasm::from(address));
             let value = JsValue::from(PlatformAddressInfoWasm::from(info));
@@ -836,18 +823,7 @@ impl WasmSdk {
             .into();
 
         // Convert outputs to map (address -> optional amount)
-        let outputs_map: std::collections::BTreeMap<
-            dash_sdk::dpp::address_funds::PlatformAddress,
-            Option<dash_sdk::dpp::fee::Credits>,
-        > = parsed
-            .outputs
-            .into_iter()
-            .map(|output| {
-                let address = output.address().clone().into();
-                let amount = Some(output.amount_value());
-                (address, amount)
-            })
-            .collect();
+        let outputs_map = outputs_to_optional_btree_map(parsed.outputs);
 
         // Extract signer from options
         let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
@@ -876,10 +852,7 @@ impl WasmSdk {
 
         for (address, info_opt) in address_infos {
             let info = info_opt.ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Address {} has no info after funding",
-                    address
-                ))
+                WasmSdkError::generic(format!("Address {} has no info after funding", address))
             })?;
             let key = JsValue::from(PlatformAddressWasm::from(address));
             let value = JsValue::from(PlatformAddressInfoWasm::from(info));
@@ -1027,41 +1000,18 @@ impl WasmSdk {
             .into();
 
         // Convert inputs to map (address -> amount)
-        let inputs_map: std::collections::BTreeMap<
-            dash_sdk::dpp::address_funds::PlatformAddress,
-            dash_sdk::dpp::fee::Credits,
-        > = parsed
-            .inputs
-            .into_iter()
-            .map(|input| {
-                let address = input.address().clone().into();
-                let amount = input.amount_value();
-                (address, amount)
-            })
-            .collect();
+        let inputs_map = outputs_to_btree_map(parsed.inputs);
 
         // Convert change output if provided
-        let change_output = parsed.change_output.map(|output| {
-            let address = output.address().clone().into();
-            let amount = output.amount_value();
-            (address, amount)
-        });
+        let change_output = parsed.change_output.map(|output| output.into_inner());
 
-        // Extract identity signer from options
-        let identity_signer_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("identitySigner"))
-                .map_err(|_| WasmSdkError::invalid_argument("identitySigner is required"))?;
-        let identity_signer = identity_signer_js
-            .to_wasm::<IdentitySignerWasm>("IdentitySigner")?
-            .clone();
-
-        // Extract address signer from options
-        let address_signer_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("addressSigner"))
-                .map_err(|_| WasmSdkError::invalid_argument("addressSigner is required"))?;
-        let address_signer = address_signer_js
-            .to_wasm::<PlatformAddressSignerWasm>("PlatformAddressSigner")?
-            .clone();
+        // Extract signers from options using helper methods
+        let identity_signer =
+            IdentitySignerWasm::try_from_options_with_field(&options_value, "identitySigner")?;
+        let address_signer = PlatformAddressSignerWasm::try_from_options_with_field(
+            &options_value,
+            "addressSigner",
+        )?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;

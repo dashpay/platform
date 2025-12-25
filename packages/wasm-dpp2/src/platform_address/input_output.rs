@@ -168,6 +168,22 @@ pub fn outputs_to_btree_map(
     outputs.into_iter().map(|o| o.into_inner()).collect()
 }
 
+/// Converts a vector of PlatformAddressOutput into a BTreeMap with optional amounts.
+///
+/// Used for asset lock funding where the amount is optional (None means
+/// the system distributes the asset lock funds automatically).
+pub fn outputs_to_optional_btree_map(
+    outputs: Vec<PlatformAddressOutputWasm>,
+) -> BTreeMap<PlatformAddress, Option<Credits>> {
+    outputs
+        .into_iter()
+        .map(|o| {
+            let (addr, amount) = o.into_inner();
+            (addr, Some(amount))
+        })
+        .collect()
+}
+
 /// Extracts addresses from a slice of PlatformAddressOutput.
 pub fn extract_addresses(outputs: &[PlatformAddressOutputWasm]) -> Vec<PlatformAddress> {
     outputs.iter().map(|o| o.platform_address()).collect()
