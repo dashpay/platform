@@ -20,7 +20,6 @@ pub mod error;
 pub mod group;
 pub mod identifier;
 pub mod identity;
-pub mod identity_signer;
 pub mod mock_bls;
 pub mod platform_address;
 pub mod private_key;
@@ -32,8 +31,8 @@ pub mod utils;
 pub mod voting;
 
 pub use core_script::CoreScriptWasm;
+pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
-pub use identity_signer::IdentitySignerWasm;
 
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
