@@ -29,7 +29,7 @@ use crate::ProtocolError;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         output_script: Option<CoreScript>,
         amount: u64,

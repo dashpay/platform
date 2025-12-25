@@ -3,15 +3,18 @@
 //! Provides key generation and address derivation without full HD wallet support
 
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
 /// Key pair information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KeyPair {
     /// Private key in WIF format
     pub private_key_wif: String,
@@ -26,7 +29,8 @@ pub struct KeyPair {
 }
 
 #[wasm_bindgen(js_name = "KeyPair")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct KeyPairWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "privateKeyWif")]
     pub private_key_wif: String,
@@ -51,6 +55,8 @@ impl From<KeyPair> for KeyPairWasm {
         }
     }
 }
+
+impl_wasm_serde_conversions!(KeyPairWasm);
 
 #[wasm_bindgen]
 impl WasmSdk {

@@ -622,10 +622,7 @@ mod tests {
                         );
 
                         let identity_names = sdk
-                            .get_contested_dpns_usernames_by_identity(
-                                test_identity.clone(),
-                                Some(5),
-                            )
+                            .get_contested_dpns_usernames_by_identity(*test_identity, Some(5))
                             .await;
 
                         match identity_names {
@@ -659,7 +656,7 @@ mod tests {
 
         if let Ok(masternode_id) = test_masternode_id {
             let votes = sdk
-                .get_contested_dpns_identity_votes(masternode_id.clone(), Some(5), None)
+                .get_contested_dpns_identity_votes(masternode_id, Some(5), None)
                 .await;
 
             match votes {
@@ -1072,10 +1069,7 @@ mod tests {
                     // Now test the new method
                     println!("\n2. Getting contests for identity {}...", test_identity);
                     let identity_contests = sdk
-                        .get_non_resolved_dpns_contests_for_identity(
-                            test_identity.clone(),
-                            Some(20),
-                        )
+                        .get_non_resolved_dpns_contests_for_identity(*test_identity, Some(20))
                         .await;
 
                     match identity_contests {

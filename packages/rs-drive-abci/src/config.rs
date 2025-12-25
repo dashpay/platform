@@ -879,6 +879,8 @@ pub struct PlatformTestConfig {
     pub disable_instant_lock_signature_verification: bool,
     /// Disable temporarily disabled contested documents validation
     pub disable_contested_documents_is_allowed_validation: bool,
+    /// Disable checkpoint creation during tests
+    pub disable_checkpoints: bool,
 }
 
 #[cfg(feature = "testing-config")]
@@ -891,6 +893,7 @@ impl PlatformTestConfig {
             block_commit_signature_verification: false,
             disable_instant_lock_signature_verification: true,
             disable_contested_documents_is_allowed_validation: true,
+            disable_checkpoints: true,
         }
     }
 }
@@ -904,6 +907,7 @@ impl Default for PlatformTestConfig {
             block_commit_signature_verification: true,
             disable_instant_lock_signature_verification: false,
             disable_contested_documents_is_allowed_validation: true,
+            disable_checkpoints: true,
         }
     }
 }

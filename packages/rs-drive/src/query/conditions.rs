@@ -1891,15 +1891,17 @@ mod tests {
             .document_type_for_name("niceDocument")
             .expect("doc type exists");
 
-        let mut clauses = InternalClauses::default();
-        clauses.primary_key_in_clause = Some(WhereClause {
-            field: "$id".to_string(),
-            operator: In,
-            value: Value::Array(vec![
-                Value::Text("a".to_string()),
-                Value::Text("b".to_string()),
-            ]),
-        });
+        let clauses = InternalClauses {
+            primary_key_in_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: In,
+                value: Value::Array(vec![
+                    Value::Text("a".to_string()),
+                    Value::Text("b".to_string()),
+                ]),
+            }),
+            ..Default::default()
+        };
 
         let res = clauses.validate_against_schema(doc_type);
         assert!(res.is_err());

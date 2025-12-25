@@ -5,7 +5,7 @@ use crate::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV0,
 };
 use crate::state_transition::StateTransitionType::Batch;
-use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
+use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType};
 use crate::version::FeatureVersion;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
@@ -31,23 +31,6 @@ impl StateTransitionLike for BatchTransitionV0 {
     fn state_transition_type(&self) -> StateTransitionType {
         Batch
     }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.owner_id
-    }
 
     /// We create a list of unique identifiers for the batch
     fn unique_identifiers(&self) -> Vec<String> {
@@ -70,5 +53,27 @@ impl StateTransitionLike for BatchTransitionV0 {
 
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         self.user_fee_increase = user_fee_increase
+    }
+}
+
+impl StateTransitionSingleSigned for BatchTransitionV0 {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        &self.signature
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for BatchTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.owner_id
     }
 }

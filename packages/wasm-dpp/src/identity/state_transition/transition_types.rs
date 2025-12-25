@@ -13,6 +13,12 @@ pub enum StateTransitionTypeWasm {
     IdentityCreditWithdrawal = 6,
     IdentityCreditTransfer = 7,
     MasternodeVote = 8,
+    IdentityCreditTransferToAddresses = 9,
+    IdentityCreateFromAddresses = 10,
+    IdentityTopUpFromAddresses = 11,
+    AddressFundsTransfer = 12,
+    AddressFundingFromAssetLock = 13,
+    AddressCreditWithdrawal = 14,
 }
 
 impl From<StateTransitionType> for StateTransitionTypeWasm {
@@ -31,6 +37,24 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
                 StateTransitionTypeWasm::IdentityCreditTransfer
             }
             StateTransitionType::MasternodeVote => StateTransitionTypeWasm::MasternodeVote,
+            StateTransitionType::IdentityCreditTransferToAddresses => {
+                StateTransitionTypeWasm::IdentityCreditTransferToAddresses
+            }
+            StateTransitionType::IdentityCreateFromAddresses => {
+                StateTransitionTypeWasm::IdentityCreateFromAddresses
+            }
+            StateTransitionType::IdentityTopUpFromAddresses => {
+                StateTransitionTypeWasm::IdentityTopUpFromAddresses
+            }
+            StateTransitionType::AddressFundsTransfer => {
+                StateTransitionTypeWasm::AddressFundsTransfer
+            }
+            StateTransitionType::AddressFundingFromAssetLock => {
+                StateTransitionTypeWasm::AddressFundingFromAssetLock
+            }
+            StateTransitionType::AddressCreditWithdrawal => {
+                StateTransitionTypeWasm::AddressCreditWithdrawal
+            }
         }
     }
 }

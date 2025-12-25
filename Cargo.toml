@@ -4,7 +4,7 @@ resolver = "2"
 
 members = [
     "packages/dapi-grpc",
-    "packages/rs-dapi-grpc-macros",
+    "packages/rs-dash-platform-macros",
     "packages/rs-dpp",
     "packages/rs-drive",
     "packages/rs-platform-value",
@@ -45,5 +45,5 @@ members = [
 
 [workspace.package]
 
-version = "2.2.0-dev.1"
-rust-version = "1.89"
+version = "3.0.0-dev.5"
+rust-version = "1.92"

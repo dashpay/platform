@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(managed.balance(), 1000);
         assert_eq!(managed.revision(), 1);
         assert_eq!(managed.label, None);
-        assert_eq!(managed.is_active, true);
+        assert!(managed.is_active);
         assert_eq!(managed.last_sync_timestamp, None);
         assert_eq!(managed.last_sync_height, None);
     }
@@ -135,13 +135,13 @@ mod tests {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity);
 
-        assert_eq!(managed.is_active, true);
+        assert!(managed.is_active);
 
         managed.deactivate();
-        assert_eq!(managed.is_active, false);
+        assert!(!managed.is_active);
 
         managed.activate();
-        assert_eq!(managed.is_active, true);
+        assert!(managed.is_active);
     }
 
     #[test]
@@ -160,13 +160,13 @@ mod tests {
         let mut managed = ManagedIdentity::new(identity);
 
         // Never synced - needs sync
-        assert_eq!(managed.needs_sync(1000, 100), true);
+        assert!(managed.needs_sync(1000, 100));
 
         // Just synced
         managed.update_sync_info(1000, 100);
-        assert_eq!(managed.needs_sync(1050, 100), false);
+        assert!(!managed.needs_sync(1050, 100));
 
         // Old sync - needs sync
-        assert_eq!(managed.needs_sync(1200, 100), true);
+        assert!(managed.needs_sync(1200, 100));
     }
 }

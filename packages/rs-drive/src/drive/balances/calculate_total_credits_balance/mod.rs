@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -36,9 +37,10 @@ impl Drive {
             .calculate_total_credits_balance
         {
             0 => self.calculate_total_credits_balance_v0(transaction, drive_version),
+            1 => self.calculate_total_credits_balance_v1(transaction, drive_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "calculate_total_credits_balance".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

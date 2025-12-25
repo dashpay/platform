@@ -8,8 +8,7 @@ use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 use std::fmt::{Debug, Formatter};
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
@@ -126,10 +125,18 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let config = config.unwrap_or(PlatformConfig::default_testnet());
+        let config = match config {
+            Some(config) => config,
+            None => {
+                // When using default config, set db_path to the provided path
+                let mut config = PlatformConfig::default_testnet();
+                config.db_path = path.as_ref().to_path_buf();
+                config
+            }
+        };
 
         let (drive, current_platform_version) =
-            Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
+            Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
         if let Some(initial_protocol_version) = initial_protocol_version {
             if initial_protocol_version > 1 {

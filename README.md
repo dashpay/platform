@@ -50,7 +50,7 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.89+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - [rust](https://www.rust-lang.org/tools/install) v1.92+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v32.0+
     - if needed, set PROTOC environment variable to location of `protoc` binary
   - [wasm-bindgen toolchain](https://rustwasm.github.io/wasm-bindgen/):
@@ -64,6 +64,7 @@ this repository may be used on the following networks:
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
   - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`
+  - wasm-pack: `curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources

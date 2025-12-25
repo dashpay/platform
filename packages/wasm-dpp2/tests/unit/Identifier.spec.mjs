@@ -62,13 +62,13 @@ describe('Identifier', () => {
     it('should allow to get identifier base58', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
-      expect(identifier.base58()).to.equal('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
+      expect(identifier.toBase58()).to.equal('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
     });
 
     it('should allow to get identifier base64', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
-      expect(identifier.base64()).to.equal('CSgo7cCB07oaVPBDJZuUE2jyxxiIGwap00eIOyG/4xM=');
+      expect(identifier.toBase64()).to.equal('CSgo7cCB07oaVPBDJZuUE2jyxxiIGwap00eIOyG/4xM=');
     });
 
     it('should allow to get identifier hex', () => {

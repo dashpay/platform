@@ -6,7 +6,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
@@ -71,9 +71,14 @@ impl TestPlatformBuilder {
             } else {
                 Some(PlatformVersion::latest().protocol_version)
             };
+        // Ensure db_path matches the tempdir path
+        let config = self.config.map(|mut c| {
+            c.db_path = self.tempdir.path().to_path_buf();
+            c
+        });
         let platform = Platform::<MockCoreRPCLike>::open(
             self.tempdir.path(),
-            self.config,
+            config,
             use_initial_protocol_version,
         )
         .expect("should open Platform successfully");
@@ -86,7 +91,12 @@ impl TestPlatformBuilder {
 
     /// Create a new temp platform with a default core rpc
     pub fn build_with_default_rpc(self) -> TempPlatform<DefaultCoreRPC> {
-        let platform = Platform::<DefaultCoreRPC>::open(self.tempdir.path(), self.config)
+        // Ensure db_path matches the tempdir path
+        let config = self.config.map(|mut c| {
+            c.db_path = self.tempdir.path().to_path_buf();
+            c
+        });
+        let platform = Platform::<DefaultCoreRPC>::open(self.tempdir.path(), config)
             .expect("should open Platform successfully");
 
         TempPlatform {
@@ -229,7 +239,9 @@ impl TempPlatform<MockCoreRPCLike> {
     }
 
     /// Rebuilds Platform from the tempdir as if it was destroyed and restarted
-    pub fn open_with_tempdir(tempdir: TempDir, config: PlatformConfig) -> Self {
+    pub fn open_with_tempdir(tempdir: TempDir, mut config: PlatformConfig) -> Self {
+        // Ensure db_path matches the tempdir path
+        config.db_path = tempdir.path().to_path_buf();
         let platform = Platform::<MockCoreRPCLike>::open(tempdir.path(), Some(config), None)
             .expect("should open Platform successfully");
 

@@ -12,14 +12,12 @@ license = "MIT"
 
 [dependencies]
 tracing = "0.1.41"
-futures = "0.3"
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
 rand = "0.8.5"
 hex = "0.4.3"
-serde_json = "1.0"
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "abci",
   "bls-signatures",
@@ -37,13 +35,8 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 ] }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 platform-version = { path = "../rs-platform-version" }
-platform-serialization = { path = "../rs-platform-serialization" }
-platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
-
-# For tests of grovedb verify
-rocksdb = { version = "0.23.0" }

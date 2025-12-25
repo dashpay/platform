@@ -1,8 +1,9 @@
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, Serialize, Deserialize)]
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
     NoWinner,

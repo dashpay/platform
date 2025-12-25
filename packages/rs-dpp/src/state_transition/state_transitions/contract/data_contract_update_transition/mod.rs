@@ -16,6 +16,7 @@ mod identity_signed;
 mod json_conversion;
 pub mod methods;
 mod serialize;
+mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -116,7 +117,7 @@ mod test {
 
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::state_transition::{StateTransitionLike, StateTransitionType};
+    use crate::state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType};
 
     struct TestData {
         state_transition: DataContractUpdateTransition,

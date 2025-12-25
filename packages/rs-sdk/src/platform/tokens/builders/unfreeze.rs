@@ -152,7 +152,7 @@ impl TokenUnfreezeTransitionBuilder {
         self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(
