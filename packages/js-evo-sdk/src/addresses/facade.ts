@@ -59,11 +59,6 @@ export class AddressesFacade {
   /**
    * Transfers credits between Platform addresses.
    *
-   * This method handles the complete transfer flow:
-   * 1. Fetches current nonces for all input addresses
-   * 2. Builds and signs the transfer transition
-   * 3. Broadcasts and waits for confirmation
-   *
    * @param options - Transfer options including inputs, outputs, and signer
    * @returns Promise resolving to transfer result with updated address information
    *
@@ -94,12 +89,6 @@ export class AddressesFacade {
   /**
    * Top up an identity from Platform addresses.
    *
-   * This method handles the complete top up flow:
-   * 1. Fetches the identity from Platform
-   * 2. Fetches current nonces for all input addresses
-   * 3. Builds and signs the identity top up transition
-   * 4. Broadcasts and waits for confirmation
-   *
    * @param options - Top up options including identity ID, inputs, and signer
    * @returns Promise resolving to result with updated address infos and new identity balance
    *
@@ -129,13 +118,7 @@ export class AddressesFacade {
   }
 
   /**
-   * Withdraws Platform address credits to Core (L1).
-   *
-   * This method handles the complete withdrawal flow:
-   * 1. Fetches current nonces for all input addresses
-   * 2. Builds and signs the withdrawal transition
-   * 3. Broadcasts and waits for confirmation
-   * 4. The withdrawal may be pooled with others depending on the pooling strategy
+   * Withdraws Platform address credits to Dash Core.
    *
    * @param options - Withdrawal options including inputs, output script, pooling, and signer
    * @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
@@ -170,12 +153,6 @@ export class AddressesFacade {
   /**
    * Transfer credits from an identity to Platform addresses.
    *
-   * This method handles the complete transfer flow:
-   * 1. Fetches the identity from Platform
-   * 2. Finds the appropriate transfer key to use for signing (if signingTransferKeyId specified)
-   * 3. Builds and signs the identity credit transfer to addresses transition
-   * 4. Broadcasts and waits for confirmation
-   *
    * @param options - Transfer options including identity ID, outputs, and signer
    * @returns Result with updated address information and new identity balance
    *
@@ -208,11 +185,6 @@ export class AddressesFacade {
 
   /**
    * Fund Platform addresses from an asset lock.
-   *
-   * This method handles the complete funding flow:
-   * 1. Validates the asset lock proof
-   * 2. Builds and signs the address funding transition
-   * 3. Broadcasts and waits for confirmation
    *
    * @param options - Funding options including asset lock proof, outputs, and signer
    * @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
@@ -250,11 +222,6 @@ export class AddressesFacade {
 
   /**
    * Create an identity funded from Platform addresses.
-   *
-   * This method handles the complete identity creation flow:
-   * 1. Fetches current nonces for all input addresses
-   * 2. Builds and signs the identity create from addresses transition
-   * 3. Broadcasts and waits for confirmation
    *
    * @param options - Creation options including identity, inputs, and signers
    * @returns Promise resolving to result with created identity and updated address infos
