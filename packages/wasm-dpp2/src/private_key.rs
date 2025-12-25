@@ -11,7 +11,20 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PrivateKey")]
+#[derive(Clone)]
 pub struct PrivateKeyWasm(PrivateKey);
+
+impl From<PrivateKeyWasm> for PrivateKey {
+    fn from(key: PrivateKeyWasm) -> Self {
+        key.0
+    }
+}
+
+impl From<PrivateKey> for PrivateKeyWasm {
+    fn from(key: PrivateKey) -> Self {
+        PrivateKeyWasm(key)
+    }
+}
 
 #[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWasm {

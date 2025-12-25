@@ -1,13 +1,52 @@
 use crate::error::WasmDppError;
 use dpp::withdrawal::Pooling;
+use serde::{Deserialize, Deserializer};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
+#[derive(Clone, Copy)]
 pub enum PoolingWasm {
     Never = 0,
     IfAvailable = 1,
     Standard = 2,
+}
+
+impl<'de> Deserialize<'de> for PoolingWasm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value: serde_json::Value = Deserialize::deserialize(deserializer)?;
+
+        // Try as string first
+        if let Some(s) = value.as_str() {
+            return match s.to_lowercase().as_str() {
+                "never" => Ok(PoolingWasm::Never),
+                "ifavailable" => Ok(PoolingWasm::IfAvailable),
+                "standard" => Ok(PoolingWasm::Standard),
+                _ => Err(serde::de::Error::custom(format!(
+                    "unsupported pooling value ({})",
+                    s
+                ))),
+            };
+        }
+
+        // Try as number
+        if let Some(n) = value.as_u64() {
+            return match n {
+                0 => Ok(PoolingWasm::Never),
+                1 => Ok(PoolingWasm::IfAvailable),
+                2 => Ok(PoolingWasm::Standard),
+                _ => Err(serde::de::Error::custom(format!(
+                    "unsupported pooling value ({})",
+                    n
+                ))),
+            };
+        }
+
+        Err(serde::de::Error::custom("pooling must be a string or number"))
+    }
 }
 
 impl From<PoolingWasm> for Pooling {

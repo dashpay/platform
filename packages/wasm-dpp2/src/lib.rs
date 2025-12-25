@@ -20,6 +20,7 @@ pub mod error;
 pub mod group;
 pub mod identifier;
 pub mod identity;
+pub mod identity_signer;
 pub mod mock_bls;
 pub mod platform_address;
 pub mod private_key;
@@ -29,6 +30,10 @@ pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
 pub mod voting;
+
+pub use core_script::CoreScriptWasm;
+pub use enums::withdrawal::PoolingWasm;
+pub use identity_signer::IdentitySignerWasm;
 
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
@@ -42,7 +47,12 @@ pub use identity::{
     IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
     MasternodeVoteTransitionWasm, PartialIdentityWasm,
 };
-pub use platform_address::PlatformAddressWasm;
+pub use platform_address::{
+    default_fee_strategy, extract_addresses, extract_amounts, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default, inputs_to_btree_map, outputs_to_btree_map,
+    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressOutputWasm,
+    PlatformAddressSignerWasm, PlatformAddressWasm,
+};
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
 pub use voting::{
