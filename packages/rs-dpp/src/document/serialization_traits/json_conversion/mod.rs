@@ -29,19 +29,20 @@ impl DocumentJsonMethodsV0<'_> for Document {
     }
 
     /// Create a document from a JSON value.
-    fn from_json_value<S>(
+    fn from_json_value<S, E>(
         document_value: JsonValue,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = E>,
+        E: Into<ProtocolError>,
     {
         match platform_version
             .dpp
             .document_versions
             .document_structure_version
         {
-            0 => Ok(Document::V0(DocumentV0::from_json_value::<S>(
+            0 => Ok(Document::V0(DocumentV0::from_json_value::<S, E>(
                 document_value,
                 platform_version,
             )?)),

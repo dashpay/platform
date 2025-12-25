@@ -3076,7 +3076,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dashcore-lib", "npm:0.22.0"],\
           ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
-          ["@types/bs58", "npm:4.0.1"],\
+          ["@types/bs58", "npm:4.0.4"],\
           ["@types/node", "npm:14.17.34"],\
           ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
           ["ajv", "npm:8.12.0"],\
@@ -3131,6 +3131,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/wasm-dpp2", "workspace:packages/wasm-dpp2"],\
           ["assert", "npm:2.0.0"],\
+          ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -4629,10 +4630,11 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@types/bs58", [\
-      ["npm:4.0.1", {\
-        "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.1-179273a650-5063fed6bb.zip/node_modules/@types/bs58/",\
+      ["npm:4.0.4", {\
+        "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.4-61d579b54c-9cac5a0034.zip/node_modules/@types/bs58/",\
         "packageDependencies": [\
-          ["@types/bs58", "npm:4.0.1"],\
+          ["@types/bs58", "npm:4.0.4"],\
+          ["@types/node", "npm:18.16.1"],\
           ["base-x", "npm:3.0.11"]\
         ],\
         "linkType": "HARD"\

@@ -2,12 +2,13 @@ use crate::VoteWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
-use dpp::platform_value::string_encoding::decode;
+use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -233,4 +234,18 @@ impl MasternodeVoteTransitionWasm {
             )),
         }
     }
+
+    #[wasm_bindgen(js_name = "toHex")]
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Hex))
+    }
+
+    #[wasm_bindgen(js_name = "toBase64")]
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Base64))
+    }
 }
+
+impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);

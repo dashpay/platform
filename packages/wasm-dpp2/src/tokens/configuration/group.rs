@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::serialization;
 use crate::utils::JsValueExt;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
@@ -141,5 +142,28 @@ impl GroupWasm {
         self.0.set_member_power(member, member_required_power);
 
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        serialization::to_json(&self.0)
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<GroupWasm> {
+        serialization::from_json(js_value).map(GroupWasm)
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        // Use toJSON for serialization because it handles BTreeMap<Identifier, u32>
+        // correctly (Identifier becomes base58 string in human-readable mode).
+        // This ensures all fields are automatically included when new versions are added.
+        serialization::to_json(&self.0)
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<GroupWasm> {
+        serialization::from_object(js_value).map(GroupWasm)
     }
 }

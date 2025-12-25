@@ -31,6 +31,11 @@ pub enum Contender {
 #[derive(
     Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 #[platform_serialize(unversioned)]
 pub enum ContenderWithSerializedDocument {
     /// V0

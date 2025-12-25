@@ -5606,6 +5606,16 @@ dependencies = [
 
 [[package]]
 name = "serde-wasm-bindgen"
+version = "0.5.0"
+source = "git+https://github.com/dashpay/serde-wasm-bindgen?branch=fix%2Fuint8array-to-bytes#c909c5759c9ca997abe96283edd8e23cb64b4ce0"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
@@ -7245,7 +7255,7 @@ dependencies = [
  "num_enum 0.7.4",
  "paste",
  "serde",
- "serde-wasm-bindgen 0.5.0",
+ "serde-wasm-bindgen 0.5.0 (git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat%2Fnot_human_readable)",
  "serde_json",
  "thiserror 2.0.17",
  "wasm-bindgen",
@@ -7256,7 +7266,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp2"
-version = "1.0.5"
+version = "3.0.0-dev.5"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -7264,7 +7274,7 @@ dependencies = [
  "hex",
  "js-sys",
  "serde",
- "serde-wasm-bindgen 0.5.0",
+ "serde-wasm-bindgen 0.5.0 (git+https://github.com/dashpay/serde-wasm-bindgen?branch=fix%2Fuint8array-to-bytes)",
  "serde_json",
  "sha2",
  "thiserror 1.0.69",
@@ -7325,7 +7335,7 @@ dependencies = [
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
  "serde",
- "serde-wasm-bindgen 0.6.5",
+ "serde-wasm-bindgen 0.5.0 (git+https://github.com/dashpay/serde-wasm-bindgen?branch=fix%2Fuint8array-to-bytes)",
  "serde_json",
  "sha2",
  "simple-signer",
