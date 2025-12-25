@@ -29,13 +29,22 @@ describe('CoreScript', () => {
     it('should allow to convert to asm P2PKH', () => {
       const script = wasm.CoreScript.newP2PKH([195, 219, 253, 64, 231, 248, 164, 132, 92, 47, 142, 134, 138, 22, 124, 152, 64, 73, 118, 73]);
 
-      expect(script.ASMString()).to.equal('OP_DUP OP_HASH160 OP_PUSHBYTES_20 c3dbfd40e7f8a4845c2f8e868a167c9840497649 OP_EQUALVERIFY OP_CHECKSIG');
+      expect(script.toASMString()).to.equal('OP_DUP OP_HASH160 OP_PUSHBYTES_20 c3dbfd40e7f8a4845c2f8e868a167c9840497649 OP_EQUALVERIFY OP_CHECKSIG');
     });
 
     it('should allow to convert to adddress', () => {
       const script = wasm.CoreScript.fromBytes(Buffer.from('76a9142de40f87177f6e167fb9fcda9a3b3c64fc42468f88ac', 'hex'));
 
       expect(script.toAddress(wasm.Network.Testnet)).to.equal('yQW6TmUFef5CDyhEYwjoN8aUTMmKLYYNDm');
+    });
+
+    it('should allow to get base64 representation', () => {
+      const script = wasm.CoreScript.fromBytes(Buffer.from('76a9142de40f87177f6e167fb9fcda9a3b3c64fc42468f88ac', 'hex'));
+
+      const base64 = script.toBase64();
+      const bytes = script.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
     });
   });
 });

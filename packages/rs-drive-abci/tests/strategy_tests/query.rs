@@ -317,11 +317,11 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
-    use strategy_tests::{IdentityInsertInfo, StartIdentities, Strategy};
+    use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     use crate::strategy::CoreHeightIncrease::RandomCoreHeightIncrease;
 
@@ -356,8 +356,8 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -384,7 +384,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -467,8 +466,8 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -495,7 +494,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -574,8 +572,8 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -602,7 +600,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,
@@ -737,8 +734,8 @@ mod tests {
                 start_contracts: vec![],
                 operations: vec![],
                 start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo::default(),
-
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
@@ -765,7 +762,6 @@ mod tests {
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: hour_in_ms,

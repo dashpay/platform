@@ -43,7 +43,9 @@ pub mod platform {
     #[cfg(any(feature = "server", feature = "client", target_arch = "wasm32"))]
     mod versioning;
     #[cfg(any(feature = "server", feature = "client", target_arch = "wasm32"))]
-    pub use versioning::{VersionedGrpcMessage, VersionedGrpcResponse};
+    pub use versioning::{
+        MerkProofVersionedGrpcResponse, VersionedGrpcMessage, VersionedGrpcResponse,
+    };
 }
 
 #[cfg(all(feature = "drive", feature = "platform"))]

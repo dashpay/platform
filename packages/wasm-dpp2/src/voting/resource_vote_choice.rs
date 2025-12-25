@@ -1,5 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -71,3 +72,5 @@ impl ResourceVoteChoiceWasm {
         }
     }
 }
+
+impl_wasm_conversions!(ResourceVoteChoiceWasm, ResourceVoteChoice);

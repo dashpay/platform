@@ -1,5 +1,6 @@
 use crate::group::action_event::GroupActionEventWasm;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use dpp::data_contract::TokenContractPosition;
 use dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -52,3 +53,5 @@ impl GroupActionWasm {
         GroupActionEventWasm::from(self.0.event().clone())
     }
 }
+
+impl_wasm_conversions!(GroupActionWasm, GroupAction);

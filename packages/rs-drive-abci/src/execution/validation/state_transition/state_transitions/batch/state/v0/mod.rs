@@ -3,7 +3,7 @@ use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::StateTransitionLike;
+use dpp::state_transition::StateTransitionOwned;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
@@ -36,7 +36,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{data_
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 mod data_triggers;
 pub mod fetch_contender;

@@ -1,5 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use dpp::prelude::Identifier;
 use dpp::voting::contender_structs::{
     ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
@@ -72,3 +73,8 @@ impl ContenderWithSerializedDocumentWasm {
         &self.0
     }
 }
+
+impl_wasm_conversions!(
+    ContenderWithSerializedDocumentWasm,
+    ContenderWithSerializedDocument
+);

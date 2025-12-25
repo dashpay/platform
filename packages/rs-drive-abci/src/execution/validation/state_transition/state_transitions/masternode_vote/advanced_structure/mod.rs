@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::masternode_vote::advanced_structure::v0::MasternodeVoteStateTransitionAdvancedStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionStructureKnownInStateValidationV0;
+use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;

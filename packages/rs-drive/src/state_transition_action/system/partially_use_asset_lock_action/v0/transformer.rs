@@ -1,3 +1,4 @@
+use crate::state_transition_action::address_funds::address_funding_from_asset_lock::v0::AddressFundingFromAssetLockTransitionActionV0;
 use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
@@ -52,6 +53,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         })
     }
 
@@ -97,6 +100,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         })
     }
 
@@ -135,6 +140,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         }
     }
 
@@ -172,6 +179,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         }
     }
 
@@ -216,6 +225,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         })
     }
 
@@ -260,6 +271,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         })
     }
 
@@ -297,6 +310,8 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
         }
     }
 
@@ -334,6 +349,90 @@ impl PartiallyUseAssetLockActionV0 {
             remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
             used_credits,
             user_fee_increase: *user_fee_increase,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
+        }
+    }
+
+    /// from address funding from asset lock transition action
+    /// This includes the inputs and fee strategy for prioritized fee deduction
+    pub fn from_address_funding_from_asset_lock_transition_action(
+        value: AddressFundingFromAssetLockTransitionActionV0,
+        desired_used_credits: Credits,
+    ) -> Self {
+        let AddressFundingFromAssetLockTransitionActionV0 {
+            signable_bytes_hasher,
+            asset_lock_outpoint,
+            asset_lock_value_to_be_consumed,
+            inputs_with_remaining_balance,
+            fee_strategy,
+            user_fee_increase,
+            ..
+        } = value;
+
+        let remaining_balance_after_used_credits_are_deducted = asset_lock_value_to_be_consumed
+            .remaining_credit_value()
+            .saturating_sub(desired_used_credits);
+
+        let used_credits = std::cmp::min(
+            asset_lock_value_to_be_consumed.remaining_credit_value(),
+            desired_used_credits,
+        );
+
+        let mut used_tags = asset_lock_value_to_be_consumed.used_tags_ref().clone();
+        used_tags.push(signable_bytes_hasher.into_hashed_bytes());
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint,
+            initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
+            previous_transaction_hashes: used_tags,
+            asset_lock_script: asset_lock_value_to_be_consumed.tx_out_script_owned(),
+            remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
+            used_credits,
+            user_fee_increase,
+            inputs_with_remaining_balance: Some(inputs_with_remaining_balance),
+            fee_strategy: Some(fee_strategy),
+        }
+    }
+
+    /// from borrowed address funding from asset lock transition action
+    /// This includes the inputs and fee strategy for prioritized fee deduction
+    pub fn from_borrowed_address_funding_from_asset_lock_transition_action(
+        value: &AddressFundingFromAssetLockTransitionActionV0,
+        desired_used_credits: Credits,
+    ) -> Self {
+        let AddressFundingFromAssetLockTransitionActionV0 {
+            signable_bytes_hasher,
+            asset_lock_outpoint,
+            asset_lock_value_to_be_consumed,
+            inputs_with_remaining_balance,
+            fee_strategy,
+            user_fee_increase,
+            ..
+        } = value;
+
+        let remaining_balance_after_used_credits_are_deducted = asset_lock_value_to_be_consumed
+            .remaining_credit_value()
+            .saturating_sub(desired_used_credits);
+
+        let used_credits = std::cmp::min(
+            asset_lock_value_to_be_consumed.remaining_credit_value(),
+            desired_used_credits,
+        );
+
+        let mut used_tags = asset_lock_value_to_be_consumed.used_tags_ref().clone();
+        used_tags.push(signable_bytes_hasher.to_hashed_bytes());
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint: *asset_lock_outpoint,
+            initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
+            previous_transaction_hashes: used_tags,
+            asset_lock_script: asset_lock_value_to_be_consumed.tx_out_script().clone(),
+            remaining_credit_value: remaining_balance_after_used_credits_are_deducted,
+            used_credits,
+            user_fee_increase: *user_fee_increase,
+            inputs_with_remaining_balance: Some(inputs_with_remaining_balance.clone()),
+            fee_strategy: Some(fee_strategy.clone()),
         }
     }
 }

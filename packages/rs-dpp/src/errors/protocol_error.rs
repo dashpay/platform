@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
+    UncompressedPublicKeyNotAllowedError,
 };
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
@@ -196,6 +197,9 @@ pub enum ProtocolError {
     PublicKeyIsDisabledError(PublicKeyIsDisabledError),
 
     #[error(transparent)]
+    UncompressedPublicKeyNotAllowedError(UncompressedPublicKeyNotAllowedError),
+
+    #[error(transparent)]
     IdentityNotPresentError(IdentityNotPresentError),
 
     /// Error
@@ -287,6 +291,14 @@ pub enum ProtocolError {
     InvalidBatchedTransitionActionVariant {
         expected: &'static str,
         found: &'static str,
+    },
+    #[error(
+        "Invalid verification wrong number of elements: needed {needed}, using {using}, {msg}"
+    )]
+    InvalidVerificationWrongNumberOfElements {
+        needed: u16,
+        using: u16,
+        msg: &'static str,
     },
 }
 

@@ -59,6 +59,31 @@ describe('Platform', () => {
       expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
     });
 
+    it('should expose validation error when document property positions are not contiguous', async () => {
+      // Additional wait time to mitigate testnet latency
+      await waitForSTPropagated();
+
+      const identityNonce = await client.platform.nonceManager
+        .bumpIdentityNonce(identity.getId());
+      const invalidDataContract = await getDataContractFixture(identityNonce, identity.getId());
+
+      const documentSchema = invalidDataContract.getDocumentSchema('niceDocument');
+      documentSchema.properties.name.position = 5;
+      invalidDataContract.setDocumentSchema('niceDocument', documentSchema, { skipValidation: true });
+
+      let broadcastError;
+
+      try {
+        await client.platform.contracts.publish(invalidDataContract, identity);
+      } catch (e) {
+        broadcastError = e;
+      }
+
+      expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCode()).to.equal(10411);
+      expect(broadcastError.getMessage()).to.equal('position field is not present for document type "niceDocument"');
+    });
+
     it('should create new data contract with previously created identity as an owner', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();

@@ -28,9 +28,17 @@ impl<C> Platform<C> {
                 }
             };
 
-        let result =
-            self.drive
-                .prove_state_transition(&state_transition, None, platform_version)?;
+        let result = self
+            .drive
+            .prove_state_transition(&state_transition, None, platform_version)
+            .inspect_err(|e| {
+                tracing::warn!(
+                    state_transition_type = %state_transition.state_transition_type(),
+                    error = %e,
+                    "Error while proving state transition: {}",
+                    e
+                )
+            })?;
 
         if !result.is_valid() {
             return Ok(QueryValidationResult::new_with_errors(

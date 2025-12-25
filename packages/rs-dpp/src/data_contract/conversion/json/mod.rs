@@ -55,7 +55,6 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::prelude::DataContract;
     use crate::version::PlatformVersion;

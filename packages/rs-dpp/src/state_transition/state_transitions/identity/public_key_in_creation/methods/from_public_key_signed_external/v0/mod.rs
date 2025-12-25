@@ -6,7 +6,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::ProtocolError;
 
 impl IdentityPublicKeyInCreation {
-    pub(super) fn from_public_key_signed_external_v0<S: Signer>(
+    pub(super) fn from_public_key_signed_external_v0<S: Signer<IdentityPublicKey>>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,

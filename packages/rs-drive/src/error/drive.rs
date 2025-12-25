@@ -201,4 +201,16 @@ pub enum DriveError {
     /// Element was not found
     #[error("element not found: {0}")]
     ElementNotFound(&'static str),
+
+    /// Invalid input provided
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+
+    /// No checkpoints available
+    #[error("no checkpoints available")]
+    NoCheckpointsAvailable,
+
+    /// Checkpoint not found for specified block height
+    #[error("checkpoint not found for block height: {0}")]
+    CheckpointNotFound(u64),
 }

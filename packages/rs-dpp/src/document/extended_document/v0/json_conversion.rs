@@ -42,12 +42,13 @@ impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
         Ok(json)
     }
 
-    fn from_json_value<S>(
+    fn from_json_value<S, E>(
         document_value: JsonValue,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
+        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = E>,
+        E: Into<ProtocolError>,
     {
         Self::from_platform_value(document_value.into(), platform_version)
     }

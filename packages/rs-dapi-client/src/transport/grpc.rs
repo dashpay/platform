@@ -623,3 +623,21 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_token_perpetual_distribution_last_claim
 );
+
+// rpc getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressInfoRequest,
+    platform_proto::GetAddressInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_address_info
+);
+
+// rpc getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesInfosRequest,
+    platform_proto::GetAddressesInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_infos
+);

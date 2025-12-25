@@ -17,7 +17,7 @@ use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
     Batch, DataContractCreate, DataContractUpdate, IdentityCreditTransfer,
-    IdentityCreditWithdrawal, IdentityTopUp, IdentityUpdate, MasternodeVote,
+    IdentityCreditWithdrawal, IdentityUpdate, MasternodeVote,
 };
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -28,8 +28,10 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -81,9 +83,20 @@ impl StateTransitionWasm {
             &MockBLS {},
         )?;
 
-        self.0.set_signature(self.0.signature().clone());
-        self.0
-            .set_signature_public_key_id(self.0.signature_public_key_id().unwrap());
+        let Some(signature) = self.0.signature() else {
+            return Err(WasmDppError::generic(
+                "Signature was not set after signing the state transition; this is a bug",
+            ));
+        };
+
+        let Some(signature_public_key) = self.0.signature_public_key_id() else {
+            return Err(WasmDppError::generic(
+                "Signature public key ID was not set after signing the state transition; this is a bug",
+            ));
+        };
+
+        self.0.set_signature(signature.clone());
+        self.0.set_signature_public_key_id(signature_public_key);
 
         Ok(self.0.serialize_to_bytes()?)
     }
@@ -223,7 +236,7 @@ impl StateTransitionWasm {
         Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Hex)))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<JsValue> {
         let bytes = self.0.serialize_to_bytes()?;
 
@@ -275,27 +288,34 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "getActionTypeNumber")]
     pub fn get_action_type_number(&self) -> u8 {
+        use StateTransition::*;
         match self.0 {
             DataContractCreate(_) => 0,
             Batch(_) => 1,
-            StateTransition::IdentityCreate(_) => 2,
+            IdentityCreate(_) => 2,
             IdentityTopUp(_) => 3,
             DataContractUpdate(_) => 4,
             IdentityUpdate(_) => 5,
             IdentityCreditWithdrawal(_) => 6,
             IdentityCreditTransfer(_) => 7,
             MasternodeVote(_) => 8,
+            IdentityCreditTransferToAddresses(_) => 9,
+            IdentityCreateFromAddresses(_) => 10,
+            IdentityTopUpFromAddresses(_) => 11,
+            AddressFundsTransfer(_) => 12,
+            AddressFundingFromAssetLock(_) => 13,
+            AddressCreditWithdrawal(_) => 14,
         }
     }
 
     #[wasm_bindgen(js_name = "getOwnerId")]
-    pub fn get_owner_id(&self) -> IdentifierWasm {
-        self.0.owner_id().into()
+    pub fn get_owner_id(&self) -> Option<IdentifierWasm> {
+        self.0.owner_id().map(Into::into)
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
-        self.0.signature().to_vec()
+    pub fn get_signature(&self) -> Option<Vec<u8>> {
+        self.0.signature().map(BinaryData::to_vec)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
@@ -342,7 +362,8 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "getIdentityContractNonce")]
     pub fn get_identity_contract_nonce(&self) -> Option<IdentityNonce> {
-        match self.0.clone() {
+        use StateTransition::*;
+        match &self.0 {
             DataContractCreate(_) => None,
             DataContractUpdate(contract_update) => Some(contract_update.identity_contract_nonce()),
             Batch(batch) => match batch {
@@ -362,12 +383,19 @@ impl StateTransitionWasm {
             IdentityUpdate(_) => None,
             IdentityCreditTransfer(_) => None,
             MasternodeVote(_) => None,
+            IdentityCreditTransferToAddresses(_)
+            | IdentityCreateFromAddresses(_)
+            | IdentityTopUpFromAddresses(_)
+            | AddressFundsTransfer(_)
+            | AddressFundingFromAssetLock(_)
+            | AddressCreditWithdrawal(_) => None,
         }
     }
 
     #[wasm_bindgen(js_name = "getIdentityNonce")]
     pub fn get_identity_nonce(&self) -> Option<IdentityNonce> {
-        match self.0.clone() {
+        use StateTransition::*;
+        match &self.0 {
             DataContractCreate(contract_create) => Some(contract_create.identity_nonce()),
             DataContractUpdate(_) => None,
             Batch(_) => None,
@@ -377,11 +405,17 @@ impl StateTransitionWasm {
             IdentityUpdate(identity_update) => Some(identity_update.nonce()),
             IdentityCreditTransfer(credit_transfer) => Some(credit_transfer.nonce()),
             MasternodeVote(mn_vote) => Some(mn_vote.nonce()),
+            IdentityCreditTransferToAddresses(ct) => Some(ct.nonce()),
+            IdentityCreateFromAddresses(_) => None,
+            IdentityTopUpFromAddresses(_) => None,
+            AddressFundsTransfer(_)
+            | AddressFundingFromAssetLock(_)
+            | AddressCreditWithdrawal(_) => None,
         }
     }
 
     #[wasm_bindgen(setter = "signature")]
-    pub fn set_signature(&mut self, signature: Vec<u8>) {
+    pub fn set_signature(&mut self, signature: Vec<u8>) -> bool {
         self.0.set_signature(BinaryData::from(signature))
     }
 
@@ -401,6 +435,7 @@ impl StateTransitionWasm {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_owner_id: &JsValue,
     ) -> WasmDppResult<()> {
+        use dpp::state_transition::StateTransition::*;
         let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
 
         match self.0.clone() {
@@ -486,6 +521,28 @@ impl StateTransitionWasm {
 
                 self.0 = MasternodeVote(mn_vote);
             }
+
+            IdentityCreditTransferToAddresses(mut ct) => {
+                ct.set_identity_id(owner_id);
+                self.0 = IdentityCreditTransferToAddresses(ct);
+            }
+            IdentityCreateFromAddresses(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set owner for identity create transition",
+                ));
+            }
+            IdentityTopUpFromAddresses(mut top_up) => {
+                top_up.set_identity_id(owner_id);
+                self.0 = IdentityTopUpFromAddresses(top_up);
+            }
+            AddressFundsTransfer(_)
+            | AddressFundingFromAssetLock(_)
+            | AddressCreditWithdrawal(_) => {
+                // NOOP - address funds transfer has no owner id
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set owner for address funds transfer transition",
+                ));
+            }
         };
 
         Ok(())
@@ -493,6 +550,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
     pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) -> WasmDppResult<()> {
+        use StateTransition::*;
         self.0 = match self.0.clone() {
             DataContractCreate(_) => {
                 return Err(WasmDppError::invalid_argument(
@@ -541,6 +599,16 @@ impl StateTransitionWasm {
                     "Cannot set identity contract nonce for Masternode Vote",
                 ));
             }
+            IdentityCreditTransferToAddresses(_)
+            | IdentityCreateFromAddresses(_)
+            | IdentityTopUpFromAddresses(_)
+            | AddressFundsTransfer(_)
+            | AddressFundingFromAssetLock(_)
+            | AddressCreditWithdrawal(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for address-related transition types",
+                ));
+            }
         };
 
         Ok(())
@@ -548,6 +616,7 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "setIdentityNonce")]
     pub fn set_identity_nonce(&mut self, nonce: IdentityNonce) -> WasmDppResult<()> {
+        use StateTransition::*;
         self.0 = match self.0.clone() {
             DataContractCreate(mut contract_create) => {
                 contract_create = match contract_create {
@@ -604,6 +673,27 @@ impl StateTransitionWasm {
                 };
 
                 mn_vote.into()
+            }
+            IdentityCreditTransferToAddresses(mut transfer) => {
+                transfer.set_nonce(nonce);
+                transfer.into()
+            }
+            IdentityCreateFromAddresses(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Identity Create From Addresses",
+                ));
+            }
+            IdentityTopUpFromAddresses(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Identity Top Up From Addresses",
+                ));
+            }
+            AddressFundsTransfer(_)
+            | AddressFundingFromAssetLock(_)
+            | AddressCreditWithdrawal(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for address-related transition types",
+                ));
             }
         };
 

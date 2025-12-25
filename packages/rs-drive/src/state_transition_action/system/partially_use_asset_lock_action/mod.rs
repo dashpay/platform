@@ -1,8 +1,10 @@
 use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
 use derive_more::From;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::platform_value::{Bytes32, Bytes36};
-use dpp::prelude::UserFeeIncrease;
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
+use std::collections::BTreeMap;
 
 mod transformer;
 mod v0;
@@ -62,6 +64,22 @@ impl PartiallyUseAssetLockActionAccessorsV0 for PartiallyUseAssetLockAction {
     fn previous_transaction_hashes_ref(&self) -> &Vec<Bytes32> {
         match self {
             PartiallyUseAssetLockAction::V0(transition) => &transition.previous_transaction_hashes,
+        }
+    }
+
+    fn inputs_with_remaining_balance(
+        &self,
+    ) -> Option<&BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
+        match self {
+            PartiallyUseAssetLockAction::V0(transition) => {
+                transition.inputs_with_remaining_balance.as_ref()
+            }
+        }
+    }
+
+    fn fee_strategy(&self) -> Option<&AddressFundsFeeStrategy> {
+        match self {
+            PartiallyUseAssetLockAction::V0(transition) => transition.fee_strategy.as_ref(),
         }
     }
 }
