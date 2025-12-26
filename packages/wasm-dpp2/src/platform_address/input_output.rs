@@ -80,28 +80,30 @@ impl PlatformAddressInputWasm {
 /// Represents an output address for address-based state transitions.
 ///
 /// An output specifies a Platform address that will receive credits,
-/// along with the amount to receive.
+/// along with an optional amount to receive. When amount is None,
+/// the system distributes funds automatically (used for asset lock funding).
 #[wasm_bindgen(js_name = "PlatformAddressOutput")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformAddressOutputWasm {
     address: PlatformAddressWasm,
-    amount: Credits,
+    #[serde(default)]
+    amount: Option<Credits>,
 }
 
 #[wasm_bindgen(js_class = PlatformAddressOutput)]
 impl PlatformAddressOutputWasm {
-    /// Creates a new PlatformAddressOutput.
+    /// Creates a new PlatformAddressOutput with a specific amount.
     ///
     /// @param address - The Platform address (PlatformAddress, Uint8Array, or bech32m string)
-    /// @param amount - The amount of credits to send to this address
+    /// @param amount - The amount of credits to send to this address (optional for asset lock funding)
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
-        amount: BigInt,
+        amount: Option<BigInt>,
     ) -> WasmDppResult<PlatformAddressOutputWasm> {
         let platform_address = PlatformAddressWasm::try_from(address)?;
-        let amount_u64 = bigint_to_u64(amount)?;
+        let amount_u64 = amount.map(bigint_to_u64).transpose()?;
 
         Ok(PlatformAddressOutputWasm {
             address: platform_address,
@@ -115,16 +117,25 @@ impl PlatformAddressOutputWasm {
         self.address
     }
 
-    /// Returns the amount.
+    /// Returns the amount, or undefined if not specified.
     #[wasm_bindgen(getter)]
-    pub fn amount(&self) -> BigInt {
-        BigInt::from(self.amount)
+    pub fn amount(&self) -> Option<BigInt> {
+        self.amount.map(BigInt::from)
     }
 }
 
 impl PlatformAddressOutputWasm {
     /// Returns the inner values as a tuple suitable for BTreeMap insertion.
+    /// Panics if amount is None - use `into_inner_optional` for optional amounts.
     pub fn into_inner(self) -> (PlatformAddress, Credits) {
+        (
+            self.address.into(),
+            self.amount.expect("amount is required for this operation"),
+        )
+    }
+
+    /// Returns the inner values with optional amount.
+    pub fn into_inner_optional(self) -> (PlatformAddress, Option<Credits>) {
         (self.address.into(), self.amount)
     }
 }
@@ -145,9 +156,6 @@ pub fn outputs_to_optional_btree_map(
 ) -> BTreeMap<PlatformAddress, Option<Credits>> {
     outputs
         .into_iter()
-        .map(|o| {
-            let (addr, amount) = o.into_inner();
-            (addr, Some(amount))
-        })
+        .map(|o| o.into_inner_optional())
         .collect()
 }
