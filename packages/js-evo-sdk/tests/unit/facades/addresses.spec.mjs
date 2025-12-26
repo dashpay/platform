@@ -70,9 +70,6 @@ describe('AddressesFacade', () => {
 
   it('transfer() forwards options to addressFundsTransfer with PlatformAddressSigner', async () => {
     // Create proper PlatformAddress objects
-    const senderAddr = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
-    );
     const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
     );
@@ -81,12 +78,12 @@ describe('AddressesFacade', () => {
     const privateKeyBytes = new Uint8Array(32).fill(1); // Test key bytes
     const privateKey = wasmSDKPackage.PrivateKey.fromBytes(privateKeyBytes, 'testnet');
 
-    // Create signer and add the private key
+    // Create signer and derive the sender address from the private key
     const signer = new wasmSDKPackage.PlatformAddressSigner();
-    signer.addKey(senderAddr, privateKey);
+    const derivedSenderAddr = signer.addKey(privateKey);
 
     // Create typed input and output objects (address, nonce, amount)
-    const input = new wasmSDKPackage.PlatformAddressInput(senderAddr, 0, 100000n);
+    const input = new wasmSDKPackage.PlatformAddressInput(derivedSenderAddr, 0, 100000n);
     const output = new wasmSDKPackage.PlatformAddressOutput(recipientAddr, 90000n);
 
     const options = {
@@ -95,7 +92,7 @@ describe('AddressesFacade', () => {
       signer,
     };
     const result = await client.addresses.transfer(options);
-    expect(wasmSdk.addressFundsTransfer).to.be.calledOnce;
+    expect(wasmSdk.addressFundsTransfer).to.be.calledOnce();
     expect(result.type).to.equal('VerifiedAddressInfos');
     expect(result.addressInfos).to.have.lengthOf(1);
     expect(result.addressInfos[0].address.addressType).to.equal('P2PKH');
@@ -108,9 +105,6 @@ describe('AddressesFacade', () => {
     });
 
     // Create proper PlatformAddress objects
-    const senderAddr = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
-    );
     const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
     );
@@ -119,12 +113,12 @@ describe('AddressesFacade', () => {
     const privateKeyBytes = new Uint8Array(32).fill(1); // Test key bytes
     const privateKey = wasmSDKPackage.PrivateKey.fromBytes(privateKeyBytes, 'testnet');
 
-    // Create signer and add the private key
+    // Create signer and derive the sender address from the private key
     const signer = new wasmSDKPackage.PlatformAddressSigner();
-    signer.addKey(senderAddr, privateKey);
+    const derivedSenderAddr = signer.addKey(privateKey);
 
     // Create typed input and output objects (address, nonce, amount)
-    const input = new wasmSDKPackage.PlatformAddressInput(senderAddr, 0, 100000n);
+    const input = new wasmSDKPackage.PlatformAddressInput(derivedSenderAddr, 0, 100000n);
     const output = new wasmSDKPackage.PlatformAddressOutput(recipientAddr, 90000n);
 
     const options = {
@@ -159,7 +153,7 @@ describe('AddressesFacade', () => {
     };
 
     const result = await client.addresses.topUpIdentity(options);
-    expect(wasmSdk.identityTopUpFromAddresses).to.be.calledOnce;
+    expect(wasmSdk.identityTopUpFromAddresses).to.be.calledOnce();
     expect(result.newBalance).to.equal(150000n);
   });
 
@@ -187,7 +181,7 @@ describe('AddressesFacade', () => {
     };
 
     const result = await client.addresses.withdraw(options);
-    expect(wasmSdk.addressFundsWithdraw).to.be.calledOnce;
+    expect(wasmSdk.addressFundsWithdraw).to.be.calledOnce();
     expect(result).to.be.instanceOf(Map);
   });
 
@@ -213,7 +207,7 @@ describe('AddressesFacade', () => {
     };
 
     const result = await client.addresses.transferFromIdentity(options);
-    expect(wasmSdk.identityTransferToAddresses).to.be.calledOnce;
+    expect(wasmSdk.identityTransferToAddresses).to.be.calledOnce();
     expect(result.newBalance).to.equal(400000n);
   });
 
@@ -237,7 +231,7 @@ describe('AddressesFacade', () => {
     };
 
     const result = await client.addresses.fundFromAssetLock(options);
-    expect(wasmSdk.addressFundingFromAssetLock).to.be.calledOnce;
+    expect(wasmSdk.addressFundingFromAssetLock).to.be.calledOnce();
     expect(result).to.be.instanceOf(Map);
   });
 
@@ -264,7 +258,7 @@ describe('AddressesFacade', () => {
     };
 
     const result = await client.addresses.createIdentity(options);
-    expect(wasmSdk.identityCreateFromAddresses).to.be.calledOnce;
+    expect(wasmSdk.identityCreateFromAddresses).to.be.calledOnce();
     expect(result.identity).to.exist();
   });
 });

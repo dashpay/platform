@@ -45,7 +45,9 @@ impl<'de> Deserialize<'de> for PoolingWasm {
             };
         }
 
-        Err(serde::de::Error::custom("pooling must be a string or number"))
+        Err(serde::de::Error::custom(
+            "pooling must be a string or number",
+        ))
     }
 }
 

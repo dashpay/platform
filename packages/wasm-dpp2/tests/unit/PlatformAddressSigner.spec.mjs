@@ -21,93 +21,72 @@ describe('PlatformAddressSigner', () => {
   });
 
   describe('addKey', () => {
-    it('should add key from PrivateKey created from WIF', () => {
+    it('should add key and return derived address from PrivateKey created from WIF', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
       const privateKey = wasm.PrivateKey.fromWIF(testPrivateKeyWif);
 
-      signer.addKey(addr, privateKey);
+      const derivedAddr = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
+      expect(derivedAddr).to.exist;
+      expect(derivedAddr.addressType).to.equal('P2PKH');
     });
 
-    it('should add key from PrivateKey created from hex', () => {
+    it('should add key and return derived address from PrivateKey created from hex', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
 
-      signer.addKey(addr, privateKey);
+      const derivedAddr = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
+      expect(derivedAddr).to.exist;
+      expect(derivedAddr.addressType).to.equal('P2PKH');
     });
 
-    it('should add key from PrivateKey created from bytes', () => {
+    it('should add key and return derived address from PrivateKey created from bytes', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
       const keyBytes = new Uint8Array(32).fill(1);
       const privateKey = wasm.PrivateKey.fromBytes(keyBytes, 'testnet');
 
-      signer.addKey(addr, privateKey);
+      const derivedAddr = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
+      expect(derivedAddr).to.exist;
+      expect(derivedAddr.addressType).to.equal('P2PKH');
     });
 
-    it('should add multiple keys', () => {
+    it('should add multiple keys with different derived addresses', () => {
       const signer = new wasm.PlatformAddressSigner();
-
-      const addr1Bytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr1 = wasm.PlatformAddress.fromBytes(addr1Bytes);
-
-      const addr2Bytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
-      const addr2 = wasm.PlatformAddress.fromBytes(addr2Bytes);
 
       const privateKey1 = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
       const privateKey2 = wasm.PrivateKey.fromHex('a9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd', 'testnet');
 
-      signer.addKey(addr1, privateKey1);
-      signer.addKey(addr2, privateKey2);
+      const addr1 = signer.addKey(privateKey1);
+      const addr2 = signer.addKey(privateKey2);
 
       expect(signer.keyCount).to.equal(2);
+      // Addresses should be different since keys are different
+      expect(addr1.toBytes()).to.not.deep.equal(addr2.toBytes());
     });
 
-    it('should accept address as bech32m string', () => {
+    it('should return same address when adding same key twice', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
-      const bech32m = addr.toBech32m('testnet');
-
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
-      signer.addKey(bech32m, privateKey);
 
-      expect(signer.keyCount).to.equal(1);
-    });
-
-    it('should replace key for same address', () => {
-      const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
-
-      const privateKey1 = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
-      const privateKey2 = wasm.PrivateKey.fromHex('a9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd', 'testnet');
-
-      signer.addKey(addr, privateKey1);
+      const addr1 = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
 
-      // Add different key for same address
-      signer.addKey(addr, privateKey2);
-      expect(signer.keyCount).to.equal(1); // Still 1, replaced
+      // Add same key again
+      const addr2 = signer.addKey(privateKey);
+      expect(signer.keyCount).to.equal(1); // Still 1, same address
+      expect(addr1.toBytes()).to.deep.equal(addr2.toBytes());
     });
   });
 
   describe('hasKey', () => {
-    it('should return true for added address', () => {
+    it('should return true for derived address', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
 
-      signer.addKey(addr, privateKey);
-      expect(signer.hasKey(addr)).to.be.true;
+      const derivedAddr = signer.addKey(privateKey);
+      expect(signer.hasKey(derivedAddr)).to.be.true;
     });
 
     it('should return false for unknown address', () => {
@@ -118,14 +97,12 @@ describe('PlatformAddressSigner', () => {
       expect(signer.hasKey(addr)).to.be.false;
     });
 
-    it('should accept address as bech32m string', () => {
+    it('should accept derived address as bech32m string', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
-      const bech32m = addr.toBech32m('testnet');
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
 
-      signer.addKey(addr, privateKey);
+      const derivedAddr = signer.addKey(privateKey);
+      const bech32m = derivedAddr.toBech32m('testnet');
       expect(signer.hasKey(bech32m)).to.be.true;
     });
   });
@@ -140,11 +117,9 @@ describe('PlatformAddressSigner', () => {
 
     it('should return array of key entries', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-      const addr = wasm.PlatformAddress.fromBytes(addressBytes);
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
 
-      signer.addKey(addr, privateKey);
+      signer.addKey(privateKey);
 
       const keys = signer.getPrivateKeysBytes();
       expect(keys).to.be.an('array');

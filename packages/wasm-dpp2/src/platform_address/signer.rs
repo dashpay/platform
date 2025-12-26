@@ -1,12 +1,12 @@
+use super::PlatformAddressWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::private_key::PrivateKeyWasm;
 use crate::utils::IntoWasm;
-use super::PlatformAddressWasm;
+use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::signer;
 use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
-use dpp::ProtocolError;
 use std::collections::BTreeMap;
 use std::fmt;
 use wasm_bindgen::prelude::*;
@@ -40,19 +40,19 @@ impl PlatformAddressSignerWasm {
         }
     }
 
-    /// Adds a private key for the given Platform address.
+    /// Adds a private key and derives the Platform address from it.
     ///
-    /// @param address - The Platform address (PlatformAddress, Uint8Array, or bech32m string)
+    /// The address is derived as: P2PKH(Hash160(compressed_public_key))
+    ///
     /// @param privateKey - The PrivateKey object
+    /// @returns The derived Platform address
     #[wasm_bindgen(js_name = "addKey")]
-    pub fn add_key(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
-        private_key: &PrivateKeyWasm,
-    ) -> WasmDppResult<()> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
-        self.private_keys.insert(platform_address, private_key.clone());
-        Ok(())
+    pub fn add_key(&mut self, private_key: &PrivateKeyWasm) -> WasmDppResult<PlatformAddressWasm> {
+        let platform_address =
+            PlatformAddressWasm::from(PlatformAddress::from(private_key.inner()));
+        self.private_keys
+            .insert(platform_address, private_key.clone());
+        Ok(platform_address)
     }
 
     #[wasm_bindgen(getter = __struct)]
@@ -101,15 +101,12 @@ impl Signer<PlatformAddress> for PlatformAddressSignerWasm {
     fn sign(&self, address: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         let wasm_address = PlatformAddressWasm::from(*address);
 
-        let private_key = self
-            .private_keys
-            .get(&wasm_address)
-            .ok_or_else(|| {
-                ProtocolError::Generic(format!(
-                    "No private key found for address hash {}",
-                    hex::encode(address.hash())
-                ))
-            })?;
+        let private_key = self.private_keys.get(&wasm_address).ok_or_else(|| {
+            ProtocolError::Generic(format!(
+                "No private key found for address hash {}",
+                hex::encode(address.hash())
+            ))
+        })?;
 
         let key_bytes = private_key.to_bytes();
         let signature = signer::sign(data, &key_bytes)?;
@@ -162,8 +159,10 @@ impl PlatformAddressSignerWasm {
     /// This helper reads the specified field from an options object and converts it
     /// to a PlatformAddressSignerWasm.
     pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let signer_js = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-            .map_err(|_| WasmDppError::invalid_argument(format!("Missing '{}' field", field_name)))?;
+        let signer_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
 
         if signer_js.is_undefined() || signer_js.is_null() {
             return Err(WasmDppError::invalid_argument(format!(

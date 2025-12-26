@@ -1,6 +1,6 @@
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep};
-use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::Deserialize;
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use std::fmt;
 use wasm_bindgen::prelude::*;
 

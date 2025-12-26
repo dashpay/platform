@@ -6,15 +6,13 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::private_key::PrivateKeyWasm;
 use crate::utils::IntoWasm;
-use dpp::dashcore::hashes::{hash160, Hash};
-use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use dpp::ProtocolError;
+use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::signer;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
-use dpp::address_funds::AddressWitness;
-use dpp::ProtocolError;
 use std::collections::BTreeMap;
 use std::fmt;
 use wasm_bindgen::prelude::*;
@@ -50,33 +48,22 @@ impl IdentitySignerWasm {
 
     /// Adds a private key to the signer.
     ///
-    /// The public key hash is derived automatically from the private key.
+    /// The public key hash is derived automatically from the private key using
+    /// Hash160(compressed_public_key) where Hash160 = RIPEMD160(SHA256(x)).
     ///
     /// @param privateKey - The PrivateKey object
     #[wasm_bindgen(js_name = "addKey")]
     pub fn add_key(&mut self, private_key: &PrivateKeyWasm) -> WasmDppResult<()> {
-        let key_bytes = private_key.to_bytes();
-        if key_bytes.len() != 32 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "Private key must be 32 bytes, got {}",
-                key_bytes.len()
-            )));
-        }
+        let private_key_bytes: [u8; 32] = private_key
+            .to_bytes()
+            .try_into()
+            .map_err(|_| WasmDppError::invalid_argument("Private key must be 32 bytes"))?;
 
-        // Derive public key hash from private key
-        let secp = Secp256k1::new();
-        let secret_key = SecretKey::from_slice(&key_bytes).map_err(|e| {
-            WasmDppError::invalid_argument(format!("Invalid secret key: {}", e))
-        })?;
-        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
-        let public_key_bytes = public_key.serialize();
-        let public_key_hash = hash160::Hash::hash(&public_key_bytes[..])
-            .to_byte_array();
+        // Derive public key hash from private key using From<&PrivateKey> for PlatformAddress
+        let platform_address = PlatformAddress::from(private_key.inner());
+        let public_key_hash = *platform_address.hash();
 
-        let mut key_array = [0u8; 32];
-        key_array.copy_from_slice(&key_bytes);
-
-        self.private_keys.insert(public_key_hash, key_array);
+        self.private_keys.insert(public_key_hash, private_key_bytes);
         Ok(())
     }
 
@@ -198,8 +185,10 @@ impl IdentitySignerWasm {
     /// This helper reads the specified field from an options object and converts it
     /// to an IdentitySignerWasm.
     pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let signer_js = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-            .map_err(|_| WasmDppError::invalid_argument(format!("Missing '{}' field", field_name)))?;
+        let signer_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
 
         if signer_js.is_undefined() || signer_js.is_null() {
             return Err(WasmDppError::invalid_argument(format!(

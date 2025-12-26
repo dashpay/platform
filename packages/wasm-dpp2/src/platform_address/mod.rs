@@ -5,11 +5,11 @@ mod signer;
 
 pub use address::PlatformAddressWasm;
 pub use fee_strategy::{
-    default_fee_strategy, fee_strategy_from_steps, fee_strategy_from_steps_or_default,
-    FeeStrategyStepWasm,
+    FeeStrategyStepWasm, default_fee_strategy, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default,
 };
 pub use input_output::{
-    outputs_to_btree_map, outputs_to_optional_btree_map, PlatformAddressInputWasm,
-    PlatformAddressOutputWasm,
+    PlatformAddressInputWasm, PlatformAddressOutputWasm, outputs_to_btree_map,
+    outputs_to_optional_btree_map,
 };
 pub use signer::PlatformAddressSignerWasm;

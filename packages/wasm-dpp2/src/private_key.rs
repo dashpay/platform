@@ -26,6 +26,13 @@ impl From<PrivateKey> for PrivateKeyWasm {
     }
 }
 
+impl PrivateKeyWasm {
+    /// Returns a reference to the inner PrivateKey
+    pub fn inner(&self) -> &PrivateKey {
+        &self.0
+    }
+}
+
 #[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWasm {
     #[wasm_bindgen(getter = __type)]

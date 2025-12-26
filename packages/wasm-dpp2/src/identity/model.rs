@@ -98,7 +98,8 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "getPublicKeyById")]
     pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<IdentityPublicKeyWasm> {
-        self.0.get_public_key_by_id(key_id)
+        self.0
+            .get_public_key_by_id(key_id)
             .map(|key| IdentityPublicKeyWasm::from(key.clone()))
     }
 

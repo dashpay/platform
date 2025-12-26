@@ -1,5 +1,5 @@
-use crate::error::{WasmDppError, WasmDppResult};
 use super::PlatformAddressWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;

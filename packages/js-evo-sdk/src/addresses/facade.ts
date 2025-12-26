@@ -64,15 +64,14 @@ export class AddressesFacade {
    *
    * @example
    * ```typescript
-   * const senderAddr = PlatformAddress.fromBech32m("tdashevo1...");
    * const recipientAddr = PlatformAddress.fromBech32m("tdashevo1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    *
+   * const signer = new PlatformAddressSigner();
+   * const senderAddr = signer.addKey(privateKey); // Derives P2PKH address from key
+   *
    * const input = new PlatformAddressInput(senderAddr, 0n, 100000n);
    * const output = new PlatformAddressOutput(recipientAddr, 90000n);
-   *
-   * const signer = new PlatformAddressSigner();
-   * signer.addKey(senderAddr, privateKey);
    *
    * const result = await sdk.addresses.transfer({
    *   inputs: [input],
@@ -95,13 +94,12 @@ export class AddressesFacade {
    * @example
    * ```typescript
    * const identityId = Identifier.from("...");
-   * const sourceAddr = PlatformAddress.fromBech32m("tdashevo1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    *
-   * const input = new PlatformAddressInput(sourceAddr, 0n, 50000n);
-   *
    * const signer = new PlatformAddressSigner();
-   * signer.addKey(sourceAddr, privateKey);
+   * const sourceAddr = signer.addKey(privateKey); // Derives P2PKH address from key
+   *
+   * const input = new PlatformAddressInput(sourceAddr, 0n, 50000n);
    *
    * const result = await sdk.addresses.topUpIdentity({
    *   identityId,
@@ -125,16 +123,15 @@ export class AddressesFacade {
    *
    * @example
    * ```typescript
-   * const platformAddr = PlatformAddress.fromBech32m("tdashevo1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    *
    * // Create Core output script for L1 destination
    * const coreScript = CoreScript.newP2PKH(coreAddressHash);
    *
-   * const input = new PlatformAddressInput(platformAddr, 0n, 100000n);
-   *
    * const signer = new PlatformAddressSigner();
-   * signer.addKey(platformAddr, privateKey);
+   * const platformAddr = signer.addKey(privateKey); // Derives P2PKH address from key
+   *
+   * const input = new PlatformAddressInput(platformAddr, 0n, 100000n);
    *
    * const result = await sdk.addresses.withdraw({
    *   inputs: [input],
@@ -191,7 +188,6 @@ export class AddressesFacade {
    *
    * @example
    * ```typescript
-   * const platformAddr = PlatformAddress.fromBech32m("tdashevo1...");
    * const assetLockPrivateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    * const addressPrivateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    *
@@ -202,10 +198,10 @@ export class AddressesFacade {
    *   outputIndex
    * );
    *
-   * const output = new PlatformAddressOutput(platformAddr, 100000n);
-   *
    * const signer = new PlatformAddressSigner();
-   * signer.addKey(platformAddr, addressPrivateKey);
+   * const platformAddr = signer.addKey(addressPrivateKey); // Derives P2PKH address from key
+   *
+   * const output = new PlatformAddressOutput(platformAddr, 100000n);
    *
    * const result = await sdk.addresses.fundFromAssetLock({
    *   assetLockProof,
@@ -228,7 +224,6 @@ export class AddressesFacade {
    *
    * @example
    * ```typescript
-   * const sourceAddr = PlatformAddress.fromBech32m("tdashevo1...");
    * const addressPrivateKey = PrivateKey.fromWIF("cAddressPrivateKeyWif...");
    * const identityPrivateKey = PrivateKey.fromWIF("cIdentityKeyWif...");
    *
@@ -236,11 +231,11 @@ export class AddressesFacade {
    * const identity = new Identity(Identifier.random());
    * identity.addPublicKey(identityPublicKey);
    *
-   * const input = new PlatformAddressInput(sourceAddr, 0n, 100000n);
-   *
    * // Create signers
    * const addressSigner = new PlatformAddressSigner();
-   * addressSigner.addKey(sourceAddr, addressPrivateKey);
+   * const sourceAddr = addressSigner.addKey(addressPrivateKey); // Derives P2PKH address from key
+   *
+   * const input = new PlatformAddressInput(sourceAddr, 0n, 100000n);
    *
    * const identitySigner = new IdentitySigner();
    * identitySigner.addKey(identityPrivateKey);

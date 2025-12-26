@@ -47,10 +47,9 @@ pub use identity::{
     MasternodeVoteTransitionWasm, PartialIdentityWasm,
 };
 pub use platform_address::{
-    default_fee_strategy, fee_strategy_from_steps, fee_strategy_from_steps_or_default,
-    outputs_to_btree_map, outputs_to_optional_btree_map, FeeStrategyStepWasm,
-    PlatformAddressInputWasm, PlatformAddressOutputWasm, PlatformAddressSignerWasm,
-    PlatformAddressWasm,
+    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressOutputWasm,
+    PlatformAddressSignerWasm, PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;

@@ -247,8 +247,7 @@ pub fn parse_put_settings(
         return Ok(None);
     }
 
-    let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value).map_err(|e| {
-        WasmSdkError::serialization(format!("Failed to parse put settings: {}", e))
-    })?;
+    let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value)
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to parse put settings: {}", e)))?;
     Ok(Some(input.into()))
 }
