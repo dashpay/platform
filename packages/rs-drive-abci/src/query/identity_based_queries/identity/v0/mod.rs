@@ -2,6 +2,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::get_identity_response::{
@@ -12,6 +13,7 @@ use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_identity_v0(
@@ -36,9 +38,10 @@ impl<C> Platform<C> {
 
             GetIdentityResponseV0 {
                 result: Some(get_identity_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                        .map(|(_, proof)| proof)?,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let maybe_identity = self.drive.fetch_full_identity(
@@ -59,7 +62,7 @@ impl<C> Platform<C> {
                 result: Some(get_identity_response_v0::Result::Identity(
                     serialized_identity,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

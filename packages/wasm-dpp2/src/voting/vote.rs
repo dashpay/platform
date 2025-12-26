@@ -1,3 +1,4 @@
+use crate::impl_wasm_conversions;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
 use dpp::voting::votes::Vote;
@@ -76,3 +77,5 @@ impl VoteWasm {
         }
     }
 }
+
+impl_wasm_conversions!(VoteWasm, Vote);

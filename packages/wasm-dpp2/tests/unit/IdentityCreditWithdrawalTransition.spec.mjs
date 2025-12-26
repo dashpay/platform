@@ -18,6 +18,22 @@ describe('IdentityCreditWithdrawalTransition', () => {
       expect(script.__wbg_ptr).to.not.equal(0);
       expect(transition.__wbg_ptr).to.not.equal(0);
     });
+
+    it('Should convert IdentityCreditWithdrawalTransition to base64 and back', () => {
+      const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+
+      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+
+      const base64 = transition.toBase64();
+      const bytes = transition.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+
+      const restored = wasm.IdentityCreditWithdrawalTransition.fromBase64(base64);
+
+      expect(Buffer.from(restored.toBytes())).to.deep.equal(Buffer.from(bytes));
+    });
   });
 
   describe('getters', () => {
@@ -45,7 +61,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
       const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
 
-      expect(transition.identityId.base58()).to.deep.equal(identifier.base58());
+      expect(transition.identityId.toBase58()).to.deep.equal(identifier.toBase58());
     });
 
     it('Should allow to get userFeeIncrease', () => {
@@ -129,7 +145,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
       transition.identityId = identifier2;
 
-      expect(transition.identityId.base58()).to.deep.equal(identifier2.base58());
+      expect(transition.identityId.toBase58()).to.deep.equal(identifier2.toBase58());
     });
 
     it('Should allow to set userFeeIncrease', () => {

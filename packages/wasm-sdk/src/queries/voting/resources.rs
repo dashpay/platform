@@ -10,7 +10,7 @@ use dash_sdk::platform::FetchMany;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive_proof_verifier::types::{ContestedResource, ContestedResources};
 use js_sys::{Array, Reflect};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_dpp2::identifier::IdentifierWasm;
@@ -152,7 +152,9 @@ fn contested_resources_into_wasm(
     let array = Array::new();
 
     for resource in contested_resources.0 {
-        let js_value = serde_wasm_bindgen::to_value(&resource.0).map_err(|e| {
+        // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_value = resource.0.serialize(&serializer).map_err(|e| {
             WasmSdkError::serialization(format!(
                 "Failed to serialize contested resource value: {}",
                 e

@@ -5,9 +5,9 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::enums::lock_types::AssetLockProofTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{IntoWasm, get_class_type};
+use crate::utils::{IntoWasm, JsValueExt, get_class_type};
 use dpp::prelude::AssetLockProof;
-use serde::Serialize;
+use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -141,34 +141,131 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let json_value = self.0.to_raw_object()?;
+        let inner_object = match &self.0 {
+            AssetLockProof::Chain(chain) => {
+                ChainAssetLockProofWasm::from(chain.clone()).to_object()?
+            }
+            AssetLockProof::Instant(instant) => {
+                InstantAssetLockProofWasm::from(instant.clone()).to_object()?
+            }
+        };
 
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        // Add type field: 0 = Instant, 1 = Chain
+        let object = Object::from(inner_object);
+        let proof_type: u8 = match &self.0 {
+            AssetLockProof::Instant(_) => 0,
+            AssetLockProof::Chain(_) => 1,
+        };
+        Reflect::set(
+            &object,
+            &JsValue::from_str("type"),
+            &JsValue::from(proof_type),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        Ok(object.into())
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
+        let object = Object::from(js_value.clone());
+        let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
+            .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
+
+        let type_num = proof_type.as_f64().ok_or_else(|| {
+            WasmDppError::invalid_argument(
+                "AssetLockProof object must have a 'type' field (0 = Instant, 1 = Chain)"
+                    .to_string(),
+            )
+        })?;
+
+        match type_num as u8 {
+            0 => InstantAssetLockProofWasm::from_object(js_value).map(AssetLockProofWasm::from),
+            1 => ChainAssetLockProofWasm::from_object(js_value).map(AssetLockProofWasm::from),
+            _ => Err(WasmDppError::invalid_argument(format!(
+                "Unknown AssetLockProof type: {}",
+                type_num
+            ))),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let inner_json = match &self.0 {
+            AssetLockProof::Chain(chain) => {
+                ChainAssetLockProofWasm::from(chain.clone()).to_json()?
+            }
+            AssetLockProof::Instant(instant) => {
+                InstantAssetLockProofWasm::from(instant.clone()).to_json()?
+            }
+        };
+
+        // Add type field: 0 = Instant, 1 = Chain
+        let object = Object::from(inner_json);
+        let proof_type: u8 = match &self.0 {
+            AssetLockProof::Instant(_) => 0,
+            AssetLockProof::Chain(_) => 1,
+        };
+        Reflect::set(
+            &object,
+            &JsValue::from_str("type"),
+            &JsValue::from(proof_type),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        Ok(object.into())
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
+        let object = Object::from(js_value.clone());
+        let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
+            .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
+
+        let type_num = proof_type.as_f64().ok_or_else(|| {
+            WasmDppError::invalid_argument(
+                "AssetLockProof JSON must have a 'type' field (0 = Instant, 1 = Chain)".to_string(),
+            )
+        })?;
+
+        match type_num as u8 {
+            0 => InstantAssetLockProofWasm::from_json(js_value).map(AssetLockProofWasm::from),
+            1 => ChainAssetLockProofWasm::from_json(js_value).map(AssetLockProofWasm::from),
+            _ => Err(WasmDppError::invalid_argument(format!(
+                "Unknown AssetLockProof type: {}",
+                type_num
+            ))),
+        }
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_string(&self) -> WasmDppResult<String> {
-        let json = serde_json::to_string(&self.0)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        Ok(hex::encode(json))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = bincode::encode_to_vec(&self.0, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(hex::encode(bytes))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(asset_lock_proof: String) -> WasmDppResult<AssetLockProofWasm> {
-        let asset_lock_proof_bytes = hex::decode(&asset_lock_proof).map_err(|e| {
-            WasmDppError::serialization(format!("Invalid asset lock proof hex: {}", e))
-        })?;
+        let bytes = hex::decode(asset_lock_proof)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
+            .0;
+        Ok(AssetLockProofWasm(proof))
+    }
 
-        let json_str = String::from_utf8(asset_lock_proof_bytes).map_err(|e| {
-            WasmDppError::serialization(format!("Invalid UTF-8 in asset lock proof: {}", e))
-        })?;
+    #[wasm_bindgen(js_name = "toBytes")]
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        bincode::encode_to_vec(&self.0, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
 
-        let asset_lock_proof: AssetLockProof = serde_json::from_str(&json_str).map_err(|e| {
-            WasmDppError::serialization(format!("Failed to parse asset lock proof JSON: {}", e))
-        })?;
-
-        Ok(AssetLockProofWasm(asset_lock_proof))
+    #[wasm_bindgen(js_name = "fromBytes")]
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AssetLockProofWasm> {
+        let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
+            .0;
+        Ok(AssetLockProofWasm(proof))
     }
 }

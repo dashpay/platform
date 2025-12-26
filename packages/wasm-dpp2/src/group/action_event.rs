@@ -1,6 +1,14 @@
 use crate::group::token_event::TokenEventWasm;
+use crate::impl_wasm_conversions;
 use dpp::group::action_event::GroupActionEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+/// TypeScript enum for GroupActionEvent variants
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GroupActionEventVariant {
+    TokenEvent = 0,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "GroupActionEvent")]
@@ -31,9 +39,9 @@ impl GroupActionEventWasm {
     }
 
     #[wasm_bindgen(getter = "variant")]
-    pub fn variant(&self) -> String {
+    pub fn variant(&self) -> GroupActionEventVariant {
         match &self.0 {
-            GroupActionEvent::TokenEvent(_) => "TokenEvent".to_string(),
+            GroupActionEvent::TokenEvent(_) => GroupActionEventVariant::TokenEvent,
         }
     }
 
@@ -54,3 +62,5 @@ impl GroupActionEventWasm {
         self.0.public_note().map(|note| note.to_string())
     }
 }
+
+impl_wasm_conversions!(GroupActionEventWasm, GroupActionEvent);

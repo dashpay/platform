@@ -7,9 +7,15 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
+#[cfg(feature = "state-transition-serde-conversion")]
+use serde::{Deserialize, Serialize};
 
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum GroupAction {

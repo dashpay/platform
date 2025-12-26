@@ -116,9 +116,30 @@ impl Drop for Checkpoint {
     }
 }
 
+/// Information about a checkpoint including the database
+#[cfg(feature = "server")]
+#[derive(Clone)]
+pub struct CheckpointInfo {
+    /// The timestamp when this checkpoint was created
+    pub timestamp_ms: TimestampMillis,
+    /// The checkpoint database
+    pub checkpoint: Arc<Checkpoint>,
+}
+
+#[cfg(feature = "server")]
+impl CheckpointInfo {
+    /// Creates a new CheckpointInfo with the given timestamp and checkpoint
+    pub fn new(timestamp_ms: TimestampMillis, checkpoint: Arc<Checkpoint>) -> Self {
+        Self {
+            timestamp_ms,
+            checkpoint,
+        }
+    }
+}
+
 /// Type alias for the checkpoints map wrapped in ArcSwap for atomic updates
 #[cfg(feature = "server")]
-pub type CheckpointsMap = ArcSwap<BTreeMap<BlockHeight, (TimestampMillis, Arc<Checkpoint>)>>;
+pub type CheckpointsMap = ArcSwap<BTreeMap<BlockHeight, CheckpointInfo>>;
 
 /// Drive struct
 #[cfg(any(feature = "server", feature = "verify"))]

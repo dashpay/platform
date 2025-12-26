@@ -3,6 +3,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -229,7 +230,7 @@ impl IdentityUpdateTransitionWasm {
         Ok(encode(bytes.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
         Ok(encode(bytes.as_slice(), Base64))
@@ -261,3 +262,5 @@ impl IdentityUpdateTransitionWasm {
         }
     }
 }
+
+impl_wasm_conversions!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);

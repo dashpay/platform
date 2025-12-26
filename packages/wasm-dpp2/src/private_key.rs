@@ -34,22 +34,28 @@ impl PrivateKeyWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>, js_network: JsValue) -> WasmDppResult<Self> {
-        let network = NetworkWasm::try_from(js_network)?;
+    pub fn from_bytes(
+        bytes: Vec<u8>,
+        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: JsValue,
+    ) -> WasmDppResult<Self> {
+        let network_wasm = NetworkWasm::try_from(network)?;
 
         let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
             WasmDppError::invalid_argument("Private key bytes must be exactly 32 bytes".to_string())
         })?;
 
-        let pk = PrivateKey::from_byte_array(&key_bytes, network.into())
+        let pk = PrivateKey::from_byte_array(&key_bytes, network_wasm.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PrivateKeyWasm(pk))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex_key: &str, js_network: JsValue) -> WasmDppResult<Self> {
-        let network = NetworkWasm::try_from(js_network)?;
+    pub fn from_hex(
+        hex_key: &str,
+        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: JsValue,
+    ) -> WasmDppResult<Self> {
+        let network_wasm = NetworkWasm::try_from(network)?;
 
         let bytes = Vec::from_hex(hex_key)
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -58,7 +64,7 @@ impl PrivateKeyWasm {
             WasmDppError::invalid_argument("Private key hex must decode to 32 bytes".to_string())
         })?;
 
-        let pk = PrivateKey::from_byte_array(&key_bytes, network.into())
+        let pk = PrivateKey::from_byte_array(&key_bytes, network_wasm.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PrivateKeyWasm(pk))
