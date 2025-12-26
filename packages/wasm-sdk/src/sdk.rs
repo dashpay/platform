@@ -1,4 +1,4 @@
-use crate::context_provider::WasmContext;
+use crate::context_provider::{WasmContext, WasmTrustedContext};
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::sdk::Uri;
@@ -9,15 +9,12 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
-pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
-    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
-> = Lazy::new(|| Mutex::new(None));
-pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
-    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
-> = Lazy::new(|| Mutex::new(None));
-pub(crate) static LOCAL_TRUSTED_CONTEXT: Lazy<
-    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
-> = Lazy::new(|| Mutex::new(None));
+pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
+    Lazy::new(|| Mutex::new(None));
+pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
+    Lazy::new(|| Mutex::new(None));
+pub(crate) static LOCAL_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
+    Lazy::new(|| Mutex::new(None));
 const DEFAULT_LOCAL_QUORUM_URL: &str = "http://127.0.0.1:2444";
 static MAINNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
@@ -56,7 +53,7 @@ fn default_testnet_addresses() -> Vec<Address> {
     ])
 }
 async fn fetch_and_cache_addresses(
-    trusted_context: &crate::context_provider::WasmTrustedContext,
+    trusted_context: &WasmTrustedContext,
     cache: &Lazy<Mutex<Option<Vec<Address>>>>,
 ) -> Result<(), WasmSdkError> {
     let address_list = trusted_context
@@ -121,8 +118,6 @@ impl WasmSdk {
 impl WasmSdk {
     #[wasm_bindgen(js_name = "prefetchTrustedQuorumsMainnet")]
     pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
         let trusted_context = WasmTrustedContext::new_mainnet()
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
 
@@ -141,8 +136,6 @@ impl WasmSdk {
 
     #[wasm_bindgen(js_name = "prefetchTrustedQuorumsTestnet")]
     pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
         let trusted_context = WasmTrustedContext::new_testnet()
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
 
@@ -160,9 +153,9 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "prefetchTrustedQuorumsLocal")]
-    pub async fn prefetch_trusted_quorums_local(quorum_url: Option<String>) -> Result<(), WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
+    pub async fn prefetch_trusted_quorums_local(
+        quorum_url: Option<String>,
+    ) -> Result<(), WasmSdkError> {
         let quorum_url = quorum_url.unwrap_or_else(|| DEFAULT_LOCAL_QUORUM_URL.to_string());
 
         let trusted_context = WasmTrustedContext::new_local_with_url(&quorum_url)
@@ -219,7 +212,6 @@ impl WasmSdkBuilder {
         addresses: Vec<String>,
         network: String,
     ) -> Result<Self, WasmSdkError> {
-        use crate::context_provider::{WasmContext, WasmTrustedContext};
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::Uri;
 
@@ -341,25 +333,13 @@ impl WasmSdkBuilder {
         let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
-            .with_context_provider(
-                LOCAL_TRUSTED_CONTEXT
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or_else(|| {
-                        // Fallback to non-trusted context if prefetch was not called
-                        tracing::warn!("Local trusted context not prefetched; running without trusted quorums");
-                        WasmContext {}
-                    }),
-            );
+            .with_context_provider(WasmContext {});
 
         Self(sdk_builder)
     }
 
     #[wasm_bindgen(js_name = "localTrusted")]
     pub fn new_local_trusted() -> Result<Self, WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
         let trusted_context = {
             let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
@@ -381,8 +361,6 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "mainnetTrusted")]
     pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
         // Use the cached context if available, otherwise create a new one
         let trusted_context = {
             let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
@@ -426,8 +404,6 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "testnetTrusted")]
     pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
         // Use the cached context if available, otherwise create a new one
         let trusted_context = {
             let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
