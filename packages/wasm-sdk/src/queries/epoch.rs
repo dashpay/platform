@@ -542,13 +542,12 @@ impl WasmSdk {
             .collect::<Result<Vec<_>, WasmSdkError>>()?;
 
         // Use FetchMany with proof to get block counts for specific IDs
-        let (counts, metadata, proof) =
-            ProposerBlockCountById::fetch_many_with_metadata_and_proof(
-                self.as_ref(),
-                (epoch, parsed_hashes),
-                None,
-            )
-            .await?;
+        let (counts, metadata, proof) = ProposerBlockCountById::fetch_many_with_metadata_and_proof(
+            self.as_ref(),
+            (epoch, parsed_hashes),
+            None,
+        )
+        .await?;
 
         let map = Map::new();
         for (identifier, count) in counts.0 {

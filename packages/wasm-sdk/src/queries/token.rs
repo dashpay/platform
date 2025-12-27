@@ -920,8 +920,8 @@ impl WasmSdk {
         token_id: Identifier,
     ) -> Result<(), WasmSdkError> {
         use crate::sdk::{MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
-        use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::dashcore::Network;
+        use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::DataContract;
