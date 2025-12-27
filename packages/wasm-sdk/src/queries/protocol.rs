@@ -317,10 +317,10 @@ impl WasmSdk {
             }
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(votes_map),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            votes_map,
+            metadata,
+            proof,
         ))
     }
 }

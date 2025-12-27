@@ -555,10 +555,10 @@ impl WasmSdk {
             map.set(&key, &JsValue::from(BigInt::from(count)));
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(map),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map,
+            metadata,
+            proof,
         ))
     }
 
@@ -600,10 +600,10 @@ impl WasmSdk {
             map.set(&key, &JsValue::from(BigInt::from(count)));
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(map),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map,
+            metadata,
+            proof,
         ))
     }
 }
