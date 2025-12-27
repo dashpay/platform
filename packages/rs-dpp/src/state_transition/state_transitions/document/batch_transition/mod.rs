@@ -43,6 +43,7 @@ mod identity_signed;
 mod json_conversion;
 pub mod methods;
 pub mod resolvers;
+mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 mod v1;

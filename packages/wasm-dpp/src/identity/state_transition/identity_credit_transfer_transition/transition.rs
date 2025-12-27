@@ -19,8 +19,8 @@ use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::{StateTransitionLike, StateTransitionSingleSigned};
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]
 pub struct IdentityCreditTransferTransitionWasm(IdentityCreditTransferTransition);
@@ -322,7 +322,8 @@ impl IdentityCreditTransferTransitionWasm {
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
             .with_js_error()?;
 
-        self.0.set_signature(wrapper.signature().to_owned());
+        self.0
+            .set_signature(wrapper.signature().unwrap().to_owned());
 
         Ok(())
     }
@@ -362,7 +363,7 @@ impl IdentityCreditTransferTransitionWasm {
             )
             .with_js_error()?;
 
-        let signature = state_transition.signature().to_owned();
+        let signature = state_transition.signature().unwrap().to_owned();
         let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
 
         self.0.set_signature(signature);

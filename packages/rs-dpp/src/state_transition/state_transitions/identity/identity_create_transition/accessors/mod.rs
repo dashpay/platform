@@ -36,10 +36,4 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransition {
             IdentityCreateTransition::V0(transition) => transition.identity_id(),
         }
     }
-
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.owner_id(),
-        }
-    }
 }

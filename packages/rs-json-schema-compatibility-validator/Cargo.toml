@@ -18,3 +18,9 @@ assert_matches = "1.5.0"
 
 [features]
 examples = []
+
+[package.metadata.cargo-machete]
+ignored=[
+    "assert_matches", # used in doctests
+]
+

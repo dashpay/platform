@@ -99,17 +99,17 @@ Tenderdash is the consensus engine that provides Byzantine Fault Tolerant (BFT) 
 * Communicates with other Tenderdash nodes via P2P
 * Provides RPC for DAPI API
 
-| Service                   | Port Purpose         | Default Value | Config Path                                      | Default Host Binding | Host Config Path |
-|---------------------------|----------------------|---------------|--------------------------------------------------|---------------------|-----------------|
-| **Drive ABCI**            | ABCI                 | 26658         | (fixed internal)                                 | (internal)          | -               |
-|                           | gRPC                 | 26670         | (fixed internal)                                 | (internal)          | -               |
-|                           | Metrics              | 29090         | (exposed via PLATFORM_DRIVE_ABCI_METRICS_PORT)   | 127.0.0.1 (local)   | PLATFORM_DRIVE_ABCI_METRICS_HOST |
-|                           | Tokio Console        | 6669          | `platform.drive.abci.tokioConsole.port`          | 127.0.0.1 (local)   | `platform.drive.abci.tokioConsole.host` |
-|                           | GroveDB Visualizer   | 8083          | `platform.drive.abci.grovedbVisualizer.port`     | 127.0.0.1 (local)   | `platform.drive.abci.grovedbVisualizer.host` |
-| **Drive Tenderdash**      | P2P                  | 26656         | `platform.drive.tenderdash.p2p.port`             | 0.0.0.0 (all)       | `platform.drive.tenderdash.p2p.host` |
-|                           | RPC                  | 26657         | `platform.drive.tenderdash.rpc.port`             | 127.0.0.1 (local)   | `platform.drive.tenderdash.rpc.host` |
-|                           | Metrics              | 26660         | `platform.drive.tenderdash.metrics.port`         | 127.0.0.1 (local)   | `platform.drive.tenderdash.metrics.host` |
-|                           | pprof Debug          | 6060          | `platform.drive.tenderdash.pprof.port`           | 127.0.0.1 (local)   | (fixed)         |
+| Service              | Port Purpose       | Default Value | Config Path                                    | Default Host Binding | Host Config Path                             |
+| -------------------- | ------------------ | ------------- | ---------------------------------------------- | -------------------- | -------------------------------------------- |
+| **Drive ABCI**       | ABCI               | 26658         | (fixed internal)                               | (internal)           | -                                            |
+|                      | gRPC               | 26670         | (fixed internal)                               | (internal)           | -                                            |
+|                      | Metrics            | 29090         | (exposed via PLATFORM_DRIVE_ABCI_METRICS_PORT) | 127.0.0.1 (local)    | PLATFORM_DRIVE_ABCI_METRICS_HOST             |
+|                      | Tokio Console      | 6669          | `platform.drive.abci.tokioConsole.port`        | 127.0.0.1 (local)    | `platform.drive.abci.tokioConsole.host`      |
+|                      | GroveDB Visualizer | 8083          | `platform.drive.abci.grovedbVisualizer.port`   | 127.0.0.1 (local)    | `platform.drive.abci.grovedbVisualizer.host` |
+| **Drive Tenderdash** | P2P                | 26656         | `platform.drive.tenderdash.p2p.port`           | 0.0.0.0 (all)        | `platform.drive.tenderdash.p2p.host`         |
+|                      | RPC                | 26657         | `platform.drive.tenderdash.rpc.port`           | 127.0.0.1 (local)    | `platform.drive.tenderdash.rpc.host`         |
+|                      | Metrics            | 26660         | `platform.drive.tenderdash.metrics.port`       | 127.0.0.1 (local)    | `platform.drive.tenderdash.metrics.host`     |
+|                      | pprof Debug        | 6060          | `platform.drive.tenderdash.pprof.port`         | 127.0.0.1 (local)    | (fixed)                                      |
 
 ## DAPI Services
 
@@ -133,10 +133,10 @@ Tenderdash is the consensus engine that provides Byzantine Fault Tolerant (BFT) 
 
 **rs-dapi Ports and Configuration**:
 
-| Service              | Port Purpose     | Default Value | Config Path                                     | Default Host Binding | Host Config Path |
-|----------------------|------------------|---------------|-------------------------------------------------|----------------------|------------------|
-| **rs-dapi (Rust)**   | JSON-RPC         | 3009          | (fixed internal)                                | (internal)           | -                |
-|                      | gRPC / gRPC-Web  | 3010          | (fixed internal)                                | (internal)           | -                |
-|                      | Metrics & Health | 9091 (mainnet), 19091 (testnet), 29091 (local)| `platform.dapi.rsDapi.metrics.port`             | 127.0.0.1            | `platform.dapi.rsDapi.metrics.host` |
+| Service            | Port Purpose     | Default Value                                  | Config Path                         | Default Host Binding | Host Config Path                    |
+| ------------------ | ---------------- | ---------------------------------------------- | ----------------------------------- | -------------------- | ----------------------------------- |
+| **rs-dapi (Rust)** | JSON-RPC         | 3009                                           | (fixed internal)                    | (internal)           | -                                   |
+|                    | gRPC / gRPC-Web  | 3010                                           | (fixed internal)                    | (internal)           | -                                   |
+|                    | Metrics & Health | 9091 (mainnet), 19091 (testnet), 29091 (local) | `platform.dapi.rsDapi.metrics.port` | 127.0.0.1            | `platform.dapi.rsDapi.metrics.host` |
 
 The rs-dapi metrics server exposes health endpoints alongside Prometheus data on `/metrics` from the same port. Dashmate applies network-specific defaults (mainnet 9091, testnet 19091, local 29091) so multiple presets can coexist on a host without conflicts.

@@ -1,5 +1,6 @@
 import * as wasm from './wasm.js';
 import { ensureInitialized as initWasm } from './wasm.js';
+import { AddressesFacade } from './addresses/facade.js';
 import { DocumentsFacade } from './documents/facade.js';
 import { IdentitiesFacade } from './identities/facade.js';
 import { ContractsFacade } from './contracts/facade.js';
@@ -38,6 +39,7 @@ export class EvoSDK {
   private wasmSdk?: wasm.WasmSdk;
   private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted'>> & ConnectionOptions & { addresses?: string[] };
 
+  public addresses!: AddressesFacade;
   public documents!: DocumentsFacade;
   public identities!: IdentitiesFacade;
   public contracts!: ContractsFacade;
@@ -53,6 +55,7 @@ export class EvoSDK {
     const { network = 'testnet', trusted = false, addresses, ...connection } = options;
     this.options = { network, trusted, addresses, ...connection };
 
+    this.addresses = new AddressesFacade(this);
     this.documents = new DocumentsFacade(this);
     this.identities = new IdentitiesFacade(this);
     this.contracts = new ContractsFacade(this);
@@ -164,6 +167,7 @@ export class EvoSDK {
   }
 }
 
+export { AddressesFacade } from './addresses/facade.js';
 export { DocumentsFacade } from './documents/facade.js';
 export { IdentitiesFacade } from './identities/facade.js';
 export { ContractsFacade } from './contracts/facade.js';

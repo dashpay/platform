@@ -177,7 +177,7 @@ impl DocumentTransferTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -243,7 +243,7 @@ impl Sdk {
     /// - Document not found
     /// - Insufficient permissions to transfer the document
     /// - Invalid recipient identity
-    pub async fn document_transfer<S: Signer>(
+    pub async fn document_transfer<S: Signer<IdentityPublicKey>>(
         &self,
         transfer_document_transition_builder: DocumentTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,

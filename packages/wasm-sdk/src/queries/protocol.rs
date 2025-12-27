@@ -1,13 +1,16 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256d, Hash as _};
 use js_sys::Map;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeState")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProtocolVersionUpgradeStateWasm {
     current_protocol_version: u32,
     next_protocol_version: Option<u32>,
@@ -63,7 +66,8 @@ impl ProtocolVersionUpgradeStateWasm {
 }
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProtocolVersionUpgradeVoteStatusWasm {
     pro_tx_hash: String,
     version: u32,
@@ -90,6 +94,9 @@ impl ProtocolVersionUpgradeVoteStatusWasm {
         self.version
     }
 }
+
+impl_wasm_serde_conversions!(ProtocolVersionUpgradeStateWasm);
+impl_wasm_serde_conversions!(ProtocolVersionUpgradeVoteStatusWasm);
 
 #[wasm_bindgen]
 impl WasmSdk {

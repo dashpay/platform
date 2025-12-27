@@ -1,5 +1,6 @@
 use dash_sdk::dpp::platform_value::{Identifier, Value as PlatformValue};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
@@ -74,7 +75,9 @@ pub(crate) fn convert_json_values_to_platform_values(
         .unwrap_or_default()
         .into_iter()
         .map(|value| {
-            serde_wasm_bindgen::to_value(&value).map_err(|err| {
+            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            value.serialize(&serializer).map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
             })
         })

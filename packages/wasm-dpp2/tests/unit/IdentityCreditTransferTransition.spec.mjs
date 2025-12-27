@@ -24,19 +24,32 @@ describe('IdentityCreditTransferTransition', () => {
       expect(sender.__wbg_ptr).to.not.equal(0);
       expect(recipient.__wbg_ptr).to.not.equal(0);
     });
+
+    it('Should convert IdentityCreditTransferTransition to base64 and back', () => {
+      const transition = new wasm.IdentityCreditTransfer(BigInt(100), '11111111111111111111111111111111', 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', BigInt(199));
+
+      const base64 = transition.toBase64();
+      const bytes = transition.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+
+      const restored = wasm.IdentityCreditTransfer.fromBase64(base64);
+
+      expect(Buffer.from(restored.toBytes())).to.deep.equal(Buffer.from(bytes));
+    });
   });
 
   describe('getters', () => {
     it('Should return recipientId', async () => {
       const transition = new wasm.IdentityCreditTransfer(BigInt(100), '11111111111111111111111111111111', 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', BigInt(199));
 
-      expect(transition.recipientId.base58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+      expect(transition.recipientId.toBase58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
     });
 
     it('Should return senderId', async () => {
       const transition = new wasm.IdentityCreditTransfer(BigInt(100), '11111111111111111111111111111111', 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec', BigInt(199));
 
-      expect(transition.senderId.base58()).to.deep.equal('11111111111111111111111111111111');
+      expect(transition.senderId.toBase58()).to.deep.equal('11111111111111111111111111111111');
     });
 
     it('Should return amount', async () => {
@@ -78,11 +91,11 @@ describe('IdentityCreditTransferTransition', () => {
 
       transition.recipientId = recipient;
 
-      expect(transition.recipientId.base58()).to.deep.equal('11111111111111111111111111111111');
+      expect(transition.recipientId.toBase58()).to.deep.equal('11111111111111111111111111111111');
 
       transition.recipientId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 
-      expect(transition.recipientId.base58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+      expect(transition.recipientId.toBase58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
       expect(recipient.__wbg_ptr).to.not.equal(0);
     });
 
@@ -93,12 +106,12 @@ describe('IdentityCreditTransferTransition', () => {
 
       transition.senderId = sender;
 
-      expect(transition.senderId.base58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+      expect(transition.senderId.toBase58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
 
       transition.senderId = '11111111111111111111111111111111';
 
       expect(sender.__wbg_ptr).to.not.equal(0);
-      expect(transition.senderId.base58()).to.deep.equal('11111111111111111111111111111111');
+      expect(transition.senderId.toBase58()).to.deep.equal('11111111111111111111111111111111');
     });
 
     it('Should return amount', async () => {

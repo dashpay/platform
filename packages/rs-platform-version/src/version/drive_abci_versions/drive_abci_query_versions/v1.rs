@@ -1,8 +1,9 @@
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
-    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
-    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
+    DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions, DriveAbciQueryVersions,
+    DriveAbciQueryVotingVersions,
 };
 use versioned_feature_core::FeatureVersionBounds;
 
@@ -241,6 +242,28 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             default_current_version: 0,
         },
         group_action_signers: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+    },
+    address_funds_queries: DriveAbciQueryAddressFundsVersions {
+        addresses_infos: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        address_info: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        addresses_trunk_state: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        addresses_branch_state: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

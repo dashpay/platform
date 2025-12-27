@@ -128,6 +128,89 @@ impl PartialIdentityWasm {
 
         Ok(())
     }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let obj = Object::new();
+
+        Reflect::set(&obj, &"id".into(), &self.id().to_base58().into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        // Serialize loaded public keys as object with string keys and JSON values
+        let loaded_keys_obj = Object::new();
+        for (k, v) in self.0.loaded_public_keys.clone() {
+            let key_wasm = IdentityPublicKeyWasm::from(v);
+            Reflect::set(
+                &loaded_keys_obj,
+                &k.to_string().into(),
+                &key_wasm.to_json()?,
+            )
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        }
+        Reflect::set(&obj, &"loadedPublicKeys".into(), &loaded_keys_obj.into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        match self.0.balance {
+            Some(b) => Reflect::set(&obj, &"balance".into(), &JsValue::from(b as f64))
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+            None => Reflect::set(&obj, &"balance".into(), &JsValue::NULL)
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+        };
+
+        match self.0.revision {
+            Some(r) => Reflect::set(&obj, &"revision".into(), &JsValue::from(r as f64))
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+            None => Reflect::set(&obj, &"revision".into(), &JsValue::NULL)
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+        };
+
+        let not_found_arr = Array::new();
+        for k in self.0.not_found_public_keys.iter() {
+            not_found_arr.push(&JsValue::from(*k));
+        }
+        Reflect::set(&obj, &"notFoundPublicKeys".into(), &not_found_arr.into())
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let obj = Object::new();
+
+        Reflect::set(&obj, &"id".into(), &JsValue::from(self.id()))
+            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        Reflect::set(
+            &obj,
+            &"loadedPublicKeys".into(),
+            &self.loaded_public_keys()?.into(),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        match self.0.balance {
+            Some(b) => Reflect::set(&obj, &"balance".into(), &js_sys::BigInt::from(b).into())
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+            None => Reflect::set(&obj, &"balance".into(), &JsValue::NULL)
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+        };
+
+        match self.0.revision {
+            Some(r) => Reflect::set(&obj, &"revision".into(), &js_sys::BigInt::from(r).into())
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+            None => Reflect::set(&obj, &"revision".into(), &JsValue::NULL)
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
+        };
+
+        Reflect::set(
+            &obj,
+            &"notFoundPublicKeys".into(),
+            &self.not_found_public_keys().into(),
+        )
+        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+
+        Ok(obj.into())
+    }
 }
 
 pub fn js_value_to_loaded_public_keys(

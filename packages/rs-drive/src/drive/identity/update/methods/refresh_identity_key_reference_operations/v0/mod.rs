@@ -9,7 +9,7 @@ use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
 use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType;
+use grovedb::element::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use platform_version::version::PlatformVersion;
