@@ -556,9 +556,7 @@ impl WasmSdk {
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            map,
-            metadata,
-            proof,
+            map, metadata, proof,
         ))
     }
 
@@ -601,9 +599,7 @@ impl WasmSdk {
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            map,
-            metadata,
-            proof,
+            map, metadata, proof,
         ))
     }
 }

@@ -318,9 +318,7 @@ impl WasmSdk {
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            votes_map,
-            metadata,
-            proof,
+            votes_map, metadata, proof,
         ))
     }
 }
