@@ -8,8 +8,9 @@ export function wasmFunctionalTestRequirements() {
     identityId: '4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi',
     dpnsContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
     dpnsDomain: {
-      parent: 'dash',
-      label: 'therealslimshaddy5',
+      // The 'dash' TLD exists by default on any network
+      parent: '',
+      label: 'dash',
     },
     tokenContracts: [
       // Seeded token contract (contract id = 32 bytes of 0x03)

@@ -232,7 +232,8 @@ services:
       - DASH_RPC_PASSWORD=${CORE_RPC_USERS_QUORUM_LIST_PASSWORD:?err}
       - QUORUM_PREVIOUS_BLOCKS_OFFSET=${PLATFORM_QUORUM_LIST_PREVIOUS_BLOCKS_OFFSET:?err}
       - DASH_NETWORK=${DASH_CORE_NETWORK:?err}
-      - LOCALHOST_REPLACEMENT=host.docker.internal
+      - VERSION_CHECK_HOST=host.docker.internal
+      - ADDRESS_HOST_OVERRIDE=127.0.0.1
     profiles:
       - platform-quorum
 
