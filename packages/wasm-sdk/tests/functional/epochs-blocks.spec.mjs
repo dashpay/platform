@@ -19,7 +19,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     if (client) { client.free(); }
   });
 
-  it('gets epochs info and finalized epochs', async () => {
+  it('gets epochs info and finalized epochs', async function getsEpochsInfo() {
     if (!sampleEpoch) {
       this.skip();
     }
@@ -41,7 +41,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     expect(finalized).to.be.instanceOf(Map);
   });
 
-  it('queries evonode proposed blocks by id/range', async () => {
+  it('queries evonode proposed blocks by id/range', async function queriesEvonodeBlocks() {
     if (!evonodeProTxHash) {
       this.skip();
     }

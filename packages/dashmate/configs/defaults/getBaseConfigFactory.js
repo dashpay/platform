@@ -73,7 +73,7 @@ export default function getBaseConfigFactory() {
             quorum_list: {
               password: 'rpcpassword',
               whitelist: [
-                'quorum', 'getbestblockhash', 'getblockhash', 'getblockcount', 'getblockchaininfo',
+                'quorum', 'masternode', 'getbestblockhash', 'getblockhash', 'getblockcount', 'getblockchaininfo',
               ],
               lowPriority: true,
             },

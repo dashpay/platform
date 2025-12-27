@@ -24,7 +24,7 @@ describe('Protocol versions', function describeProtocolVersions() {
     expect(state).to.be.ok();
   });
 
-  it('lists protocol upgrade vote statuses', async () => {
+  it('lists protocol upgrade vote statuses', async function listsVoteStatuses() {
     if (!evonodeProTxHash) {
       this.skip();
     }

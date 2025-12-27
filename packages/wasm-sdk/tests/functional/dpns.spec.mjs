@@ -72,7 +72,7 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('getDocument by id (should handle invalid id gracefully)', async () => {
     await expect(
-      client.getDocument(DPNS_CONTRACT, 'domain', 'invalidDocumentId'),
+      client.getDocument(dpnsContractId, 'domain', 'invalidDocumentId'),
     ).to.be.rejected();
   });
 

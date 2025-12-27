@@ -20,6 +20,8 @@ static MAINNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
 static TESTNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
+static LOCAL_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
+    Lazy::new(|| Mutex::new(None));
 fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
     addresses
         .iter()
@@ -51,6 +53,9 @@ fn default_testnet_addresses() -> Vec<Address> {
         "https://54.149.33.167:1443",
         "https://52.24.124.162:1443",
     ])
+}
+fn default_local_addresses() -> Vec<Address> {
+    parse_addresses(&["https://127.0.0.1:2443"])
 }
 async fn fetch_and_cache_addresses(
     trusted_context: &WasmTrustedContext,
@@ -165,6 +170,8 @@ impl WasmSdk {
             .prefetch_quorums()
             .await
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        fetch_and_cache_addresses(&trusted_context, &LOCAL_DISCOVERED_ADDRESSES).await?;
 
         *LOCAL_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
 
@@ -350,7 +357,12 @@ impl WasmSdkBuilder {
                 .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
 
-        let local_addresses = vec!["https://127.0.0.1:2443".parse().unwrap()];
+        let local_addresses = LOCAL_DISCOVERED_ADDRESSES
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(default_local_addresses);
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
