@@ -140,4 +140,13 @@ impl WasmTrustedContext {
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
     }
+
+    /// Add a token configuration to the known token configurations cache
+    pub fn add_known_token_configuration(
+        &self,
+        token_id: Identifier,
+        config: TokenConfiguration,
+    ) {
+        self.inner.add_known_token_configuration(token_id, config);
+    }
 }

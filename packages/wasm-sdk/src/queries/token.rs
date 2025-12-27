@@ -482,84 +482,17 @@ impl WasmSdk {
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
 
-        // Create query and fetch via SDK (proofless variant)
+        // Prefetch token configuration and add to context provider cache
+        // This is required for proof verification to work
+        self.prefetch_token_configuration(token_identifier).await?;
+
+        // Create query and fetch via SDK with proof verification
         let query = TokenLastClaimQuery {
             token_id: token_identifier,
             identity_id: identity_identifier,
         };
 
-        // Try proof-backed fetch first; fall back to direct gRPC with prove=false if context lacks token config
-        let claim_result = match RewardDistributionMoment::fetch(self.as_ref(), query.clone()).await
-        {
-            Ok(res) => res,
-            Err(err) => {
-                // If proof verification failed due to missing token distribution type, retry without proofs
-                if err
-                    .to_string()
-                    .contains("Token distribution type not found with get_token_distribution")
-                {
-                    use dapi_grpc::platform::v0::{
-                        get_token_perpetual_distribution_last_claim_request::{
-                            GetTokenPerpetualDistributionLastClaimRequestV0, Version,
-                        },
-                        get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt,
-                        GetTokenPerpetualDistributionLastClaimRequest,
-                    };
-                    use rs_dapi_client::DapiRequestExecutor;
-
-                    let request = GetTokenPerpetualDistributionLastClaimRequest {
-                        version: Some(Version::V0(
-                            GetTokenPerpetualDistributionLastClaimRequestV0 {
-                                token_id: query.token_id.to_vec(),
-                                identity_id: query.identity_id.to_vec(),
-                                contract_info: None,
-                                prove: false,
-                            },
-                        )),
-                    };
-
-                    let response = self
-                        .inner_sdk()
-                        .execute(request, rs_dapi_client::RequestSettings::default())
-                        .await
-                        .map_err(|e| {
-                            WasmSdkError::generic(format!(
-                                "Failed to fetch token perpetual distribution last claim (fallback): {}",
-                                e
-                            ))
-                        })?;
-
-                    let claim = match response.inner.version {
-                        Some(
-                            dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(
-                                v0,
-                            ),
-                        ) => match v0.result {
-                            Some(
-                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
-                                    claim,
-                                ),
-                            ) => claim.paid_at,
-                            _ => None,
-                        },
-                        _ => None,
-                    };
-
-                    match claim {
-                        Some(PaidAt::TimestampMs(ts)) => Some(RewardDistributionMoment::TimeBasedMoment(ts)),
-                        Some(PaidAt::BlockHeight(height)) => {
-                            Some(RewardDistributionMoment::BlockBasedMoment(height))
-                        }
-                        Some(PaidAt::Epoch(epoch)) => {
-                            Some(RewardDistributionMoment::EpochBasedMoment(epoch as u64))
-                        }
-                        _ => None,
-                    }
-                } else {
-                    return Err(err.into());
-                }
-            }
-        };
+        let claim_result = RewardDistributionMoment::fetch(self.as_ref(), query).await?;
 
         let data = claim_result.map(|moment| {
             let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
@@ -922,6 +855,10 @@ impl WasmSdk {
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
 
+        // Prefetch token configuration and add to context provider cache
+        // This is required for proof verification to work
+        self.prefetch_token_configuration(token_identifier).await?;
+
         // Create query
         let query = TokenLastClaimQuery {
             token_id: token_identifier,
@@ -962,5 +899,77 @@ impl WasmSdk {
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
         ))
+    }
+}
+
+// Internal helper methods for token queries
+impl WasmSdk {
+    /// Prefetch token configuration and add it to the context provider cache.
+    /// This is required for proof verification of token-related queries.
+    pub(crate) async fn prefetch_token_configuration(
+        &self,
+        token_id: Identifier,
+    ) -> Result<(), WasmSdkError> {
+        use crate::sdk::{MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
+        use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
+        use dash_sdk::dpp::dashcore::Network;
+        use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
+        use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
+        use dash_sdk::platform::DataContract;
+
+        // Step 1: Fetch TokenContractInfo to get contract_id and position
+        let token_contract_info = TokenContractInfo::fetch(self.as_ref(), token_id)
+            .await?
+            .ok_or_else(|| {
+                WasmSdkError::generic(format!(
+                    "Token contract info not found for token ID: {}",
+                    token_id
+                ))
+            })?;
+
+        let contract_id = token_contract_info.contract_id();
+        let token_position = token_contract_info.token_contract_position();
+
+        // Step 2: Fetch the DataContract
+        let data_contract = DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| {
+                WasmSdkError::generic(format!(
+                    "Data contract not found for contract ID: {}",
+                    contract_id
+                ))
+            })?;
+
+        // Step 3: Extract the TokenConfiguration from the contract
+        let token_configuration = data_contract
+            .expected_token_configuration(token_position)
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get token configuration at position {}: {}",
+                    token_position, e
+                ))
+            })?
+            .clone();
+
+        // Step 4: Add the token configuration to the trusted context cache
+        let network = self.network();
+        match network {
+            Network::Dash => {
+                if let Some(ref ctx) = *MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
+                    ctx.add_known_token_configuration(token_id, token_configuration);
+                }
+            }
+            Network::Testnet => {
+                if let Some(ref ctx) = *TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
+                    ctx.add_known_token_configuration(token_id, token_configuration);
+                }
+            }
+            _ => {
+                // For other networks, we can't cache the token configuration
+                // The proof verification may still work if the context provider has the info
+            }
+        }
+
+        Ok(())
     }
 }
