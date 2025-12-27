@@ -59,6 +59,12 @@ impl From<StateTransitionWasm> for StateTransition {
     }
 }
 
+impl From<&StateTransitionWasm> for StateTransition {
+    fn from(transition: &StateTransitionWasm) -> Self {
+        transition.0.clone()
+    }
+}
+
 #[wasm_bindgen(js_class = StateTransition)]
 impl StateTransitionWasm {
     #[wasm_bindgen(getter = __type)]
