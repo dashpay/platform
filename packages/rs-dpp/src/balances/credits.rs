@@ -39,6 +39,15 @@ pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 
 pub const CREDITS_PER_DUFF: Credits = 1000;
 
+/// An enum for credit operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub enum CreditOperation {
+    /// We are setting credit amounts
+    SetCredits(Credits),
+    /// We are adding to credits
+    AddToCredits(Credits),
+}
+
 /// Trait for signed and unsigned credits
 pub trait Creditable {
     /// Convert unsigned credit to singed

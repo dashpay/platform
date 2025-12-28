@@ -106,6 +106,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         process_raw_state_transitions: 0,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
+        store_address_balances_to_recent_block_storage: 0,
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,

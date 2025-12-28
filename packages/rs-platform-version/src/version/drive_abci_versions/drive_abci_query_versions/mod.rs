@@ -52,6 +52,7 @@ pub struct DriveAbciQueryAddressFundsVersions {
     pub address_info: FeatureVersionBounds,
     pub addresses_trunk_state: FeatureVersionBounds,
     pub addresses_branch_state: FeatureVersionBounds,
+    pub recent_address_balance_changes: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

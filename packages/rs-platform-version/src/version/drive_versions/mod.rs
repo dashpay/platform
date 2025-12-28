@@ -65,12 +65,19 @@ pub struct DriveMethodVersions {
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
     pub address_funds: DriveAddressFundsMethodVersions,
+    pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveSavedBlockTransactionsMethodVersions {
+    pub store_address_balances: FeatureVersion,
+    pub fetch_address_balances: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -64,6 +64,9 @@ mod shared;
 /// Address funds module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod address_funds;
+/// Saved block transactions module
+#[cfg(feature = "server")]
+pub mod saved_block_transactions;
 /// Token module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod tokens;
@@ -173,9 +176,6 @@ pub struct Drive {
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
 //                                     /
 //                           Saved Block Transactions 36
-
-
-
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]

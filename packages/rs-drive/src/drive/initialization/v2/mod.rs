@@ -1,6 +1,7 @@
 //! Drive Initialization
 
 use crate::drive::address_funds::queries::CLEAR_ADDRESS_POOL;
+use crate::drive::saved_block_transactions::ADDRESS_BALANCES_KEY_U8;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -75,6 +76,14 @@ impl Drive {
             Self::addresses_path(),
             CLEAR_ADDRESS_POOL.to_vec(),
             Element::empty_provable_count_sum_tree(),
+        );
+
+        // Address balances subtree under SavedBlockTransactions for storing
+        // address balance changes per block
+        batch.add_insert(
+            Self::saved_block_transactions_path(),
+            vec![ADDRESS_BALANCES_KEY_U8],
+            Element::empty_tree(),
         );
 
         Ok(())

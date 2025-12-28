@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use crate::rpc::core::CoreRPCLike;
 use dpp::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::deduct_fee_from_outputs_or_remaining_balance_of_inputs;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
@@ -111,6 +112,7 @@ where
         block_info: &BlockInfo,
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
+        mut address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -173,6 +175,54 @@ where
                         Some(transaction),
                         platform_version,
                     )?;
+
+                    // Track the adjusted amount being added (after fee deduction)
+                    if let Some(balance_updates) = address_balances_in_update.as_mut() {
+                        let new_op = CreditOperation::AddToCredits(adjusted_amount);
+                        balance_updates
+                            .entry(*address)
+                            .and_modify(|existing| {
+                                *existing = match existing {
+                                    // Set + Add = Set to combined value
+                                    CreditOperation::SetCredits(set_val) => {
+                                        CreditOperation::SetCredits(
+                                            set_val.saturating_add(adjusted_amount),
+                                        )
+                                    }
+                                    // Add + Add = saturating add
+                                    CreditOperation::AddToCredits(add_val) => {
+                                        CreditOperation::AddToCredits(
+                                            add_val.saturating_add(adjusted_amount),
+                                        )
+                                    }
+                                };
+                            })
+                            .or_insert(new_op);
+                    }
+                } else {
+                    // No fee taken from this output, track the full amount being added
+                    if let Some(balance_updates) = address_balances_in_update.as_mut() {
+                        let new_op = CreditOperation::AddToCredits(adjusted_amount);
+                        balance_updates
+                            .entry(*address)
+                            .and_modify(|existing| {
+                                *existing = match existing {
+                                    // Set + Add = Set to combined value
+                                    CreditOperation::SetCredits(set_val) => {
+                                        CreditOperation::SetCredits(
+                                            set_val.saturating_add(adjusted_amount),
+                                        )
+                                    }
+                                    // Add + Add = saturating add
+                                    CreditOperation::AddToCredits(add_val) => {
+                                        CreditOperation::AddToCredits(
+                                            add_val.saturating_add(adjusted_amount),
+                                        )
+                                    }
+                                };
+                            })
+                            .or_insert(new_op);
+                    }
                 }
             }
 
@@ -183,6 +233,7 @@ where
                     .map(|(_, bal)| *bal)
                     .unwrap_or(0);
                 if original_remaining > &adjusted_remaining {
+                    // Fees were taken from this input, need to adjust the balance
                     self.drive.set_balance_to_address(
                         *address,
                         *nonce,
@@ -191,6 +242,27 @@ where
                         &mut fee_drive_operations,
                         platform_version,
                     )?;
+                }
+
+                // Always track the Set operation for input addresses, regardless of fee deduction
+                // The input's balance was already set by the drive operations
+                if let Some(balance_updates) = address_balances_in_update.as_mut() {
+                    let new_op = CreditOperation::SetCredits(adjusted_remaining);
+                    balance_updates
+                        .entry(*address)
+                        .and_modify(|existing| {
+                            *existing = match existing {
+                                // Set + Set = second Set wins
+                                CreditOperation::SetCredits(_) => {
+                                    CreditOperation::SetCredits(adjusted_remaining)
+                                }
+                                // Add + Set = Set (discard the Add)
+                                CreditOperation::AddToCredits(_) => {
+                                    CreditOperation::SetCredits(adjusted_remaining)
+                                }
+                            };
+                        })
+                        .or_insert(new_op);
                 }
             }
 
@@ -254,6 +326,7 @@ where
         consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -298,6 +371,7 @@ where
             }
             ExecutionEvent::Paid {
                 identity,
+                added_to_balance_outputs,
                 operations,
                 execution_operations,
                 additional_fixed_fee_cost,
@@ -306,7 +380,7 @@ where
             } => {
                 // We can unwrap here because we have the match right above
                 let fee_validation_result = maybe_fee_validation_result.unwrap();
-                self.paid_from_identity_function(
+                let result = self.paid_from_identity_function(
                     fee_validation_result,
                     identity,
                     operations,
@@ -318,7 +392,37 @@ where
                     transaction,
                     platform_version,
                     previous_fee_versions,
-                )
+                )?;
+
+                // Track address outputs if provided (e.g., for IdentityCreditTransferToAddresses)
+                if let Some(outputs) = added_to_balance_outputs {
+                    if let Some(balance_updates) = address_balances_in_update {
+                        for (address, credits) in outputs {
+                            let new_op = CreditOperation::AddToCredits(credits);
+                            balance_updates
+                                .entry(address)
+                                .and_modify(|existing| {
+                                    *existing = match existing {
+                                        // Set + Add = Set to combined value
+                                        CreditOperation::SetCredits(set_val) => {
+                                            CreditOperation::SetCredits(
+                                                set_val.saturating_add(credits),
+                                            )
+                                        }
+                                        // Add + Add = saturating add
+                                        CreditOperation::AddToCredits(add_val) => {
+                                            CreditOperation::AddToCredits(
+                                                add_val.saturating_add(credits),
+                                            )
+                                        }
+                                    };
+                                })
+                                .or_insert(new_op);
+                        }
+                    }
+                }
+
+                Ok(result)
             }
             ExecutionEvent::PaidFromAddressInputs {
                 input_current_balances,
@@ -344,6 +448,7 @@ where
                     block_info,
                     consensus_errors,
                     transaction,
+                    address_balances_in_update,
                     platform_version,
                     previous_fee_versions,
                 )

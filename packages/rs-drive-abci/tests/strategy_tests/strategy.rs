@@ -17,6 +17,7 @@ use strategy_tests::operations::{
     MaybeOutputAmount, OperationType, OutputCountRange, TokenOp,
     UseExistingAddressesAsOutputChance,
 };
+use strategy_tests::KeyMaps;
 
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
@@ -423,6 +424,10 @@ impl NetworkStrategy {
             if self.strategy.start_identities.number_of_identities > 0 {
                 let mut new_transitions = self.create_identities_state_transitions(
                     self.strategy.start_identities.number_of_identities,
+                    self.strategy.start_identities.keys_per_identity as KeyID,
+                    &self.strategy.start_identities.extra_keys,
+                    &(self.strategy.start_identities.starting_balances
+                        ..=self.strategy.start_identities.starting_balances),
                     signer,
                     rng,
                     instant_lock_quorums,
@@ -450,6 +455,9 @@ impl NetworkStrategy {
             let count = frequency.events(rng);
             let mut new_transitions = self.create_identities_state_transitions(
                 count,
+                self.strategy.identity_inserts.start_keys as KeyID,
+                &self.strategy.identity_inserts.extra_keys,
+                &self.strategy.identity_inserts.start_balance_range,
                 signer,
                 rng,
                 instant_lock_quorums,
@@ -1910,16 +1918,15 @@ impl NetworkStrategy {
     fn create_identities_state_transitions(
         &self,
         count: u16,
+        key_count: KeyID,
+        extra_keys: &KeyMaps,
+        balance_range: &RangeInclusive<Credits>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         instant_lock_quorums: &Quorums<SigningQuorum>,
         platform_config: &PlatformConfig,
         platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
-        let key_count = self.strategy.identity_inserts.start_keys as KeyID;
-        let extra_keys = &self.strategy.identity_inserts.extra_keys;
-        let balance_range = &self.strategy.identity_inserts.start_balance_range;
-
         let (mut identities, mut keys) = Identity::random_identities_with_private_keys_with_rng::<
             Vec<_>,
         >(count, key_count, rng, platform_version)
