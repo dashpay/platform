@@ -1,6 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
+};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
@@ -23,6 +25,30 @@ impl StateTransitionLike for IdentityUpdateTransition {
             IdentityUpdateTransition::V0(transition) => transition.state_transition_type(),
         }
     }
+
+    /// returns the fee multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.user_fee_increase(),
+        }
+    }
+    /// set a fee multiplier
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        match self {
+            IdentityUpdateTransition::V0(transition) => {
+                transition.set_user_fee_increase(user_fee_increase)
+            }
+        }
+    }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            IdentityUpdateTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
+}
+
+impl StateTransitionSingleSigned for IdentityUpdateTransition {
     /// returns the signature as a byte-array
     fn signature(&self) -> &BinaryData {
         match self {
@@ -41,31 +67,12 @@ impl StateTransitionLike for IdentityUpdateTransition {
             IdentityUpdateTransition::V0(transition) => transition.set_signature_bytes(signature),
         }
     }
+}
 
-    /// returns the fee multiplier
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            IdentityUpdateTransition::V0(transition) => transition.user_fee_increase(),
-        }
-    }
-    /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        match self {
-            IdentityUpdateTransition::V0(transition) => {
-                transition.set_user_fee_increase(user_fee_increase)
-            }
-        }
-    }
-
+impl StateTransitionOwned for IdentityUpdateTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityUpdateTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
-    fn unique_identifiers(&self) -> Vec<String> {
-        match self {
-            IdentityUpdateTransition::V0(transition) => transition.unique_identifiers(),
         }
     }
 }

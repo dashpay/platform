@@ -178,7 +178,7 @@ impl DocumentSetPriceTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -244,7 +244,7 @@ impl Sdk {
     /// - Document not found
     /// - Insufficient permissions to set price
     /// - Invalid price value
-    pub async fn document_set_price<S: Signer>(
+    pub async fn document_set_price<S: Signer<IdentityPublicKey>>(
         &self,
         set_price_document_transition_builder: DocumentSetPriceTransitionBuilder,
         signing_key: &IdentityPublicKey,

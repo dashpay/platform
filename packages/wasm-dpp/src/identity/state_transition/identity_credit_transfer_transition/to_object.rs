@@ -2,7 +2,7 @@ use dpp::identity::KeyID;
 
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionSingleSigned};
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 use serde::Deserialize;
 use std::default::Default;

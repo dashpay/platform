@@ -28,7 +28,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use dpp::{
     identifier::Identifier, identity::state_transition::asset_lock_proof::AssetLockProof,
     state_transition::StateTransitionLike,
@@ -304,7 +304,8 @@ impl IdentityTopUpTransitionWasm {
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
             .with_js_error()?;
 
-        self.0.set_signature(wrapper.signature().to_owned());
+        self.0
+            .set_signature(wrapper.signature().unwrap().to_owned());
 
         Ok(())
     }

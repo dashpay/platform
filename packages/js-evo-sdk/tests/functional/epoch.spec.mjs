@@ -24,4 +24,24 @@ describe('Epoch', function epochSuite() {
     const res = await sdk.epoch.evonodesProposedBlocksByRange({ epoch: TEST_IDS.epoch, limit: 5 });
     expect(res).to.exist();
   });
+
+  it('evonodesProposedBlocksByIdsWithProof() returns results with proof', async () => {
+    const { epoch, proTxHash } = TEST_IDS;
+    const res = await sdk.epoch.evonodesProposedBlocksByIdsWithProof(epoch, [proTxHash]);
+    expect(res).to.exist();
+    expect(res.data).to.be.instanceOf(Map);
+    expect(res.proof).to.exist();
+    expect(res.metadata).to.exist();
+  });
+
+  it('evonodesProposedBlocksByRangeWithProof() returns results with proof', async () => {
+    const res = await sdk.epoch.evonodesProposedBlocksByRangeWithProof({
+      epoch: TEST_IDS.epoch,
+      limit: 5,
+    });
+    expect(res).to.exist();
+    expect(res.data).to.be.instanceOf(Map);
+    expect(res.proof).to.exist();
+    expect(res.metadata).to.exist();
+  });
 });

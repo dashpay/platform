@@ -57,7 +57,6 @@ impl Drive {
                     Some(Item(value, ..)) => {
                         let active_action = match GroupAction::deserialize_from_bytes(&value) {
                             Ok(active_action) => active_action,
-
                             Err(e) => return Some(Err(e.into())),
                         };
                         Some(Ok((action_id, active_action)))

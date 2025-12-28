@@ -780,7 +780,6 @@ mod random {
                 name: format!("test_{}", i),
                 base_height: i - 1,
                 base_time_ms: Default::default(),
-
                 expected_balance: None,
                 claim_transition_assertions: Default::default(),
             })

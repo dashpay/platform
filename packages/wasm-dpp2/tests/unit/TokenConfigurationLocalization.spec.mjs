@@ -13,6 +13,24 @@ describe('TokenConfigurationLocalization', () => {
 
       expect(localization.__wbg_ptr).to.not.equal(0);
     });
+
+    it('should recreate localization from JSON', () => {
+      const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
+      const json = localization.toJSON();
+
+      const restored = wasm.TokenConfigurationLocalization.fromJSON(json);
+
+      expect(restored.toJSON()).to.deep.equal(json);
+    });
+
+    it('should recreate localization from object', () => {
+      const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
+      const object = localization.toJSON();
+
+      const restored = wasm.TokenConfigurationLocalization.fromObject(object);
+
+      expect(restored.toJSON()).to.deep.equal(object);
+    });
   });
 
   describe('getters', () => {

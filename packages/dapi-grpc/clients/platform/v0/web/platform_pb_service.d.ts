@@ -427,6 +427,24 @@ type PlatformgetGroupActionSigners = {
   readonly responseType: typeof platform_pb.GetGroupActionSignersResponse;
 };
 
+type PlatformgetAddressInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressInfoRequest;
+  readonly responseType: typeof platform_pb.GetAddressInfoResponse;
+};
+
+type PlatformgetAddressesInfos = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesInfosRequest;
+  readonly responseType: typeof platform_pb.GetAddressesInfosResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -476,6 +494,8 @@ export class Platform {
   static readonly getGroupInfos: PlatformgetGroupInfos;
   static readonly getGroupActions: PlatformgetGroupActions;
   static readonly getGroupActionSigners: PlatformgetGroupActionSigners;
+  static readonly getAddressInfo: PlatformgetAddressInfo;
+  static readonly getAddressesInfos: PlatformgetAddressesInfos;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -932,6 +952,24 @@ export class PlatformClient {
   getGroupActionSigners(
     requestMessage: platform_pb.GetGroupActionSignersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getAddressInfo(
+    requestMessage: platform_pb.GetAddressInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressInfoResponse|null) => void
+  ): UnaryResponse;
+  getAddressInfo(
+    requestMessage: platform_pb.GetAddressInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressInfoResponse|null) => void
+  ): UnaryResponse;
+  getAddressesInfos(
+    requestMessage: platform_pb.GetAddressesInfosRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesInfosResponse|null) => void
+  ): UnaryResponse;
+  getAddressesInfos(
+    requestMessage: platform_pb.GetAddressesInfosRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesInfosResponse|null) => void
   ): UnaryResponse;
 }
 

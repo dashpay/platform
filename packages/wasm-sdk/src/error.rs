@@ -2,6 +2,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_dpp2::error::WasmDppError;
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -24,6 +25,7 @@ pub enum WasmSdkErrorKind {
     EpochNotFound,
     TimeoutReached,
     AlreadyExists,
+    InvalidCreditTransfer,
     Generic,
     ContextProviderError,
     Cancelled,
@@ -137,6 +139,12 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            InvalidCreditTransfer(msg) => Self::new(
+                WasmSdkErrorKind::InvalidCreditTransfer,
+                msg,
+                None,
+                retriable,
+            ),
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),
@@ -189,6 +197,18 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
     }
 }
 
+impl From<WasmDppError> for WasmSdkError {
+    fn from(err: WasmDppError) -> Self {
+        // Map WasmDppError to appropriate WasmSdkError kind
+        Self::new(
+            WasmSdkErrorKind::SerializationError,
+            err.to_string(),
+            None,
+            false,
+        )
+    }
+}
+
 #[wasm_bindgen]
 impl WasmSdkError {
     /// Error kind (enum)
@@ -218,6 +238,7 @@ impl WasmSdkError {
             K::EpochNotFound => "EpochNotFound",
             K::TimeoutReached => "TimeoutReached",
             K::AlreadyExists => "AlreadyExists",
+            K::InvalidCreditTransfer => "InvalidCreditTransfer",
             K::Generic => "Generic",
             K::ContextProviderError => "ContextProviderError",
             K::Cancelled => "Cancelled",

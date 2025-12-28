@@ -1,0 +1,70 @@
+name: Assign Milestone
+
+on:
+  pull_request:
+    types: [opened, reopened, edited]
+
+jobs:
+  assign-milestone:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      # Following needed because PRs are technically under issues
+      issues: write 
+    steps:
+      - name: Assign milestone based on target branch
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const baseBranch = pr.base.ref;
+
+            // Skip if targeting master
+            if (baseBranch === 'master') {
+              console.log('PR targets master, skipping milestone assignment');
+              return;
+            }
+
+            // Parse v*-dev branch pattern
+            const match = baseBranch.match(/^v(\d+\.\d+)-dev$/);
+            if (!match) {
+              console.log(`Branch ${baseBranch} does not match v*-dev pattern`);
+              return;
+            }
+
+            const milestoneName = `v${match[1]}.0`;
+
+            // Skip if PR already has the correct milestone
+            if (pr.milestone && pr.milestone.title === milestoneName) {
+              console.log(`PR already has correct milestone: ${pr.milestone.title}`);
+              return;
+            }
+
+            console.log(`Looking for milestone: ${milestoneName}`);
+
+            // Find the milestone
+            const milestones = await github.rest.issues.listMilestones({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open'
+            });
+
+            const milestone = milestones.data.find(m => m.title === milestoneName);
+
+            if (!milestone) {
+              core.warning(`Milestone ${milestoneName} not found. Create it to enable automatic assignment.`);
+              return;
+            }
+
+            // Assign or update the milestone
+            if (pr.milestone) {
+              console.log(`Updating milestone from ${pr.milestone.title} to ${milestoneName}`);
+            }
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              milestone: milestone.number
+            });
+
+            console.log(`Assigned milestone ${milestoneName} to PR #${pr.number}`);

@@ -379,7 +379,7 @@ mod test {
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
     use crate::platform_types::platform::PlatformStateRef;
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
     use dpp::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;

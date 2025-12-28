@@ -106,8 +106,7 @@ impl WasmTrustedContext {
             std::num::NonZeroUsize::new(100).unwrap(),
         )
         .map_err(|e| ContextProviderError::Generic(e.to_string()))?
-        // Enable refetch so token configs (and other context) are pulled on demand, same as rs-sdk
-        .with_refetch_if_not_found(true);
+        .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
 
         Ok(Self {
             inner: std::sync::Arc::new(inner),
@@ -121,8 +120,7 @@ impl WasmTrustedContext {
             std::num::NonZeroUsize::new(100).unwrap(),
         )
         .map_err(|e| ContextProviderError::Generic(e.to_string()))?
-        // Enable refetch so token configs (and other context) are pulled on demand, same as rs-sdk
-        .with_refetch_if_not_found(true);
+        .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
 
         Ok(Self {
             inner: std::sync::Arc::new(inner),
@@ -136,17 +134,37 @@ impl WasmTrustedContext {
         })
     }
 
+    pub async fn fetch_masternode_addresses(
+        &self,
+    ) -> Result<rs_dapi_client::AddressList, ContextProviderError> {
+        let urls = self.inner.fetch_masternode_addresses().await.map_err(|e| {
+            ContextProviderError::Generic(format!("Failed to fetch masternodes: {}", e))
+        })?;
+
+        let mut addresses = Vec::new();
+        for url in urls {
+            let uri = dash_sdk::sdk::Uri::from_maybe_shared(url.to_string()).map_err(|e| {
+                ContextProviderError::Generic(format!("Invalid masternode URI '{}': {}", url, e))
+            })?;
+            let address = rs_dapi_client::Address::try_from(uri).map_err(|e| {
+                ContextProviderError::Generic(format!(
+                    "Invalid masternode address '{}': {}",
+                    url, e
+                ))
+            })?;
+            addresses.push(address);
+        }
+
+        Ok(rs_dapi_client::AddressList::from_iter(addresses))
+    }
+
     /// Add a data contract to the known contracts cache
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
     }
 
     /// Add a token configuration to the known token configurations cache
-    pub fn add_known_token_configuration(
-        &self,
-        token_id: Identifier,
-        config: TokenConfiguration,
-    ) {
+    pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
         self.inner.add_known_token_configuration(token_id, config);
     }
 }

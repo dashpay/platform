@@ -5,7 +5,7 @@ use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
 use js_sys::Uint8Array;
 use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use std::fmt;
 use wasm_bindgen::prelude::*;
@@ -176,7 +176,29 @@ impl<'de> Deserialize<'de> for IdentifierWasm {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(IdentifierWasmVisitor)
+        if deserializer.is_human_readable() {
+            // JSON/human-readable: expect Base58 string
+            let s = String::deserialize(deserializer)?;
+            IdentifierWasm::try_from(s.as_str()).map_err(D::Error::custom)
+        } else {
+            // Binary/WASM: expect bytes or any compatible representation
+            deserializer.deserialize_any(IdentifierWasmVisitor)
+        }
+    }
+}
+
+impl Serialize for IdentifierWasm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            // JSON/human-readable: serialize as Base58 string
+            serializer.serialize_str(&self.to_base58())
+        } else {
+            // Binary/WASM: serialize as bytes (becomes Uint8Array)
+            serializer.serialize_bytes(&self.0.to_vec())
+        }
     }
 }
 
@@ -195,18 +217,25 @@ impl IdentifierWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
+        identifier: &JsValue,
     ) -> WasmDppResult<IdentifierWasm> {
-        IdentifierWasm::try_from(js_identifier)
+        IdentifierWasm::try_from(identifier)
     }
 
-    #[wasm_bindgen(js_name = "base58")]
-    pub fn get_base58(&self) -> String {
+    #[wasm_bindgen(js_name = "toBase58")]
+    pub fn to_base58(&self) -> String {
         self.0.to_string(Base58)
     }
 
-    #[wasm_bindgen(js_name = "base64")]
-    pub fn get_base64(&self) -> String {
+    /// Returns the identifier as a Base58 string for JSON serialization.
+    /// This method is called automatically when the object is serialized to JSON.
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> String {
+        self.to_base58()
+    }
+
+    #[wasm_bindgen(js_name = "toBase64")]
+    pub fn to_base64(&self) -> String {
         self.0.to_string(Base64)
     }
 

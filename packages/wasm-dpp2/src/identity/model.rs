@@ -1,17 +1,15 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::serialization;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dpp::identity::{self, Identity, KeyID};
-use dpp::platform_value::ReplacementType;
+use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::prelude::{Identifier, IdentityPublicKey};
+use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
-use dpp::version::PlatformVersion;
-use serde_json::Value as JsonValue;
-use serde_wasm_bindgen::to_value;
-use std::collections::BTreeMap;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+use std::convert::TryFrom;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -22,6 +20,12 @@ pub struct IdentityWasm(Identity);
 impl From<Identity> for IdentityWasm {
     fn from(identity: Identity) -> Self {
         Self(identity)
+    }
+}
+
+impl From<IdentityWasm> for Identity {
+    fn from(wasm: IdentityWasm) -> Self {
+        wasm.0
     }
 }
 
@@ -93,9 +97,10 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyById")]
-    pub fn get_public_key_by_id(&self, key_id: KeyID) -> IdentityPublicKeyWasm {
-        let identity_public_key = self.0.get_public_key_by_id(key_id);
-        IdentityPublicKeyWasm::from(identity_public_key.unwrap().clone())
+    pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<IdentityPublicKeyWasm> {
+        self.0
+            .get_public_key_by_id(key_id)
+            .map(|key| IdentityPublicKeyWasm::from(key.clone()))
     }
 
     #[wasm_bindgen(js_name = "getPublicKeys")]
@@ -134,60 +139,40 @@ impl IdentityWasm {
         Ok(encode(bytes.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
         Ok(encode(bytes.as_slice(), Base64))
     }
 
-    fn cleaned_json_value(&self) -> WasmDppResult<JsonValue> {
-        let mut value = self.0.to_object()?;
-
-        value
-            .replace_at_paths(
-                identity::IDENTIFIER_FIELDS_RAW_OBJECT,
-                ReplacementType::TextBase58,
-            )
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-
-        if let Some(public_keys) = value
-            .get_optional_array_mut_ref(identity::property_names::PUBLIC_KEYS)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?
-        {
-            for key in public_keys.iter_mut() {
-                key.replace_at_paths(
-                    identity::identity_public_key::BINARY_DATA_FIELDS,
-                    ReplacementType::TextBase64,
-                )
-                .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-            }
-        }
-
-        value
-            .try_into_validating_json()
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let json_value = self.cleaned_json_value()?;
-        to_value(&json_value).map_err(|e| WasmDppError::serialization(e.to_string()))
+        // Use platform_value conversion which handles BigInt for balance/revision
+        // and outputs id as Uint8Array, publicKeys as plain objects
+        let value = self.0.to_object()?;
+        serialization::platform_value_to_object(&value)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        self.to_object()
+        serialization::to_json(&self.0)
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
+        serialization::from_json(js_value).map(IdentityWasm)
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
+        let value = serialization::js_value_to_platform_value(&js_value)?;
+        let identity = Identity::try_from_platform_versioned(value, PlatformVersion::latest())?;
+        Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityWasm> {
         let identity = Identity::deserialize_from_bytes(bytes.as_slice())?;
         Ok(IdentityWasm(identity))
-    }
-}
-
-impl IdentityWasm {
-    pub fn get_rs_public_keys(&self) -> BTreeMap<KeyID, IdentityPublicKey> {
-        self.0.public_keys().clone()
     }
 }

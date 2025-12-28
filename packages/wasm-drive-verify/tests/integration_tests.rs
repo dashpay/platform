@@ -19,15 +19,6 @@ fn hex_to_uint8array(hex: &str) -> Uint8Array {
     Uint8Array::from(&bytes[..])
 }
 
-/// Helper to create Uint8Array from base64 string
-fn base64_to_uint8array(base64: &str) -> Uint8Array {
-    use base64::{engine::general_purpose, Engine as _};
-    let bytes = general_purpose::STANDARD
-        .decode(base64)
-        .expect("Invalid base64 string");
-    Uint8Array::from(&bytes[..])
-}
-
 mod identity_integration {
     use super::*;
 
@@ -147,7 +138,7 @@ mod contract_integration {
 fn create_mock_identity_proof() -> Uint8Array {
     // This would be replaced with actual proof bytes from testnet
     // For now, create a minimal valid proof structure
-    let proof_bytes = vec![
+    let proof_bytes = [
         0x01, // version
         0x00, 0x00, 0x00, 0x20, // proof length (32 bytes)
         // Mock proof data
@@ -155,7 +146,7 @@ fn create_mock_identity_proof() -> Uint8Array {
         0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
         0x1f, 0x20,
     ];
-    Uint8Array::from(&proof_bytes[..])
+    Uint8Array::from(proof_bytes.as_slice())
 }
 
 fn create_mock_balance_proof() -> Uint8Array {
@@ -176,14 +167,14 @@ fn create_mock_contract_proof() -> Uint8Array {
 fn create_mock_dpns_contract() -> Uint8Array {
     // This would be the actual DPNS contract CBOR bytes
     // For now, return a minimal valid CBOR structure
-    let contract_cbor = vec![
+    let contract_cbor = [
         0xa1, // map with 1 item
         0x64, // text string of length 4
         0x74, 0x65, 0x73, 0x74, // "test"
         0x64, // text string of length 4
         0x64, 0x61, 0x74, 0x61, // "data"
     ];
-    Uint8Array::from(&contract_cbor[..])
+    Uint8Array::from(contract_cbor.as_slice())
 }
 
 #[cfg(test)]

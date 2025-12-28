@@ -55,7 +55,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_mint<S: Signer>(
+    pub async fn token_mint<S: Signer<IdentityPublicKey>>(
         &self,
         mint_tokens_transition_builder: TokenMintTransitionBuilder,
         signing_key: &IdentityPublicKey,

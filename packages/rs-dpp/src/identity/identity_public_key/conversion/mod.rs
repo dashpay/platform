@@ -1,6 +1,6 @@
-#[cfg(feature = "cbor")]
+#[cfg(feature = "identity-cbor-conversion")]
 pub mod cbor;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "identity-json-conversion")]
 pub mod json;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "identity-value-conversion")]
 pub mod platform_value;

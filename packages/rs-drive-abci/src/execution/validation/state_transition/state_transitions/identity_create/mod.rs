@@ -10,7 +10,6 @@ use crate::error::execution::ExecutionError;
 
 use crate::execution::validation::state_transition::identity_create::basic_structure::v0::IdentityCreateStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;
 
 use crate::rpc::core::CoreRPCLike;
@@ -23,8 +22,9 @@ use dpp::version::PlatformVersion;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -215,6 +215,7 @@ mod tests {
     use rand::SeedableRng;
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
+    use std::ops::Div;
 
     #[test]
     fn test_identity_create_validation_first_protocol_version() {
@@ -247,7 +248,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -256,7 +257,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -360,7 +361,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
@@ -369,7 +370,7 @@ mod tests {
         )
         .expect("expected to get key pair");
 
-        signer.add_key(key.clone(), private_key);
+        signer.add_identity_public_key(key.clone(), private_key);
 
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
@@ -474,7 +475,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key_that_is_already_in_system, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -518,7 +519,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(
+        signer.add_identity_public_key(
             critical_public_key_that_is_already_in_system.clone(),
             private_key,
         );
@@ -603,7 +604,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(new_public_key.clone(), new_private_key);
+        signer.add_identity_public_key(new_public_key.clone(), new_private_key);
 
         // let's set the new key to the identity (replacing the one that was causing the issue
         identity.set_public_keys(BTreeMap::from([
@@ -696,7 +697,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key_that_is_already_in_system, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -740,7 +741,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(
+        signer.add_identity_public_key(
             critical_public_key_that_is_already_in_system.clone(),
             private_key,
         );
@@ -825,7 +826,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(new_public_key.clone(), new_private_key);
+        signer.add_identity_public_key(new_public_key.clone(), new_private_key);
 
         // let's set the new key to the identity (replacing the one that was causing the issue
         identity.set_public_keys(BTreeMap::from([
@@ -918,7 +919,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key_that_is_already_in_system, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -962,7 +963,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(
+        signer.add_identity_public_key(
             critical_public_key_that_is_already_in_system.clone(),
             private_key,
         );
@@ -989,7 +990,7 @@ mod tests {
                 )
                 .expect("expected to get key pair");
 
-            signer.add_key(new_master_key.clone(), new_master_private_key);
+            signer.add_identity_public_key(new_master_key.clone(), new_master_private_key);
 
             let identity: Identity = IdentityV0 {
                 id: identifier,
@@ -1059,7 +1060,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(new_public_key.clone(), new_private_key);
+        signer.add_identity_public_key(new_public_key.clone(), new_private_key);
 
         let identity: Identity = IdentityV0 {
             id: identifier,
@@ -1146,7 +1147,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key_that_is_already_in_system, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -1190,7 +1191,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(
+        signer.add_identity_public_key(
             critical_public_key_that_is_already_in_system.clone(),
             private_key,
         );
@@ -1198,10 +1199,15 @@ mod tests {
         let (_, pk) = ECDSA_SECP256K1
             .random_public_and_private_key_data(&mut rng, platform_version)
             .unwrap();
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let base_cost = min_fees.identity_create_base_cost;
+        let keys_extra_cost = base_cost
+            .saturating_add(min_fees.identity_key_in_creation_cost.saturating_mul(2))
+            .div(1000);
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
             Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
-            Some(220000),
+            Some(220000 + keys_extra_cost),
         );
 
         let identifier = asset_lock_proof
@@ -1218,7 +1224,7 @@ mod tests {
                 )
                 .expect("expected to get key pair");
 
-            signer.add_key(new_master_key.clone(), new_master_private_key);
+            signer.add_identity_public_key(new_master_key.clone(), new_master_private_key);
 
             let identity: Identity = IdentityV0 {
                 id: identifier,
@@ -1288,7 +1294,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(new_public_key.clone(), new_private_key);
+        signer.add_identity_public_key(new_public_key.clone(), new_private_key);
 
         let identity: Identity = IdentityV0 {
             id: identifier,
@@ -1376,7 +1382,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key_that_is_already_in_system, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -1420,7 +1426,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(
+        signer.add_identity_public_key(
             critical_public_key_that_is_already_in_system.clone(),
             private_key,
         );
@@ -1530,7 +1536,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(new_public_key.clone(), new_private_key);
+        signer.add_identity_public_key(new_public_key.clone(), new_private_key);
 
         // let's set the new key to the identity (replacing the one that was causing the issue
         identity.set_public_keys(BTreeMap::from([
@@ -1623,7 +1629,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key_that_is_already_in_system, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
@@ -1667,7 +1673,7 @@ mod tests {
             )
             .expect("expected to add a new identity");
 
-        signer.add_key(
+        signer.add_identity_public_key(
             critical_public_key_that_is_already_in_system.clone(),
             private_key,
         );
@@ -1777,7 +1783,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(new_public_key.clone(), new_private_key);
+        signer.add_identity_public_key(new_public_key.clone(), new_private_key);
 
         // let's set the new key to the identity (replacing the one that was causing the issue
         identity.set_public_keys(BTreeMap::from([

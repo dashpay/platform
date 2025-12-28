@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::{identifier_from_js, identifiers_from_js};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -11,13 +12,15 @@ use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dash_sdk::platform::query::TokenLastClaimQuery;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier};
 use js_sys::{BigInt, Map};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::tokens::{IdentityTokenInfoWasm, TokenContractInfoWasm, TokenStatusWasm};
 
 #[wasm_bindgen(js_name = "TokenPriceInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenPriceInfoWasm {
     token_id: IdentifierWasm,
     current_price: String,
@@ -53,7 +56,8 @@ impl TokenPriceInfoWasm {
 }
 
 #[wasm_bindgen(js_name = "TokenLastClaim")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenLastClaimWasm {
     last_claim_timestamp_ms: u64,
     last_claim_block_height: u64,
@@ -65,6 +69,18 @@ impl TokenLastClaimWasm {
             last_claim_timestamp_ms,
             last_claim_block_height,
         }
+    }
+}
+
+impl From<RewardDistributionMoment> for TokenLastClaimWasm {
+    fn from(moment: RewardDistributionMoment) -> Self {
+        let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
+            RewardDistributionMoment::BlockBasedMoment(height) => (0, height),
+            RewardDistributionMoment::TimeBasedMoment(timestamp) => (timestamp, 0),
+            RewardDistributionMoment::EpochBasedMoment(epoch) => (0, epoch as u64),
+        };
+
+        Self::new(last_claim_timestamp_ms, last_claim_block_height)
     }
 }
 
@@ -80,9 +96,11 @@ impl TokenLastClaimWasm {
         self.last_claim_block_height
     }
 }
+impl_wasm_serde_conversions!(TokenLastClaimWasm);
 
 #[wasm_bindgen(js_name = "TokenTotalSupply")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenTotalSupplyWasm {
     total_supply: u64,
 }
@@ -100,6 +118,9 @@ impl TokenTotalSupplyWasm {
         BigInt::from(self.total_supply)
     }
 }
+
+impl_wasm_serde_conversions!(TokenTotalSupplyWasm);
+impl_wasm_serde_conversions!(TokenPriceInfoWasm);
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -162,7 +183,7 @@ impl WasmSdk {
     ///     "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
     ///     0
     /// );
-    /// console.log(`Token ${priceInfo.tokenId.base58()} current price: ${priceInfo.currentPrice}`);
+    /// console.log(`Token ${priceInfo.tokenId.toBase58()} current price: ${priceInfo.currentPrice}`);
     /// ```
     #[wasm_bindgen(js_name = "getTokenPriceByContract")]
     pub async fn get_token_price_by_contract(
@@ -217,14 +238,14 @@ impl WasmSdk {
             } else {
                 Err(WasmSdkError::not_found(format!(
                     "No pricing schedule found for token at contract {} position {}",
-                    IdentifierWasm::from(contract_identifier).get_base58(),
+                    IdentifierWasm::from(contract_identifier).to_base58(),
                     token_position
                 )))
             }
         } else {
             Err(WasmSdkError::not_found(format!(
                 "Token not found at contract {} position {}",
-                IdentifierWasm::from(contract_identifier).get_base58(),
+                IdentifierWasm::from(contract_identifier).to_base58(),
                 token_position
             )))
         }
@@ -494,17 +515,7 @@ impl WasmSdk {
 
         let claim_result = RewardDistributionMoment::fetch(self.as_ref(), query).await?;
 
-        let data = claim_result.map(|moment| {
-            let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-                RewardDistributionMoment::BlockBasedMoment(height) => (0, height),
-                RewardDistributionMoment::TimeBasedMoment(timestamp) => (timestamp, 0),
-                RewardDistributionMoment::EpochBasedMoment(epoch) => (0, epoch as u64),
-            };
-
-            TokenLastClaimWasm::new(last_claim_timestamp_ms, last_claim_block_height)
-        });
-
-        Ok(data)
+        Ok(claim_result.map(TokenLastClaimWasm::from))
     }
 
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
@@ -870,31 +881,10 @@ impl WasmSdk {
             RewardDistributionMoment::fetch_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let data = if let Some(moment) = claim_result {
-            // Extract timestamp and block height based on the moment type
-            // Since we need both timestamp and block height in the response,
-            // we'll return the moment value and type
-            let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::BlockBasedMoment(
-                    height,
-                ) => (0, height), // No timestamp available for block-based
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::TimeBasedMoment(
-                    timestamp,
-                ) => (timestamp, 0),  // No block height available for time-based
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::EpochBasedMoment(
-                    epoch,
-                ) => (0, epoch as u64), // Convert epoch to u64, no timestamp available
-            };
-
-            Some(TokenLastClaimWasm::new(
-                last_claim_timestamp_ms,
-                last_claim_block_height,
-            ))
-        } else {
-            None
-        };
-
-        let data = data.map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
+        let data = claim_result
+            .map(TokenLastClaimWasm::from)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -911,8 +901,8 @@ impl WasmSdk {
         token_id: Identifier,
     ) -> Result<(), WasmSdkError> {
         use crate::sdk::{MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
-        use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::dashcore::Network;
+        use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::DataContract;
@@ -975,8 +965,10 @@ impl WasmSdk {
                 ctx.add_known_token_configuration(token_id, token_configuration);
             }
             _ => {
-                // For other networks, we can't cache the token configuration
-                // The proof verification may still work if the context provider has the info
+                return Err(WasmSdkError::generic(format!(
+                    "Token configuration caching not implemented for network {:?}",
+                    network
+                )));
             }
         }
 

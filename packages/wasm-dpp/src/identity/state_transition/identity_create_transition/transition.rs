@@ -29,7 +29,7 @@ use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use dpp::{
     identity::state_transition::asset_lock_proof::AssetLockProof,
     state_transition::identity::identity_create_transition::IdentityCreateTransition,
@@ -164,7 +164,7 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        (IdentityCreateTransitionAccessorsV0::owner_id(&self.0)).into()
+        self.0.owner_id().into()
     }
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
@@ -359,7 +359,8 @@ impl IdentityCreateTransitionWasm {
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
             .with_js_error()?;
 
-        self.0.set_signature(wrapper.signature().to_owned());
+        self.0
+            .set_signature(wrapper.signature().unwrap().to_owned());
 
         Ok(())
     }

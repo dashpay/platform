@@ -25,16 +25,17 @@ use crate::state_transition::identity_create_transition::methods::IdentityCreate
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::IdentityPublicKey;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
-
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer>(
+    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
@@ -109,11 +110,6 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
 
     /// Returns identity id
     fn identity_id(&self) -> Identifier {
-        self.identity_id
-    }
-
-    /// Returns Owner ID
-    fn owner_id(&self) -> Identifier {
         self.identity_id
     }
 }

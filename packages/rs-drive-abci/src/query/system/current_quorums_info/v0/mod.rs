@@ -1,8 +1,9 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_current_quorums_info_request::GetCurrentQuorumsInfoRequestV0;
 use dapi_grpc::platform::v0::get_current_quorums_info_response::{
@@ -63,7 +64,7 @@ impl<C> Platform<C> {
             validator_sets,
             last_block_proposer: last_committed_block_proposer_pro_tx_hash.to_vec(),
             current_quorum_hash: current_quorum_index.as_byte_array().to_vec(),
-            metadata: Some(self.response_metadata_v0(platform_state)),
+            metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
         };
 
         // Return the response wrapped in a QueryValidationResult

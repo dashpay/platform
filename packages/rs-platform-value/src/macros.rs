@@ -300,7 +300,7 @@ macro_rules! platform_value_expect_expr_comma {
 #[cfg(test)]
 mod test {
     use crate::types::binary_data::BinaryData;
-    use crate::{platform_value, to_value, Identifier, Value};
+    use crate::{to_value, Identifier, Value};
 
     #[test]
     fn test_null() {

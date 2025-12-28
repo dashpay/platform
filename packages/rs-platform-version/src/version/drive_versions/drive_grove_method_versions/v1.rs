@@ -7,7 +7,6 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
     basic: DriveGroveBasicMethodVersions {
         grove_insert: 0,
         grove_insert_empty_tree: 0,
-        grove_insert_empty_sum_tree: 0,
         grove_insert_if_not_exists: 0,
         grove_insert_if_not_exists_return_existing_element: 0,
         grove_clear: 0,
@@ -24,6 +23,8 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         grove_get_raw_path_query: 0,
         grove_get_proved_path_query: 0,
         grove_get_proved_path_query_with_conditional: 0,
+        grove_get_proved_branch_chunk_query: 0,
+        grove_get_proved_trunk_chunk_query: 0,
         grove_get_sum_tree_total_value: 0,
         grove_has_raw: 0,
         grove_get_raw_item: 0,
@@ -49,6 +50,7 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         batch_refresh_reference: 0,
         batch_insert_empty_sum_tree: 0,
         batch_move: 0,
+        batch_insert_item_with_sum_item_if_not_exists: 0,
     },
     apply: DriveGroveApplyMethodVersions {
         grove_apply_operation: 0,

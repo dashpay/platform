@@ -93,6 +93,7 @@ describe('TokenConfigurationConvention', () => {
       expect(convention.localizations.ru).to.deep.equal(undefined);
       expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalization');
       expect(convention.localizations.en.toJSON()).to.deep.equal({
+        $format_version: '0',
         shouldCapitalize: false,
         singularForm: 'singularForm',
         pluralForm: 'pluralForm',

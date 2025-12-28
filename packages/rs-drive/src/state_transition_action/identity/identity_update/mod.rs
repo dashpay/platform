@@ -7,7 +7,7 @@ use crate::state_transition_action::identity::identity_update::v0::IdentityUpdat
 use derive_more::From;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::platform_value::Identifier;
-use dpp::prelude::{Revision, UserFeeIncrease};
+use dpp::prelude::{IdentityNonce, Revision, UserFeeIncrease};
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -50,6 +50,13 @@ impl IdentityUpdateTransitionAction {
     pub fn revision(&self) -> Revision {
         match self {
             IdentityUpdateTransitionAction::V0(transition) => transition.revision,
+        }
+    }
+
+    /// Nonce
+    pub fn nonce(&self) -> IdentityNonce {
+        match self {
+            IdentityUpdateTransitionAction::V0(transition) => transition.nonce,
         }
     }
 

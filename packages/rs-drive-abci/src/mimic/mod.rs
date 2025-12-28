@@ -218,20 +218,38 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             }
         })?;
 
-        let state_transactions_to_process = tx_records
+        assert_eq!(
+            state_transitions.len(),
+            tx_records.len(),
+            "Each state transition should have exactly one corresponding tx record"
+        );
+
+        let state_transitions_accepted: (Vec<Vec<u8>>, Vec<StateTransition>) = tx_records
             .into_iter()
-            .filter_map(|tx_record| {
+            .zip(state_transitions)
+            .filter_map(|(tx_record, st)| {
                 if tx_record.action == TxAction::Removed as i32
                     || tx_record.action == TxAction::Delayed as i32
                 {
                     None
                 } else {
-                    Some(tx_record.tx)
+                    Some((tx_record.tx, st))
                 }
             })
-            .collect::<Vec<_>>();
+            .unzip();
 
-        let state_transaction_results = state_transitions.into_iter().zip(tx_results).collect();
+        assert_eq!(
+            state_transitions_accepted.1.len(),
+            tx_results.len(),
+            "Each accepted state transition should have exactly one corresponding tx result"
+        );
+
+        let state_transactions_to_process = state_transitions_accepted.0;
+        let state_transaction_results = state_transitions_accepted
+            .1
+            .into_iter()
+            .zip(tx_results)
+            .collect();
 
         // PROCESS
 

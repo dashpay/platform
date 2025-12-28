@@ -9,9 +9,6 @@ pub mod grove_insert;
 /// Grove insert operation into an empty tree
 pub mod grove_insert_empty_tree;
 
-/// Grove insert operation into an empty sum tree
-pub mod grove_insert_empty_sum_tree;
-
 /// Grove insert operation, but only if it doesn't already exist
 pub mod grove_insert_if_not_exists;
 
@@ -50,6 +47,12 @@ pub mod grove_get_raw_path_query;
 
 /// Proved path query in grove
 pub mod grove_get_proved_path_query;
+
+/// Proved branch chunk query in grove
+pub mod grove_get_proved_branch_chunk_query;
+
+/// Proved trunk chunk query in grove
+pub mod grove_get_proved_trunk_chunk_query;
 
 /// Get total value from sum tree in grove
 pub mod grove_get_sum_tree_total_value;
@@ -137,6 +140,10 @@ pub mod batch_insert_sum_item_if_not_exists;
 /// Moved items that are found in a path query to a new path.
 pub mod batch_move_items_in_path_query;
 
+/// Batch inserts item with sum item if not already existing
+pub mod batch_insert_item_with_sum_item_if_not_exists;
+/// Keeps the item, but inserts or adds to the sum item if it already exists
+pub mod batch_keep_item_insert_sum_item_or_add_to_if_already_exists;
 mod batch_move;
 /// Get the total value from a big sum tree
 pub mod grove_get_big_sum_tree_total_value;
@@ -512,4 +519,15 @@ impl From<&BatchDeleteApplyType> for DirectQueryType {
             }
         }
     }
+}
+
+/// Specifies which GroveDB instance to use for a query
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroveDBToUse {
+    /// Use the current (main) GroveDB
+    Current,
+    /// Use the latest checkpoint
+    LatestCheckpoint,
+    /// Use a specific checkpoint at the given block height
+    Checkpoint(u64),
 }

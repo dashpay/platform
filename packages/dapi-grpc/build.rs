@@ -73,7 +73,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 44] = [
+    const VERSIONED_REQUESTS: [&str; 46] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -118,7 +118,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetGroupActionsRequest",
         "GetGroupActionSignersRequest",
         "GetFinalizedEpochInfosRequest",
+        "GetAddressInfoRequest",
+        "GetAddressesInfosRequest",
     ];
+
+    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
+
+    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesBranchStateRequest"];
 
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
@@ -128,7 +134,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 42] = [
+    const VERSIONED_RESPONSES: [&str; 44] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -171,17 +177,37 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetGroupActionsResponse",
         "GetGroupActionSignersResponse",
         "GetFinalizedEpochInfosResponse",
+        "GetAddressInfoResponse",
+        "GetAddressesInfosResponse",
     ];
+
+    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
+
+    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesBranchStateResponse"];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
     check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
+    check_unique(&PROOF_ONLY_VERSIONED_REQUESTS).expect("PROOF_ONLY_VERSIONED_REQUESTS");
+    check_unique(&PROOF_ONLY_VERSIONED_RESPONSES).expect("PROOF_ONLY_VERSIONED_RESPONSES");
+    check_unique(&MERK_PROOF_VERSIONED_REQUESTS).expect("MERK_PROOF_VERSIONED_REQUESTS");
+    check_unique(&MERK_PROOF_VERSIONED_RESPONSES).expect("MERK_PROOF_VERSIONED_RESPONSES");
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]"#,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive ProofOnlyVersionedGrpcMessage on requests
+    for msg in PROOF_ONLY_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::ProofOnlyVersionedGrpcMessage)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
@@ -191,13 +217,44 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage,::dapi_grpc_macros::VersionedGrpcResponse)]"#,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and ProofOnlyVersionedGrpcResponse on responses
+    for msg in PROOF_ONLY_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::ProofOnlyVersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage on merk proof requests
+    for msg in MERK_PROOF_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and MerkProofVersionedGrpcResponse on responses
+    for msg in MERK_PROOF_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::MerkProofVersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
     // All messages can be mocked.
-    let platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+    let platform =
+        platform.message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#);
 
     let platform = platform
         .type_attribute(
@@ -232,7 +289,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
 fn configure_drive(drive: MappingConfig) -> MappingConfig {
     drive
-        .message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#)
+        .message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#)
         .type_attribute(
             ".",
             r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
@@ -267,7 +324,7 @@ fn check_unique(messages: &[&'static str]) -> Result<(), String> {
 
 fn configure_core(core: MappingConfig) -> MappingConfig {
     // All messages can be mocked.
-    let core = core.message_attribute(".", r#"#[derive(::dapi_grpc_macros::Mockable)]"#);
+    let core = core.message_attribute(".", r#"#[derive(::dash_platform_macros::Mockable)]"#);
 
     // Serde support
     let core = core.type_attribute(

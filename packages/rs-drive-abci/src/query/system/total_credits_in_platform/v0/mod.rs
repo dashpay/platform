@@ -1,7 +1,8 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_response::{
@@ -23,7 +24,7 @@ use drive::drive::system::misc_path;
 use drive::drive::RootTree;
 use drive::error::proof::ProofError;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
-use drive::util::grove_operations::DirectQueryType;
+use drive::util::grove_operations::{DirectQueryType, GroveDBToUse};
 
 impl<C> Platform<C> {
     pub(super) fn query_total_credits_in_platform_v0(
@@ -76,11 +77,14 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             ));
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetTotalCreditsInPlatformResponseV0 {
                 result: Some(get_total_credits_in_platform_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    proof,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let path_holding_total_credits = misc_path();
@@ -125,7 +129,7 @@ impl<C> Platform<C> {
                 result: Some(get_total_credits_in_platform_response_v0::Result::Credits(
                     total_credits_with_rewards,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 
