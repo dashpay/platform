@@ -141,19 +141,7 @@
     },
     "getConsensusParams": {
       "status": "not_implemented"
-    },
-    "getAddressInfo": {
-      "status": "implemented"
-    },
-    "getAddressesBranchState": {
-      "status": "not_implemented"
-    },
-    "getAddressesInfos": {
-      "status": "implemented"
-    },
-    "getAddressesTrunkState": {
-      "status": "not_implemented"
     }
   },
-  "last_updated": "2025-12-27T20:03:57.356709"
+  "last_updated": "2025-07-14T03:27:11.465612"
 }
