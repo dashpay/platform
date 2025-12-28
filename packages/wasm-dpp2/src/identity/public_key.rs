@@ -347,3 +347,28 @@ impl IdentityPublicKeyWasm {
         Ok(IdentityPublicKeyWasm(key))
     }
 }
+
+impl IdentityPublicKeyWasm {
+    /// Extracts an IdentityPublicKey from a JS options object.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to an IdentityPublicKeyWasm.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let key_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if key_js.is_undefined() || key_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        key_js
+            .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
+            .map(|boxed| (*boxed).clone())
+            .map_err(|_| WasmDppError::invalid_argument("Expected an IdentityPublicKey object"))
+    }
+}

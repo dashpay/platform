@@ -537,4 +537,27 @@ impl DataContractWasm {
     ) -> Result<DocumentTypeRef<'_>, DataContractError> {
         self.0.document_type_for_name(name.as_str()).clone()
     }
+
+    /// Extracts a DataContract from a JS options object.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to a DataContractWasm.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let contract_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if contract_js.is_undefined() || contract_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        contract_js
+            .to_wasm::<DataContractWasm>("DataContract")
+            .map(|boxed| (*boxed).clone())
+            .map_err(|_| WasmDppError::invalid_argument("Expected a DataContract object"))
+    }
 }

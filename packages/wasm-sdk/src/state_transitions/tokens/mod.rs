@@ -3,11 +3,12 @@
 //! This module provides WASM bindings for token operations like mint, burn, transfer, etc.
 
 use crate::error::WasmSdkError;
-use crate::queries::utils::identifier_from_js;
+use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
+use crate::settings::extract_settings_from_options;
 use dash_sdk::dpp::balances::credits::TokenAmount;
-use dash_sdk::dpp::document::DocumentV0Getters;
-use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Identifier};
+use dash_sdk::dpp::identity::IdentityPublicKey;
+use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
@@ -15,58 +16,24 @@ use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::tokens::calculate_token_id;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
-use serde::Serialize;
-use serde_json;
+use js_sys::BigInt;
+use serde::Deserialize;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsValue;
+use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::IdentitySignerWasm;
 
-/// Helper function to serialize to JsValue using json_compatible()
-fn to_json_compatible<T: Serialize>(value: &T) -> Result<JsValue, serde_wasm_bindgen::Error> {
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    value.serialize(&serializer)
-}
-
-// WasmSigner has been replaced with SingleKeySigner from simple-signer crate
-
-// Helper functions for token operations
+// Helper methods for token operations
 impl WasmSdk {
-    /// Parse and validate token operation parameters
-    async fn parse_token_params(
-        &self,
-        data_contract_id: &JsValue,
-        identity_id: &JsValue,
-        amount: &str,
-        recipient_id: Option<&JsValue>,
-    ) -> Result<(Identifier, Identifier, TokenAmount, Option<Identifier>), WasmSdkError> {
-        // Parse identifiers
-        let contract_id = identifier_from_js(data_contract_id, "contract ID")?;
-
-        let identity_identifier = identifier_from_js(identity_id, "identity ID")?;
-
-        let recipient = match recipient_id {
-            Some(value) if !value.is_null() && !value.is_undefined() => {
-                Some(identifier_from_js(value, "recipient ID")?)
-            }
-            _ => None,
-        };
-
-        // Parse amount
-        let token_amount = amount
-            .parse::<TokenAmount>()
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid amount: {}", e)))?;
-
-        Ok((contract_id, identity_identifier, token_amount, recipient))
-    }
-
     /// Fetch and cache data contract in trusted context
     async fn fetch_and_cache_token_contract(
         &self,
         contract_id: Identifier,
     ) -> Result<dash_sdk::platform::DataContract, WasmSdkError> {
-        let sdk = self.inner_clone();
+        let sdk = self.inner_sdk();
 
         // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(&sdk, contract_id)
+        let data_contract = dash_sdk::platform::DataContract::fetch(sdk, contract_id)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
@@ -87,58 +54,113 @@ impl WasmSdk {
 
         Ok(data_contract)
     }
+}
 
-    /// Convert state transition proof result to JsValue
-    fn format_token_result(
-        &self,
-        proof_result: StateTransitionProofResult,
-    ) -> Result<JsValue, WasmSdkError> {
-        match proof_result {
-            StateTransitionProofResult::VerifiedTokenBalance(recipient_id, new_balance) => {
-                to_json_compatible(&serde_json::json!({
-                    "type": "VerifiedTokenBalance",
-                    "recipientId": recipient_id.to_string(Encoding::Base58),
-                    "newBalance": new_balance.to_string()
-                }))
-                .map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
-                })
-            }
-            StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
-                to_json_compatible(&serde_json::json!({
-                    "type": "VerifiedTokenActionWithDocument",
-                    "documentId": doc.id().to_string(Encoding::Base58),
-                    "message": "Token operation recorded successfully"
-                }))
-                .map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
-                })
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
-                to_json_compatible(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithDocument",
-                    "groupPower": power,
-                    "document": doc.is_some()
-                }))
-                .map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
-                })
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
-                power,
-                status,
-                balance,
-            ) => to_json_compatible(&serde_json::json!({
-                "type": "VerifiedTokenGroupActionWithTokenBalance",
-                "groupPower": power,
-                "status": format!("{:?}", status),
-                "balance": balance.map(|b| b.to_string())
-            }))
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e))),
-            _ => Err(WasmSdkError::generic(
-                "Unexpected result type for token transition",
-            )),
-        }
+// ============================================================================
+// Token Mint
+// ============================================================================
+
+/// TypeScript interface for token mint options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_MINT_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for minting new tokens.
+ */
+export interface TokenMintOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The amount of tokens to mint.
+   */
+  amount: bigint | number;
+
+  /**
+   * The identity ID of the minter.
+   */
+  identityId: Identifier;
+
+  /**
+   * Optional recipient identity ID.
+   * If not provided, mints to the minter's identity.
+   */
+  recipientId?: Identifier;
+
+  /**
+   * Optional public note for the mint operation.
+   */
+  publicNote?: string;
+
+  /**
+   * The identity public key to use for signing the transition.
+   * Get this from the minter identity's public keys.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenMintOptions")]
+    pub type TokenMintOptionsJs;
+}
+
+/// Main input struct for token mint options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenMintOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    amount: u64,
+    identity_id: IdentifierWasm,
+    #[serde(default)]
+    recipient_id: Option<IdentifierWasm>,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_mint_options(options: JsValue) -> Result<TokenMintOptionsInput, WasmSdkError> {
+    deserialize_required_query(options, "Options object is required", "token mint options")
+}
+
+/// Result of minting tokens.
+#[wasm_bindgen(js_name = "TokenMintResult")]
+pub struct TokenMintResultWasm {
+    recipient_id: IdentifierWasm,
+    new_balance: u64,
+}
+
+#[wasm_bindgen(js_class = TokenMintResult)]
+impl TokenMintResultWasm {
+    /// The recipient's identity ID.
+    #[wasm_bindgen(getter = "recipientId")]
+    pub fn recipient_id(&self) -> IdentifierWasm {
+        self.recipient_id.clone()
+    }
+
+    /// The new token balance after minting.
+    #[wasm_bindgen(getter = "newBalance")]
+    pub fn new_balance(&self) -> BigInt {
+        BigInt::from(self.new_balance)
     }
 }
 
@@ -146,1263 +168,1681 @@ impl WasmSdk {
 impl WasmSdk {
     /// Mint new tokens according to the token's configuration.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `amount` - The amount of tokens to mint
-    /// * `identity_id` - The identity ID of the minter
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `recipient_id` - Optional recipient identity ID (if None, mints to issuer)
-    /// * `public_note` - Optional public note for the mint operation
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[allow(clippy::too_many_arguments)]
-    #[wasm_bindgen(js_name = tokenMint)]
+    /// @param options - Mint options including contract ID, token position, amount, and signer
+    /// @returns Promise resolving to TokenMintResult with the new balance
+    #[wasm_bindgen(js_name = "tokenMint")]
     pub async fn token_mint(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        amount: String,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "recipientId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
-        recipient_id: JsValue,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        let sdk = self.inner_clone();
+        options: TokenMintOptionsJs,
+    ) -> Result<TokenMintResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        let recipient_option = if recipient_id.is_null() || recipient_id.is_undefined() {
-            None
-        } else {
-            Some(&recipient_id)
-        };
+        // Deserialize and validate options
+        let parsed = deserialize_token_mint_options(options_value.clone())?;
 
-        // Parse and validate parameters
-        let (contract_id, issuer_id, token_amount, recipient) = self
-            .parse_token_params(&data_contract_id, &identity_id, &amount, recipient_option)
-            .await?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let identity_id: Identifier = parsed.identity_id.into();
+        let recipient_id: Identifier = parsed
+            .recipient_id
+            .map(Into::into)
+            .unwrap_or(identity_id);
+        let amount = parsed.amount as TokenAmount;
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, issuer_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Calculate token ID
+        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(issuer_id, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(identity_id, contract_id, true, None)
             .await?;
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the mint transition
         let state_transition = BatchTransition::new_token_mint_transition(
             token_id,
-            issuer_id,
+            identity_id,
             contract_id,
-            token_position,
-            token_amount,
-            recipient,
-            public_note,
+            parsed.token_position,
+            amount,
+            Some(recipient_id),
+            parsed.public_note,
             None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create mint transition: {}", e)))?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        let result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
+        // Extract balance from result
+        let new_balance = match result {
+            StateTransitionProofResult::VerifiedTokenBalance(_, balance) => balance,
+            _ => 0,
+        };
+
+        Ok(TokenMintResultWasm {
+            recipient_id: recipient_id.into(),
+            new_balance,
+        })
+    }
+}
+
+// ============================================================================
+// Token Burn
+// ============================================================================
+
+/// TypeScript interface for token burn options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_BURN_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for burning tokens.
+ */
+export interface TokenBurnOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The amount of tokens to burn.
+   */
+  amount: bigint | number;
+
+  /**
+   * The identity ID of the token holder burning tokens.
+   */
+  identityId: Identifier;
+
+  /**
+   * Optional public note for the burn operation.
+   */
+  publicNote?: string;
+
+  /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenBurnOptions")]
+    pub type TokenBurnOptionsJs;
+}
+
+/// Main input struct for token burn options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenBurnOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    amount: u64,
+    identity_id: IdentifierWasm,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_burn_options(options: JsValue) -> Result<TokenBurnOptionsInput, WasmSdkError> {
+    deserialize_required_query(options, "Options object is required", "token burn options")
+}
+
+/// Result of burning tokens.
+#[wasm_bindgen(js_name = "TokenBurnResult")]
+pub struct TokenBurnResultWasm {
+    identity_id: IdentifierWasm,
+    new_balance: u64,
+}
+
+#[wasm_bindgen(js_class = TokenBurnResult)]
+impl TokenBurnResultWasm {
+    /// The identity ID that burned tokens.
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> IdentifierWasm {
+        self.identity_id.clone()
     }
 
-    /// Burn tokens, permanently removing them from circulation.
+    /// The new token balance after burning.
+    #[wasm_bindgen(getter = "newBalance")]
+    pub fn new_balance(&self) -> BigInt {
+        BigInt::from(self.new_balance)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Burn tokens from an identity's balance.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `amount` - The amount of tokens to burn
-    /// * `identity_id` - The identity ID of the burner
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `public_note` - Optional public note for the burn operation
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[wasm_bindgen(js_name = tokenBurn)]
+    /// @param options - Burn options including contract ID, token position, amount, and signer
+    /// @returns Promise resolving to TokenBurnResult with the new balance
+    #[wasm_bindgen(js_name = "tokenBurn")]
     pub async fn token_burn(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        amount: String,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        let sdk = self.inner_clone();
+        options: TokenBurnOptionsJs,
+    ) -> Result<TokenBurnResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        // Parse and validate parameters (no recipient for burn)
-        let (contract_id, burner_id, token_amount, _) = self
-            .parse_token_params(&data_contract_id, &identity_id, &amount, None)
-            .await?;
+        // Deserialize and validate options
+        let parsed = deserialize_token_burn_options(options_value.clone())?;
+
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let identity_id: Identifier = parsed.identity_id.into();
+        let amount = parsed.amount as TokenAmount;
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, burner_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Calculate token ID
+        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(burner_id, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(identity_id, contract_id, true, None)
             .await?;
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the burn transition
         let state_transition = BatchTransition::new_token_burn_transition(
             token_id,
-            burner_id,
+            identity_id,
             contract_id,
-            token_position,
-            token_amount,
-            public_note,
+            parsed.token_position,
+            amount,
+            parsed.public_note,
             None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create burn transition: {}", e)))?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        let result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
+        // Extract balance from result
+        let new_balance = match result {
+            StateTransitionProofResult::VerifiedTokenBalance(_, balance) => balance,
+            _ => 0,
+        };
+
+        Ok(TokenBurnResultWasm {
+            identity_id: identity_id.into(),
+            new_balance,
+        })
+    }
+}
+
+// ============================================================================
+// Token Transfer
+// ============================================================================
+
+/// TypeScript interface for token transfer options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_TRANSFER_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for transferring tokens between identities.
+ */
+export interface TokenTransferOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The amount of tokens to transfer.
+   */
+  amount: bigint | number;
+
+  /**
+   * The sender's identity ID.
+   */
+  senderId: Identifier;
+
+  /**
+   * The recipient's identity ID.
+   */
+  recipientId: Identifier;
+
+  /**
+   * Optional public note for the transfer.
+   */
+  publicNote?: string;
+
+  /**
+   * Signer containing the private key for the sender's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenTransferOptions")]
+    pub type TokenTransferOptionsJs;
+}
+
+/// Main input struct for token transfer options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenTransferOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    amount: u64,
+    sender_id: IdentifierWasm,
+    recipient_id: IdentifierWasm,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_transfer_options(
+    options: JsValue,
+) -> Result<TokenTransferOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token transfer options",
+    )
+}
+
+/// Result of transferring tokens.
+#[wasm_bindgen(js_name = "TokenTransferResult")]
+pub struct TokenTransferResultWasm {
+    sender_id: IdentifierWasm,
+    recipient_id: IdentifierWasm,
+    amount: u64,
+}
+
+#[wasm_bindgen(js_class = TokenTransferResult)]
+impl TokenTransferResultWasm {
+    /// The sender's identity ID.
+    #[wasm_bindgen(getter = "senderId")]
+    pub fn sender_id(&self) -> IdentifierWasm {
+        self.sender_id.clone()
     }
 
-    /// Transfer tokens between identities.
+    /// The recipient's identity ID.
+    #[wasm_bindgen(getter = "recipientId")]
+    pub fn recipient_id(&self) -> IdentifierWasm {
+        self.recipient_id.clone()
+    }
+
+    /// The amount of tokens transferred.
+    #[wasm_bindgen(getter)]
+    pub fn amount(&self) -> BigInt {
+        BigInt::from(self.amount)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Transfer tokens from one identity to another.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `amount` - The amount of tokens to transfer
-    /// * `sender_id` - The identity ID of the sender
-    /// * `recipient_id` - The identity ID of the recipient
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `public_note` - Optional public note for the transfer
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[allow(clippy::too_many_arguments)]
-    #[wasm_bindgen(js_name = tokenTransfer)]
+    /// @param options - Transfer options including contract ID, token position, amount, sender, recipient, and signer
+    /// @returns Promise resolving to TokenTransferResult with transfer info
+    #[wasm_bindgen(js_name = "tokenTransfer")]
     pub async fn token_transfer(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        amount: String,
-        #[wasm_bindgen(js_name = "senderId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        sender_id: JsValue,
-        #[wasm_bindgen(js_name = "recipientId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        recipient_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        let sdk = self.inner_clone();
+        options: TokenTransferOptionsJs,
+    ) -> Result<TokenTransferResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        // Parse and validate parameters
-        let (contract_id, sender_identifier, token_amount, _) = self
-            .parse_token_params(&data_contract_id, &sender_id, &amount, None)
-            .await?;
+        // Deserialize and validate options
+        let parsed = deserialize_token_transfer_options(options_value.clone())?;
 
-        // Parse recipient ID
-        let recipient_identifier = identifier_from_js(&recipient_id, "recipient ID")?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let sender_id: Identifier = parsed.sender_id.into();
+        let recipient_id: Identifier = parsed.recipient_id.into();
+        let amount = parsed.amount as TokenAmount;
+
+        // Validate not transferring to self
+        if sender_id == recipient_id {
+            return Err(WasmSdkError::invalid_argument(
+                "Cannot transfer tokens to yourself",
+            ));
+        }
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, sender_identifier)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Calculate token ID
+        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(sender_identifier, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(sender_id, contract_id, true, None)
             .await?;
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the transfer transition
         let state_transition = BatchTransition::new_token_transfer_transition(
             token_id,
-            sender_identifier,
+            sender_id,
             contract_id,
-            token_position,
-            token_amount,
-            recipient_identifier,
-            public_note,
+            parsed.token_position,
+            amount,
+            recipient_id,
+            parsed.public_note,
             None, // shared_encrypted_note
             None, // private_encrypted_note
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create transfer transition: {}", e))
         })?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
+        Ok(TokenTransferResultWasm {
+            sender_id: sender_id.into(),
+            recipient_id: recipient_id.into(),
+            amount: parsed.amount,
+        })
     }
+}
 
-    /// Freeze tokens for a specific identity.
+// ============================================================================
+// Token Freeze
+// ============================================================================
+
+/// TypeScript interface for token freeze options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_FREEZE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for freezing an identity's token balance.
+ */
+export interface TokenFreezeOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID of the token authority performing the freeze.
+   */
+  authorityId: Identifier;
+
+  /**
+   * The identity ID to freeze.
+   */
+  frozenIdentityId: Identifier;
+
+  /**
+   * Optional public note for the freeze operation.
+   */
+  publicNote?: string;
+
+  /**
+   * Signer containing the private key for the authority's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenFreezeOptions")]
+    pub type TokenFreezeOptionsJs;
+}
+
+/// Main input struct for token freeze options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenFreezeOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    authority_id: IdentifierWasm,
+    frozen_identity_id: IdentifierWasm,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_freeze_options(
+    options: JsValue,
+) -> Result<TokenFreezeOptionsInput, WasmSdkError> {
+    deserialize_required_query(options, "Options object is required", "token freeze options")
+}
+
+/// Result of freezing tokens.
+#[wasm_bindgen(js_name = "TokenFreezeResult")]
+pub struct TokenFreezeResultWasm {
+    frozen_identity_id: IdentifierWasm,
+}
+
+#[wasm_bindgen(js_class = TokenFreezeResult)]
+impl TokenFreezeResultWasm {
+    /// The identity ID that was frozen.
+    #[wasm_bindgen(getter = "frozenIdentityId")]
+    pub fn frozen_identity_id(&self) -> IdentifierWasm {
+        self.frozen_identity_id.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Freeze an identity's token balance.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `identity_to_freeze_id` - The identity ID whose tokens to freeze
-    /// * `freezer_id` - The identity ID of the freezer (must have permission)
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `public_note` - Optional public note for the freeze operation
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[wasm_bindgen(js_name = tokenFreeze)]
+    /// @param options - Freeze options including contract ID, token position, authority, frozen identity, and signer
+    /// @returns Promise resolving to TokenFreezeResult
+    #[wasm_bindgen(js_name = "tokenFreeze")]
     pub async fn token_freeze(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        #[wasm_bindgen(js_name = "identityToFreezeId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_to_freeze_id: JsValue,
-        #[wasm_bindgen(js_name = "freezerId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        freezer_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        let sdk = self.inner_clone();
+        options: TokenFreezeOptionsJs,
+    ) -> Result<TokenFreezeResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        // Parse and validate parameters
-        let (contract_id, freezer_identifier, _, _) = self
-            .parse_token_params(
-                &data_contract_id,
-                &freezer_id,
-                "0", // Amount not needed for freeze
-                None,
-            )
-            .await?;
+        // Deserialize and validate options
+        let parsed = deserialize_token_freeze_options(options_value.clone())?;
 
-        // Parse identity to freeze
-        let frozen_identity_id = identifier_from_js(&identity_to_freeze_id, "identity to freeze")?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let authority_id: Identifier = parsed.authority_id.into();
+        let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, freezer_identifier)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Calculate token ID
+        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(freezer_identifier, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(authority_id, contract_id, true, None)
             .await?;
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the freeze transition
         let state_transition = BatchTransition::new_token_freeze_transition(
             token_id,
-            freezer_identifier,
+            authority_id,
             contract_id,
-            token_position,
+            parsed.token_position,
             frozen_identity_id,
-            public_note,
+            parsed.public_note,
             None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create freeze transition: {}", e)))?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
+        Ok(TokenFreezeResultWasm {
+            frozen_identity_id: frozen_identity_id.into(),
+        })
     }
+}
 
-    /// Unfreeze tokens for a specific identity.
+// ============================================================================
+// Token Unfreeze
+// ============================================================================
+
+/// TypeScript interface for token unfreeze options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_UNFREEZE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for unfreezing an identity's token balance.
+ */
+export interface TokenUnfreezeOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID of the token authority performing the unfreeze.
+   */
+  authorityId: Identifier;
+
+  /**
+   * The identity ID to unfreeze.
+   */
+  frozenIdentityId: Identifier;
+
+  /**
+   * Optional public note for the unfreeze operation.
+   */
+  publicNote?: string;
+
+  /**
+   * Signer containing the private key for the authority's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenUnfreezeOptions")]
+    pub type TokenUnfreezeOptionsJs;
+}
+
+/// Main input struct for token unfreeze options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenUnfreezeOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    authority_id: IdentifierWasm,
+    frozen_identity_id: IdentifierWasm,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_unfreeze_options(
+    options: JsValue,
+) -> Result<TokenUnfreezeOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token unfreeze options",
+    )
+}
+
+/// Result of unfreezing tokens.
+#[wasm_bindgen(js_name = "TokenUnfreezeResult")]
+pub struct TokenUnfreezeResultWasm {
+    unfrozen_identity_id: IdentifierWasm,
+}
+
+#[wasm_bindgen(js_class = TokenUnfreezeResult)]
+impl TokenUnfreezeResultWasm {
+    /// The identity ID that was unfrozen.
+    #[wasm_bindgen(getter = "unfrozenIdentityId")]
+    pub fn unfrozen_identity_id(&self) -> IdentifierWasm {
+        self.unfrozen_identity_id.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Unfreeze an identity's token balance.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `identity_to_unfreeze_id` - The identity ID whose tokens to unfreeze
-    /// * `unfreezer_id` - The identity ID of the unfreezer (must have permission)
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `public_note` - Optional public note for the unfreeze operation
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[wasm_bindgen(js_name = tokenUnfreeze)]
+    /// @param options - Unfreeze options including contract ID, token position, authority, frozen identity, and signer
+    /// @returns Promise resolving to TokenUnfreezeResult
+    #[wasm_bindgen(js_name = "tokenUnfreeze")]
     pub async fn token_unfreeze(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        #[wasm_bindgen(js_name = "identityToUnfreezeId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_to_unfreeze_id: JsValue,
-        #[wasm_bindgen(js_name = "unfreezerId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        unfreezer_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        let sdk = self.inner_clone();
+        options: TokenUnfreezeOptionsJs,
+    ) -> Result<TokenUnfreezeResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        // Parse and validate parameters
-        let (contract_id, unfreezer_identifier, _, _) = self
-            .parse_token_params(
-                &data_contract_id,
-                &unfreezer_id,
-                "0", // Amount not needed for unfreeze
-                None,
-            )
-            .await?;
+        // Deserialize and validate options
+        let parsed = deserialize_token_unfreeze_options(options_value.clone())?;
 
-        // Parse identity to unfreeze
-        let frozen_identity_id =
-            identifier_from_js(&identity_to_unfreeze_id, "identity to unfreeze")?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let authority_id: Identifier = parsed.authority_id.into();
+        let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, unfreezer_identifier)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Calculate token ID
+        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(unfreezer_identifier, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(authority_id, contract_id, true, None)
             .await?;
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the unfreeze transition
         let state_transition = BatchTransition::new_token_unfreeze_transition(
             token_id,
-            unfreezer_identifier,
+            authority_id,
             contract_id,
-            token_position,
+            parsed.token_position,
             frozen_identity_id,
-            public_note,
+            parsed.public_note,
             None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create unfreeze transition: {}", e))
         })?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
+        Ok(TokenUnfreezeResultWasm {
+            unfrozen_identity_id: frozen_identity_id.into(),
+        })
     }
+}
 
-    /// Destroy frozen tokens.
+// ============================================================================
+// Token Destroy Frozen
+// ============================================================================
+
+/// TypeScript interface for token destroy frozen options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_DESTROY_FROZEN_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for destroying a frozen identity's token balance.
+ */
+export interface TokenDestroyFrozenOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID of the token authority performing the destruction.
+   */
+  authorityId: Identifier;
+
+  /**
+   * The frozen identity ID whose tokens will be destroyed.
+   */
+  frozenIdentityId: Identifier;
+
+  /**
+   * Optional public note for the destruction operation.
+   */
+  publicNote?: string;
+
+  /**
+   * Signer containing the private key for the authority's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenDestroyFrozenOptions")]
+    pub type TokenDestroyFrozenOptionsJs;
+}
+
+/// Main input struct for token destroy frozen options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenDestroyFrozenOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    authority_id: IdentifierWasm,
+    frozen_identity_id: IdentifierWasm,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_destroy_frozen_options(
+    options: JsValue,
+) -> Result<TokenDestroyFrozenOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token destroy frozen options",
+    )
+}
+
+/// Result of destroying frozen tokens.
+#[wasm_bindgen(js_name = "TokenDestroyFrozenResult")]
+pub struct TokenDestroyFrozenResultWasm {
+    destroyed_identity_id: IdentifierWasm,
+}
+
+#[wasm_bindgen(js_class = TokenDestroyFrozenResult)]
+impl TokenDestroyFrozenResultWasm {
+    /// The identity ID whose tokens were destroyed.
+    #[wasm_bindgen(getter = "destroyedIdentityId")]
+    pub fn destroyed_identity_id(&self) -> IdentifierWasm {
+        self.destroyed_identity_id.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Destroy a frozen identity's token balance.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `identity_id` - The identity ID whose frozen tokens to destroy
-    /// * `destroyer_id` - The identity ID of the destroyer (must have permission)
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `public_note` - Optional public note for the destroy operation
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[wasm_bindgen(js_name = tokenDestroyFrozen)]
+    /// @param options - Destroy frozen options including contract ID, token position, authority, frozen identity, and signer
+    /// @returns Promise resolving to TokenDestroyFrozenResult
+    #[wasm_bindgen(js_name = "tokenDestroyFrozen")]
     pub async fn token_destroy_frozen(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "destroyerId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        destroyer_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        let sdk = self.inner_clone();
+        options: TokenDestroyFrozenOptionsJs,
+    ) -> Result<TokenDestroyFrozenResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        // Parse and validate parameters
-        let (contract_id, destroyer_identifier, _, _) = self
-            .parse_token_params(
-                &data_contract_id,
-                &destroyer_id,
-                "0", // Amount not needed for destroy frozen
-                None,
-            )
-            .await?;
+        // Deserialize and validate options
+        let parsed = deserialize_token_destroy_frozen_options(options_value.clone())?;
 
-        // Parse identity whose frozen tokens to destroy
-        let frozen_identity_id =
-            identifier_from_js(&identity_id, "identity to destroy frozen funds")?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let authority_id: Identifier = parsed.authority_id.into();
+        let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, destroyer_identifier)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Calculate token ID
+        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(destroyer_identifier, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(authority_id, contract_id, true, None)
             .await?;
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the destroy frozen transition
         let state_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
             token_id,
-            destroyer_identifier,
+            authority_id,
             contract_id,
-            token_position,
+            parsed.token_position,
             frozen_identity_id,
-            public_note,
+            parsed.public_note,
             None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create destroy frozen transition: {}", e))
+            WasmSdkError::generic(format!(
+                "Failed to create destroy frozen transition: {}",
+                e
+            ))
         })?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
+        Ok(TokenDestroyFrozenResultWasm {
+            destroyed_identity_id: frozen_identity_id.into(),
+        })
     }
+}
 
-    /// Set or update the price for direct token purchases.
+// ============================================================================
+// Token Emergency Action (Pause/Resume)
+// ============================================================================
+
+/// TypeScript interface for token emergency action options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_EMERGENCY_ACTION_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for performing an emergency action (pause/resume) on a token.
+ */
+export interface TokenEmergencyActionOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID of the token authority performing the action.
+   */
+  authorityId: Identifier;
+
+  /**
+   * The emergency action to perform: "pause" or "resume".
+   */
+  action: "pause" | "resume";
+
+  /**
+   * Optional public note for the emergency action.
+   */
+  publicNote?: string;
+
+  /**
+   * Signer containing the private key for the authority's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenEmergencyActionOptions")]
+    pub type TokenEmergencyActionOptionsJs;
+}
+
+/// Main input struct for token emergency action options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenEmergencyActionOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    authority_id: IdentifierWasm,
+    action: String,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_emergency_action_options(
+    options: JsValue,
+) -> Result<TokenEmergencyActionOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token emergency action options",
+    )
+}
+
+/// Result of an emergency action.
+#[wasm_bindgen(js_name = "TokenEmergencyActionResult")]
+pub struct TokenEmergencyActionResultWasm {
+    action: String,
+}
+
+#[wasm_bindgen(js_class = TokenEmergencyActionResult)]
+impl TokenEmergencyActionResultWasm {
+    /// The action that was performed ("pause" or "resume").
+    #[wasm_bindgen(getter)]
+    pub fn action(&self) -> String {
+        self.action.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Perform an emergency action (pause or resume) on a token.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `identity_id` - The identity ID of the actor setting the price
-    /// * `price_type` - The pricing type: "single" or "tiered"
-    /// * `price_data` - JSON string with pricing data (single price or tiered pricing map)
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
-    /// * `public_note` - Optional public note for the price change
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[allow(clippy::too_many_arguments)]
-    #[wasm_bindgen(js_name = tokenSetPriceForDirectPurchase)]
-    pub async fn token_set_price_for_direct_purchase(
+    /// @param options - Emergency action options including contract ID, token position, action type, and signer
+    /// @returns Promise resolving to TokenEmergencyActionResult
+    #[wasm_bindgen(js_name = "tokenEmergencyAction")]
+    pub async fn token_emergency_action(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "priceType")] price_type: String,
-        #[wasm_bindgen(js_name = "priceData")] price_data: String,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        use dash_sdk::dpp::fee::Credits;
-        use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-        use std::collections::BTreeMap;
+        options: TokenEmergencyActionOptionsJs,
+    ) -> Result<TokenEmergencyActionResultWasm, WasmSdkError> {
+        use dash_sdk::dpp::tokens::emergency_action::TokenEmergencyAction;
 
-        let sdk = self.inner_clone();
+        let options_value: JsValue = options.into();
 
-        // Parse identifiers
-        let (contract_id, actor_id, _, _) = self
-            .parse_token_params(
-                &data_contract_id,
-                &identity_id,
-                "0", // Amount not needed for setting price
-                None,
-            )
-            .await?;
+        // Deserialize and validate options
+        let parsed = deserialize_token_emergency_action_options(options_value.clone())?;
 
-        // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let authority_id: Identifier = parsed.authority_id.into();
 
-        // Parse pricing schedule
-        let pricing_schedule = if price_data.is_empty() || price_data == "null" {
-            // Empty price_data means remove pricing (make not purchasable)
-            None
-        } else {
-            match price_type.to_lowercase().as_str() {
-                "single" => {
-                    // Parse single price
-                    let price_credits: Credits = price_data.parse::<u64>().map_err(|e| {
-                        WasmSdkError::invalid_argument(format!("Invalid price credits: {}", e))
-                    })?;
-                    Some(TokenPricingSchedule::SinglePrice(price_credits))
-                }
-                "tiered" | "set" => {
-                    // Parse tiered pricing map from JSON
-                    let price_map: std::collections::HashMap<String, u64> =
-                        serde_json::from_str(&price_data).map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid tiered pricing JSON: {}",
-                                e
-                            ))
-                        })?;
-
-                    // Convert to BTreeMap<TokenAmount, Credits>
-                    let mut btree_map = BTreeMap::new();
-                    for (amount_str, credits) in price_map {
-                        let amount: TokenAmount = amount_str.parse().map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid token amount '{}': {}",
-                                amount_str, e
-                            ))
-                        })?;
-                        btree_map.insert(amount, credits);
-                    }
-
-                    if btree_map.is_empty() {
-                        return Err(WasmSdkError::invalid_argument(
-                            "Tiered pricing map cannot be empty",
-                        ));
-                    }
-
-                    Some(TokenPricingSchedule::SetPrices(btree_map))
-                }
-                _ => {
-                    return Err(WasmSdkError::invalid_argument(
-                        "Invalid price type. Use 'single' or 'tiered'",
-                    ));
-                }
+        // Parse the action
+        let emergency_action = match parsed.action.to_lowercase().as_str() {
+            "pause" => TokenEmergencyAction::Pause,
+            "resume" => TokenEmergencyAction::Resume,
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "action must be 'pause' or 'resume'",
+                ))
             }
         };
 
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, actor_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
+        let token_id =
+            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(actor_id, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(authority_id, contract_id, true, None)
             .await?;
 
-        // Create the state transition
-        let platform_version = sdk.version();
-        let state_transition = BatchTransition::new_token_change_direct_purchase_price_transition(
+        // Create the emergency action transition
+        let state_transition = BatchTransition::new_token_emergency_action_transition(
             token_id,
-            actor_id,
+            authority_id,
             contract_id,
-            token_position,
-            pricing_schedule,
-            public_note,
+            parsed.token_position,
+            emergency_action,
+            parsed.public_note,
             None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
+        )
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create emergency action transition: {}", e))
+        })?;
+
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
+        // Broadcast the transition
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
+            .await?;
+
+        Ok(TokenEmergencyActionResultWasm {
+            action: parsed.action,
+        })
+    }
+}
+
+// ============================================================================
+// Token Claim
+// ============================================================================
+
+/// TypeScript interface for token claim options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_CLAIM_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for claiming tokens from a distribution.
+ */
+export interface TokenClaimOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID claiming the tokens.
+   */
+  identityId: Identifier;
+
+  /**
+   * The type of distribution to claim from: "preProgrammed" or "perpetual".
+   */
+  distributionType: "preProgrammed" | "perpetual";
+
+  /**
+   * Optional public note for the claim operation.
+   */
+  publicNote?: string;
+
+  /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenClaimOptions")]
+    pub type TokenClaimOptionsJs;
+}
+
+/// Main input struct for token claim options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenClaimOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    identity_id: IdentifierWasm,
+    distribution_type: String,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_claim_options(options: JsValue) -> Result<TokenClaimOptionsInput, WasmSdkError> {
+    deserialize_required_query(options, "Options object is required", "token claim options")
+}
+
+/// Result of claiming tokens.
+#[wasm_bindgen(js_name = "TokenClaimResult")]
+pub struct TokenClaimResultWasm {
+    identity_id: IdentifierWasm,
+    distribution_type: String,
+}
+
+#[wasm_bindgen(js_class = TokenClaimResult)]
+impl TokenClaimResultWasm {
+    /// The identity ID that claimed tokens.
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> IdentifierWasm {
+        self.identity_id.clone()
+    }
+
+    /// The distribution type that was claimed from.
+    #[wasm_bindgen(getter = "distributionType")]
+    pub fn distribution_type(&self) -> String {
+        self.distribution_type.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Claim tokens from a distribution.
+    ///
+    /// @param options - Claim options including contract ID, token position, distribution type, and signer
+    /// @returns Promise resolving to TokenClaimResult
+    #[wasm_bindgen(js_name = "tokenClaim")]
+    pub async fn token_claim(
+        &self,
+        options: TokenClaimOptionsJs,
+    ) -> Result<TokenClaimResultWasm, WasmSdkError> {
+        use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+
+        let options_value: JsValue = options.into();
+
+        // Deserialize and validate options
+        let parsed = deserialize_token_claim_options(options_value.clone())?;
+
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let identity_id: Identifier = parsed.identity_id.into();
+
+        // Parse the distribution type
+        let distribution_type = match parsed.distribution_type.to_lowercase().as_str() {
+            "preprogrammed" => TokenDistributionType::PreProgrammed,
+            "perpetual" => TokenDistributionType::Perpetual,
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "distributionType must be 'preProgrammed' or 'perpetual'",
+                ))
+            }
+        };
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+
+        // Calculate token ID
+        let token_id =
+            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(identity_id, contract_id, true, None)
+            .await?;
+
+        // Create the claim transition
+        let state_transition = BatchTransition::new_token_claim_transition(
+            token_id,
+            identity_id,
+            contract_id,
+            parsed.token_position,
+            distribution_type,
+            parsed.public_note,
+            &identity_key,
+            identity_nonce,
+            UserFeeIncrease::default(),
+            &signer,
+            self.inner_sdk().version(),
+            None, // options
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create claim transition: {}", e)))?;
+
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
+        // Broadcast the transition
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
+            .await?;
+
+        Ok(TokenClaimResultWasm {
+            identity_id: identity_id.into(),
+            distribution_type: parsed.distribution_type,
+        })
+    }
+}
+
+// ============================================================================
+// Token Set Price for Direct Purchase
+// ============================================================================
+
+/// TypeScript interface for token set price options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_SET_PRICE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for setting the price of a token for direct purchase.
+ */
+export interface TokenSetPriceOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID of the token authority setting the price.
+   */
+  authorityId: Identifier;
+
+  /**
+   * The price in credits for one token.
+   * Set to null to disable direct purchases.
+   */
+  price: bigint | number | null;
+
+  /**
+   * Optional public note for the price change.
+   */
+  publicNote?: string;
+
+  /**
+   * Signer containing the private key for the authority's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenSetPriceOptions")]
+    pub type TokenSetPriceOptionsJs;
+}
+
+/// Main input struct for token set price options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenSetPriceOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    authority_id: IdentifierWasm,
+    #[serde(default)]
+    price: Option<u64>,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_set_price_options(
+    options: JsValue,
+) -> Result<TokenSetPriceOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token set price options",
+    )
+}
+
+/// Result of setting the token price.
+#[wasm_bindgen(js_name = "TokenSetPriceResult")]
+pub struct TokenSetPriceResultWasm {
+    price: Option<u64>,
+}
+
+#[wasm_bindgen(js_class = TokenSetPriceResult)]
+impl TokenSetPriceResultWasm {
+    /// The new price that was set, or null if purchases are disabled.
+    #[wasm_bindgen(getter)]
+    pub fn price(&self) -> Option<BigInt> {
+        self.price.map(BigInt::from)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Set the price of a token for direct purchase.
+    ///
+    /// @param options - Price options including contract ID, token position, price, and signer
+    /// @returns Promise resolving to TokenSetPriceResult
+    #[wasm_bindgen(js_name = "tokenSetPrice")]
+    pub async fn token_set_price(
+        &self,
+        options: TokenSetPriceOptionsJs,
+    ) -> Result<TokenSetPriceResultWasm, WasmSdkError> {
+        use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+
+        let options_value: JsValue = options.into();
+
+        // Deserialize and validate options
+        let parsed = deserialize_token_set_price_options(options_value.clone())?;
+
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let authority_id: Identifier = parsed.authority_id.into();
+
+        // Convert price to pricing schedule
+        let pricing_schedule = parsed.price.map(TokenPricingSchedule::SinglePrice);
+
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+
+        // Calculate token ID
+        let token_id =
+            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(authority_id, contract_id, true, None)
+            .await?;
+
+        // Create the set price transition
+        let state_transition = BatchTransition::new_token_change_direct_purchase_price_transition(
+            token_id,
+            authority_id,
+            contract_id,
+            parsed.token_position,
+            pricing_schedule,
+            parsed.public_note,
+            None, // using_group_info
+            &identity_key,
+            identity_nonce,
+            UserFeeIncrease::default(),
+            &signer,
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create set price transition: {}", e))
         })?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result based on the proof result type
-        match proof_result {
-            StateTransitionProofResult::VerifiedTokenPricingSchedule(owner_id, schedule) => {
-                to_json_compatible(&serde_json::json!({
-                    "type": "VerifiedTokenPricingSchedule",
-                    "ownerId": owner_id.to_string(Encoding::Base58),
-                    "pricingSchedule": schedule.map(|s| match s {
-                        TokenPricingSchedule::SinglePrice(credits) => serde_json::json!({
-                            "type": "single",
-                            "price": credits
-                        }),
-                        TokenPricingSchedule::SetPrices(prices) => {
-                            let price_map: std::collections::HashMap<String, u64> = prices
-                                .into_iter()
-                                .map(|(amount, credits)| (amount.to_string(), credits))
-                                .collect();
-                            serde_json::json!({
-                                "type": "tiered",
-                                "prices": price_map
-                            })
-                        }
-                    })
-                }))
-                .map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
-                })
-            }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenPricingSchedule(
-                power,
-                status,
-                schedule,
-            ) => to_json_compatible(&serde_json::json!({
-                "type": "VerifiedTokenGroupActionWithTokenPricingSchedule",
-                "groupPower": power,
-                "status": format!("{:?}", status),
-                "pricingSchedule": schedule.map(|s| match s {
-                    TokenPricingSchedule::SinglePrice(credits) => serde_json::json!({
-                        "type": "single",
-                        "price": credits
-                    }),
-                    TokenPricingSchedule::SetPrices(prices) => {
-                        let price_map: std::collections::HashMap<String, u64> = prices
-                            .into_iter()
-                            .map(|(amount, credits)| (amount.to_string(), credits))
-                            .collect();
-                        serde_json::json!({
-                            "type": "tiered",
-                            "prices": price_map
-                        })
-                    }
-                })
-            }))
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e))),
-            _ => self.format_token_result(proof_result),
-        }
+        Ok(TokenSetPriceResultWasm {
+            price: parsed.price,
+        })
+    }
+}
+
+// ============================================================================
+// Token Direct Purchase
+// ============================================================================
+
+/// TypeScript interface for token direct purchase options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_DIRECT_PURCHASE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for directly purchasing tokens.
+ */
+export interface TokenDirectPurchaseOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID purchasing the tokens.
+   */
+  buyerId: Identifier;
+
+  /**
+   * The amount of tokens to purchase.
+   */
+  amount: bigint | number;
+
+  /**
+   * The maximum total credits the buyer is willing to pay.
+   * The actual cost may be less if the token price is lower.
+   */
+  maxTotalCost: bigint | number;
+
+  /**
+   * Signer containing the private key for the buyer's authentication key.
+   * Use IdentitySigner to add the authentication key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenDirectPurchaseOptions")]
+    pub type TokenDirectPurchaseOptionsJs;
+}
+
+/// Main input struct for token direct purchase options.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenDirectPurchaseOptionsInput {
+    data_contract_id: IdentifierWasm,
+    token_position: u16,
+    buyer_id: IdentifierWasm,
+    amount: u64,
+    max_total_cost: u64,
+}
+
+fn deserialize_token_direct_purchase_options(
+    options: JsValue,
+) -> Result<TokenDirectPurchaseOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token direct purchase options",
+    )
+}
+
+/// Result of a direct token purchase.
+#[wasm_bindgen(js_name = "TokenDirectPurchaseResult")]
+pub struct TokenDirectPurchaseResultWasm {
+    buyer_id: IdentifierWasm,
+    amount: u64,
+}
+
+#[wasm_bindgen(js_class = TokenDirectPurchaseResult)]
+impl TokenDirectPurchaseResultWasm {
+    /// The buyer's identity ID.
+    #[wasm_bindgen(getter = "buyerId")]
+    pub fn buyer_id(&self) -> IdentifierWasm {
+        self.buyer_id.clone()
     }
 
-    /// Purchase tokens directly at the configured price.
+    /// The amount of tokens purchased.
+    #[wasm_bindgen(getter)]
+    pub fn amount(&self) -> BigInt {
+        BigInt::from(self.amount)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Directly purchase tokens using credits.
     ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `amount` - The amount of tokens to purchase
-    /// * `identity_id` - The identity ID of the purchaser
-    /// * `total_agreed_price` - The total price in credits for the purchase
-    /// * `private_key_wif` - The private key in WIF format for signing
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[wasm_bindgen(js_name = tokenDirectPurchase)]
+    /// @param options - Purchase options including contract ID, token position, amount, max cost, and signer
+    /// @returns Promise resolving to TokenDirectPurchaseResult
+    #[wasm_bindgen(js_name = "tokenDirectPurchase")]
     pub async fn token_direct_purchase(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        amount: String,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "totalAgreedPrice")] total_agreed_price: Option<String>,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-    ) -> Result<JsValue, WasmSdkError> {
-        use dash_sdk::dpp::fee::Credits;
+        options: TokenDirectPurchaseOptionsJs,
+    ) -> Result<TokenDirectPurchaseResultWasm, WasmSdkError> {
+        let options_value: JsValue = options.into();
 
-        let sdk = self.inner_clone();
+        // Deserialize and validate options
+        let parsed = deserialize_token_direct_purchase_options(options_value.clone())?;
 
-        // Parse and validate parameters
-        let (contract_id, purchaser_id, token_amount, _) = self
-            .parse_token_params(&data_contract_id, &identity_id, &amount, None)
-            .await?;
+        // Convert identifiers
+        let contract_id: Identifier = parsed.data_contract_id.into();
+        let buyer_id: Identifier = parsed.buyer_id.into();
+        let amount = parsed.amount as TokenAmount;
+        let max_total_cost = parsed.max_total_cost;
 
-        // Get total price - either from parameter or fetch from pricing schedule
-        let price_credits: Credits = match total_agreed_price {
-            Some(price_str) => {
-                // Use provided price
-                price_str.parse::<u64>().map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid total agreed price: {}", e))
-                })?
-            }
-            None => {
-                // Fetch price from pricing schedule
-                let token_id = Self::calculate_token_id_from_contract(
-                    data_contract_id.clone(),
-                    token_position,
-                )
-                .map_err(|e| {
-                    WasmSdkError::generic(format!("Failed to calculate token ID: {:?}", e))
-                })?;
+        // Extract identity key from options
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
-                let token_ids = vec![JsValue::from_str(&token_id)];
-                let prices = self.get_token_direct_purchase_prices(token_ids).await?;
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-                // Use js_sys to work with JavaScript objects
-                use js_sys::{Array, Reflect};
-
-                // Get the prices array from the result
-                let prices_prop = Reflect::get(&prices, &JsValue::from_str("prices"))
-                    .map_err(|_| WasmSdkError::generic("Failed to get prices property"))?;
-
-                // Convert to array and get first element
-                let prices_array = Array::from(&prices_prop);
-                if prices_array.length() == 0 {
-                    return Err(WasmSdkError::not_found("No prices found for token"));
-                }
-
-                let first_price = prices_array.get(0);
-
-                // Get current price from the price object
-                let current_price_prop =
-                    Reflect::get(&first_price, &JsValue::from_str("currentPrice")).map_err(
-                        |_| WasmSdkError::generic("Failed to get currentPrice property"),
-                    )?;
-
-                // Convert to string and parse
-                let price_str = current_price_prop.as_string().ok_or_else(|| {
-                    WasmSdkError::invalid_argument("Current price is not a string")
-                })?;
-
-                let price_per_token = price_str.parse::<u64>().map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid current price format: {}", e))
-                })?;
-
-                price_per_token * token_amount
-            }
-        };
-
-        // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, purchaser_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
-
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
+        // Fetch and cache the data contract
+        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
+        let token_id =
+            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(purchaser_id, contract_id, true, None)
+        // Get identity nonce for the token contract
+        let identity_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(buyer_id, contract_id, true, None)
             .await?;
 
-        // Create the state transition
-        let platform_version = sdk.version();
+        // Create the direct purchase transition
         let state_transition = BatchTransition::new_token_direct_purchase_transition(
             token_id,
-            purchaser_id,
+            buyer_id,
             contract_id,
-            token_position,
-            token_amount,
-            price_credits,
-            &public_key,
-            identity_contract_nonce,
+            parsed.token_position,
+            amount,
+            max_total_cost,
+            &identity_key,
+            identity_nonce,
             UserFeeIncrease::default(),
             &signer,
-            platform_version,
-            None, // state_transition_creation_options
+            self.inner_sdk().version(),
+            None, // options
         )
         .map_err(|e| {
-            WasmSdkError::generic(format!(
-                "Failed to create direct purchase transition: {}",
-                e
-            ))
+            WasmSdkError::generic(format!("Failed to create direct purchase transition: {}", e))
         })?;
 
-        // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
-            .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transition: {}", e)))?;
-
-        // Format and return result
-        self.format_token_result(proof_result)
-    }
-
-    /// Claim tokens from a distribution
-    ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - ID of the data contract containing the token
-    /// * `token_position` - Position of the token within the contract
-    /// * `distribution_type` - Type of distribution: "perpetual" or "preprogrammed"
-    /// * `identity_id` - Identity ID of the claimant
-    /// * `private_key_wif` - Private key in WIF format
-    /// * `public_note` - Optional public note
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[wasm_bindgen(js_name = tokenClaim)]
-    pub async fn token_claim(
-        &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        #[wasm_bindgen(js_name = "distributionType")] distribution_type: String,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-
-        let sdk = self.inner_clone();
-
-        // Parse identifiers
-        let (contract_id, identity_identifier, _, _) = self
-            .parse_token_params(
-                &data_contract_id,
-                &identity_id,
-                "0", // Amount not needed for claim
-                None,
-            )
-            .await?;
-
-        // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Parse distribution type
-        let dist_type = match distribution_type.to_lowercase().as_str() {
-            "perpetual" => TokenDistributionType::Perpetual,
-            "preprogrammed" | "pre-programmed" | "scheduled" => {
-                TokenDistributionType::PreProgrammed
-            }
-            _ => {
-                return Err(WasmSdkError::invalid_argument(
-                    "Invalid distribution type. Use 'perpetual' or 'preprogrammed'",
-                ));
-            }
-        };
-
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, identity_identifier)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
-
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(identity_identifier, contract_id, true, None)
-            .await?;
-
-        // Create the state transition directly as a token claim transition
-        let platform_version = sdk.version();
-        // Create state transition using BatchTransition's token claim method
-        let state_transition = BatchTransition::new_token_claim_transition(
-            token_id,
-            identity_identifier,
-            contract_id,
-            token_position,
-            dist_type,
-            public_note,
-            &public_key,
-            identity_contract_nonce,
-            UserFeeIncrease::default(),
-            &signer,
-            platform_version,
-            None, // state_transition_creation_options
-        )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create claim transition: {}", e)))?;
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await?;
 
-        // Format and return result
-        self.format_token_result(proof_result)
-    }
-
-    /// Update token configuration settings.
-    ///
-    /// # Arguments
-    ///
-    /// * `data_contract_id` - The ID of the data contract containing the token
-    /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `config_item_type` - The type of configuration to update
-    /// * `config_value` - The new configuration value (JSON string)
-    /// * `identity_id` - The identity ID of the owner/admin
-    /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `public_note` - Optional public note for the configuration change
-    ///
-    /// # Returns
-    ///
-    /// Returns a Promise that resolves to a JsValue containing the state transition result
-    #[allow(clippy::too_many_arguments)]
-    #[wasm_bindgen(js_name = tokenConfigUpdate)]
-    pub async fn token_config_update(
-        &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
-        #[wasm_bindgen(js_name = "configItemType")] config_item_type: String,
-        #[wasm_bindgen(js_name = "configValue")] config_value: String,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        use dash_sdk::dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
-        use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-        use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
-        use dash_sdk::dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
-
-        let sdk = self.inner_clone();
-
-        // Parse identifiers
-        let (contract_id, owner_id, _, _) = self
-            .parse_token_params(
-                &data_contract_id,
-                &identity_id,
-                "0", // Amount not needed for config update
-                None,
-            )
-            .await?;
-
-        // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Parse configuration change item based on type
-        let config_change_item = match config_item_type.as_str() {
-            "conventions" => {
-                // Parse JSON for conventions
-                let convention: TokenConfigurationConvention = serde_json::from_str(&config_value)
-                    .map_err(|e| {
-                        WasmSdkError::invalid_argument(format!("Invalid conventions JSON: {}", e))
-                    })?;
-                TokenConfigurationChangeItem::Conventions(convention)
-            }
-            "max_supply" => {
-                if config_value.is_empty() || config_value == "null" {
-                    TokenConfigurationChangeItem::MaxSupply(None)
-                } else {
-                    let max_supply: TokenAmount = config_value.parse().map_err(|e| {
-                        WasmSdkError::invalid_argument(format!("Invalid max supply: {}", e))
-                    })?;
-                    TokenConfigurationChangeItem::MaxSupply(Some(max_supply))
-                }
-            }
-            "perpetual_distribution" => {
-                if config_value.is_empty() || config_value == "null" {
-                    TokenConfigurationChangeItem::PerpetualDistribution(None)
-                } else {
-                    // Parse JSON for perpetual distribution config
-                    let distribution: TokenPerpetualDistribution =
-                        serde_json::from_str(&config_value).map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid perpetual distribution JSON: {}",
-                                e
-                            ))
-                        })?;
-                    TokenConfigurationChangeItem::PerpetualDistribution(Some(distribution))
-                }
-            }
-            "new_tokens_destination_identity" => {
-                if config_value.is_empty() || config_value == "null" {
-                    TokenConfigurationChangeItem::NewTokensDestinationIdentity(None)
-                } else {
-                    let dest_id = Identifier::from_string(&config_value, Encoding::Base58)
-                        .map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid destination identity ID: {}",
-                                e
-                            ))
-                        })?;
-                    TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(dest_id))
-                }
-            }
-            "minting_allow_choosing_destination" => {
-                let allow: bool = config_value
-                    .parse()
-                    .map_err(|_| WasmSdkError::invalid_argument("Invalid boolean value"))?;
-                TokenConfigurationChangeItem::MintingAllowChoosingDestination(allow)
-            }
-            "manual_minting"
-            | "manual_burning"
-            | "conventions_control_group"
-            | "conventions_admin_group"
-            | "max_supply_control_group"
-            | "max_supply_admin_group"
-            | "perpetual_distribution_control_group"
-            | "perpetual_distribution_admin_group"
-            | "new_tokens_destination_identity_control_group"
-            | "new_tokens_destination_identity_admin_group"
-            | "minting_allow_choosing_destination_control_group"
-            | "minting_allow_choosing_destination_admin_group"
-            | "manual_minting_admin_group"
-            | "manual_burning_admin_group" => {
-                // Parse AuthorizedActionTakers from JSON
-                let action_takers: AuthorizedActionTakers = serde_json::from_str(&config_value)
-                    .map_err(|e| {
-                        WasmSdkError::invalid_argument(format!(
-                            "Invalid authorized action takers JSON: {}",
-                            e
-                        ))
-                    })?;
-
-                match config_item_type.as_str() {
-                    "manual_minting" => TokenConfigurationChangeItem::ManualMinting(action_takers),
-                    "manual_burning" => TokenConfigurationChangeItem::ManualBurning(action_takers),
-                    "conventions_control_group" => {
-                        TokenConfigurationChangeItem::ConventionsControlGroup(action_takers)
-                    }
-                    "conventions_admin_group" => {
-                        TokenConfigurationChangeItem::ConventionsAdminGroup(action_takers)
-                    }
-                    "max_supply_control_group" => {
-                        TokenConfigurationChangeItem::MaxSupplyControlGroup(action_takers)
-                    }
-                    "max_supply_admin_group" => {
-                        TokenConfigurationChangeItem::MaxSupplyAdminGroup(action_takers)
-                    }
-                    "perpetual_distribution_control_group" => {
-                        TokenConfigurationChangeItem::PerpetualDistributionControlGroup(
-                            action_takers,
-                        )
-                    }
-                    "perpetual_distribution_admin_group" => {
-                        TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(action_takers)
-                    }
-                    "new_tokens_destination_identity_control_group" => {
-                        TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
-                            action_takers,
-                        )
-                    }
-                    "new_tokens_destination_identity_admin_group" => {
-                        TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(
-                            action_takers,
-                        )
-                    }
-                    "minting_allow_choosing_destination_control_group" => {
-                        TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
-                            action_takers,
-                        )
-                    }
-                    "minting_allow_choosing_destination_admin_group" => {
-                        TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
-                            action_takers,
-                        )
-                    }
-                    "manual_minting_admin_group" => {
-                        TokenConfigurationChangeItem::ManualMintingAdminGroup(action_takers)
-                    }
-                    "manual_burning_admin_group" => {
-                        TokenConfigurationChangeItem::ManualBurningAdminGroup(action_takers)
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            _ => {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid config item type: {}",
-                    config_item_type
-                )));
-            }
-        };
-
-        // Get identity to find matching authentication key
-        let identity = dash_sdk::platform::Identity::fetch(&sdk, owner_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
-
-        // Find matching authentication key and create signer
-        let (_, matching_key) =
-            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
-        let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
-        let public_key = matching_key.clone();
-
-        // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
-
-        // Get identity contract nonce
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(owner_id, contract_id, true, None)
-            .await?;
-
-        // Create the state transition
-        let platform_version = sdk.version();
-        let state_transition = BatchTransition::new_token_config_update_transition(
-            token_id,
-            owner_id,
-            contract_id,
-            token_position,
-            config_change_item,
-            public_note,
-            None, // using_group_info
-            &public_key,
-            identity_contract_nonce,
-            UserFeeIncrease::default(),
-            &signer,
-            platform_version,
-            None, // state_transition_creation_options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create config update transition: {}", e))
-        })?;
-
-        // Broadcast the transition
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
-            .await?;
-
-        // Format and return result
-        self.format_token_result(proof_result)
+        Ok(TokenDirectPurchaseResultWasm {
+            buyer_id: buyer_id.into(),
+            amount: parsed.amount,
+        })
     }
 }
