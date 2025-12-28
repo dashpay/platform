@@ -955,14 +955,24 @@ impl WasmSdk {
         let network = self.network();
         match network {
             Network::Dash => {
-                if let Some(ref ctx) = *MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    ctx.add_known_token_configuration(token_id, token_configuration);
-                }
+                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                let ctx = guard.as_ref().ok_or_else(|| {
+                    WasmSdkError::generic(format!(
+                        "Mainnet trusted context not initialized for token {}",
+                        token_id
+                    ))
+                })?;
+                ctx.add_known_token_configuration(token_id, token_configuration);
             }
             Network::Testnet => {
-                if let Some(ref ctx) = *TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    ctx.add_known_token_configuration(token_id, token_configuration);
-                }
+                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                let ctx = guard.as_ref().ok_or_else(|| {
+                    WasmSdkError::generic(format!(
+                        "Testnet trusted context not initialized for token {}",
+                        token_id
+                    ))
+                })?;
+                ctx.add_known_token_configuration(token_id, token_configuration);
             }
             _ => {
                 // For other networks, we can't cache the token configuration
