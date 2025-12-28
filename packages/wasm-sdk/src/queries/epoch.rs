@@ -164,12 +164,6 @@ export interface EvonodeProposedBlocksRangeQuery {
    * @default undefined
    */
   startAfter?: string;
-
-  /**
-   * Sort order for results.
-   * @default undefined (server default)
-   */
-  orderAscending?: boolean;
 }
 "#;
 
@@ -187,15 +181,12 @@ struct EvonodeProposedBlocksRangeQueryInput {
     limit: Option<u32>,
     #[serde(default)]
     start_after: Option<String>,
-    #[serde(default)]
-    order_ascending: Option<bool>,
 }
 
 struct EvonodeProposedBlocksRangeQueryParsed {
     epoch: u16,
     limit: Option<u32>,
     start_info: Option<QueryStartInfo>,
-    order_ascending: Option<bool>,
 }
 
 fn parse_evonode_range_query(
@@ -223,7 +214,6 @@ fn parse_evonode_range_query(
         epoch: input.epoch,
         limit: input.limit,
         start_info,
-        order_ascending: input.order_ascending,
     })
 }
 
@@ -374,10 +364,7 @@ impl WasmSdk {
             epoch,
             limit,
             start_info,
-            order_ascending,
         } = parse_evonode_range_query(query)?;
-
-        let _ = order_ascending;
 
         let counts_result = ProposerBlockCounts::fetch_proposed_blocks_by_range(
             self.as_ref(),
@@ -517,31 +504,88 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
         #[wasm_bindgen(js_name = "proTxHashes")] pro_tx_hashes: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountById
-        // Currently not supported due to query format issues
-        let _ = (self, epoch, pro_tx_hashes); // Parameters will be used when implemented
-        Err(WasmSdkError::generic(
-            "get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info is not yet implemented",
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        use drive_proof_verifier::types::ProposerBlockCountById;
+
+        // Parse the ProTxHash strings
+        let parsed_hashes: Vec<ProTxHash> = pro_tx_hashes
+            .into_iter()
+            .map(|hash_str| {
+                ProTxHash::from_str(&hash_str).map_err(|e| {
+                    WasmSdkError::invalid_argument(format!(
+                        "Invalid ProTxHash '{}': {}",
+                        hash_str, e
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, WasmSdkError>>()?;
+
+        // Use FetchMany with proof to get block counts for specific IDs
+        let (counts, metadata, proof) = ProposerBlockCountById::fetch_many_with_metadata_and_proof(
+            self.as_ref(),
+            (epoch, parsed_hashes),
+            None,
+        )
+        .await?;
+
+        let map = Map::new();
+        for (identifier, count) in counts.0 {
+            let key = JsValue::from(IdentifierWasm::from(identifier));
+            map.set(&key, &JsValue::from(BigInt::from(count)));
+        }
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
         ))
     }
 
-    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByRangeWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getEvonodesProposedEpochBlocksByRangeWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_range_with_proof_info(
         &self,
         query: EvonodeProposedBlocksRangeQueryJs,
-    ) -> Result<JsValue, WasmSdkError> {
-        // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountByRange
-        // Currently not supported due to query format issues
-        let parsed = parse_evonode_range_query(query)?;
-        let _ = (self, parsed); // Parameters will be used when implemented
-        Err(WasmSdkError::generic(
-            "get_evonodes_proposed_epoch_blocks_by_range_with_proof_info is not yet implemented",
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        use drive_proof_verifier::types::ProposerBlockCountByRange;
+
+        let EvonodeProposedBlocksRangeQueryParsed {
+            epoch,
+            limit,
+            start_info,
+        } = parse_evonode_range_query(query)?;
+
+        // Create a LimitQuery for the range request
+        let limit_query = LimitQuery {
+            query: Some(epoch),
+            limit,
+            start_info,
+        };
+
+        let (counts, metadata, proof) =
+            ProposerBlockCountByRange::fetch_many_with_metadata_and_proof(
+                self.as_ref(),
+                limit_query,
+                None,
+            )
+            .await?;
+
+        let map = Map::new();
+        for (identifier, count) in counts.0 {
+            let key = JsValue::from(IdentifierWasm::from(identifier));
+            map.set(&key, &JsValue::from(BigInt::from(count)));
+        }
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
         ))
     }
 }
