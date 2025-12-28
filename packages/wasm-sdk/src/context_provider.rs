@@ -106,8 +106,7 @@ impl WasmTrustedContext {
             std::num::NonZeroUsize::new(100).unwrap(),
         )
         .map_err(|e| ContextProviderError::Generic(e.to_string()))?
-        // Enable refetch so token configs (and other context) are pulled on demand, same as rs-sdk
-        .with_refetch_if_not_found(true);
+        .with_refetch_if_not_found(false);
 
         Ok(Self {
             inner: std::sync::Arc::new(inner),
@@ -121,8 +120,7 @@ impl WasmTrustedContext {
             std::num::NonZeroUsize::new(100).unwrap(),
         )
         .map_err(|e| ContextProviderError::Generic(e.to_string()))?
-        // Enable refetch so token configs (and other context) are pulled on demand, same as rs-sdk
-        .with_refetch_if_not_found(true);
+        .with_refetch_if_not_found(false);
 
         Ok(Self {
             inner: std::sync::Arc::new(inner),

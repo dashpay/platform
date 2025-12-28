@@ -72,6 +72,18 @@ impl TokenLastClaimWasm {
     }
 }
 
+impl From<RewardDistributionMoment> for TokenLastClaimWasm {
+    fn from(moment: RewardDistributionMoment) -> Self {
+        let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
+            RewardDistributionMoment::BlockBasedMoment(height) => (0, height),
+            RewardDistributionMoment::TimeBasedMoment(timestamp) => (timestamp, 0),
+            RewardDistributionMoment::EpochBasedMoment(epoch) => (0, epoch as u64),
+        };
+
+        Self::new(last_claim_timestamp_ms, last_claim_block_height)
+    }
+}
+
 #[wasm_bindgen(js_class = TokenLastClaim)]
 impl TokenLastClaimWasm {
     #[wasm_bindgen(getter = "lastClaimTimestampMs")]
@@ -503,17 +515,7 @@ impl WasmSdk {
 
         let claim_result = RewardDistributionMoment::fetch(self.as_ref(), query).await?;
 
-        let data = claim_result.map(|moment| {
-            let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-                RewardDistributionMoment::BlockBasedMoment(height) => (0, height),
-                RewardDistributionMoment::TimeBasedMoment(timestamp) => (timestamp, 0),
-                RewardDistributionMoment::EpochBasedMoment(epoch) => (0, epoch as u64),
-            };
-
-            TokenLastClaimWasm::new(last_claim_timestamp_ms, last_claim_block_height)
-        });
-
-        Ok(data)
+        Ok(claim_result.map(TokenLastClaimWasm::from))
     }
 
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
@@ -879,31 +881,10 @@ impl WasmSdk {
             RewardDistributionMoment::fetch_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let data = if let Some(moment) = claim_result {
-            // Extract timestamp and block height based on the moment type
-            // Since we need both timestamp and block height in the response,
-            // we'll return the moment value and type
-            let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::BlockBasedMoment(
-                    height,
-                ) => (0, height), // No timestamp available for block-based
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::TimeBasedMoment(
-                    timestamp,
-                ) => (timestamp, 0),  // No block height available for time-based
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::EpochBasedMoment(
-                    epoch,
-                ) => (0, epoch as u64), // Convert epoch to u64, no timestamp available
-            };
-
-            Some(TokenLastClaimWasm::new(
-                last_claim_timestamp_ms,
-                last_claim_block_height,
-            ))
-        } else {
-            None
-        };
-
-        let data = data.map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
+        let data = claim_result
+            .map(TokenLastClaimWasm::from)
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -974,8 +955,10 @@ impl WasmSdk {
                 }
             }
             _ => {
-                // For other networks, we can't cache the token configuration
-                // The proof verification may still work if the context provider has the info
+                return Err(WasmSdkError::generic(format!(
+                    "Token configuration caching not implemented for network {:?}",
+                    network
+                )));
             }
         }
 

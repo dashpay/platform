@@ -164,12 +164,6 @@ export interface EvonodeProposedBlocksRangeQuery {
    * @default undefined
    */
   startAfter?: string;
-
-  /**
-   * Sort order for results.
-   * @default undefined (server default)
-   */
-  orderAscending?: boolean;
 }
 "#;
 
@@ -187,15 +181,12 @@ struct EvonodeProposedBlocksRangeQueryInput {
     limit: Option<u32>,
     #[serde(default)]
     start_after: Option<String>,
-    #[serde(default)]
-    order_ascending: Option<bool>,
 }
 
 struct EvonodeProposedBlocksRangeQueryParsed {
     epoch: u16,
     limit: Option<u32>,
     start_info: Option<QueryStartInfo>,
-    order_ascending: Option<bool>,
 }
 
 fn parse_evonode_range_query(
@@ -223,7 +214,6 @@ fn parse_evonode_range_query(
         epoch: input.epoch,
         limit: input.limit,
         start_info,
-        order_ascending: input.order_ascending,
     })
 }
 
@@ -374,10 +364,7 @@ impl WasmSdk {
             epoch,
             limit,
             start_info,
-            order_ascending,
         } = parse_evonode_range_query(query)?;
-
-        let _ = order_ascending;
 
         let counts_result = ProposerBlockCounts::fetch_proposed_blocks_by_range(
             self.as_ref(),
@@ -574,7 +561,6 @@ impl WasmSdk {
             epoch,
             limit,
             start_info,
-            order_ascending: _,
         } = parse_evonode_range_query(query)?;
 
         // Create a LimitQuery for the range request
