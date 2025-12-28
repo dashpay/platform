@@ -55,48 +55,54 @@ impl TokenPriceInfoWasm {
     }
 }
 
-#[wasm_bindgen(js_name = "TokenLastClaim")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenLastClaimWasm {
-    last_claim_timestamp_ms: u64,
-    last_claim_block_height: u64,
-}
+#[wasm_bindgen(js_name = "RewardDistributionMoment")]
+pub struct RewardDistributionMomentWasm(RewardDistributionMoment);
 
-impl TokenLastClaimWasm {
-    fn new(last_claim_timestamp_ms: u64, last_claim_block_height: u64) -> Self {
-        Self {
-            last_claim_timestamp_ms,
-            last_claim_block_height,
+#[wasm_bindgen(js_class = RewardDistributionMoment)]
+impl RewardDistributionMomentWasm {
+    /// Returns the type: "block", "time", or "epoch"
+    #[wasm_bindgen(getter = "type")]
+    pub fn moment_type(&self) -> String {
+        match &self.0 {
+            RewardDistributionMoment::BlockBasedMoment(_) => "block".to_string(),
+            RewardDistributionMoment::TimeBasedMoment(_) => "time".to_string(),
+            RewardDistributionMoment::EpochBasedMoment(_) => "epoch".to_string(),
+        }
+    }
+
+    /// Returns the block height (only valid when type is "block")
+    #[wasm_bindgen(getter = "blockHeight")]
+    pub fn block_height(&self) -> Option<u64> {
+        match &self.0 {
+            RewardDistributionMoment::BlockBasedMoment(height) => Some(*height),
+            _ => None,
+        }
+    }
+
+    /// Returns the timestamp in ms (only valid when type is "time")
+    #[wasm_bindgen(getter = "timestampMs")]
+    pub fn timestamp_ms(&self) -> Option<u64> {
+        match &self.0 {
+            RewardDistributionMoment::TimeBasedMoment(ts) => Some(*ts),
+            _ => None,
+        }
+    }
+
+    /// Returns the epoch index (only valid when type is "epoch")
+    #[wasm_bindgen(getter = "epochIndex")]
+    pub fn epoch_index(&self) -> Option<u16> {
+        match &self.0 {
+            RewardDistributionMoment::EpochBasedMoment(epoch) => Some(*epoch),
+            _ => None,
         }
     }
 }
 
-impl From<RewardDistributionMoment> for TokenLastClaimWasm {
+impl From<RewardDistributionMoment> for RewardDistributionMomentWasm {
     fn from(moment: RewardDistributionMoment) -> Self {
-        let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-            RewardDistributionMoment::BlockBasedMoment(height) => (0, height),
-            RewardDistributionMoment::TimeBasedMoment(timestamp) => (timestamp, 0),
-            RewardDistributionMoment::EpochBasedMoment(epoch) => (0, epoch as u64),
-        };
-
-        Self::new(last_claim_timestamp_ms, last_claim_block_height)
+        Self(moment)
     }
 }
-
-#[wasm_bindgen(js_class = TokenLastClaim)]
-impl TokenLastClaimWasm {
-    #[wasm_bindgen(getter = "lastClaimTimestampMs")]
-    pub fn last_claim_timestamp_ms(&self) -> u64 {
-        self.last_claim_timestamp_ms
-    }
-
-    #[wasm_bindgen(getter = "lastClaimBlockHeight")]
-    pub fn last_claim_block_height(&self) -> u64 {
-        self.last_claim_block_height
-    }
-}
-impl_wasm_serde_conversions!(TokenLastClaimWasm);
 
 #[wasm_bindgen(js_name = "TokenTotalSupply")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -498,7 +504,7 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
-    ) -> Result<Option<TokenLastClaimWasm>, WasmSdkError> {
+    ) -> Result<Option<RewardDistributionMomentWasm>, WasmSdkError> {
         // Parse IDs
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
@@ -515,7 +521,7 @@ impl WasmSdk {
 
         let claim_result = RewardDistributionMoment::fetch(self.as_ref(), query).await?;
 
-        Ok(claim_result.map(TokenLastClaimWasm::from))
+        Ok(claim_result.map(RewardDistributionMomentWasm::from))
     }
 
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
@@ -882,7 +888,7 @@ impl WasmSdk {
                 .await?;
 
         let data = claim_result
-            .map(TokenLastClaimWasm::from)
+            .map(RewardDistributionMomentWasm::from)
             .map(JsValue::from)
             .unwrap_or(JsValue::UNDEFINED);
 
