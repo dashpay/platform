@@ -1,4 +1,5 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Token pricing', function describeTokenPricing() {
   this.timeout(60000);
@@ -8,8 +9,8 @@ describe('Token pricing', function describeTokenPricing() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
   });
 
@@ -18,7 +19,7 @@ describe('Token pricing', function describeTokenPricing() {
   });
 
   it('calculates token id and fetches price by contract', async () => {
-    const CONTRACT_ID = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
+    const CONTRACT_ID = wasmFunctionalTestRequirements().tokenContracts[0].contractId;
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(CONTRACT_ID, 0);
     expect(tokenId).to.be.a('string');
     try {

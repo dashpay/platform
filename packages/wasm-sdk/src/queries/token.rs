@@ -906,7 +906,7 @@ impl WasmSdk {
         &self,
         token_id: Identifier,
     ) -> Result<(), WasmSdkError> {
-        use crate::sdk::{MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
+        use crate::sdk::{LOCAL_TRUSTED_CONTEXT, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
@@ -965,6 +965,16 @@ impl WasmSdk {
                 let ctx = guard.as_ref().ok_or_else(|| {
                     WasmSdkError::generic(format!(
                         "Testnet trusted context not initialized for token {}",
+                        token_id
+                    ))
+                })?;
+                ctx.add_known_token_configuration(token_id, token_configuration);
+            }
+            Network::Regtest => {
+                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+                let ctx = guard.as_ref().ok_or_else(|| {
+                    WasmSdkError::generic(format!(
+                        "Local trusted context not initialized for token {}",
                         token_id
                     ))
                 })?;

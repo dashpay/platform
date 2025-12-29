@@ -259,6 +259,16 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetAddressesInfosRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetAddressesInfosResponse.FromString,
                 )
+        self.getAddressesTrunkState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAddressesTrunkState',
+                request_serializer=platform__pb2.GetAddressesTrunkStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAddressesTrunkStateResponse.FromString,
+                )
+        self.getAddressesBranchState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getAddressesBranchState',
+                request_serializer=platform__pb2.GetAddressesBranchStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetAddressesBranchStateResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -563,6 +573,18 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getAddressesTrunkState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getAddressesBranchState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -810,6 +832,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getAddressesInfos,
                     request_deserializer=platform__pb2.GetAddressesInfosRequest.FromString,
                     response_serializer=platform__pb2.GetAddressesInfosResponse.SerializeToString,
+            ),
+            'getAddressesTrunkState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddressesTrunkState,
+                    request_deserializer=platform__pb2.GetAddressesTrunkStateRequest.FromString,
+                    response_serializer=platform__pb2.GetAddressesTrunkStateResponse.SerializeToString,
+            ),
+            'getAddressesBranchState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getAddressesBranchState,
+                    request_deserializer=platform__pb2.GetAddressesBranchStateRequest.FromString,
+                    response_serializer=platform__pb2.GetAddressesBranchStateResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1651,5 +1683,39 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressesInfos',
             platform__pb2.GetAddressesInfosRequest.SerializeToString,
             platform__pb2.GetAddressesInfosResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAddressesTrunkState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressesTrunkState',
+            platform__pb2.GetAddressesTrunkStateRequest.SerializeToString,
+            platform__pb2.GetAddressesTrunkStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getAddressesBranchState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressesBranchState',
+            platform__pb2.GetAddressesBranchStateRequest.SerializeToString,
+            platform__pb2.GetAddressesBranchStateResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

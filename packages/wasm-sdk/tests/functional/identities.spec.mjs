@@ -1,18 +1,22 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Identity queries', function describeBlock() {
   this.timeout(90000);
 
-  const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
-  const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+  const {
+    identityId: TEST_IDENTITY,
+    dpnsContractId: DPNS_CONTRACT,
+    tokenContracts,
+  } = wasmFunctionalTestRequirements();
 
   let client;
   let builder;
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
   });
 
@@ -117,17 +121,24 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('gets identity balance and nonce', async () => {
-    const bal = await client.getIdentityBalance(TEST_IDENTITY);
-    expect(bal).to.be.an('object');
-    expect(String(bal.balance)).to.match(/^\d+$/);
+    // getIdentityBalance returns bigint | null, but for existing identity it should be present
+    const balance = await client.getIdentityBalance(TEST_IDENTITY);
+    expect(typeof balance).to.equal('bigint');
+    expect(String(balance)).to.match(/^\d+$/);
 
+    // getIdentityNonce returns bigint | null, but for existing identity it should be present
     const nonce = await client.getIdentityNonce(TEST_IDENTITY);
-    expect(nonce).to.be.an('object');
-    expect(String(nonce.nonce)).to.match(/^\d+$/);
+    expect(typeof nonce).to.equal('bigint');
+    expect(String(nonce)).to.match(/^\d+$/);
   });
 
   it('gets contract nonce and keys', async () => {
-    await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
+    // getIdentityContractNonce returns bigint | null
+    // null if identity never interacted with the contract
+    // TEST_IDENTITY has no DPNS documents, so nonce should be null
+    const nonce = await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
+    expect(nonce).to.be.null();
+
     const keys = await client.getIdentityKeys({
       identityId: TEST_IDENTITY,
       request: { type: 'all' },
@@ -136,10 +147,20 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('batch identity balances and balance+revision', async () => {
+    // getIdentitiesBalances returns Map<Identifier, bigint | null>
     const balances = await client.getIdentitiesBalances([TEST_IDENTITY]);
-    expect(balances).to.be.an('array');
+    expect(balances).to.be.instanceOf(Map);
+    expect(balances.size).to.equal(1);
+    // For existing identity, balance should be present
+    const balance = Array.from(balances.values())[0];
+    expect(typeof balance).to.equal('bigint');
+
+    // getIdentityBalanceAndRevision returns IdentityBalanceAndRevision | null
+    // For existing identity, it should be present
     const br = await client.getIdentityBalanceAndRevision(TEST_IDENTITY);
     expect(br).to.be.ok();
+    expect(typeof br.balance).to.equal('bigint');
+    expect(typeof br.revision === 'number' || typeof br.revision === 'bigint').to.be.true();
   });
 
   it('contract keys for identity', async () => {
@@ -186,12 +207,12 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('token balances/infos for identity and batches', async () => {
-    const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
+    const TOKEN_CONTRACT = tokenContracts[0].contractId;
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 1);
 
     await client.getIdentityTokenBalances(TEST_IDENTITY, [tokenId]);
     await client.getIdentitiesTokenBalances([TEST_IDENTITY], tokenId);
     await client.getIdentityTokenInfos(TEST_IDENTITY, [tokenId]);
-    await client.getIdentitiesTokenInfos([TEST_IDENTITY], 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy');
+    await client.getIdentitiesTokenInfos([TEST_IDENTITY], tokenContracts[0].contractId);
   });
 });
