@@ -17,6 +17,10 @@ export default function assertLocalServicesRunningFactory(assertServiceRunning) 
     for (const config of configGroup) {
       if (config.name === 'local_seed') {
         await assertServiceRunning(config, 'core', expected);
+
+        if (config.get('platform.quorumList.enabled')) {
+          await assertServiceRunning(config, 'quorum_list', expected);
+        }
       } else {
         for (const serviceName of Object.keys(SERVICES)) {
           await assertServiceRunning(config, serviceName, expected);

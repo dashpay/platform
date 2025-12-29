@@ -451,6 +451,24 @@ Platform.getAddressesInfos = {
   responseType: platform_pb.GetAddressesInfosResponse
 };
 
+Platform.getAddressesTrunkState = {
+  methodName: "getAddressesTrunkState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetAddressesTrunkStateRequest,
+  responseType: platform_pb.GetAddressesTrunkStateResponse
+};
+
+Platform.getAddressesBranchState = {
+  methodName: "getAddressesBranchState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetAddressesBranchStateRequest,
+  responseType: platform_pb.GetAddressesBranchStateResponse
+};
+
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -1951,6 +1969,68 @@ PlatformClient.prototype.getAddressesInfos = function getAddressesInfos(requestM
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getAddressesInfos, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getAddressesTrunkState = function getAddressesTrunkState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getAddressesTrunkState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getAddressesBranchState = function getAddressesBranchState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getAddressesBranchState, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

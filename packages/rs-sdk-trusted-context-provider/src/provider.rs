@@ -74,6 +74,8 @@ struct MasternodeEntry {
     status: String,
     #[serde(rename = "versionCheck")]
     version_check: Option<String>,
+    #[serde(rename = "platformHTTPPort")]
+    platform_http_port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -292,7 +294,7 @@ impl TrustedHttpContextProvider {
             ));
         }
 
-        let dapi_port = match self.network {
+        let default_dapi_port = match self.network {
             Network::Dash => 443,
             Network::Testnet => 1443,
             _ => 443,
@@ -309,6 +311,8 @@ impl TrustedHttpContextProvider {
                 .rsplit_once(':')
                 .map(|(h, _)| h)
                 .unwrap_or(host_port.as_str());
+            // Use platformHTTPPort from the entry if available, otherwise use network default
+            let dapi_port = entry.platform_http_port.unwrap_or(default_dapi_port);
             let https_url = format!("https://{}:{}", host, dapi_port);
             let url = url::Url::parse(&https_url).map_err(|e| {
                 TrustedContextProviderError::NetworkError(format!(
