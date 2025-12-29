@@ -1,4 +1,5 @@
 use super::broadcast::BroadcastStateTransition;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
@@ -16,7 +17,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
-pub trait PutDocument<S: Signer>: Waitable {
+pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +47,7 @@ pub trait PutDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PutDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -109,6 +110,7 @@ impl<S: Signer> PutDocument<S> for Document {
                 settings.state_transition_creation_options,
             )
         }?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         transition.broadcast(sdk, Some(settings)).await?;

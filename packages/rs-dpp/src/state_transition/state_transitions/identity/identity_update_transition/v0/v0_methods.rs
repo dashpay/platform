@@ -38,9 +38,10 @@ use crate::{
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::{identity::SecurityLevel, ProtocolError};
+
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<'a, S: Signer>(
+    fn try_from_identity_with_signer<'a, S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         master_public_key_id: &KeyID,
         add_public_keys: Vec<IdentityPublicKey>,
@@ -156,9 +157,5 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransitionV0 {
 
     fn public_key_ids_to_disable(&self) -> &[KeyID] {
         &self.disable_public_keys
-    }
-
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 }

@@ -104,6 +104,14 @@ service Platform {
   rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
   rpc getGroupActionSigners(GetGroupActionSignersRequest)
       returns (GetGroupActionSignersResponse);
+  rpc getAddressInfo(GetAddressInfoRequest)
+          returns (GetAddressInfoResponse);
+  rpc getAddressesInfos(GetAddressesInfosRequest)
+          returns (GetAddressesInfosResponse);
+  rpc getAddressesTrunkState(GetAddressesTrunkStateRequest)
+          returns (GetAddressesTrunkStateResponse);
+  rpc getAddressesBranchState(GetAddressesBranchStateRequest)
+          returns (GetAddressesBranchStateResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1940,3 +1948,87 @@ message GetGroupActionSignersResponse {
 
   oneof version { GetGroupActionSignersResponseV0 v0 = 1; }
 }
+
+
+message GetAddressInfoRequest {
+  message GetAddressInfoRequestV0 {
+    bytes address = 1;
+    bool prove = 2;
+  }
+  oneof version { GetAddressInfoRequestV0 v0 = 1; }
+}
+
+message AddressInfoEntry {
+  bytes address = 1;
+  optional BalanceAndNonce balance_and_nonce = 2;
+}
+
+message BalanceAndNonce {
+  uint64 balance = 1;
+  uint32 nonce = 2;
+}
+
+message AddressInfoEntries {
+  repeated AddressInfoEntry address_info_entries = 1;
+}
+
+message GetAddressInfoResponse {
+  message GetAddressInfoResponseV0 {
+    oneof result {
+      AddressInfoEntry address_info_entry = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetAddressInfoResponseV0 v0 = 1; }
+}
+
+message GetAddressesInfosRequest {
+  message GetAddressesInfosRequestV0 {
+    repeated bytes addresses = 1;
+    bool prove = 2;
+  }
+  oneof version { GetAddressesInfosRequestV0 v0 = 1; }
+}
+
+message GetAddressesInfosResponse {
+  message GetAddressesInfosResponseV0 {
+    oneof result {
+      AddressInfoEntries address_info_entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetAddressesInfosResponseV0 v0 = 1; }
+}
+
+message GetAddressesTrunkStateRequest {
+  message GetAddressesTrunkStateRequestV0 {
+  }
+  oneof version { GetAddressesTrunkStateRequestV0 v0 = 1; }
+}
+
+message GetAddressesTrunkStateResponse {
+  message GetAddressesTrunkStateResponseV0 {
+    Proof proof = 2;
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetAddressesTrunkStateResponseV0 v0 = 1; }
+}
+
+message GetAddressesBranchStateRequest {
+  message GetAddressesBranchStateRequestV0 {
+    bytes key = 1;
+    uint32 depth = 2;
+  }
+  oneof version { GetAddressesBranchStateRequestV0 v0 = 1; }
+}
+
+message GetAddressesBranchStateResponse {
+  message GetAddressesBranchStateResponseV0 {
+    bytes merk_proof = 2;
+  }
+  oneof version { GetAddressesBranchStateResponseV0 v0 = 1; }
+}
+
+

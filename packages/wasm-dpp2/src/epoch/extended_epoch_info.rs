@@ -1,3 +1,4 @@
+use crate::impl_wasm_conversions;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use js_sys::BigInt;
@@ -123,3 +124,5 @@ impl ExtendedEpochInfoWasm {
         self.v0_mut().protocol_version = protocol_version;
     }
 }
+
+impl_wasm_conversions!(ExtendedEpochInfoWasm, ExtendedEpochInfo);

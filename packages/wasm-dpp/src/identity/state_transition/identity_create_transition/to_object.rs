@@ -2,6 +2,7 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransitionSingleSigned;
 use dpp::{
     identifier::Identifier, state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionLike,

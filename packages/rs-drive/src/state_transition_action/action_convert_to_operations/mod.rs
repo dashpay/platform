@@ -3,6 +3,7 @@
 //! This module defines general, commonly used functions in Drive.
 //!
 
+mod address_funds;
 mod batch;
 mod contract;
 mod identity;
@@ -74,6 +75,37 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
                 partially_used_asset_lock_action,
             ) => partially_used_asset_lock_action
                 .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::IdentityCreateFromAddressesAction(
+                identity_create_from_addresses_transition,
+            ) => identity_create_from_addresses_transition
+                .into_high_level_drive_operations(epoch, platform_version),
+
+            StateTransitionAction::IdentityTopUpFromAddressesAction(
+                identity_top_up_from_addresses_transition,
+            ) => identity_top_up_from_addresses_transition
+                .into_high_level_drive_operations(epoch, platform_version),
+
+            StateTransitionAction::IdentityCreditTransferToAddressesAction(
+                identity_credit_transfer_to_addresses_transition,
+            ) => identity_credit_transfer_to_addresses_transition
+                .into_high_level_drive_operations(epoch, platform_version),
+
+            StateTransitionAction::AddressFundsTransfer(address_funds_transfer_transition) => {
+                address_funds_transfer_transition
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::BumpAddressInputNoncesAction(
+                bump_address_input_nonces_action,
+            ) => bump_address_input_nonces_action
+                .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::AddressCreditWithdrawal(address_credit_withdrawal) => {
+                address_credit_withdrawal.into_high_level_drive_operations(epoch, platform_version)
+            }
+
+            StateTransitionAction::AddressFundingFromAssetLock(address_funding_from_asset_lock) => {
+                address_funding_from_asset_lock
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
         }
     }
 }

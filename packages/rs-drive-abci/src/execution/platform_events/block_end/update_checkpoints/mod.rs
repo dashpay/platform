@@ -1,0 +1,53 @@
+mod v0;
+
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+
+use crate::platform_types::platform::Platform;
+
+use crate::rpc::core::CoreRPCLike;
+
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use dpp::version::PlatformVersion;
+
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
+    /// Updates the drive cache at the end of finalize block. This does a few things like merging
+    /// the data contract cache and the platform versions cache.
+    ///
+    /// This function is a version handler that directs to specific version implementations
+    /// of the update_state_cache function.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
+    ///   the method to call.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<bool, Error>` - Returns `Ok(true)` if a checkpoint was created, `Ok(false)` otherwise.
+    ///   If there is a problem with the update, it returns an `Error`.
+    ///
+    pub fn update_checkpoints(
+        &self,
+        block_execution_context: &BlockExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
+        match platform_version
+            .drive_abci
+            .methods
+            .block_end
+            .update_checkpoints
+        {
+            None => Ok(false),
+            Some(0) => self.update_checkpoints_v0(block_execution_context, platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "update_checkpoints".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}

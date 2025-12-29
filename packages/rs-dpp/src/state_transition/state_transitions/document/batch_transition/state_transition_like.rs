@@ -1,6 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::batch_transition::BatchTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
+};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
@@ -26,6 +28,31 @@ impl StateTransitionLike for BatchTransition {
             BatchTransition::V1(transition) => transition.state_transition_type(),
         }
     }
+
+    /// returns the fee multiplier
+    fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            BatchTransition::V0(transition) => transition.user_fee_increase(),
+            BatchTransition::V1(transition) => transition.user_fee_increase(),
+        }
+    }
+    /// set a fee multiplier
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+        match self {
+            BatchTransition::V0(transition) => transition.set_user_fee_increase(user_fee_increase),
+            BatchTransition::V1(transition) => transition.set_user_fee_increase(user_fee_increase),
+        }
+    }
+
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            BatchTransition::V0(transition) => transition.unique_identifiers(),
+            BatchTransition::V1(transition) => transition.unique_identifiers(),
+        }
+    }
+}
+
+impl StateTransitionSingleSigned for BatchTransition {
     /// returns the signature as a byte-array
     fn signature(&self) -> &BinaryData {
         match self {
@@ -47,33 +74,13 @@ impl StateTransitionLike for BatchTransition {
             BatchTransition::V1(transition) => transition.set_signature_bytes(signature),
         }
     }
+}
 
-    /// returns the fee multiplier
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            BatchTransition::V0(transition) => transition.user_fee_increase(),
-            BatchTransition::V1(transition) => transition.user_fee_increase(),
-        }
-    }
-    /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        match self {
-            BatchTransition::V0(transition) => transition.set_user_fee_increase(user_fee_increase),
-            BatchTransition::V1(transition) => transition.set_user_fee_increase(user_fee_increase),
-        }
-    }
-
+impl StateTransitionOwned for BatchTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             BatchTransition::V0(transition) => transition.owner_id(),
             BatchTransition::V1(transition) => transition.owner_id(),
-        }
-    }
-
-    fn unique_identifiers(&self) -> Vec<String> {
-        match self {
-            BatchTransition::V0(transition) => transition.unique_identifiers(),
-            BatchTransition::V1(transition) => transition.unique_identifiers(),
         }
     }
 }

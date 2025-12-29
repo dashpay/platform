@@ -55,7 +55,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - Insufficient credits for the purchase
-    pub async fn token_purchase<S: Signer>(
+    pub async fn token_purchase<S: Signer<IdentityPublicKey>>(
         &self,
         purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,

@@ -139,6 +139,11 @@ impl TestQuorumInfo {
         // We test on purpose with the bls library that Dash Core uses
         let private_keys = bls_signatures::PrivateKey::generate_dash_many(pro_tx_hashes.len(), rng)
             .expect("expected to generate private keys");
+        assert_eq!(
+            private_keys.len(),
+            pro_tx_hashes.len(),
+            "zipped private keys and pro_tx_hashes must have the same length"
+        );
         let bls_id_private_key_pairs = private_keys
             .into_iter()
             .zip(pro_tx_hashes)

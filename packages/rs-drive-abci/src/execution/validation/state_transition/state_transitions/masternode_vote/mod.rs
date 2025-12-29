@@ -4,10 +4,14 @@ mod nonce;
 mod state;
 mod transform_into_action;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::state_transition_action::StateTransitionAction;
+use std::collections::BTreeMap;
 
 use drive::grovedb::TransactionArg;
 
@@ -19,16 +23,19 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
-impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
+impl StateTransitionActionTransformer for MasternodeVoteTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         _block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -53,7 +60,7 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
     }
 }
 
-impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
+impl StateTransitionStateValidation for MasternodeVoteTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
@@ -78,6 +85,10 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
                 received: version,
             })),
         }
+    }
+
+    fn validates_full_state_on_check_tx(&self) -> bool {
+        true
     }
 }
 

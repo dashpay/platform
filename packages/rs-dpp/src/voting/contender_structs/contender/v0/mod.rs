@@ -27,6 +27,11 @@ pub struct ContenderV0 {
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 pub struct ContenderWithSerializedDocumentV0 {
     /// The identity ID of the contender.
     pub identity_id: Identifier,

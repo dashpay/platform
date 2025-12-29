@@ -15,6 +15,7 @@ authors = [
 anyhow = { version = "1.0.81" }
 async-trait = { version = "0.1.79" }
 base64 = "0.22.1"
+bech32 = "0.11"
 bs58 = "0.5"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.35", default-features = false, features = [
@@ -29,6 +30,7 @@ dashcore = { path = "../../../rust-dashcore/dash", features = [
   "rand",
   "signer",
   "serde",
+  "eddsa",
 ], default-features = false }
 key-wallet = { path = "../../../rust-dashcore/key-wallet", optional = true }
 key-wallet-manager = { path = "../../../rust-dashcore/key-wallet-manager", optional = true }
@@ -54,7 +56,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
-thiserror = { version = "2.0.12" }
+thiserror = { version = "2.0.17" }
 data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
@@ -129,7 +131,6 @@ all_features = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",
@@ -184,7 +185,6 @@ all_features_without_client = [
   "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
-  "state-transitions",
   "factories",
   "fixtures-and-mocks",
   "random-public-keys",
@@ -242,6 +242,7 @@ data-contract-serde-conversion = []
 data-contract-value-conversion = ["data-contract-serde-conversion"]
 data-contract-json-conversion = [
   "data-contract-value-conversion",
+  "data-contract-serde-conversion",
   "platform-value-json",
 ]
 data-contract-cbor-conversion = [

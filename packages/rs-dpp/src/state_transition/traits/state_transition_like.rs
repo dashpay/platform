@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use platform_value::BinaryData;
-
 use crate::prelude::{Identifier, UserFeeIncrease};
 use crate::version::FeatureVersion;
 
@@ -10,12 +8,15 @@ use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] = [StateTransitionType::Batch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 8] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
     StateTransitionType::IdentityUpdate,
     StateTransitionType::IdentityCreditTransfer,
     StateTransitionType::IdentityCreditWithdrawal,
+    StateTransitionType::IdentityTopUpFromAddresses,
+    StateTransitionType::IdentityCreateFromAddresses,
+    StateTransitionType::IdentityCreditTransferToAddresses,
 ];
 
 pub const VOTING_TRANSITION_TYPE: [StateTransitionType; 1] = [StateTransitionType::MasternodeVote];
@@ -34,10 +35,6 @@ pub trait StateTransitionLike:
     fn state_transition_protocol_version(&self) -> FeatureVersion;
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType;
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData;
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData);
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease;
     /// set a fee multiplier
@@ -62,11 +59,6 @@ pub trait StateTransitionLike:
     fn is_voting_state_transition(&self) -> bool {
         VOTING_TRANSITION_TYPE.contains(&self.state_transition_type())
     }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>);
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier;
 
     /// unique identifiers for the state transition
     /// This is often only one String except in the case of a documents batch state transition

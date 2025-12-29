@@ -14,11 +14,6 @@ pub fn mock_identifier() -> [u8; 32] {
     [0xFF; 32]
 }
 
-/// Generate a mock 20-byte hash
-pub fn mock_hash_160() -> [u8; 20] {
-    [0xEE; 20]
-}
-
 /// Generate test platform version
 pub fn test_platform_version() -> u32 {
     1

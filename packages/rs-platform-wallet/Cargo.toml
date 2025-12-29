@@ -20,7 +20,6 @@ key-wallet-manager = { path = "../../../rust-dashcore/key-wallet-manager", optio
 dashcore = { path = "../../../rust-dashcore/dash" }
 
 # Standard dependencies
-serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 async-trait = "0.1"
 

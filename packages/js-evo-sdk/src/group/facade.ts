@@ -85,12 +85,12 @@ export class GroupFacade {
     return w.getContestedResourcesWithProofInfo(query);
   }
 
-  async contestedResourceVotersForIdentity(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<string[]> {
+  async contestedResourceVotersForIdentity(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<wasm.Identifier[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVotersForIdentity(query);
   }
 
-  async contestedResourceVotersForIdentityWithProof(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<wasm.ProofMetadataResponseTyped<string[]>> {
+  async contestedResourceVotersForIdentityWithProof(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.Identifier[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVotersForIdentityWithProofInfo(query);
   }

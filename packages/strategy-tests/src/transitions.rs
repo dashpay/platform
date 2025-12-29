@@ -1,3 +1,37 @@
+//! State transition factories for strategy tests.
+//!
+//! This module provides functions to create various platform state transitions
+//! used during strategy test execution. State transitions are the fundamental
+//! units of change on the Dash Platform, representing actions like identity
+//! creation, credit transfers, withdrawals, and key management.
+//!
+//! # Overview
+//!
+//! The functions in this module generate properly signed state transitions that
+//! can be submitted to the platform. They handle:
+//!
+//! - **Asset lock proofs**: Creating instant asset lock transactions that fund
+//!   new identities or top up existing ones
+//! - **Identity creation**: Generating new identities with cryptographic keys
+//! - **Identity updates**: Adding or disabling public keys
+//! - **Credit operations**: Top-ups, withdrawals, and transfers between identities
+//! - **Address operations**: Transfers to platform addresses
+//!
+//! # Fixtures vs. Production Code
+//!
+//! These functions create "fixture" data suitable for testing. They use hardcoded
+//! values (like transaction IDs and signatures) that would not be valid on a real
+//! network. This is intentional—strategy tests run against a controlled test
+//! environment where these fixtures are accepted.
+//!
+//! # Signing
+//!
+//! All state transitions must be cryptographically signed. The functions in this
+//! module use a [`SimpleSigner`] to manage keys and create signatures. The signer
+//! must have access to the appropriate private keys for the identity performing
+//! each action.
+
+use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
@@ -33,10 +67,13 @@ use dpp::withdrawal::Pooling;
 use rand::prelude::{IteratorRandom, StdRng};
 use simple_signer::signer::SimpleSigner;
 
+use crate::addresses_with_balance::AddressesWithBalance;
 use crate::operations::AmountRange;
 use crate::KeyMaps;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use dpp::state_transition::identity_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
 use rand::Rng;
@@ -77,6 +114,19 @@ pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> Ass
     AssetLockProof::Instant(is_lock_proof)
 }
 
+/// Constructs an `AssetLockProof` with a dynamically determined amount.
+///
+/// Similar to [`instant_asset_lock_proof_fixture`], but the locked amount is
+/// randomly selected from the provided range. This is useful for testing
+/// scenarios with variable funding amounts.
+///
+/// # Parameters
+/// - `one_time_private_key`: A unique private key for generating the locking transaction.
+/// - `amount_range`: The inclusive range from which to randomly select the lock amount.
+/// - `rng`: A mutable reference to a random number generator.
+///
+/// # Returns
+/// An `AssetLockProof` with a randomly selected amount within the specified range.
 pub fn instant_asset_lock_proof_fixture_with_dynamic_range(
     one_time_private_key: PrivateKey,
     amount_range: &AmountRange,
@@ -179,6 +229,23 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     }
 }
 
+/// Constructs a `Transaction` for an instant asset lock with a dynamic amount.
+///
+/// Similar to [`instant_asset_lock_proof_transaction_fixture`], but the funding
+/// amount is randomly selected from the provided range rather than using a
+/// fixed 1 Dash value.
+///
+/// # Parameters
+/// - `one_time_private_key`: A unique private key for the locking transaction.
+/// - `amount_range`: The inclusive range from which to randomly select the amount.
+/// - `rng`: A mutable reference to a random number generator.
+///
+/// # Returns
+/// A `Transaction` with the funding output set to a random amount within the range.
+///
+/// # Note
+/// If `amount_range.start() == amount_range.end()`, the exact value is used
+/// without consuming randomness from the RNG.
 pub fn instant_asset_lock_proof_transaction_fixture_with_dynamic_amount(
     one_time_private_key: PrivateKey,
     amount_range: &AmountRange,
@@ -841,6 +908,109 @@ pub fn create_identity_credit_transfer_transition(
     transition
 }
 
+/// Creates a state transition to transfer credits from an identity to multiple addresses.
+///
+/// This function transfers credits from the sender's identity to newly created addresses.
+/// The total amount is distributed evenly among the specified number of output addresses.
+///
+/// # Parameters
+/// - `identity`: The identity sending the credits.
+/// - `identity_nonce_counter`: A mutable reference to track nonces for each identity.
+/// - `signer`: A mutable reference to a signer for signing the transition and creating new addresses.
+/// - `total_amount`: The total amount of credits to transfer.
+/// - `output_count`: The number of recipient addresses to create.
+/// - `rng`: A mutable reference to a random number generator.
+///
+/// # Returns
+/// A tuple containing:
+/// 1. `StateTransition`: The signed state transition.
+/// 2. `BTreeMap<PlatformAddress, u64>`: The recipient addresses and their amounts.
+///
+/// # Panics
+/// This function may panic if:
+/// - The sender's identity does not have a suitable transfer key available for signing.
+/// - There's an error during the signing process.
+#[allow(clippy::too_many_arguments)]
+pub fn create_identity_credit_transfer_to_addresses_transition(
+    identity: &Identity,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+    current_addresses_with_balance: &mut AddressesWithBalance,
+    signer: &mut SimpleSigner,
+    total_amount: u64,
+    output_count: usize,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> (StateTransition, BTreeMap<PlatformAddress, u64>) {
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
+
+    // Create output addresses and distribute funds evenly
+    let output_count = output_count.max(1);
+    let amount_per_output = total_amount / output_count as u64;
+    let mut recipient_addresses = BTreeMap::new();
+
+    for _ in 0..output_count {
+        let new_address = signer.add_random_address_key(rng);
+        current_addresses_with_balance.register_new_address(new_address, amount_per_output);
+        recipient_addresses.insert(new_address, amount_per_output);
+    }
+
+    let transition = IdentityCreditTransferToAddressesTransition::try_from_identity(
+        identity,
+        recipient_addresses.clone(),
+        0, // user_fee_increase
+        signer,
+        None, // signing_withdrawal_key_to_use
+        *nonce,
+        platform_version,
+        None, // version
+    )
+    .expect("expected to create transfer to addresses transition");
+
+    (transition, recipient_addresses)
+}
+
+/// Creates a state transition to transfer credits from an identity to specific addresses.
+///
+/// This function transfers credits from the sender's identity to pre-specified addresses.
+///
+/// # Parameters
+/// - `identity`: The identity sending the credits.
+/// - `identity_nonce_counter`: A mutable reference to track nonces for each identity.
+/// - `signer`: A mutable reference to a signer for signing the transition.
+/// - `recipient_addresses`: The recipient addresses and their amounts.
+/// - `platform_version`: The platform version.
+///
+/// # Returns
+/// The signed state transition.
+///
+/// # Panics
+/// This function may panic if:
+/// - The sender's identity does not have a suitable transfer key available for signing.
+/// - There's an error during the signing process.
+pub fn create_identity_credit_transfer_to_addresses_transition_with_outputs(
+    identity: &Identity,
+    identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
+    signer: &mut SimpleSigner,
+    recipient_addresses: BTreeMap<PlatformAddress, u64>,
+    platform_version: &PlatformVersion,
+) -> StateTransition {
+    let nonce = identity_nonce_counter.entry(identity.id()).or_default();
+    *nonce += 1;
+
+    IdentityCreditTransferToAddressesTransition::try_from_identity(
+        identity,
+        recipient_addresses,
+        0, // user_fee_increase
+        signer,
+        None, // signing_withdrawal_key_to_use
+        *nonce,
+        platform_version,
+        None, // version
+    )
+    .expect("expected to create transfer to addresses transition")
+}
+
 /// Generates a specified number of new identities and their corresponding state transitions.
 ///
 /// This function first creates a specified number of random identities along with their
@@ -933,7 +1103,7 @@ pub fn create_identities_state_transitions(
         id_pub_key_v0.set_id(current_id_num);
         current_id_num += 1; // Increment for each key
     }
-    signer.add_keys(keys);
+    signer.add_identity_public_keys(keys);
 
     // Generate state transitions for each identity
     identities
@@ -968,7 +1138,11 @@ pub fn create_identities_state_transitions(
                     platform_version,
                 ) {
                     Ok(identity_create_transition) => {
-                        identity.set_id(identity_create_transition.owner_id());
+                        identity.set_id(
+                            identity_create_transition
+                                .owner_id()
+                                .expect("identity create transitions have an identity id"),
+                        );
                         Ok((identity, identity_create_transition))
                     }
                     Err(e) => Err(e),
@@ -1052,13 +1226,37 @@ where
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.set_id(identity_create_transition.owner_id());
+            identity.set_id(
+                identity_create_transition
+                    .owner_id()
+                    .expect("identity create transitions have an identity id"),
+            );
 
             (identity.clone(), identity_create_transition)
         })
         .collect()
 }
 
+/// Creates state transitions for identities with pre-generated asset lock proofs.
+///
+/// Unlike [`create_state_transitions_for_identities`] which generates new asset
+/// lock proofs, this function uses pre-provided proofs. This is useful when
+/// asset locks have been created separately (e.g., from actual core chain
+/// transactions in integration tests).
+///
+/// # Parameters
+/// - `identities_with_proofs`: A vector of tuples containing:
+///   * `Identity`: The identity to create
+///   * `[u8; 32]`: The private key bytes for signing the asset lock
+///   * `AssetLockProof`: The pre-generated asset lock proof
+/// - `signer`: A mutable reference to the signer for creating signatures.
+/// - `platform_version`: The platform version for compatibility.
+///
+/// # Returns
+/// A vector of tuples containing the identity and its creation state transition.
+///
+/// # Panics
+/// Panics if unable to create the identity creation transition.
 pub fn create_state_transitions_for_identities_and_proofs(
     identities_with_proofs: Vec<(Identity, [u8; 32], AssetLockProof)>,
     signer: &mut SimpleSigner,
@@ -1078,7 +1276,11 @@ pub fn create_state_transitions_for_identities_and_proofs(
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.set_id(identity_create_transition.owner_id());
+            identity.set_id(
+                identity_create_transition
+                    .owner_id()
+                    .expect("identity create transitions have an identity id"),
+            );
 
             (identity, identity_create_transition)
         })

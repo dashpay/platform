@@ -34,14 +34,69 @@ describe('Document', () => {
     });
 
     it('should allows to create Document from bytes and convert to bytes', () => {
-      const dataContract = wasm.DataContract.fromValue(dataContractValue, false);
+      const dataContract = wasm.DataContract.fromJSON(dataContractValue, false);
       const documentInstance = wasm.Document.fromBytes(fromHexString(documentBytes), dataContract, 'note');
 
-      const bytes = documentInstance.bytes(dataContract, PlatformVersion.PLATFORM_V1);
+      const bytes = documentInstance.toBytes(dataContract, PlatformVersion.PLATFORM_V1);
 
-      expect(documentInstance.dataContractId.base58()).to.equal(dataContract.id.base58());
+      expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());
       expect(bytes).to.deep.equal(fromHexString(documentBytes));
       expect(dataContract.__wbg_ptr).to.not.equal(0);
+    });
+  });
+
+  describe('toObject / fromObject', () => {
+    it('should convert to object with binary fields as Uint8Array', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const obj = documentInstance.toObject();
+
+      expect(obj.$id).to.be.instanceOf(Uint8Array);
+      expect(obj.$ownerId).to.be.instanceOf(Uint8Array);
+      expect(obj.$dataContractId).to.be.instanceOf(Uint8Array);
+      expect(obj.$type).to.equal(documentTypeName);
+      // toObject uses BigInt for u64 values like revision to preserve precision
+      expect(BigInt(obj.$revision)).to.equal(revision);
+    });
+
+    it('should roundtrip through toObject / fromObject', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const obj = documentInstance.toObject();
+      const restored = wasm.Document.fromObject(obj);
+
+      expect(restored.id.toBase58()).to.equal(documentInstance.id.toBase58());
+      expect(restored.ownerId.toBase58()).to.equal(documentInstance.ownerId.toBase58());
+      expect(restored.dataContractId.toBase58()).to.equal(documentInstance.dataContractId.toBase58());
+      expect(restored.documentTypeName).to.equal(documentInstance.documentTypeName);
+      expect(restored.revision).to.equal(documentInstance.revision);
+    });
+  });
+
+  describe('toJSON / fromJSON', () => {
+    it('should convert to JSON with identifiers as Base58 strings', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const json = documentInstance.toJSON();
+
+      expect(typeof json.$id).to.equal('string');
+      expect(typeof json.$ownerId).to.equal('string');
+      expect(typeof json.$dataContractId).to.equal('string');
+      expect(json.$type).to.equal(documentTypeName);
+      expect(json.$revision).to.equal(Number(revision));
+    });
+
+    it('should roundtrip through toJSON / fromJSON', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const json = documentInstance.toJSON();
+      const restored = wasm.Document.fromJSON(json);
+
+      expect(restored.id.toBase58()).to.equal(documentInstance.id.toBase58());
+      expect(restored.ownerId.toBase58()).to.equal(documentInstance.ownerId.toBase58());
+      expect(restored.dataContractId.toBase58()).to.equal(documentInstance.dataContractId.toBase58());
+      expect(restored.documentTypeName).to.equal(documentInstance.documentTypeName);
+      expect(restored.revision).to.equal(documentInstance.revision);
     });
   });
 
@@ -49,19 +104,19 @@ describe('Document', () => {
     it('should return document id', () => {
       const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
 
-      expect(documentInstance.id.base58()).to.deep.equal(id);
+      expect(documentInstance.id.toBase58()).to.deep.equal(id);
     });
 
     it('should return owner id', () => {
       const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
 
-      expect(documentInstance.ownerId.base58()).to.deep.equal(ownerId);
+      expect(documentInstance.ownerId.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should return data contract id', () => {
       const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
 
-      expect(documentInstance.dataContractId.base58()).to.deep.equal(dataContractId);
+      expect(documentInstance.dataContractId.toBase58()).to.deep.equal(dataContractId);
     });
 
     it('should return properties', () => {
@@ -83,7 +138,7 @@ describe('Document', () => {
 
       documentInstance.id = ownerId;
 
-      expect(documentInstance.id.base58()).to.deep.equal(ownerId);
+      expect(documentInstance.id.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should allow to set document owner id', () => {
@@ -91,7 +146,7 @@ describe('Document', () => {
 
       documentInstance.ownerId = id;
 
-      expect(documentInstance.ownerId.base58()).to.deep.equal(id);
+      expect(documentInstance.ownerId.toBase58()).to.deep.equal(id);
     });
 
     it('should allow to set entropy', () => {

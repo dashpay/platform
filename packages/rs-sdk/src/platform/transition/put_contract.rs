@@ -13,11 +13,12 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::state_transition::StateTransition;
 
 use super::broadcast::BroadcastStateTransition;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform
-pub trait PutContract<S: Signer>: Waitable {
+pub trait PutContract<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     async fn put_to_platform(
@@ -39,7 +40,7 @@ pub trait PutContract<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PutContract<S> for DataContract {
+impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -69,6 +70,7 @@ impl<S: Signer> PutContract<S> for DataContract {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         transition.broadcast(sdk, settings).await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result

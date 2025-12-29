@@ -5,6 +5,8 @@ env:
   es2020: true
   node: true
   mocha: true
+parserOptions:
+  ecmaVersion: 2024
 rules:
   eol-last:
     - error

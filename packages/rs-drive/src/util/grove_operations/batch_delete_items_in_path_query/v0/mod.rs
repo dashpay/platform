@@ -156,6 +156,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -243,6 +244,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -388,6 +390,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],
@@ -505,6 +508,7 @@ mod tests {
             .grove_insert_empty_tree(
                 SubtreePath::empty(),
                 b"root",
+                TreeType::NormalTree,
                 Some(&transaction),
                 None,
                 &mut vec![],

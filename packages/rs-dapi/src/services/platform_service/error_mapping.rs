@@ -6,12 +6,15 @@ use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 use std::{fmt::Debug, str::FromStr};
 use tonic::{Code, metadata::MetadataValue};
 
+use crate::DapiError;
+
 #[derive(Clone, serde::Serialize)]
 pub struct TenderdashStatus {
     pub code: i64,
-    // human-readable error message; will be put into `data` field
+    /// human-readable error message; will be put into `data` field
+    /// Access using [`TenderdashStatus::grpc_message()`].
     pub message: Option<String>,
-    // CBOR-encoded dpp ConsensusError
+    /// CBOR-encoded dpp ConsensusError
     pub consensus_error: Option<Vec<u8>>,
 }
 
@@ -38,6 +41,14 @@ impl TenderdashStatus {
     pub fn to_status(&self) -> tonic::Status {
         let status_code = self.grpc_code();
         let status_message = self.grpc_message();
+
+        // check if we can map to a DapiError first
+        if let Some(dapi_error) = map_tenderdash_message(&status_message) {
+            // avoid infinite recursion
+            if !matches!(dapi_error, DapiError::TenderdashClientError(_)) {
+                return dapi_error.to_status();
+            }
+        }
 
         let mut status: tonic::Status = tonic::Status::new(status_code, status_message);
 
@@ -141,7 +152,7 @@ impl From<TenderdashStatus> for StateTransitionBroadcastError {
     fn from(err: TenderdashStatus) -> Self {
         StateTransitionBroadcastError {
             code: err.code.clamp(0, u32::MAX as i64) as u32,
-            message: err.message.unwrap_or_else(|| "Unknown error".to_string()),
+            message: err.grpc_message(),
             data: err.consensus_error.clone().unwrap_or_default(),
         }
     }
@@ -273,10 +284,22 @@ impl From<serde_json::Value> for TenderdashStatus {
                     tracing::debug!("Tenderdash error missing 'code' field, defaulting to 0");
                     0
                 });
-            let message = object
+            let raw_message = object
                 .get("message")
                 .and_then(|m| m.as_str())
-                .map(|s| s.to_string());
+                .map(|m| m.trim());
+            // empty message or "Internal error" is not very informative, so we try to check `data` field
+            let message = if raw_message
+                .is_none_or(|m| m.is_empty() || m.eq_ignore_ascii_case("Internal error"))
+            {
+                object
+                    .get("data")
+                    .and_then(|d| d.as_str())
+                    .filter(|s| s.is_ascii())
+            } else {
+                raw_message
+            }
+            .map(|s| s.to_string());
 
             // info contains additional error details, possibly including consensus error
             let consensus_error = object
@@ -300,6 +323,41 @@ impl From<serde_json::Value> for TenderdashStatus {
     }
 }
 
+// Map some common Tenderdash error messages to DapiError variants
+pub(super) fn map_tenderdash_message(message: &str) -> Option<DapiError> {
+    let msg = message.trim().to_lowercase();
+    if msg == "tx already exists in cache" {
+        return Some(DapiError::AlreadyExists(msg.to_string()));
+    }
+
+    if msg.starts_with("tx too large.") {
+        let message = msg.replace("tx too large.", "").trim().to_string();
+        return Some(DapiError::InvalidArgument(
+            "state transition is too large. ".to_string() + &message,
+        ));
+    }
+
+    if msg.starts_with("mempool is full") {
+        return Some(DapiError::ResourceExhausted(msg.to_string()));
+    }
+
+    if msg.contains("context deadline exceeded") {
+        return Some(DapiError::Timeout(
+            "broadcasting state transition is timed out".to_string(),
+        ));
+    }
+
+    if msg.contains("too_many_requests") {
+        return Some(DapiError::ResourceExhausted(
+            "tenderdash is not responding: too many requests".to_string(),
+        ));
+    }
+
+    if msg.starts_with("broadcast confirmation not received:") {
+        return Some(DapiError::Timeout(msg.to_string()));
+    }
+    None
+}
 #[cfg(test)]
 mod tests {
     use super::*;
