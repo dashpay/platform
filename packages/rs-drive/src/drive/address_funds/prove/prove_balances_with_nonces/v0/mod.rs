@@ -43,16 +43,6 @@ impl Drive {
     }
 }
 
-/// Tests for address balance proofs demonstrating GroveDB ProvableCountSumTree absence proof bug.
-///
-/// The tests `should_prove_and_verify_only_unknown_address` and
-/// `should_prove_and_verify_multiple_addresses_with_unknown` fail due to a bug in GroveDB's
-/// ProvableCountSumTree type when proving absence of elements.
-///
-/// The bug is specifically in the ProvableCountSumTree type - SumTree absence proofs work
-/// correctly (as demonstrated by token balance tests in rs-drive/src/drive/tokens/balance/).
-///
-/// Related: https://github.com/dashpay/grovedb/issues/XXX
 #[cfg(test)]
 mod tests {
     use super::*;
