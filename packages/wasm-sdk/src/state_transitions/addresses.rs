@@ -19,7 +19,6 @@ use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::utils::IntoWasm;
 use wasm_dpp2::{
     fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
     CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, PlatformAddressOutputWasm,
@@ -466,14 +465,8 @@ impl WasmSdk {
         let change_output = parsed.change_output.map(|output| output.into_inner());
 
         // Extract output script from options
-        let output_script_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("outputScript"))
-                .map_err(|_| WasmSdkError::invalid_argument("outputScript is required"))?;
-
-        let output_script: CoreScript = output_script_js
-            .to_wasm::<CoreScriptWasm>("CoreScript")?
-            .clone()
-            .into();
+        let output_script: CoreScript =
+            CoreScriptWasm::try_from_options(&options_value, "outputScript")?.into();
 
         // Extract signer from options
         let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;

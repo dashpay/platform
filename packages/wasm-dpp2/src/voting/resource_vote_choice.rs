@@ -1,6 +1,7 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::utils::IntoWasm;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -70,6 +71,30 @@ impl ResourceVoteChoiceWasm {
             ResourceVoteChoice::Abstain => "Abstain".to_string(),
             ResourceVoteChoice::Lock => "Lock".to_string(),
         }
+    }
+}
+
+impl ResourceVoteChoiceWasm {
+    /// Try to extract a ResourceVoteChoice from an options object field.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to a ResourceVoteChoiceWasm.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let choice_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if choice_js.is_undefined() || choice_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        choice_js
+            .to_wasm::<ResourceVoteChoiceWasm>("ResourceVoteChoice")
+            .map(|boxed| (*boxed).clone())
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::IntoWasm;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
@@ -105,5 +106,29 @@ impl CoreScriptWasm {
     #[wasm_bindgen(js_name = "toASMString")]
     pub fn to_asm_string(&self) -> String {
         self.0.to_asm_string()
+    }
+}
+
+impl CoreScriptWasm {
+    /// Try to extract a CoreScript from an options object field.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to a CoreScriptWasm.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let script_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if script_js.is_undefined() || script_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        script_js
+            .to_wasm::<CoreScriptWasm>("CoreScript")
+            .map(|boxed| (*boxed).clone())
     }
 }

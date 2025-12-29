@@ -1026,20 +1026,12 @@ impl WasmSdk {
         let pro_tx_hash: Identifier = parsed.masternode_pro_tx_hash.into();
 
         // Extract vote poll from options
-        let vote_poll_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("votePoll"))
-            .map_err(|_| WasmSdkError::invalid_argument("votePoll is required"))?;
-        let vote_poll: dash_sdk::dpp::voting::vote_polls::VotePoll = vote_poll_js
-            .to_wasm::<VotePollWasm>("VotePoll")?
-            .clone()
-            .into();
+        let vote_poll: dash_sdk::dpp::voting::vote_polls::VotePoll =
+            VotePollWasm::try_from_options(&options_value, "votePoll")?.into();
 
         // Extract vote choice from options
-        let vote_choice_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("voteChoice"))
-            .map_err(|_| WasmSdkError::invalid_argument("voteChoice is required"))?;
-        let resource_vote_choice: dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice = vote_choice_js
-            .to_wasm::<ResourceVoteChoiceWasm>("ResourceVoteChoice")?
-            .clone()
-            .into();
+        let resource_vote_choice: dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice =
+            ResourceVoteChoiceWasm::try_from_options(&options_value, "voteChoice")?.into();
 
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
