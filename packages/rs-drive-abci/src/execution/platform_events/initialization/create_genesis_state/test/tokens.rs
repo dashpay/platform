@@ -257,15 +257,15 @@ impl<C> Platform<C> {
             allow_transfer_to_frozen_balance: true,
             max_supply_change_rules: ChangeControlRulesV0::default().into(),
             distribution_rules: TokenDistributionRulesV0 {
-                perpetual_distribution: Some(
-                    TokenPerpetualDistribution::V0(TokenPerpetualDistributionV0 {
+                perpetual_distribution: Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
                         distribution_type: RewardDistributionType::BlockBasedDistribution {
                             interval: 10, // Distribute every 10 blocks
                             function: DistributionFunction::FixedAmount { amount: 100 },
                         },
                         distribution_recipient: TokenDistributionRecipient::ContractOwner,
-                    }),
-                ),
+                    },
+                )),
                 perpetual_distribution_rules: ChangeControlRulesV0::default().into(),
                 pre_programmed_distribution: None,
                 new_tokens_destination_identity: None,
