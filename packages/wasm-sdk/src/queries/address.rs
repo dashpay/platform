@@ -8,7 +8,7 @@ use js_sys::{BigInt, Map};
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::platform_address::PlatformAddressWasm;
+use wasm_dpp2::PlatformAddressWasm;
 
 /// Information about a Platform address including its nonce and balance.
 #[wasm_bindgen(js_name = "PlatformAddressInfo")]
@@ -19,8 +19,8 @@ pub struct PlatformAddressInfoWasm {
     balance: u64,
 }
 
-impl PlatformAddressInfoWasm {
-    fn from_address_info(info: AddressInfo) -> Self {
+impl From<AddressInfo> for PlatformAddressInfoWasm {
+    fn from(info: AddressInfo) -> Self {
         PlatformAddressInfoWasm {
             address: info.address.into(),
             nonce: info.nonce,
@@ -69,7 +69,7 @@ impl WasmSdk {
 
         let address_info = AddressInfo::fetch(self.as_ref(), platform_address).await?;
 
-        Ok(address_info.map(PlatformAddressInfoWasm::from_address_info))
+        Ok(address_info.map(PlatformAddressInfoWasm::from))
     }
 
     /// Fetches information about a Platform address including its nonce and balance, with proof.
@@ -95,7 +95,7 @@ impl WasmSdk {
                 .await?;
 
         let data = address_info
-            .map(|info| JsValue::from(PlatformAddressInfoWasm::from_address_info(info)))
+            .map(|info| JsValue::from(PlatformAddressInfoWasm::from(info)))
             .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
@@ -138,7 +138,7 @@ impl WasmSdk {
             let value = address_infos
                 .get(&address)
                 .and_then(|opt| opt.as_ref())
-                .map(|info| JsValue::from(PlatformAddressInfoWasm::from_address_info(info.clone())))
+                .map(|info| JsValue::from(PlatformAddressInfoWasm::from(info.clone())))
                 .unwrap_or(JsValue::UNDEFINED);
             results_map.set(&key, &value);
         }
@@ -186,7 +186,7 @@ impl WasmSdk {
             let value = address_infos
                 .get(&address)
                 .and_then(|opt| opt.as_ref())
-                .map(|info| JsValue::from(PlatformAddressInfoWasm::from_address_info(info.clone())))
+                .map(|info| JsValue::from(PlatformAddressInfoWasm::from(info.clone())))
                 .unwrap_or(JsValue::UNDEFINED);
             results_map.set(&key, &value);
         }

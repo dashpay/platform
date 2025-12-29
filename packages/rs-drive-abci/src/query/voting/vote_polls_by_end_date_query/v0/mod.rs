@@ -10,8 +10,10 @@ use dpp::check_validation_result_with_data;
 use dpp::version::PlatformVersion;
 use dpp::validation::ValidationResult;
 
+use crate::query::response_metadata::CheckpointUsed;
 use drive::error::query::QuerySyntaxError;
 use drive::query::VotePollsByEndDateDriveQuery;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_vote_polls_by_end_date_query_v0(
@@ -109,11 +111,12 @@ impl<C> Platform<C> {
                 Err(e) => return Err(e.into()),
             };
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetVotePollsByEndDateResponseV0 {
-                result: Some(get_vote_polls_by_end_date_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_vote_polls_by_end_date_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let results = match query.execute_no_proof_keep_serialized(
@@ -207,7 +210,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

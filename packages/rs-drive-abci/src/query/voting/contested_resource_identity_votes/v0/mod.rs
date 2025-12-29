@@ -2,6 +2,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_response::{
@@ -15,6 +16,7 @@ use dpp::{check_validation_result_with_data, platform_value, ProtocolError};
 use drive::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use drive::error::query::QuerySyntaxError;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_resource_identity_votes_v0(
@@ -87,13 +89,14 @@ impl<C> Platform<C> {
                 Err(e) => return Err(e.into()),
             };
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetContestedResourceIdentityVotesResponseV0 {
                 result: Some(
-                    get_contested_resource_identity_votes_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
-                    ),
+                    get_contested_resource_identity_votes_response_v0::Result::Proof(proof),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let votes =
@@ -189,7 +192,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

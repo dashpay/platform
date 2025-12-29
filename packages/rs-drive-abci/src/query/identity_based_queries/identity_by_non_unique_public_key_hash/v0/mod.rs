@@ -13,6 +13,8 @@ use dpp::platform_value::{Bytes20, Bytes32};
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_identity_by_non_unique_public_key_hash_v0(
@@ -58,15 +60,19 @@ impl<C> Platform<C> {
                 result: Some(
                     get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(
                         IdentityProvedResponse {
-                            grovedb_identity_public_key_hash_proof: Some(self.response_proof_v0(
-                                platform_state,
-                                proof.identity_id_public_key_hash_proof,
-                            )),
+                            grovedb_identity_public_key_hash_proof: Some(
+                                self.response_proof_v0(
+                                    platform_state,
+                                    proof.identity_id_public_key_hash_proof,
+                                    GroveDBToUse::Current,
+                                )
+                                .map(|(_, proof)| proof)?,
+                            ),
                             identity_proof_bytes: proof.identity_proof,
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let maybe_identity = self
@@ -87,7 +93,7 @@ impl<C> Platform<C> {
                 .transpose()?;
 
             GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
                 result: Some(
                     get_identity_by_non_unique_public_key_hash_response_v0::Result::Identity(
                         IdentityResponse {

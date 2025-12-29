@@ -12,6 +12,7 @@ use drive::error::query::QuerySyntaxError;
 use std::collections::BTreeMap;
 
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -19,6 +20,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
 };
+use drive::util::grove_operations::GroveDBToUse;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
     match value {
@@ -142,9 +144,10 @@ impl<C> Platform<C> {
 
             GetIdentityKeysResponseV0 {
                 result: Some(get_identity_keys_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                        .map(|(_, proof)| proof)?,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let keys: SerializedKeyVec =
@@ -155,7 +158,7 @@ impl<C> Platform<C> {
                 result: Some(get_identity_keys_response_v0::Result::Keys(
                     get_identity_keys_response_v0::Keys { keys_bytes: keys },
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

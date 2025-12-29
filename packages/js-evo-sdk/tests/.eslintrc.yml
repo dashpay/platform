@@ -2,9 +2,12 @@ extends:
   - airbnb-base
   - plugin:jsdoc/recommended
 env:
-  es2020: true
+  es2022: true
   node: true
   mocha: true
+parserOptions:
+  ecmaVersion: 2022
+  sourceType: module
 rules:
   eol-last:
     - error
