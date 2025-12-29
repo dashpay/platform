@@ -62,8 +62,8 @@ await init();
 // Uses http://127.0.0.1:2444 by default
 await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
 
-// Build a trusted client for local network
-const builder = sdk.WasmSdkBuilder.local();
+// Build a trusted client for local network (verifies proofs)
+const builder = sdk.WasmSdkBuilder.localTrusted();
 const client = builder.build();
 ```
 

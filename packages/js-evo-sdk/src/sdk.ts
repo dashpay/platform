@@ -113,7 +113,7 @@ export class EvoSDK {
       // Default local dashmate gateway and quorum list sidecar
       await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
 
-      builder = wasm.WasmSdkBuilder.local();
+      builder = trusted ? wasm.WasmSdkBuilder.localTrusted() : wasm.WasmSdkBuilder.local();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
@@ -154,7 +154,7 @@ export class EvoSDK {
   static mainnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', ...options }); }
   static testnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', trusted: true, ...options }); }
   static mainnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', trusted: true, ...options }); }
-  static local(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
+  static local(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', ...options }); }
   static localTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
 
   /**
