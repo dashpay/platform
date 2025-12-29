@@ -61,6 +61,9 @@ pub struct TrustedHttpContextProvider {
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
     known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
 
+    /// Known token configurations cache - token configs that are pre-loaded for proof verification
+    known_token_configurations: Arc<Mutex<HashMap<Identifier, TokenConfiguration>>>,
+
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
 }
@@ -71,6 +74,8 @@ struct MasternodeEntry {
     status: String,
     #[serde(rename = "versionCheck")]
     version_check: Option<String>,
+    #[serde(rename = "platformHTTPPort")]
+    platform_http_port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +170,7 @@ impl TrustedHttpContextProvider {
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
             known_contracts: Arc::new(Mutex::new(HashMap::new())),
+            known_token_configurations: Arc::new(Mutex::new(HashMap::new())),
             refetch_if_not_found: true,
         })
     }
@@ -205,6 +211,23 @@ impl TrustedHttpContextProvider {
         for contract in contracts {
             let id = contract.id();
             known.insert(id, Arc::new(contract));
+        }
+    }
+
+    /// Add a token configuration to the known token configurations cache
+    pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
+        let mut known = self.known_token_configurations.lock().unwrap();
+        known.insert(token_id, config);
+    }
+
+    /// Add multiple token configurations to the known token configurations cache
+    pub fn add_known_token_configurations(
+        &self,
+        configs: Vec<(Identifier, TokenConfiguration)>,
+    ) {
+        let mut known = self.known_token_configurations.lock().unwrap();
+        for (token_id, config) in configs {
+            known.insert(token_id, config);
         }
     }
 
@@ -271,7 +294,7 @@ impl TrustedHttpContextProvider {
             ));
         }
 
-        let dapi_port = match self.network {
+        let default_dapi_port = match self.network {
             Network::Dash => 443,
             Network::Testnet => 1443,
             _ => 443,
@@ -288,6 +311,8 @@ impl TrustedHttpContextProvider {
                 .rsplit_once(':')
                 .map(|(h, _)| h)
                 .unwrap_or(host_port.as_str());
+            // Use platformHTTPPort from the entry if available, otherwise use network default
+            let dapi_port = entry.platform_http_port.unwrap_or(default_dapi_port);
             let https_url = format!("https://{}:{}", host, dapi_port);
             let url = url::Url::parse(&https_url).map_err(|e| {
                 TrustedContextProviderError::NetworkError(format!(
@@ -747,6 +772,13 @@ impl ContextProvider for TrustedHttpContextProvider {
         &self,
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        // First check known token configurations cache
+        let known = self.known_token_configurations.lock().unwrap();
+        if let Some(config) = known.get(token_id) {
+            return Ok(Some(config.clone()));
+        }
+        drop(known);
+
         // Delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
             provider.get_token_configuration(token_id)

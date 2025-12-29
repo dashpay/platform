@@ -70,6 +70,13 @@ export default function getBaseConfigFactory() {
               whitelist: null,
               lowPriority: false,
             },
+            quorum_list: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quorum', 'masternode', 'getblockcount',
+              ],
+              lowPriority: true,
+            },
             dapi: {
               password: 'rpcpassword',
               whitelist: [
@@ -150,6 +157,19 @@ export default function getBaseConfigFactory() {
         indexes: [],
       },
       platform: {
+        quorumList: {
+          enabled: false,
+          docker: {
+            image: 'dashpay/quorum-list-server:latest',
+          },
+          api: {
+            host: '127.0.0.1',
+            port: 2444,
+          },
+          previousBlocksOffset: 8,
+          versionCheckHost: '',
+          addressHostOverride: '',
+        },
         gateway: {
           docker: {
             image: 'dashpay/envoy:1.30.2-impr.1',

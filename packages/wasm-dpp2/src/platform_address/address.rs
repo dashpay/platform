@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer};
 use std::fmt;
 use wasm_bindgen::prelude::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[wasm_bindgen(js_name = "PlatformAddress")]
 pub struct PlatformAddressWasm(PlatformAddress);
 
