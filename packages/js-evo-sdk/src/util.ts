@@ -12,13 +12,7 @@ export function asJsonString(value: unknown): string | undefined {
  * @throws Error if no secure random source is available
  */
 export function generateEntropy(): string {
-  // Node.js environment
-  if (typeof globalThis !== 'undefined' && globalThis.crypto && 'randomBytes' in globalThis.crypto) {
-    // @ts-ignore - Node.js crypto.randomBytes exists but may not be in types
-    return globalThis.crypto.randomBytes(32).toString('hex');
-  }
-
-  // Browser environment or Node.js with Web Crypto API
+  // Web Crypto API - works in both Node.js (v15+) and browsers
   if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.getRandomValues) {
     const buffer = new Uint8Array(32);
     globalThis.crypto.getRandomValues(buffer);
@@ -32,5 +26,5 @@ export function generateEntropy(): string {
     return Array.from(buffer).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  throw new Error('No secure random source available. This environment does not support crypto.randomBytes or crypto.getRandomValues.');
+  throw new Error('No secure random source available. This environment does not support crypto.getRandomValues.');
 }
