@@ -31,6 +31,7 @@ gloo-timers = { version = "0.3.0", features = ["futures"] }
 tonic-web-wasm-client = { version = "0.8.0" }
 wasm-bindgen-futures = { version = "0.4.49" }
 getrandom = { version = "0.2", features = ["js"] }
+chrono = { version = "0.4.38", features = ["serde", "wasmbind"] }
 
 
 [dependencies]
@@ -57,7 +58,7 @@ hex = { version = "0.4.3", optional = true }
 lru = { version = "0.12.3" }
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 serde_json = { version = "1.0.140", optional = true }
-chrono = { version = "0.4.38", features = ["serde", "wasmbind"] }
+chrono = { version = "0.4.38", features = ["serde"] }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros"] }
