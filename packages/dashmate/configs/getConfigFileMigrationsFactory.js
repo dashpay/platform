@@ -1398,6 +1398,24 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '3.0.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.quorumList) {
+              options.platform.quorumList = lodash.cloneDeep(defaultConfig.get('platform.quorumList'));
+            }
+
+            if (!options.core.rpc.users.quorum_list) {
+              options.core.rpc.users.quorum_list = lodash.cloneDeep(
+                defaultConfig.get('core.rpc.users.quorum_list'),
+              );
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

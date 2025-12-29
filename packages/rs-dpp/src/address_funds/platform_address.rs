@@ -11,7 +11,7 @@ use dashcore::key::Secp256k1;
 use dashcore::secp256k1::ecdsa::RecoverableSignature;
 use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
-use dashcore::{Address, Network, PubkeyHash, PublicKey, ScriptHash};
+use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,18 @@ impl TryFrom<Address> for PlatformAddress {
                     .to_string(),
             )),
         }
+    }
+}
+
+impl From<&PrivateKey> for PlatformAddress {
+    /// Derives a P2PKH Platform address from a private key.
+    ///
+    /// The address is derived as: P2PKH(Hash160(compressed_public_key))
+    /// where Hash160 = RIPEMD160(SHA256(x)), which is the standard Bitcoin P2PKH derivation.
+    fn from(private_key: &PrivateKey) -> Self {
+        let secp = Secp256k1::new();
+        let pubkey_hash = private_key.public_key(&secp).pubkey_hash();
+        PlatformAddress::P2pkh(*pubkey_hash.as_byte_array())
     }
 }
 
@@ -616,6 +628,33 @@ mod tests {
         script.push(OP_CHECKMULTISIG.to_u8());
 
         script
+    }
+
+    #[test]
+    fn test_platform_address_from_private_key() {
+        // Create a keypair
+        let seed = [1u8; 32];
+        let (secret_key, public_key) = create_keypair(seed);
+
+        // Create PrivateKey from the secret key
+        let private_key = PrivateKey::new(secret_key, Network::Testnet);
+
+        // Derive address using From<&PrivateKey>
+        let address_from_private = PlatformAddress::from(&private_key);
+
+        // Derive address manually using pubkey_hash() which computes Hash160(pubkey)
+        // Hash160 = RIPEMD160(SHA256(x)), the standard Bitcoin P2PKH derivation
+        let pubkey_hash = public_key.pubkey_hash();
+        let address_from_pubkey = PlatformAddress::P2pkh(*pubkey_hash.as_byte_array());
+
+        // Both addresses should be identical
+        assert_eq!(
+            address_from_private, address_from_pubkey,
+            "Address derived from private key should match Hash160(compressed_pubkey)"
+        );
+
+        // Verify it's a P2PKH address
+        assert!(address_from_private.is_p2pkh());
     }
 
     #[test]

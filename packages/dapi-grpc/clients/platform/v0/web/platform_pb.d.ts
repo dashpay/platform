@@ -9824,6 +9824,210 @@ export namespace GetAddressesInfosResponse {
   }
 }
 
+export class GetAddressesTrunkStateRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0 | undefined;
+  setV0(value?: GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0): void;
+
+  getVersionCase(): GetAddressesTrunkStateRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressesTrunkStateRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressesTrunkStateRequest): GetAddressesTrunkStateRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressesTrunkStateRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressesTrunkStateRequest;
+  static deserializeBinaryFromReader(message: GetAddressesTrunkStateRequest, reader: jspb.BinaryReader): GetAddressesTrunkStateRequest;
+}
+
+export namespace GetAddressesTrunkStateRequest {
+  export type AsObject = {
+    v0?: GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.AsObject,
+  }
+
+  export class GetAddressesTrunkStateRequestV0 extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressesTrunkStateRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressesTrunkStateRequestV0): GetAddressesTrunkStateRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressesTrunkStateRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressesTrunkStateRequestV0;
+    static deserializeBinaryFromReader(message: GetAddressesTrunkStateRequestV0, reader: jspb.BinaryReader): GetAddressesTrunkStateRequestV0;
+  }
+
+  export namespace GetAddressesTrunkStateRequestV0 {
+    export type AsObject = {
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetAddressesTrunkStateResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0 | undefined;
+  setV0(value?: GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0): void;
+
+  getVersionCase(): GetAddressesTrunkStateResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressesTrunkStateResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressesTrunkStateResponse): GetAddressesTrunkStateResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressesTrunkStateResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressesTrunkStateResponse;
+  static deserializeBinaryFromReader(message: GetAddressesTrunkStateResponse, reader: jspb.BinaryReader): GetAddressesTrunkStateResponse;
+}
+
+export namespace GetAddressesTrunkStateResponse {
+  export type AsObject = {
+    v0?: GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.AsObject,
+  }
+
+  export class GetAddressesTrunkStateResponseV0 extends jspb.Message {
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressesTrunkStateResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressesTrunkStateResponseV0): GetAddressesTrunkStateResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressesTrunkStateResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressesTrunkStateResponseV0;
+    static deserializeBinaryFromReader(message: GetAddressesTrunkStateResponseV0, reader: jspb.BinaryReader): GetAddressesTrunkStateResponseV0;
+  }
+
+  export namespace GetAddressesTrunkStateResponseV0 {
+    export type AsObject = {
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetAddressesBranchStateRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0 | undefined;
+  setV0(value?: GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0): void;
+
+  getVersionCase(): GetAddressesBranchStateRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressesBranchStateRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressesBranchStateRequest): GetAddressesBranchStateRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressesBranchStateRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressesBranchStateRequest;
+  static deserializeBinaryFromReader(message: GetAddressesBranchStateRequest, reader: jspb.BinaryReader): GetAddressesBranchStateRequest;
+}
+
+export namespace GetAddressesBranchStateRequest {
+  export type AsObject = {
+    v0?: GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.AsObject,
+  }
+
+  export class GetAddressesBranchStateRequestV0 extends jspb.Message {
+    getKey(): Uint8Array | string;
+    getKey_asU8(): Uint8Array;
+    getKey_asB64(): string;
+    setKey(value: Uint8Array | string): void;
+
+    getDepth(): number;
+    setDepth(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressesBranchStateRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressesBranchStateRequestV0): GetAddressesBranchStateRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressesBranchStateRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressesBranchStateRequestV0;
+    static deserializeBinaryFromReader(message: GetAddressesBranchStateRequestV0, reader: jspb.BinaryReader): GetAddressesBranchStateRequestV0;
+  }
+
+  export namespace GetAddressesBranchStateRequestV0 {
+    export type AsObject = {
+      key: Uint8Array | string,
+      depth: number,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetAddressesBranchStateResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0 | undefined;
+  setV0(value?: GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0): void;
+
+  getVersionCase(): GetAddressesBranchStateResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressesBranchStateResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressesBranchStateResponse): GetAddressesBranchStateResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressesBranchStateResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressesBranchStateResponse;
+  static deserializeBinaryFromReader(message: GetAddressesBranchStateResponse, reader: jspb.BinaryReader): GetAddressesBranchStateResponse;
+}
+
+export namespace GetAddressesBranchStateResponse {
+  export type AsObject = {
+    v0?: GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.AsObject,
+  }
+
+  export class GetAddressesBranchStateResponseV0 extends jspb.Message {
+    getMerkProof(): Uint8Array | string;
+    getMerkProof_asU8(): Uint8Array;
+    getMerkProof_asB64(): string;
+    setMerkProof(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressesBranchStateResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressesBranchStateResponseV0): GetAddressesBranchStateResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressesBranchStateResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressesBranchStateResponseV0;
+    static deserializeBinaryFromReader(message: GetAddressesBranchStateResponseV0, reader: jspb.BinaryReader): GetAddressesBranchStateResponseV0;
+  }
+
+  export namespace GetAddressesBranchStateResponseV0 {
+    export type AsObject = {
+      merkProof: Uint8Array | string,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;

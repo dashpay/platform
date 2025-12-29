@@ -641,3 +641,21 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_addresses_infos
 );
+
+// rpc getAddressesTrunkState(GetAddressesTrunkStateRequest) returns (GetAddressesTrunkStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesTrunkStateRequest,
+    platform_proto::GetAddressesTrunkStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_trunk_state
+);
+
+// rpc getAddressesBranchState(GetAddressesBranchStateRequest) returns (GetAddressesBranchStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesBranchStateRequest,
+    platform_proto::GetAddressesBranchStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_branch_state
+);

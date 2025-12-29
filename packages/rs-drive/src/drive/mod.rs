@@ -1,11 +1,15 @@
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
+
+#[cfg(feature = "server")]
+use std::collections::BTreeMap;
+#[cfg(feature = "server")]
+use std::path::PathBuf;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::config::DriveConfig;
 #[cfg(feature = "server")]
 use arc_swap::ArcSwap;
+#[cfg(feature = "server")]
 use dpp::prelude::{BlockHeight, TimestampMillis};
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
