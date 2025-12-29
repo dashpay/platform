@@ -1,4 +1,5 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Group queries', function describeGroupQueries() {
   this.timeout(60000);
@@ -8,8 +9,8 @@ describe('Group queries', function describeGroupQueries() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
   });
 
@@ -18,8 +19,9 @@ describe('Group queries', function describeGroupQueries() {
   });
 
   it('fetches identity groups and group members', async () => {
-    const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
-    const IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
+    const { dpnsContractId: DPNS_CONTRACT, identityId: IDENTITY } = (
+      wasmFunctionalTestRequirements()
+    );
     // These calls may fail in offline runs; permit network errors
     await client.getIdentityGroups({
       identityId: IDENTITY,
@@ -33,7 +35,7 @@ describe('Group queries', function describeGroupQueries() {
   });
 
   it('fetches groups data contracts', async () => {
-    const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+    const { dpnsContractId: DPNS_CONTRACT } = wasmFunctionalTestRequirements();
     await client.getGroupsDataContracts([DPNS_CONTRACT]);
   });
 });
