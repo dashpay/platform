@@ -34,10 +34,11 @@ impl Drive {
             }
             GroveDBToUse::LatestCheckpoint => {
                 let checkpoints = self.checkpoints.load();
-                let (_, (_, checkpoint)) = checkpoints
+                let (_, checkpoint_info) = checkpoints
                     .last_key_value()
                     .ok_or(Error::Drive(DriveError::NoCheckpointsAvailable))?;
-                let CostContext { value, cost } = checkpoint
+                let CostContext { value, cost } = checkpoint_info
+                    .checkpoint
                     .grove_db
                     .prove_branch_chunk(query, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
@@ -45,10 +46,11 @@ impl Drive {
             }
             GroveDBToUse::Checkpoint(block_height) => {
                 let checkpoints = self.checkpoints.load();
-                let (_, checkpoint) = checkpoints
+                let checkpoint_info = checkpoints
                     .get(&block_height)
                     .ok_or(Error::Drive(DriveError::CheckpointNotFound(block_height)))?;
-                let CostContext { value, cost } = checkpoint
+                let CostContext { value, cost } = checkpoint_info
+                    .checkpoint
                     .grove_db
                     .prove_branch_chunk(query, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
