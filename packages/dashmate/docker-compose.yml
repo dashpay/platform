@@ -220,6 +220,8 @@ services:
     logging: *default-logging
     depends_on:
       - core
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - ${PLATFORM_QUORUM_LIST_API_HOST:?err}:${PLATFORM_QUORUM_LIST_API_PORT:?err}:${PLATFORM_QUORUM_LIST_API_PORT:?err}
     expose:
