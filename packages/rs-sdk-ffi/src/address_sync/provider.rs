@@ -189,7 +189,10 @@ pub unsafe extern "C" fn dash_sdk_pending_address_list_free(list: *mut DashSDKPe
     let list = Box::from_raw(list);
     if !list.addresses.is_null() && list.count > 0 {
         // Only free the addresses array, not the key data (which is owned by caller)
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(list.addresses, list.count));
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            list.addresses,
+            list.count,
+        ));
     }
 }
 

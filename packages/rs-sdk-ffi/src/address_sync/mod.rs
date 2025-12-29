@@ -243,10 +243,10 @@ pub unsafe extern "C" fn dash_sdk_address_sync_result_free(result: *mut DashSDKA
         let found_slice = std::slice::from_raw_parts_mut(result.found, result.found_count);
         for entry in found_slice.iter() {
             if !entry.key.is_null() && entry.key_len > 0 {
-                let _ = Box::from_raw(std::slice::from_raw_parts_mut(entry.key, entry.key_len));
+                let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entry.key, entry.key_len));
             }
         }
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             result.found,
             result.found_count,
         ));
@@ -257,10 +257,10 @@ pub unsafe extern "C" fn dash_sdk_address_sync_result_free(result: *mut DashSDKA
         let absent_slice = std::slice::from_raw_parts_mut(result.absent, result.absent_count);
         for entry in absent_slice.iter() {
             if !entry.key.is_null() && entry.key_len > 0 {
-                let _ = Box::from_raw(std::slice::from_raw_parts_mut(entry.key, entry.key_len));
+                let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entry.key, entry.key_len));
             }
         }
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             result.absent,
             result.absent_count,
         ));
