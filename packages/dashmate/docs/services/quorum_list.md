@@ -63,14 +63,8 @@ await init();
 await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
 
 // Build a trusted client for local network
-const builder = sdk.WasmSdkBuilder.localTrusted();
-const client = await builder.build();
-```
-
-You can also specify a custom quorum list URL:
-
-```javascript
-await sdk.WasmSdk.prefetchTrustedQuorumsLocal('http://custom-host:2444');
+const builder = sdk.WasmSdkBuilder.local();
+const client = builder.build();
 ```
 
 ### Local network setup
