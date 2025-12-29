@@ -590,8 +590,8 @@ mod tests {
         // Verify trunk query results
         assert_eq!(
             trunk_result.elements.len(),
-            29,
-            "trunk query should return 29 elements"
+            32,
+            "trunk query should return 32 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -787,8 +787,8 @@ mod tests {
         // Verify trunk query results match expected values
         assert_eq!(
             trunk_result.elements.len(),
-            29,
-            "trunk query should return 29 elements after restart"
+            32,
+            "trunk query should return 32 elements after restart"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),
@@ -987,8 +987,8 @@ mod tests {
         // Verify trunk query results
         assert_eq!(
             trunk_result.elements.len(),
-            29,
-            "trunk query should return 29 elements"
+            32,
+            "trunk query should return 32 elements"
         );
         assert_eq!(
             trunk_result.leaf_keys.len(),

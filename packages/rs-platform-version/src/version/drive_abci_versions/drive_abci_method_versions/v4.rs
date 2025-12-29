@@ -117,6 +117,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V4: DriveAbciMethodVersions = DriveAbciMeth
         update_state_cache: 0,
         update_drive_cache: 0,
         validator_set_update: 2,
+        should_checkpoint: None,
         update_checkpoints: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
