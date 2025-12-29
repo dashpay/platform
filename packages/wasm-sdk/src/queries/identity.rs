@@ -140,7 +140,6 @@ impl IdentityBalanceAndRevisionWasm {
     }
 }
 
-
 impl_wasm_serde_conversions!(IdentityBalanceAndRevisionWasm);
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
@@ -670,7 +669,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityContractNonce", unchecked_return_type = "bigint | null")]
+    #[wasm_bindgen(
+        js_name = "getIdentityContractNonce",
+        unchecked_return_type = "bigint | null"
+    )]
     pub async fn get_identity_contract_nonce(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -740,7 +742,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityBalance", unchecked_return_type = "bigint | null")]
+    #[wasm_bindgen(
+        js_name = "getIdentityBalance",
+        unchecked_return_type = "bigint | null"
+    )]
     pub async fn get_identity_balance(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
