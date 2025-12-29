@@ -179,11 +179,14 @@ mod tests {
 
     /// Creates a platform with a Core RPC mock configured to return the given transaction
     fn create_platform_with_chain_asset_lock_mock(
-        platform_config: PlatformConfig,
+        mut platform_config: PlatformConfig,
         transaction: Transaction,
         transaction_height: i64,
     ) -> crate::test::helpers::setup::TempPlatform<MockCoreRPCLike> {
         let tempdir = TempDir::new().expect("should create temp dir");
+
+        // Set db_path to the tempdir path to avoid trying to write to /var/lib/dash-platform/data
+        platform_config.db_path = tempdir.path().to_path_buf();
 
         let mut core_rpc_mock = MockCoreRPCLike::new();
 

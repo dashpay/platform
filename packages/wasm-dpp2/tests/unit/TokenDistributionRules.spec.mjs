@@ -263,7 +263,7 @@ describe('TokenDistributionRules', () => {
     it('should allow to set newTokenDestinationIdentity', () => {
       distributionRules.newTokenDestinationIdentity = '12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 
-      expect(distributionRules.newTokenDestinationIdentity.base58()).to.deep.equal('12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1');
+      expect(distributionRules.newTokenDestinationIdentity.toBase58()).to.deep.equal('12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1');
     });
 
     it('should allow to set preProgrammedDistribution', () => {

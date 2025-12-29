@@ -152,7 +152,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 update_state_cache: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
-                update_checkpoints: 0,
+                update_checkpoints: None,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,

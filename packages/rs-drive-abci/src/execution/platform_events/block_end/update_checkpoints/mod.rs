@@ -27,22 +27,23 @@ where
     ///
     /// # Returns
     ///
-    /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
+    /// * `Result<bool, Error>` - Returns `Ok(true)` if a checkpoint was created, `Ok(false)` otherwise.
     ///   If there is a problem with the update, it returns an `Error`.
     ///
     pub fn update_checkpoints(
         &self,
         block_execution_context: &BlockExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match platform_version
             .drive_abci
             .methods
             .block_end
             .update_checkpoints
         {
-            0 => self.update_checkpoints_v0(block_execution_context, platform_version),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            None => Ok(false),
+            Some(0) => self.update_checkpoints_v0(block_execution_context, platform_version),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_checkpoints".to_string(),
                 known_versions: vec![0],
                 received: version,

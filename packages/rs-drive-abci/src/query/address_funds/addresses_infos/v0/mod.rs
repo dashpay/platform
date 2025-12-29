@@ -2,6 +2,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_addresses_infos_request::GetAddressesInfosRequestV0;
 use dapi_grpc::platform::v0::get_addresses_infos_response::{
@@ -12,6 +13,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
 use std::collections::BTreeMap;
 
 impl<C> Platform<C> {
@@ -37,11 +39,12 @@ impl<C> Platform<C> {
                 platform_version,
             ));
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetAddressesInfosResponseV0 {
-                result: Some(get_addresses_infos_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_addresses_infos_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let addresses_infos: BTreeMap<_, _> =
@@ -63,7 +66,7 @@ impl<C> Platform<C> {
                         address_info_entries,
                     },
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

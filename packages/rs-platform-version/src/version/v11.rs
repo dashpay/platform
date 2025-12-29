@@ -15,7 +15,7 @@ use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v6::DRIVE_ABCI_METHOD_VERSIONS_V6;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v7::DRIVE_ABCI_METHOD_VERSIONS_V7;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v7::DRIVE_ABCI_VALIDATION_VERSIONS_V7;
@@ -30,13 +30,13 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_11: ProtocolVersion = 11;
 
-/// This version was for Platform release 2.2.0
+/// This version was for Platform release 3.0.0
 pub const PLATFORM_V11: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_11,
     drive: DRIVE_VERSION_V6, // Changed to fix identity update issue
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V6,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V7, //update checkpoints change
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V7, // changed for validate_unique_identity_public_key_hashes_in_state
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,

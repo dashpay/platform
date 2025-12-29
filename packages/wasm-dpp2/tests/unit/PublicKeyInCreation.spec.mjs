@@ -6,7 +6,7 @@ before(async () => {
   wasm = await getWasm();
 });
 
-describe('InstantLock', () => {
+describe('IdentityPublicKeyInCreation', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create from values', () => {
       const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
@@ -251,6 +251,53 @@ describe('InstantLock', () => {
       publicKeyInCreation.signature = [1, 2, 3, 4, 5, 6];
 
       expect([...publicKeyInCreation.signature]).to.deep.equal([1, 2, 3, 4, 5, 6]);
+    });
+  });
+
+  describe('conversion methods', () => {
+    it('should round-trip via toJSON/fromJSON', () => {
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
+        0,
+        'AUTHENTICATION',
+        'master',
+        'ECDSA_SECP256K1',
+        false,
+        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
+        [],
+      );
+
+      const json = publicKeyInCreation.toJSON();
+      expect(json).to.be.an('object');
+      expect(json.id).to.equal(0);
+      expect(json.purpose).to.equal(0); // AUTHENTICATION = 0
+      expect(json.securityLevel).to.equal(0); // MASTER = 0
+      expect(json.type).to.equal(0); // ECDSA_SECP256K1 = 0
+      expect(json.readOnly).to.equal(false);
+
+      const restored = wasm.IdentityPublicKeyInCreation.fromJSON(json);
+      expect(restored.keyId).to.equal(publicKeyInCreation.keyId);
+      expect(restored.purpose).to.equal(publicKeyInCreation.purpose);
+      expect(restored.securityLevel).to.equal(publicKeyInCreation.securityLevel);
+      expect(restored.keyType).to.equal(publicKeyInCreation.keyType);
+      expect(restored.readOnly).to.equal(publicKeyInCreation.readOnly);
+    });
+
+    it('should export toObject', () => {
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
+        0,
+        'AUTHENTICATION',
+        'master',
+        'ECDSA_SECP256K1',
+        false,
+        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
+        [],
+      );
+
+      const obj = publicKeyInCreation.toObject();
+      // toObject exports with byte arrays which don't round-trip in serde_wasm_bindgen
+      // but it should at least be defined
+      expect(obj).to.not.be.undefined;
+      expect(obj).to.be.an('object');
     });
   });
 });

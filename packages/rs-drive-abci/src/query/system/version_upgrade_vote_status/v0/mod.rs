@@ -8,6 +8,8 @@ use dpp::version::PlatformVersion;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::{VersionSignal, VersionSignals};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::{get_protocol_version_upgrade_vote_status_response_v0, GetProtocolVersionUpgradeVoteStatusResponseV0};
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::error::query::QueryError;
 use crate::platform_types::platform_state::PlatformState;
 
@@ -57,10 +59,11 @@ impl<C> Platform<C> {
             GetProtocolVersionUpgradeVoteStatusResponseV0 {
                 result: Some(
                     get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
+                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                            .map(|(_, proof)| proof)?,
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let result =
@@ -86,7 +89,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

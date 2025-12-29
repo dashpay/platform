@@ -24,6 +24,8 @@ where
     /// # Arguments
     ///
     /// * `extended_block_info` - Extended block information for the current block.
+    /// * `block_platform_state` - The platform state for this block.
+    /// * `checkpointed` - Whether a checkpoint was created for this block.
     /// * `transaction` - The transaction associated with the block.
     /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
     ///   the method to call.
@@ -37,6 +39,7 @@ where
         &self,
         extended_block_info: ExtendedBlockInfo,
         block_platform_state: PlatformState,
+        checkpointed: bool,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -49,6 +52,7 @@ where
             0 => self.update_state_cache_v0(
                 extended_block_info,
                 block_platform_state,
+                checkpointed,
                 transaction,
                 platform_version,
             ),

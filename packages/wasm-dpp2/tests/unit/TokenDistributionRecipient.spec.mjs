@@ -40,7 +40,7 @@ describe('TokenDistributionRecipient', () => {
       const recipient = wasm.TokenDistributionRecipient.Identity(identifier);
 
       expect(recipient.getType()).to.equal(`Identity(${identifier})`);
-      expect(recipient.getValue().base58()).to.equal(identifier);
+      expect(recipient.getValue().toBase58()).to.equal(identifier);
     });
 
     it('should allow to get values EvonodesByParticipation', () => {

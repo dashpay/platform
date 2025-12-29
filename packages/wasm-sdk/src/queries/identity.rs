@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -11,7 +12,7 @@ use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQue
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
 use js_sys::{Array, BigInt, Map, Uint8Array};
 use rs_dapi_client::IntoInner;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -113,7 +114,8 @@ impl IdentityContractKeysWasm {
 }
 
 #[wasm_bindgen(js_name = "IdentityBalanceInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityBalanceWasm {
     balance: u64,
 }
@@ -133,17 +135,18 @@ impl IdentityBalanceWasm {
 }
 
 #[wasm_bindgen(js_name = "IdentityBalanceEntry")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityBalanceEntryWasm {
-    identity_id: String,
+    identity_id: IdentifierWasm,
     balance: u64,
 }
 
 #[wasm_bindgen(js_class = IdentityBalanceEntry)]
 impl IdentityBalanceEntryWasm {
     #[wasm_bindgen(getter = "identityId")]
-    pub fn identity_id(&self) -> String {
-        self.identity_id.clone()
+    pub fn identity_id(&self) -> IdentifierWasm {
+        self.identity_id
     }
 
     #[wasm_bindgen(getter = "balance")]
@@ -153,7 +156,8 @@ impl IdentityBalanceEntryWasm {
 }
 
 #[wasm_bindgen(js_name = "IdentityBalanceAndRevision")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityBalanceAndRevisionWasm {
     balance: u64,
     revision: u64,
@@ -179,7 +183,8 @@ impl IdentityBalanceAndRevisionWasm {
 }
 
 #[wasm_bindgen(js_name = "IdentityNonce")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityNonceWasm {
     nonce: u64,
 }
@@ -197,6 +202,11 @@ impl IdentityNonceWasm {
         BigInt::from(self.nonce)
     }
 }
+
+impl_wasm_serde_conversions!(IdentityBalanceWasm);
+impl_wasm_serde_conversions!(IdentityBalanceEntryWasm);
+impl_wasm_serde_conversions!(IdentityBalanceAndRevisionWasm);
+impl_wasm_serde_conversions!(IdentityNonceWasm);
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
 /**
@@ -423,7 +433,7 @@ struct IdentityKeysQueryParsed {
 }
 
 impl IdentityBalanceEntryWasm {
-    fn new(identity_id: String, balance: u64) -> Self {
+    fn new(identity_id: IdentifierWasm, balance: u64) -> Self {
         IdentityBalanceEntryWasm {
             identity_id,
             balance,
@@ -484,10 +494,10 @@ impl WasmSdk {
 
         identity
             .map(|identity| {
-                ProofMetadataResponseWasm::from_parts(
-                    JsValue::from(IdentityWasm::from(identity)),
-                    metadata.into(),
-                    proof.into(),
+                ProofMetadataResponseWasm::from_sdk_parts(
+                    IdentityWasm::from(identity),
+                    metadata,
+                    proof,
                 )
             })
             .ok_or_else(|| WasmSdkError::not_found("Identity not found"))
@@ -732,9 +742,7 @@ impl WasmSdk {
 
         let data = IdentityNonceWasm::new(nonce);
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            JsValue::from(data),
-            metadata,
-            proof,
+            data, metadata, proof,
         ))
     }
 
@@ -805,9 +813,7 @@ impl WasmSdk {
 
         let data = IdentityNonceWasm::new(nonce);
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            JsValue::from(data),
-            metadata,
-            proof,
+            data, metadata, proof,
         ))
     }
 
@@ -863,9 +869,8 @@ impl WasmSdk {
 
         for identifier in identifiers {
             if let Some(Some(balance)) = balances_result.get(&identifier) {
-                let identity_id = IdentifierWasm::from(identifier).get_base58();
                 results_array.push(&JsValue::from(IdentityBalanceEntryWasm::new(
-                    identity_id,
+                    IdentifierWasm::from(identifier),
                     *balance,
                 )));
             }
@@ -1145,10 +1150,8 @@ impl WasmSdk {
             }
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(keys_array),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            keys_array, metadata, proof,
         ))
     }
 
@@ -1176,7 +1179,7 @@ impl WasmSdk {
         balance_result
             .map(|balance| {
                 ProofMetadataResponseWasm::from_sdk_parts(
-                    JsValue::from(IdentityBalanceWasm::new(balance)),
+                    IdentityBalanceWasm::new(balance),
                     metadata,
                     proof,
                 )
@@ -1223,7 +1226,7 @@ impl WasmSdk {
         for identifier in identifiers {
             if let Some(Some(balance)) = balances_result.get(&identifier) {
                 balances_array.push(&JsValue::from(IdentityBalanceEntryWasm::new(
-                    IdentifierWasm::from(identifier).get_base58(),
+                    IdentifierWasm::from(identifier),
                     *balance,
                 )));
             }
@@ -1260,7 +1263,7 @@ impl WasmSdk {
         result
             .map(|(balance, revision)| {
                 ProofMetadataResponseWasm::from_sdk_parts(
-                    JsValue::from(IdentityBalanceAndRevisionWasm::new(balance, revision)),
+                    IdentityBalanceAndRevisionWasm::new(balance, revision),
                     metadata,
                     proof,
                 )
@@ -1302,10 +1305,10 @@ impl WasmSdk {
 
         result
             .map(|identity| {
-                ProofMetadataResponseWasm::from_parts(
-                    JsValue::from(IdentityWasm::from(identity)),
-                    metadata.into(),
-                    proof.into(),
+                ProofMetadataResponseWasm::from_sdk_parts(
+                    IdentityWasm::from(identity),
+                    metadata,
+                    proof,
                 )
             })
             .ok_or_else(|| WasmSdkError::not_found("Identity not found for public key hash"))

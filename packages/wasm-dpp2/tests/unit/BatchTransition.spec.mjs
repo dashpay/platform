@@ -18,7 +18,9 @@ describe('BatchTransition', () => {
 
         const documentTransition = createTransition.toDocumentTransition();
 
-        const batch = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1);
+        const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+        const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(createTransition.__wbg_ptr).to.not.equal(0);
@@ -34,7 +36,7 @@ describe('BatchTransition', () => {
 
         const batchedTransition = new wasm.BatchedTransition(documentTransition);
 
-        const batch = wasm.BatchTransition.fromV1BatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
+        const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(createTransition.__wbg_ptr).to.not.equal(0);
@@ -42,8 +44,51 @@ describe('BatchTransition', () => {
         expect(batchedTransition.__wbg_ptr).to.not.equal(0);
         expect(batch.__wbg_ptr).to.not.equal(0);
       });
-    });
-    describe('tokens', () => {
+
+      it('should allow to convert batch transition to base64 and back', () => {
+          const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+          const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+          const documentTransition = createTransition.toDocumentTransition();
+
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition], documentInstance.ownerId, 1);
+
+      const base64 = batch.toBase64();
+      const bytes = batch.toBytes();
+
+          expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+
+          const restoredBatch = wasm.BatchTransition.fromBase64(base64);
+
+          expect(Buffer.from(restoredBatch.toBytes())).to.deep.equal(Buffer.from(bytes));
+      });
+
+      it('should round-trip via object and JSON', () => {
+        const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+        const documentTransition = createTransition.toDocumentTransition();
+        const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+        const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition], documentInstance.ownerId, 1);
+
+        const object = batch.toObject();
+        expect(object.signature).to.be.instanceOf(Uint8Array);
+
+        // Note: fromObject with complex nested structures containing Value fields
+        // requires special handling due to serde_wasm_bindgen byte serialization.
+        // Use fromJSON for reliable round-trip serialization.
+
+        const json = batch.toJSON();
+        expect(json.signature).to.be.a('string');
+
+        const fromJson = wasm.BatchTransition.fromJSON(json);
+        expect(Buffer.from(fromJson.toBytes())).to.deep.equal(Buffer.from(batch.toBytes()));
+      });
+  });
+  describe('tokens', () => {
       it('should allow to create from v1 transition', () => {
         const baseTransition = new wasm.TokenBaseTransition(BigInt(1), 1, dataContractId, ownerId);
 
@@ -53,7 +98,7 @@ describe('BatchTransition', () => {
 
         const batchedTransition = new wasm.BatchedTransition(transition);
 
-        const batch = wasm.BatchTransition.fromV1BatchedTransitions([batchedTransition, batchedTransition], ownerId, 1);
+        const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], ownerId, 1);
 
         expect(baseTransition.__wbg_ptr).to.not.equal(0);
         expect(mintTransition.__wbg_ptr).to.not.equal(0);
@@ -71,7 +116,9 @@ describe('BatchTransition', () => {
 
       const documentTransition = createTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
 
       expect(batchTransition.transitions.length).to.equal(2);
     });
@@ -82,7 +129,9 @@ describe('BatchTransition', () => {
 
       const documentTransition = createTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
 
       expect(batchTransition.signature).to.deep.equal(new Uint8Array(0));
     });
@@ -93,7 +142,10 @@ describe('BatchTransition', () => {
 
       const documentTransition = createTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
+      batchTransition.signaturePublicKeyId = 1;
 
       expect(batchTransition.signaturePublicKeyId).to.equal(1);
     });
@@ -106,7 +158,7 @@ describe('BatchTransition', () => {
       const documentTransition = createTransition.toDocumentTransition();
       const documentTransition2 = purchaseTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition2], documentInstance.ownerId, 1, 1);
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition2)], documentInstance.ownerId, 1);
 
       expect(batchTransition.allPurchasesAmount).to.deep.equal(BigInt(100));
     });
@@ -117,9 +169,9 @@ describe('BatchTransition', () => {
 
       const documentTransition = createTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-      expect(batchTransition.ownerId.base58()).to.deep.equal(documentInstance.ownerId.base58());
+      expect(batchTransition.ownerId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
     });
 
     it('should allow to get modified data ids', () => {
@@ -128,9 +180,9 @@ describe('BatchTransition', () => {
 
       const documentTransition = createTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-      expect(batchTransition.modifiedDataIds.map((identifier) => identifier.base58())).to.deep.equal([documentTransition.id.base58(), documentTransition.id.base58()]);
+      expect(batchTransition.modifiedDataIds.map((identifier) => identifier.toBase58())).to.deep.equal([documentTransition.id.toBase58(), documentTransition.id.toBase58()]);
     });
 
     it('should allow to get allConflictingIndexCollateralVotingFunds', () => {
@@ -139,7 +191,7 @@ describe('BatchTransition', () => {
 
       const documentTransition = createTransition.toDocumentTransition();
 
-      const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+      const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
       expect(batchTransition.allConflictingIndexCollateralVotingFunds).to.deep.equal(undefined);
     });

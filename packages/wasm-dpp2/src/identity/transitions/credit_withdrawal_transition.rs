@@ -4,6 +4,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::withdrawal::PoolingWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::IntoWasm;
 use dpp::identity::KeyID;
@@ -242,7 +243,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         Ok(encode(bytes.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
         Ok(encode(bytes.as_slice(), Base64))
@@ -277,3 +278,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         }
     }
 }
+
+impl_wasm_conversions!(
+    IdentityCreditWithdrawalTransitionWasm,
+    IdentityCreditWithdrawalTransition
+);

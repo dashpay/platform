@@ -59,7 +59,7 @@ impl DocumentPurchaseTransitionWasm {
             };
 
         let rs_purchase_transition = generate_purchase_transition(
-            document.clone(),
+            document,
             identity_contract_nonce,
             document.get_document_type_name().to_string(),
             amount,

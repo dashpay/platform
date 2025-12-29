@@ -1,22 +1,11 @@
-use crate::asset_lock_proof::instant::instant_lock::InstantLockWasm;
 use crate::asset_lock_proof::outpoint::OutPointWasm;
-use crate::asset_lock_proof::tx_out::TxOutWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
-use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InstantAssetLockProofRAW {
-    instant_lock: Vec<u8>,
-    transaction: Vec<u8>,
-    output_index: u32,
-}
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "InstantAssetLockProof")]
@@ -64,31 +53,9 @@ impl InstantAssetLockProofWasm {
         }))
     }
 
-    #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: JsValue) -> WasmDppResult<InstantAssetLockProofWasm> {
-        let parameters: InstantAssetLockProofRAW = serde_wasm_bindgen::from_value(value)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-
-        InstantAssetLockProofWasm::new(
-            parameters.instant_lock,
-            parameters.transaction,
-            parameters.output_index,
-        )
-    }
-
-    #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-        self.0
-            .to_object()?
-            .serialize(&serializer)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = "getOutput")]
-    pub fn get_output(&self) -> Option<TxOutWasm> {
-        self.0.output().map(|output| output.clone().into())
+    pub fn get_output(&self) -> Option<Vec<u8>> {
+        self.0.output().map(serialize)
     }
 
     #[wasm_bindgen(js_name = "getOutPoint")]
@@ -102,8 +69,8 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(getter = "instantLock")]
-    pub fn get_instant_lock(&self) -> InstantLockWasm {
-        self.0.instant_lock.clone().into()
+    pub fn get_instant_lock(&self) -> Vec<u8> {
+        serialize(&self.0.instant_lock)
     }
 
     #[wasm_bindgen(setter = "outputIndex")]
@@ -112,20 +79,16 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(setter = "instantLock")]
-    pub fn set_instant_lock(&mut self, instant_lock: &InstantLockWasm) {
-        self.0.instant_lock = instant_lock.clone().into();
+    pub fn set_instant_lock(&mut self, instant_lock: Vec<u8>) -> WasmDppResult<()> {
+        self.0.instant_lock = deserialize(instant_lock.as_slice())
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getTransaction)]
     pub fn get_transaction(&self) -> Vec<u8> {
         let transaction = self.0.transaction();
         serialize(transaction)
-    }
-
-    #[wasm_bindgen(js_name=getInstantLockBytes)]
-    pub fn get_instant_lock_bytes(&self) -> Vec<u8> {
-        let instant_lock = self.0.instant_lock();
-        serialize(instant_lock)
     }
 
     #[wasm_bindgen(js_name = "createIdentityId")]
@@ -135,3 +98,5 @@ impl InstantAssetLockProofWasm {
         Ok(identifier.into())
     }
 }
+
+impl_wasm_conversions!(InstantAssetLockProofWasm, InstantAssetLockProof);
