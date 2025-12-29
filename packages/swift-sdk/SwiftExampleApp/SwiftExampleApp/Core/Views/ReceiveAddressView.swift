@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 import CoreImage.CIFilterBuiltins
 
 struct ReceiveAddressView: View {

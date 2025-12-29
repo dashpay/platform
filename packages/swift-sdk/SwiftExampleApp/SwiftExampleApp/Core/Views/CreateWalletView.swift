@@ -33,7 +33,7 @@ struct CreateWalletView: View {
         case mnemonic
     }
     
-    var currentNetwork: Network {
+    var currentNetwork: AppNetwork {
         unifiedAppState.platformState.currentNetwork
     }
     
@@ -273,10 +273,10 @@ struct CreateWalletView: View {
                 print("Import option enabled: \(showImportOption)")
                 
                 // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [Network] = [
-                    createForMainnet ? Network.mainnet : nil,
-                    createForTestnet ? Network.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                let selectedNetworks: [AppNetwork] = [
+                    createForMainnet ? AppNetwork.mainnet : nil,
+                    createForTestnet ? AppNetwork.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
                 ].compactMap { $0 }
 
                 guard let primaryNetwork = selectedNetworks.first else {

@@ -227,6 +227,11 @@ public class SPVClient: ObservableObject {
     private var client: UnsafeMutablePointer<FFIDashSpvClient>?
     private var config: UnsafeMutablePointer<FFIClientConfig>?
 
+    // Public accessor for client handle (needed for filter match queries)
+    public var clientHandle: UnsafeMutablePointer<FFIDashSpvClient>? {
+        return client
+    }
+
     // Event polling task
     private var eventPollingTask: Task<Void, Never>?
 
@@ -502,6 +507,33 @@ public class SPVClient: ObservableObject {
 
         self.syncProgress = nil
         self.lastError = nil
+    }
+
+    // MARK: - Wallet Transaction Queries
+
+    /// Get the total count of transactions in the wallet's history.
+    /// This count persists across app restarts.
+    ///
+    /// - Returns: Total number of transactions, or 0 if wallet is empty or not initialized
+    /// NOTE: FFI function dash_spv_ffi_client_get_transaction_count not available in current build
+    public func getTransactionCount() -> UInt64 {
+        guard client != nil else { return 0 }
+        // NOTE: dash_spv_ffi_client_get_transaction_count is not available in current FFI
+        // When available, use: return UInt64(dash_spv_ffi_client_get_transaction_count(client))
+        return 0
+    }
+
+    /// Get the count of unique blocks that contain wallet transactions.
+    /// Only counts confirmed transactions (those with a block height).
+    /// This is the persistent "blocks hit" metric that survives app restarts.
+    ///
+    /// - Returns: Number of blocks with wallet transactions, or 0 if wallet is empty or not initialized
+    /// NOTE: FFI function dash_spv_ffi_client_get_blocks_with_transactions_count not available in current build
+    public func getBlocksWithTransactionsCount() -> UInt64 {
+        guard client != nil else { return 0 }
+        // NOTE: dash_spv_ffi_client_get_blocks_with_transactions_count is not available in current FFI
+        // When available, use: return UInt64(dash_spv_ffi_client_get_blocks_with_transactions_count(client))
+        return 0
     }
 
     private func destroyClient() {
