@@ -1,11 +1,13 @@
 pub mod model;
 pub mod partial_identity;
 pub mod public_key;
+pub mod signer;
 pub mod transitions;
 
 pub use model::IdentityWasm;
 pub use partial_identity::PartialIdentityWasm;
 pub use public_key::IdentityPublicKeyWasm;
+pub use signer::IdentitySignerWasm;
 pub use transitions::create_transition::IdentityCreateTransitionWasm;
 pub use transitions::credit_withdrawal_transition::IdentityCreditWithdrawalTransitionWasm;
 pub use transitions::identity_credit_transfer_transition::IdentityCreditTransferWasm;

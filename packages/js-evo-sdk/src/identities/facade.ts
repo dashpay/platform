@@ -34,62 +34,62 @@ export class IdentitiesFacade {
     return w.getIdentityKeysWithProofInfo(query);
   }
 
-  async nonce(identityId: wasm.IdentifierLike): Promise<wasm.IdentityNonce> {
+  async nonce(identityId: wasm.IdentifierLike): Promise<bigint | null> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityNonce(identityId);
   }
 
-  async nonceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityNonce>> {
+  async nonceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<bigint | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityNonceWithProofInfo(identityId);
   }
 
-  async contractNonce(identityId: wasm.IdentifierLike, contractId: wasm.IdentifierLike): Promise<wasm.IdentityNonce> {
+  async contractNonce(identityId: wasm.IdentifierLike, contractId: wasm.IdentifierLike): Promise<bigint | null> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityContractNonce(identityId, contractId);
   }
 
-  async contractNonceWithProof(identityId: wasm.IdentifierLike, contractId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityNonce>> {
+  async contractNonceWithProof(identityId: wasm.IdentifierLike, contractId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<bigint | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityContractNonceWithProofInfo(identityId, contractId);
   }
 
-  async balance(identityId: wasm.IdentifierLike): Promise<wasm.IdentityBalanceInfo> {
+  async balance(identityId: wasm.IdentifierLike): Promise<bigint | null> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalance(identityId);
   }
 
-  async balanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityBalanceInfo>> {
+  async balanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<bigint | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalanceWithProofInfo(identityId);
   }
 
-  async balances(identityIds: wasm.IdentifierLike[]): Promise<wasm.IdentityBalanceEntry[]> {
+  async balances(identityIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, bigint | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesBalances(identityIds);
   }
 
-  async balancesWithProof(identityIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityBalanceEntry[]>> {
+  async balancesWithProof(identityIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint | null>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesBalancesWithProofInfo(identityIds);
   }
 
-  async balanceAndRevision(identityId: wasm.IdentifierLike): Promise<wasm.IdentityBalanceAndRevision> {
+  async balanceAndRevision(identityId: wasm.IdentifierLike): Promise<wasm.IdentityBalanceAndRevision | null> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalanceAndRevision(identityId);
   }
 
-  async balanceAndRevisionWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityBalanceAndRevision>> {
+  async balanceAndRevisionWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityBalanceAndRevision | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalanceAndRevisionWithProofInfo(identityId);
   }
 
-  async byPublicKeyHash(publicKeyHash: string | Uint8Array): Promise<wasm.Identity> {
+  async byPublicKeyHash(publicKeyHash: string | Uint8Array): Promise<wasm.Identity | null> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityByPublicKeyHash(publicKeyHash);
   }
 
-  async byPublicKeyHashWithProof(publicKeyHash: string | Uint8Array): Promise<wasm.ProofMetadataResponseTyped<wasm.Identity>> {
+  async byPublicKeyHashWithProof(publicKeyHash: string | Uint8Array): Promise<wasm.ProofMetadataResponseTyped<wasm.Identity | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityByPublicKeyHashWithProofInfo(publicKeyHash);
   }

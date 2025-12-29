@@ -2,6 +2,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0;
 use dapi_grpc::platform::v0::get_prefunded_specialized_balance_response::get_prefunded_specialized_balance_response_v0;
@@ -10,6 +11,7 @@ use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_prefunded_specialized_balance_v0(
@@ -36,10 +38,11 @@ impl<C> Platform<C> {
             GetPrefundedSpecializedBalanceResponseV0 {
                 result: Some(
                     get_prefunded_specialized_balance_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
+                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                            .map(|(_, proof)| proof)?,
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let maybe_balance = self.drive.fetch_prefunded_specialized_balance(
@@ -58,7 +61,7 @@ impl<C> Platform<C> {
                 result: Some(
                     get_prefunded_specialized_balance_response_v0::Result::Balance(balance),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

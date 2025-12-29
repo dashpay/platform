@@ -227,6 +227,13 @@ impl IdentifierWasm {
         self.0.to_string(Base58)
     }
 
+    /// Returns the identifier as a Base58 string.
+    /// This is the default string representation for JavaScript.
+    #[wasm_bindgen(js_name = "toString")]
+    pub fn to_string_js(&self) -> String {
+        self.to_base58()
+    }
+
     /// Returns the identifier as a Base58 string for JSON serialization.
     /// This method is called automatically when the object is serialized to JSON.
     #[wasm_bindgen(js_name = "toJSON")]
