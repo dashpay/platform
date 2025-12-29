@@ -16,12 +16,14 @@ mod tests {
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use dpp::state_transition::StateTransition;
     use drive::drive::Drive;
+    use drive_abci::abci::config::AbciConfig;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
     use drive_abci::logging::LogLevel;
     use drive_abci::mimic::test_quorum::TestQuorumInfo;
+    use drive_abci::mimic::CHAIN_ID;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
@@ -881,6 +883,10 @@ mod tests {
                 block_commit_signature_verification: true,
                 disable_checkpoints: false,
                 ..PlatformTestConfig::default_minimal_verifications()
+            },
+            abci: AbciConfig {
+                chain_id: CHAIN_ID.to_string(),
+                ..Default::default()
             },
             ..Default::default()
         };
