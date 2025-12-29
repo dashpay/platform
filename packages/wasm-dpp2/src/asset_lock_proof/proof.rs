@@ -269,3 +269,27 @@ impl AssetLockProofWasm {
         Ok(AssetLockProofWasm(proof))
     }
 }
+
+impl AssetLockProofWasm {
+    /// Try to extract an AssetLockProof from an options object field.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to an AssetLockProofWasm.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let proof_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if proof_js.is_undefined() || proof_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        proof_js
+            .to_wasm::<AssetLockProofWasm>("AssetLockProof")
+            .map(|boxed| (*boxed).clone())
+    }
+}

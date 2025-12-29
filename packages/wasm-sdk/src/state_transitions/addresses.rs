@@ -776,7 +776,6 @@ impl WasmSdk {
         use dash_sdk::platform::transition::top_up_address::TopUpAddress;
         use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
         use wasm_dpp2::private_key::PrivateKeyWasm;
-        use wasm_dpp2::utils::IntoWasm;
 
         let options_value: JsValue = options.into();
 
@@ -784,22 +783,12 @@ impl WasmSdk {
         let parsed = deserialize_address_funding_options(options_value.clone())?;
 
         // Extract asset lock proof from options
-        let asset_lock_proof_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockProof"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockProof is required"))?;
-        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof = asset_lock_proof_js
-            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
-            .clone()
-            .into();
+        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
+            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
-        let asset_lock_private_key_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockPrivateKey"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockPrivateKey is required"))?;
-        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey = asset_lock_private_key_js
-            .to_wasm::<PrivateKeyWasm>("PrivateKey")?
-            .clone()
-            .into();
+        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
+            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Convert outputs to map (address -> optional amount)
         let outputs_map = outputs_to_optional_btree_map(parsed.outputs);

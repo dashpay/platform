@@ -99,30 +99,15 @@ impl WasmSdk {
         let options_value: JsValue = options.into();
 
         // Extract identity from options
-        let identity_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("identity"))
-            .map_err(|_| WasmSdkError::invalid_argument("identity is required"))?;
-        let identity: Identity = identity_js
-            .to_wasm::<IdentityWasm>("Identity")?
-            .clone()
-            .into();
+        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Extract asset lock proof from options
-        let asset_lock_proof_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockProof"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockProof is required"))?;
-        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof = asset_lock_proof_js
-            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
-            .clone()
-            .into();
+        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
+            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
-        let asset_lock_private_key_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockPrivateKey"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockPrivateKey is required"))?;
-        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey = asset_lock_private_key_js
-            .to_wasm::<PrivateKeyWasm>("PrivateKey")?
-            .clone()
-            .into();
+        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
+            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
@@ -209,7 +194,6 @@ fn deserialize_identity_top_up_options(
 #[wasm_bindgen(js_name = "IdentityTopUpResult")]
 pub struct IdentityTopUpResultWasm {
     new_balance: u64,
-    topped_up_amount: u64,
 }
 
 #[wasm_bindgen(js_class = IdentityTopUpResult)]
@@ -218,12 +202,6 @@ impl IdentityTopUpResultWasm {
     #[wasm_bindgen(getter = "newBalance")]
     pub fn new_balance(&self) -> BigInt {
         BigInt::from(self.new_balance)
-    }
-
-    /// Amount that was added to the identity balance.
-    #[wasm_bindgen(getter = "toppedUpAmount")]
-    pub fn topped_up_amount(&self) -> BigInt {
-        BigInt::from(self.topped_up_amount)
     }
 }
 
@@ -257,26 +235,13 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found(format!("Identity {} not found", identity_id)))?;
 
-        // Get the initial balance
-        let initial_balance = identity.balance();
-
         // Extract asset lock proof from options
-        let asset_lock_proof_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockProof"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockProof is required"))?;
-        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof = asset_lock_proof_js
-            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
-            .clone()
-            .into();
+        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
+            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
-        let asset_lock_private_key_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockPrivateKey"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockPrivateKey is required"))?;
-        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey = asset_lock_private_key_js
-            .to_wasm::<PrivateKeyWasm>("PrivateKey")?
-            .clone()
-            .into();
+        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
+            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -293,12 +258,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
 
-        let topped_up_amount = new_balance.saturating_sub(initial_balance);
-
-        Ok(IdentityTopUpResultWasm {
-            new_balance,
-            topped_up_amount,
-        })
+        Ok(IdentityTopUpResultWasm { new_balance })
     }
 }
 
@@ -375,21 +335,6 @@ fn deserialize_identity_credit_transfer_options(
     )
 }
 
-/// Result of transferring credits between identities.
-#[wasm_bindgen(js_name = "IdentityCreditTransferResult")]
-pub struct IdentityCreditTransferResultWasm {
-    amount: u64,
-}
-
-#[wasm_bindgen(js_class = IdentityCreditTransferResult)]
-impl IdentityCreditTransferResultWasm {
-    /// Amount of credits that were transferred.
-    #[wasm_bindgen(getter)]
-    pub fn amount(&self) -> BigInt {
-        BigInt::from(self.amount)
-    }
-}
-
 #[wasm_bindgen]
 impl WasmSdk {
     /// Transfer credits from one identity to another.
@@ -401,12 +346,12 @@ impl WasmSdk {
     /// 4. Broadcasts and waits for confirmation
     ///
     /// @param options - Transfer options including sender, recipient, amount, and signer
-    /// @returns Promise resolving to IdentityCreditTransferResult
+    /// @returns Promise that resolves when the transfer is complete
     #[wasm_bindgen(js_name = "identityCreditTransfer")]
     pub async fn identity_credit_transfer(
         &self,
         options: IdentityCreditTransferOptionsJs,
-    ) -> Result<IdentityCreditTransferResultWasm, WasmSdkError> {
+    ) -> Result<(), WasmSdkError> {
         let options_value: JsValue = options.into();
 
         // Deserialize and validate options
@@ -507,7 +452,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transfer: {}", e)))?;
 
-        Ok(IdentityCreditTransferResultWasm { amount })
+        Ok(())
     }
 }
 
@@ -835,35 +780,6 @@ fn deserialize_identity_update_options(
     )
 }
 
-/// Result of updating an identity.
-#[wasm_bindgen(js_name = "IdentityUpdateResult")]
-pub struct IdentityUpdateResultWasm {
-    revision: u64,
-    added_key_ids: Vec<u32>,
-    disabled_key_ids: Vec<u32>,
-}
-
-#[wasm_bindgen(js_class = IdentityUpdateResult)]
-impl IdentityUpdateResultWasm {
-    /// New revision number of the identity after update.
-    #[wasm_bindgen(getter)]
-    pub fn revision(&self) -> u64 {
-        self.revision
-    }
-
-    /// IDs of keys that were added.
-    #[wasm_bindgen(getter = "addedKeyIds")]
-    pub fn added_key_ids(&self) -> Vec<u32> {
-        self.added_key_ids.clone()
-    }
-
-    /// IDs of keys that were disabled.
-    #[wasm_bindgen(getter = "disabledKeyIds")]
-    pub fn disabled_key_ids(&self) -> Vec<u32> {
-        self.disabled_key_ids.clone()
-    }
-}
-
 #[wasm_bindgen]
 impl WasmSdk {
     /// Update an identity by adding or disabling public keys.
@@ -876,12 +792,12 @@ impl WasmSdk {
     /// 5. Broadcasts and waits for confirmation
     ///
     /// @param options - Update options including identity ID, keys to add/disable, and signer
-    /// @returns Promise resolving to IdentityUpdateResult with new revision and key changes
+    /// @returns Promise that resolves when the update is complete
     #[wasm_bindgen(js_name = "identityUpdate")]
     pub async fn identity_update(
         &self,
         options: IdentityUpdateOptionsJs,
-    ) -> Result<IdentityUpdateResultWasm, WasmSdkError> {
+    ) -> Result<(), WasmSdkError> {
         let options_value: JsValue = options.into();
 
         // Deserialize and validate options
@@ -894,9 +810,6 @@ impl WasmSdk {
         let identity = Identity::fetch(self.inner_sdk(), identity_id)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
-
-        // Get current revision
-        let current_revision = identity.revision();
 
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
@@ -952,10 +865,6 @@ impl WasmSdk {
 
         // Get keys to disable
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
-
-        // Save counts before moving
-        let added_key_ids: Vec<u32> = keys_to_add.iter().map(|k| k.id()).collect();
-        let disabled_key_ids = keys_to_disable.clone();
 
         // Validate keys to disable
         for key_id in &keys_to_disable {
@@ -1015,27 +924,12 @@ impl WasmSdk {
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
-        let result = state_transition
+        state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast update: {}", e)))?;
 
-        // Extract updated identity from result
-        let updated_revision = match result {
-            StateTransitionProofResult::VerifiedIdentity(updated_identity) => {
-                updated_identity.revision()
-            }
-            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
-                partial_identity.revision.unwrap_or(current_revision + 1)
-            }
-            _ => current_revision + 1,
-        };
-
-        Ok(IdentityUpdateResultWasm {
-            revision: updated_revision,
-            added_key_ids,
-            disabled_key_ids,
-        })
+        Ok(())
     }
 }
 
@@ -1104,17 +998,6 @@ fn deserialize_masternode_vote_options(
     )
 }
 
-/// Result of submitting a masternode vote.
-#[wasm_bindgen(js_name = "MasternodeVoteResult")]
-pub struct MasternodeVoteResultWasm {
-    _private: (),
-}
-
-#[wasm_bindgen(js_class = MasternodeVoteResult)]
-impl MasternodeVoteResultWasm {
-    // Just a success confirmation, no fields needed
-}
-
 #[wasm_bindgen]
 impl WasmSdk {
     /// Submit a masternode vote for a contested resource.
@@ -1125,12 +1008,12 @@ impl WasmSdk {
     /// 3. Broadcasts and waits for confirmation
     ///
     /// @param options - Vote options including masternode ID, vote poll, choice, and signer
-    /// @returns Promise resolving to MasternodeVoteResult (success confirmation)
+    /// @returns Promise that resolves when the vote is submitted
     #[wasm_bindgen(js_name = "masternodeVote")]
     pub async fn masternode_vote(
         &self,
         options: MasternodeVoteOptionsJs,
-    ) -> Result<MasternodeVoteResultWasm, WasmSdkError> {
+    ) -> Result<(), WasmSdkError> {
         use wasm_dpp2::voting::resource_vote_choice::ResourceVoteChoiceWasm;
         use wasm_dpp2::voting::vote_poll::VotePollWasm;
 
@@ -1210,6 +1093,6 @@ impl WasmSdk {
         )
         .await?;
 
-        Ok(MasternodeVoteResultWasm { _private: () })
+        Ok(())
     }
 }
