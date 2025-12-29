@@ -20,7 +20,7 @@ fn main() -> Result<(), PlatformWalletError> {
     println!(
         "Total identities on {:?}: {}",
         network,
-        platform_wallet.identities(network).len()
+        platform_wallet.identities().len()
     );
 
     // The platform wallet can be used with WalletManager (requires "manager" feature)

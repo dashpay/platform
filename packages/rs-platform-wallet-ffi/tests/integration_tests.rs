@@ -20,7 +20,7 @@ fn test_wallet_creation_and_destruction() {
     let mut error = PlatformWalletFFIError::success();
 
     let result =
-        platform_wallet_info_create_from_seed(seed.as_ptr(), seed.len(), &mut handle, &mut error);
+        platform_wallet_info_create_from_seed(Network::Testnet, seed.as_ptr(), seed.len(), &mut handle, &mut error);
 
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_ne!(handle, NULL_HANDLE);
@@ -43,6 +43,7 @@ fn test_wallet_from_mnemonic() {
     let mut error = PlatformWalletFFIError::success();
 
     let result = platform_wallet_info_create_from_mnemonic(
+        Network::Testnet,
         mnemonic.as_ptr(),
         std::ptr::null(),
         &mut handle,
@@ -179,7 +180,7 @@ fn test_serialization() {
     let mut handle: Handle = NULL_HANDLE;
     let mut error = PlatformWalletFFIError::success();
 
-    platform_wallet_info_create_from_seed(seed.as_ptr(), seed.len(), &mut handle, &mut error);
+    platform_wallet_info_create_from_seed(Network::Testnet, seed.as_ptr(), seed.len(), &mut handle, &mut error);
 
     // Serialize to JSON - function not yet implemented
     // let mut json_ptr: *mut std::os::raw::c_char = std::ptr::null_mut();
@@ -237,6 +238,7 @@ fn test_error_handling() {
 
     // Try to create wallet with null pointer
     let result = platform_wallet_info_create_from_seed(
+        Network::Testnet,
         std::ptr::null(),
         0,
         std::ptr::null_mut(),
@@ -260,6 +262,7 @@ fn test_full_workflow() {
 
     let mut wallet_handle: Handle = NULL_HANDLE;
     let result = platform_wallet_info_create_from_mnemonic(
+        Network::Testnet,
         mnemonic.as_ptr(),
         std::ptr::null(),
         &mut wallet_handle,
@@ -290,10 +293,8 @@ fn test_full_workflow() {
     identity_manager_set_primary_identity(manager_handle, id_bytes, &mut error);
 
     // Set identity manager on wallet
-    let network = NetworkType::Testnet;
     let result = platform_wallet_info_set_identity_manager(
         wallet_handle,
-        network,
         manager_handle,
         &mut error,
     );
@@ -303,7 +304,6 @@ fn test_full_workflow() {
     let mut retrieved_manager_handle: Handle = NULL_HANDLE;
     let result = platform_wallet_info_get_identity_manager(
         wallet_handle,
-        network,
         &mut retrieved_manager_handle,
         &mut error,
     );

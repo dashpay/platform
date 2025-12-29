@@ -9,7 +9,7 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::immature_transaction::ImmatureTransaction;
 use key_wallet::Network;
-
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 #[allow(unused_imports)]
 use crate::ContactRequest;
 
@@ -23,7 +23,6 @@ impl PlatformWalletInfo {
     /// # Arguments
     ///
     /// * `wallet` - The wallet to derive authentication keys from
-    /// * `network` - The network to operate on
     /// * `tx` - The asset lock transaction
     ///
     /// # Returns
@@ -32,7 +31,6 @@ impl PlatformWalletInfo {
     pub async fn fetch_identity_and_contacts_for_asset_lock(
         &mut self,
         wallet: &key_wallet::Wallet,
-        network: Network,
         tx: &dashcore::Transaction,
     ) -> Result<Option<Identifier>, PlatformWalletError> {
         use dashcore::hashes::Hash;
@@ -60,7 +58,6 @@ impl PlatformWalletInfo {
         let result = self
             .fetch_contact_requests_for_identities_after_asset_locks(
                 wallet,
-                network,
                 &[immature_tx],
             )
             .await?;
@@ -77,7 +74,6 @@ impl PlatformWalletInfo {
     /// # Arguments
     ///
     /// * `wallet` - The wallet to derive authentication keys from
-    /// * `network` - The network to operate on
     /// * `asset_lock_transactions` - List of asset lock transactions from pending_asset_locks
     ///
     /// # Returns
@@ -86,7 +82,6 @@ impl PlatformWalletInfo {
     pub async fn fetch_contact_requests_for_identities_after_asset_locks(
         &mut self,
         wallet: &key_wallet::Wallet,
-        network: Network,
         asset_lock_transactions: &[ImmatureTransaction],
     ) -> Result<Vec<Identifier>, PlatformWalletError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
@@ -102,8 +97,7 @@ impl PlatformWalletInfo {
 
         // Get SDK from identity manager
         let sdk = self
-            .identity_manager(network)
-            .and_then(|manager| manager.sdk.as_ref())
+            .identity_manager().sdk.as_ref()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "SDK not configured in identity manager".to_string(),
@@ -122,7 +116,7 @@ impl PlatformWalletInfo {
             IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
         };
 
-        let base_path = match network {
+        let base_path = match self.network() {
             Network::Dash => IDENTITY_AUTHENTICATION_PATH_MAINNET,
             Network::Testnet => IDENTITY_AUTHENTICATION_PATH_TESTNET,
             _ => {
@@ -145,7 +139,7 @@ impl PlatformWalletInfo {
 
         // Derive the extended private key at this path
         let auth_key = wallet
-            .derive_extended_private_key(network, &full_path)
+            .derive_extended_private_key(&full_path)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to derive authentication key: {}",
@@ -172,11 +166,9 @@ impl PlatformWalletInfo {
 
                 // Add identity to manager if not already present
                 if !self
-                    .identity_manager(network)
-                    .map(|mgr| mgr.identities().contains_key(&identity_id))
-                    .unwrap_or(false)
+                    .identity_manager().identities().contains_key(&identity_id)
                 {
-                    self.identity_manager_mut(network)
+                    self.identity_manager_mut()
                         .add_identity(identity.clone())?;
                 }
 
@@ -192,7 +184,7 @@ impl PlatformWalletInfo {
                                 if let Ok(contact_request) = parse_contact_request_document(&doc) {
                                     // Add to managed identity
                                     if let Some(managed_identity) = self
-                                        .identity_manager_mut(network)
+                                        .identity_manager_mut()
                                         .managed_identity_mut(&identity_id)
                                     {
                                         managed_identity.add_sent_contact_request(contact_request);
@@ -207,7 +199,7 @@ impl PlatformWalletInfo {
                                 if let Ok(contact_request) = parse_contact_request_document(&doc) {
                                     // Add to managed identity
                                     if let Some(managed_identity) = self
-                                        .identity_manager_mut(network)
+                                        .identity_manager_mut()
                                         .managed_identity_mut(&identity_id)
                                     {
                                         managed_identity

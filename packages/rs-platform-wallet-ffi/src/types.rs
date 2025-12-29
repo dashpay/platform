@@ -1,35 +1,6 @@
 use std::os::raw::{c_char, c_uchar};
 
-/// Network types
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NetworkType {
-    Mainnet = 0,
-    Testnet = 1,
-    Devnet = 2,
-    Regtest = 3,
-}
-
-impl NetworkType {
-    pub fn to_dash_network(&self) -> dashcore::Network {
-        match self {
-            NetworkType::Mainnet => dashcore::Network::Dash,
-            NetworkType::Testnet => dashcore::Network::Testnet,
-            NetworkType::Devnet => dashcore::Network::Devnet,
-            NetworkType::Regtest => dashcore::Network::Regtest,
-        }
-    }
-
-    pub fn from_dash_network(network: dashcore::Network) -> Self {
-        match network {
-            dashcore::Network::Dash => NetworkType::Mainnet,
-            dashcore::Network::Testnet => NetworkType::Testnet,
-            dashcore::Network::Devnet => NetworkType::Devnet,
-            dashcore::Network::Regtest => NetworkType::Regtest,
-            _ => NetworkType::Mainnet,
-        }
-    }
-}
+pub use dashcore::Network;
 
 /// Identifier (32 bytes)
 #[repr(C)]
@@ -154,22 +125,6 @@ pub extern "C" fn platform_wallet_string_free(s: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_network_type_conversion() {
-        assert_eq!(
-            NetworkType::Mainnet.to_dash_network(),
-            dashcore::Network::Dash
-        );
-        assert_eq!(
-            NetworkType::Testnet.to_dash_network(),
-            dashcore::Network::Testnet
-        );
-        assert_eq!(
-            NetworkType::from_dash_network(dashcore::Network::Testnet),
-            NetworkType::Testnet
-        );
-    }
 
     #[test]
     fn test_identifier_bytes_from_slice() {

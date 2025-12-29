@@ -1,13 +1,15 @@
 use crate::error::*;
 use crate::handle::*;
-use crate::types::*;
+use crate::types::Network;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes
 #[no_mangle]
 pub extern "C" fn platform_wallet_info_create_from_seed(
+    network: Network,
     seed_bytes: *const c_uchar,
     seed_len: usize,
     out_handle: *mut Handle,
@@ -44,10 +46,10 @@ pub extern "C" fn platform_wallet_info_create_from_seed(
     let mut seed_array = [0u8; 64];
     seed_array.copy_from_slice(seed_slice);
 
-    // Create wallet from seed - use empty network list, accounts can be added later
+    // Create wallet from seed
     let wallet = match key_wallet::Wallet::from_seed_bytes(
         seed_array,
-        &[],                                // No networks initially
+        network,
         WalletAccountCreationOptions::None, // No accounts initially
     ) {
         Ok(w) => w,
@@ -64,14 +66,8 @@ pub extern "C" fn platform_wallet_info_create_from_seed(
         }
     };
 
-    // Create ManagedWalletInfo from the wallet
-    let wallet_info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet);
-
-    // Create PlatformWalletInfo wrapping the ManagedWalletInfo
-    let platform_wallet = PlatformWalletInfo {
-        wallet_info,
-        identity_managers: std::collections::BTreeMap::new(),
-    };
+    // Create PlatformWalletInfo from the wallet
+    let platform_wallet = PlatformWalletInfo::from_wallet(&wallet);
 
     // Store in handle storage
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
@@ -83,6 +79,7 @@ pub extern "C" fn platform_wallet_info_create_from_seed(
 /// Create a new PlatformWalletInfo from mnemonic
 #[no_mangle]
 pub extern "C" fn platform_wallet_info_create_from_mnemonic(
+    network: Network,
     mnemonic: *const c_char,
     passphrase: *const c_char,
     out_handle: *mut Handle,
@@ -155,7 +152,7 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
         match key_wallet::Wallet::from_mnemonic_with_passphrase(
             mnemonic_obj,
             pass.to_string(),
-            &[],                                // No networks initially
+            network,
             WalletAccountCreationOptions::None, // No accounts initially
         ) {
             Ok(w) => w,
@@ -177,7 +174,7 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
     } else {
         match key_wallet::Wallet::from_mnemonic(
             mnemonic_obj,
-            &[],                                // No networks initially
+            network,
             WalletAccountCreationOptions::None, // No accounts initially
         ) {
             Ok(w) => w,
@@ -195,14 +192,8 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
         }
     };
 
-    // Create ManagedWalletInfo from the wallet
-    let wallet_info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet);
-
-    // Create PlatformWalletInfo wrapping the ManagedWalletInfo
-    let platform_wallet = PlatformWalletInfo {
-        wallet_info,
-        identity_managers: std::collections::BTreeMap::new(),
-    };
+    // Create PlatformWalletInfo from the wallet
+    let platform_wallet = PlatformWalletInfo::from_wallet(&wallet);
 
     // Store in handle storage
     let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
@@ -211,11 +202,10 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
     PlatformWalletFFIResult::Success
 }
 
-/// Get the identity manager for a specific network
+/// Get the identity manager
 #[no_mangle]
 pub extern "C" fn platform_wallet_info_get_identity_manager(
     wallet_handle: Handle,
-    network: NetworkType,
     out_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -233,23 +223,9 @@ pub extern "C" fn platform_wallet_info_get_identity_manager(
 
     WALLET_INFO_STORAGE
         .with_item(wallet_handle, |wallet_info| {
-            let dash_network = network.to_dash_network();
-
-            if let Some(manager) = wallet_info.identity_managers.get(&dash_network) {
-                let handle = IDENTITY_MANAGER_STORAGE.insert(manager.clone());
-                unsafe { *out_handle = handle };
-                PlatformWalletFFIResult::Success
-            } else {
-                if !out_error.is_null() {
-                    unsafe {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorInvalidNetwork,
-                            format!("No identity manager for network: {:?}", network),
-                        );
-                    }
-                }
-                PlatformWalletFFIResult::ErrorInvalidNetwork
-            }
+            let handle = IDENTITY_MANAGER_STORAGE.insert(wallet_info.identity_manager.clone());
+            unsafe { *out_handle = handle };
+            PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
             if !out_error.is_null() {
@@ -264,11 +240,10 @@ pub extern "C" fn platform_wallet_info_get_identity_manager(
         })
 }
 
-/// Add or update identity manager for a network
+/// Set the identity manager
 #[no_mangle]
 pub extern "C" fn platform_wallet_info_set_identity_manager(
     wallet_handle: Handle,
-    network: NetworkType,
     manager_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -292,8 +267,7 @@ pub extern "C" fn platform_wallet_info_set_identity_manager(
 
     WALLET_INFO_STORAGE
         .with_item_mut(wallet_handle, |wallet_info| {
-            let dash_network = network.to_dash_network();
-            wallet_info.identity_managers.insert(dash_network, manager);
+            wallet_info.identity_manager = manager;
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -353,6 +327,7 @@ pub extern "C" fn platform_wallet_info_destroy(wallet_handle: Handle) -> Platfor
 
 #[cfg(test)]
 mod tests {
+    use crate::platform_wallet_string_free;
     use super::*;
 
     #[test]
@@ -362,6 +337,7 @@ mod tests {
         let mut error = PlatformWalletFFIError::success();
 
         let result = platform_wallet_info_create_from_seed(
+            Network::Testnet,
             seed.as_ptr(),
             seed.len(),
             &mut handle,
@@ -385,6 +361,7 @@ mod tests {
         let mut error = PlatformWalletFFIError::success();
 
         let result = platform_wallet_info_create_from_mnemonic(
+            Network::Testnet,
             mnemonic.as_ptr(),
             std::ptr::null(),
             &mut handle,
@@ -405,7 +382,7 @@ mod tests {
         let mut handle: Handle = NULL_HANDLE;
         let mut error = PlatformWalletFFIError::success();
 
-        platform_wallet_info_create_from_seed(seed.as_ptr(), seed.len(), &mut handle, &mut error);
+        platform_wallet_info_create_from_seed(Network::Testnet, seed.as_ptr(), seed.len(), &mut handle, &mut error);
 
         let mut json_ptr: *mut c_char = std::ptr::null_mut();
         let result = platform_wallet_info_to_json(handle, &mut json_ptr, &mut error);
