@@ -201,7 +201,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
 async fn execute_trunk_query(
     sdk: &Sdk,
     metrics: &mut AddressSyncMetrics,
-) -> Result<(GroveTrunkQueryResult, Option<u64>), Error> {
+) -> Result<(GroveTrunkQueryResult, u64), Error> {
     let request = GetAddressesTrunkStateRequest {
         version: Some(get_addresses_trunk_state_request::Version::V0(
             get_addresses_trunk_state_request::GetAddressesTrunkStateRequestV0 {},
@@ -209,7 +209,6 @@ async fn execute_trunk_query(
     };
 
     let response: dapi_grpc::platform::v0::GetAddressesTrunkStateResponse = request
-        .clone()
         .execute(sdk, RequestSettings::default())
         .await?
         .into_inner();
@@ -231,9 +230,7 @@ async fn execute_trunk_query(
 
     metrics.total_elements_seen += trunk_state.elements.len();
 
-    let checkpoint_height = Some(metadata.height);
-
-    Ok((trunk_state, checkpoint_height))
+    Ok((trunk_state, metadata.height))
 }
 
 /// Process the trunk query result.
@@ -316,7 +313,7 @@ fn get_privacy_adjusted_leaves(
 async fn execute_branch_queries(
     sdk: &Sdk,
     leaves: &[(LeafBoundaryKey, LeafInfo, u8)],
-    checkpoint_height: Option<u64>,
+    checkpoint_height: u64,
     metrics: &mut AddressSyncMetrics,
     max_concurrent: usize,
     platform_version: &PlatformVersion,
@@ -381,7 +378,7 @@ async fn execute_single_branch_query(
     key: LeafBoundaryKey,
     depth: u32,
     expected_hash: [u8; 32],
-    checkpoint_height: Option<u64>,
+    checkpoint_height: u64,
     platform_version: &PlatformVersion,
 ) -> Result<GroveBranchQueryResult, Error> {
     let request = GetAddressesBranchStateRequest {

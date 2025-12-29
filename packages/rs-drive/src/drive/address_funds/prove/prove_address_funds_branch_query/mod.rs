@@ -19,9 +19,8 @@ impl Drive {
     /// - `key`: The key to navigate to in the address funds tree before extracting the branch.
     /// - `depth`: The depth of the branch to return from the key. Must be between
     ///   `address_funds_query_min_depth` and `address_funds_query_max_depth` (inclusive).
-    /// - `checkpoint_height`: Optional block height of a specific checkpoint to use.
-    ///   If `None`, uses the latest checkpoint. This should match the height from the
-    ///   trunk query response to ensure consistency across queries.
+    /// - `checkpoint_height`: Block height of the checkpoint to use.
+    ///   This should match the height from the trunk query response to ensure consistency.
     /// - `platform_version`: The version of the platform that determines the correct method version.
     ///
     /// # Returns
@@ -36,7 +35,7 @@ impl Drive {
         &self,
         key: Vec<u8>,
         depth: u8,
-        checkpoint_height: Option<BlockHeight>,
+        checkpoint_height: BlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         match platform_version
@@ -68,9 +67,8 @@ impl Drive {
     /// - `key`: The key to navigate to in the address funds tree before extracting the branch.
     /// - `depth`: The depth of the branch to return from the key. Must be between
     ///   `address_funds_query_min_depth` and `address_funds_query_max_depth` (inclusive).
-    /// - `checkpoint_height`: Optional block height of a specific checkpoint to use.
-    ///   If `None`, uses the latest checkpoint. This should match the height from the
-    ///   trunk query response to ensure consistency across queries.
+    /// - `checkpoint_height`: Block height of the checkpoint to use.
+    ///   This should match the height from the trunk query response to ensure consistency.
     /// - `drive_operations`: A mutable reference to a vector that stores low-level drive operations.
     /// - `platform_version`: The version of the platform that determines the correct method version.
     ///
@@ -86,7 +84,7 @@ impl Drive {
         &self,
         key: Vec<u8>,
         depth: u8,
-        checkpoint_height: Option<BlockHeight>,
+        checkpoint_height: BlockHeight,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {

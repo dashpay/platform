@@ -12,7 +12,7 @@ impl Drive {
         &self,
         key: Vec<u8>,
         depth: u8,
-        checkpoint_height: Option<BlockHeight>,
+        checkpoint_height: BlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         self.prove_address_funds_branch_query_operations_v0(
@@ -28,7 +28,7 @@ impl Drive {
         &self,
         key: Vec<u8>,
         depth: u8,
-        checkpoint_height: Option<BlockHeight>,
+        checkpoint_height: BlockHeight,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -53,14 +53,9 @@ impl Drive {
         let path = Self::clear_addresses_path();
         let query = PathBranchChunkQuery { path, key, depth };
 
-        let grove_db_to_use = match checkpoint_height {
-            Some(height) => GroveDBToUse::Checkpoint(height),
-            None => GroveDBToUse::LatestCheckpoint,
-        };
-
         self.grove_get_proved_branch_chunk_query(
             &query,
-            grove_db_to_use,
+            GroveDBToUse::Checkpoint(checkpoint_height),
             drive_operations,
             &platform_version.drive,
         )

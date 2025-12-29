@@ -88,6 +88,7 @@ impl KeyLeafTracker {
     }
 
     /// Get LeafInfo for a specific leaf boundary key.
+    #[allow(dead_code)]
     pub fn get_leaf_info(&self, leaf_key: &[u8]) -> Option<LeafInfo> {
         self.leaf_info.get(leaf_key).copied()
     }

@@ -17,6 +17,7 @@ impl<C> Platform<C> {
         _platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetAddressesBranchStateResponseV0>, Error> {
+        // checkpoint_height is now required and must match the height from trunk response metadata
         let merk_proof = self.drive.prove_address_funds_branch_query(
             key,
             depth as u8,
