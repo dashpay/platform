@@ -7,8 +7,8 @@ describe('Platform address queries', function describePlatformAddressQueries() {
   wasmFunctionalTestRequirements();
 
   let client;
-  let testHash1;
-  let testHash2;
+  let testHash1;  // P2pkh hash for address with balance
+  let testHash2;  // P2sh hash for address with balance
 
   before(async () => {
     await init();
@@ -16,23 +16,25 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     const builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
 
-    // Create deterministic 20-byte hashes for testing unfunded addresses
-    testHash1 = new Uint8Array(20).fill(0x01);
-    testHash2 = new Uint8Array(20).fill(0x02);
+    // Use the test addresses created by SDK_TEST_DATA=true during genesis
+    // These correspond to:
+    // - PLATFORM_ADDRESS_1 = P2pkh([10; 20]) with nonce=5, balance=1_000_000
+    // - PLATFORM_ADDRESS_2 = P2sh([11; 20]) with nonce=7, balance=2_000_000
+    testHash1 = new Uint8Array(20).fill(10);
+    testHash2 = new Uint8Array(20).fill(11);
   });
 
   after(() => {
     if (client) { client.free(); }
   });
 
-  // Note: Platform addresses need to be funded for these tests to return data.
-  // If no funded addresses exist, the tests will still pass but return undefined results.
-
-  it('getAddressInfo() returns address info or undefined for unfunded address', async () => {
+  it('getAddressInfo() returns address info for funded address', async () => {
     const testAddress = sdk.PlatformAddress.fromP2pkhHash(testHash1);
     const res = await client.getAddressInfo(testAddress);
-    // Result is undefined for unfunded/non-existent addresses
-    expect(res === undefined || res !== null).to.be.true();
+    // PLATFORM_ADDRESS_1 has nonce=5, balance=1_000_000
+    expect(res).to.be.ok();
+    expect(res.nonce).to.equal(5n);
+    expect(res.balance).to.equal(1000000n);
   });
 
   it('getAddressInfoWithProofInfo() returns proof info for address query', async () => {
@@ -41,7 +43,10 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     expect(res).to.be.ok();
     expect(res.proof).to.be.ok();
     expect(res.metadata).to.be.ok();
-    // data may be undefined for unfunded addresses
+    // data should be present for funded address
+    expect(res.data).to.be.ok();
+    expect(res.data.nonce).to.equal(5n);
+    expect(res.data.balance).to.equal(1000000n);
   });
 
   it('getAddressesInfos() returns map of address infos', async () => {
@@ -52,6 +57,19 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     const res = await client.getAddressesInfos(testAddresses);
     expect(res).to.be.instanceOf(Map);
     expect(res.size).to.equal(testAddresses.length);
+
+    // Check values for both funded addresses
+    // Note: Map keys are stringified addresses, so we need to check values
+    const entries = Array.from(res.entries());
+    expect(entries.length).to.equal(2);
+
+    // Find entries by checking their nonce values (5n and 7n - BigInt)
+    const info1 = entries.find(([, v]) => v && v.nonce === 5n);
+    const info2 = entries.find(([, v]) => v && v.nonce === 7n);
+    expect(info1).to.be.ok();
+    expect(info1[1].balance).to.equal(1000000n);
+    expect(info2).to.be.ok();
+    expect(info2[1].balance).to.equal(2000000n);
   });
 
   it('getAddressesInfosWithProofInfo() returns proof info for multiple addresses', async () => {
@@ -64,5 +82,15 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     expect(res.proof).to.be.ok();
     expect(res.metadata).to.be.ok();
     expect(res.data).to.be.instanceOf(Map);
+    expect(res.data.size).to.equal(2);
+
+    // Check data values (nonce is BigInt)
+    const entries = Array.from(res.data.entries());
+    const info1 = entries.find(([, v]) => v && v.nonce === 5n);
+    const info2 = entries.find(([, v]) => v && v.nonce === 7n);
+    expect(info1).to.be.ok();
+    expect(info1[1].balance).to.equal(1000000n);
+    expect(info2).to.be.ok();
+    expect(info2[1].balance).to.equal(2000000n);
   });
 });

@@ -121,17 +121,24 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('gets identity balance and nonce', async () => {
-    const bal = await client.getIdentityBalance(TEST_IDENTITY);
-    expect(bal).to.be.an('object');
-    expect(String(bal.balance)).to.match(/^\d+$/);
+    // getIdentityBalance returns bigint | null, but for existing identity it should be present
+    const balance = await client.getIdentityBalance(TEST_IDENTITY);
+    expect(typeof balance).to.equal('bigint');
+    expect(String(balance)).to.match(/^\d+$/);
 
+    // getIdentityNonce returns bigint | null, but for existing identity it should be present
     const nonce = await client.getIdentityNonce(TEST_IDENTITY);
-    expect(nonce).to.be.an('object');
-    expect(String(nonce.nonce)).to.match(/^\d+$/);
+    expect(typeof nonce).to.equal('bigint');
+    expect(String(nonce)).to.match(/^\d+$/);
   });
 
   it('gets contract nonce and keys', async () => {
-    await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
+    // getIdentityContractNonce returns bigint | null
+    // null if identity never interacted with the contract
+    // TEST_IDENTITY has no DPNS documents, so nonce should be null
+    const nonce = await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
+    expect(nonce).to.be.null();
+
     const keys = await client.getIdentityKeys({
       identityId: TEST_IDENTITY,
       request: { type: 'all' },
@@ -140,10 +147,20 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('batch identity balances and balance+revision', async () => {
+    // getIdentitiesBalances returns Map<Identifier, bigint | null>
     const balances = await client.getIdentitiesBalances([TEST_IDENTITY]);
-    expect(balances).to.be.an('array');
+    expect(balances).to.be.instanceOf(Map);
+    expect(balances.size).to.equal(1);
+    // For existing identity, balance should be present
+    const balance = Array.from(balances.values())[0];
+    expect(typeof balance).to.equal('bigint');
+
+    // getIdentityBalanceAndRevision returns IdentityBalanceAndRevision | null
+    // For existing identity, it should be present
     const br = await client.getIdentityBalanceAndRevision(TEST_IDENTITY);
     expect(br).to.be.ok();
+    expect(typeof br.balance).to.equal('bigint');
+    expect(typeof br.revision === 'number' || typeof br.revision === 'bigint').to.be.true();
   });
 
   it('contract keys for identity', async () => {

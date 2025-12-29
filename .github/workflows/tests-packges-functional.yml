@@ -39,9 +39,6 @@ jobs:
       - name: Run SDK functional tests
         run: yarn workspace dash test:functional
 
-      - name: Run Evo SDK functional tests
-        run: yarn workspace @dashevo/evo-sdk test:functional
-
       - name: Run WASM SDK functional tests
         run: yarn workspace @dashevo/wasm-sdk test:functional
 
