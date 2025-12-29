@@ -23,6 +23,12 @@ impl From<Identity> for IdentityWasm {
     }
 }
 
+impl From<IdentityWasm> for Identity {
+    fn from(wasm: IdentityWasm) -> Self {
+        wasm.0
+    }
+}
+
 #[wasm_bindgen(js_class = Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(getter = __type)]
@@ -91,9 +97,10 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyById")]
-    pub fn get_public_key_by_id(&self, key_id: KeyID) -> IdentityPublicKeyWasm {
-        let identity_public_key = self.0.get_public_key_by_id(key_id);
-        IdentityPublicKeyWasm::from(identity_public_key.unwrap().clone())
+    pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<IdentityPublicKeyWasm> {
+        self.0
+            .get_public_key_by_id(key_id)
+            .map(|key| IdentityPublicKeyWasm::from(key.clone()))
     }
 
     #[wasm_bindgen(js_name = "getPublicKeys")]
