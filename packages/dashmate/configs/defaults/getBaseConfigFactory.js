@@ -73,7 +73,7 @@ export default function getBaseConfigFactory() {
             quorum_list: {
               password: 'rpcpassword',
               whitelist: [
-                'quorum', 'masternode', 'getbestblockhash', 'getblockhash', 'getblockcount', 'getblockchaininfo',
+                'quorum', 'masternode', 'getblockcount',
               ],
               lowPriority: true,
             },
@@ -167,6 +167,8 @@ export default function getBaseConfigFactory() {
             port: 2444,
           },
           previousBlocksOffset: 8,
+          versionCheckHost: '',
+          addressHostOverride: '',
         },
         gateway: {
           docker: {

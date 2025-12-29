@@ -15,7 +15,6 @@ import { VotingFacade } from './voting/facade.js';
 export interface ConnectionOptions {
   version?: number;
   proofs?: boolean;
-  quorumUrl?: string;
   // Configure tracing/logging emitted from the underlying Wasm SDK.
   // Accepts simple levels: 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
   // or a full EnvFilter string like: 'wasm_sdk=debug,rs_dapi_client=warn'
@@ -87,7 +86,7 @@ export class EvoSDK {
     if (this.wasmSdk) return; // idempotent
     await initWasm();
 
-    const { network, trusted, version, proofs, settings, logs, addresses, quorumUrl } = this.options;
+    const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
 
     let builder: wasm.WasmSdkBuilder;
 
@@ -99,7 +98,7 @@ export class EvoSDK {
       } else if (network === 'testnet') {
         await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
       } else if (network === 'local') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsLocal(quorumUrl ?? null);
+        await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
       }
       builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
     } else if (network === 'mainnet') {
@@ -112,7 +111,7 @@ export class EvoSDK {
       builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
     } else if (network === 'local') {
       // Default local dashmate gateway and quorum list sidecar
-      await wasm.WasmSdk.prefetchTrustedQuorumsLocal(quorumUrl ?? null);
+      await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
 
       builder = wasm.WasmSdkBuilder.local();
     } else {

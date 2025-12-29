@@ -1399,7 +1399,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '3.0.0-dev.5': (configFile) => {
+      '3.0.0-dev.6': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);

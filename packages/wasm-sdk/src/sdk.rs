@@ -158,12 +158,8 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "prefetchTrustedQuorumsLocal")]
-    pub async fn prefetch_trusted_quorums_local(
-        quorum_url: Option<String>,
-    ) -> Result<(), WasmSdkError> {
-        let quorum_url = quorum_url.unwrap_or_else(|| DEFAULT_LOCAL_QUORUM_URL.to_string());
-
-        let trusted_context = WasmTrustedContext::new_local_with_url(&quorum_url)
+    pub async fn prefetch_trusted_quorums_local() -> Result<(), WasmSdkError> {
+        let trusted_context = WasmTrustedContext::new_local_with_url(DEFAULT_LOCAL_QUORUM_URL)
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
 
         trusted_context

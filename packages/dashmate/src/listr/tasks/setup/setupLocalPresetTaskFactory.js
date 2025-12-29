@@ -165,6 +165,8 @@ export default function setupLocalPresetTaskFactory(
 
                   // Enable quorum list sidecar for SDK local testing
                   config.set('platform.quorumList.enabled', true);
+                  config.set('platform.quorumList.versionCheckHost', 'host.docker.internal');
+                  config.set('platform.quorumList.addressHostOverride', '127.0.0.1');
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
