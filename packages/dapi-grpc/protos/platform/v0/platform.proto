@@ -2020,6 +2020,7 @@ message GetAddressesBranchStateRequest {
   message GetAddressesBranchStateRequestV0 {
     bytes key = 1;
     uint32 depth = 2;
+    uint64 checkpoint_height = 3; // Block height from trunk response metadata for consistency
   }
   oneof version { GetAddressesBranchStateRequestV0 v0 = 1; }
 }

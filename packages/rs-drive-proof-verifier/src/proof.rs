@@ -51,6 +51,7 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::grovedb::Error as GroveError;
+use drive::grovedb::GroveTrunkQueryResult;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
@@ -937,6 +938,35 @@ impl FromProof<platform::GetAddressesInfosRequest> for AddressInfos {
             .collect::<AddressInfos>();
 
         Ok((Some(infos), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetAddressesTrunkStateRequest> for GroveTrunkQueryResult {
+    type Request = platform::GetAddressesTrunkStateRequest;
+    type Response = platform::GetAddressesTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        GroveTrunkQueryResult: 'a,
+    {
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, trunk_result) =
+            Drive::verify_address_funds_trunk_query(&proof.grovedb_proof, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(trunk_result), mtd.clone(), proof.clone()))
     }
 }
 
