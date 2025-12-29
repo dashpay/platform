@@ -268,3 +268,13 @@ pub fn extract_settings_from_options(options: &JsValue) -> Result<Option<PutSett
     let settings_typed: PutSettingsJs = settings_js.into();
     parse_put_settings(Some(settings_typed))
 }
+
+/// Extracts user_fee_increase from optional PutSettings, defaulting to 0.
+///
+/// This helper simplifies the common pattern of extracting user_fee_increase
+/// from settings for state transition creation.
+pub fn get_user_fee_increase(settings: Option<&PutSettings>) -> dash_sdk::dpp::prelude::UserFeeIncrease {
+    settings
+        .and_then(|s| s.user_fee_increase)
+        .unwrap_or_default()
+}

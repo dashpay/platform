@@ -414,6 +414,25 @@ macro_rules! impl_try_from_options {
                 $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
                     .map(|boxed| (*boxed).clone())
             }
+
+            /// Try to extract this type from an options object field, returning None if not present.
+            ///
+            /// This helper reads the specified field from an options object and converts it
+            /// to the WASM wrapper type. Returns Ok(None) if the field is undefined or null.
+            pub fn try_from_optional_options(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Option<Self>> {
+                let value_js = js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                    .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Ok(None);
+                }
+
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                    .map(|boxed| Some((*boxed).clone()))
+            }
         }
     };
 

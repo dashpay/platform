@@ -4,7 +4,7 @@
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
-use crate::settings::extract_settings_from_options;
+use crate::settings::{extract_settings_from_options, get_user_fee_increase};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -185,10 +185,13 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity contract nonce
         let identity_contract_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(owner_id, contract_id, true, None)
+            .get_identity_contract_nonce(owner_id, contract_id, true, settings)
             .await?;
 
         // Create partial identity for signing
@@ -206,15 +209,12 @@ impl WasmSdk {
             &partial_identity,
             identity_key.id(),
             identity_contract_nonce,
-            dash_sdk::dpp::prelude::UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None,
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;

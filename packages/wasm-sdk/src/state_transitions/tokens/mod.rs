@@ -9,7 +9,7 @@ use crate::settings::extract_settings_from_options;
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::prelude::UserFeeIncrease;
+use crate::settings::get_user_fee_increase;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -21,6 +21,7 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::IdentitySignerWasm;
 
 // Helper methods for token operations
@@ -40,16 +41,32 @@ impl WasmSdk {
         // Add the contract to the context provider's cache if using trusted mode
         match sdk.network {
             dash_sdk::dpp::dashcore::Network::Testnet => {
-                if let Some(ref context) = *crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
+                let guard = crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                let context = guard.as_ref().ok_or_else(|| {
+                    WasmSdkError::generic("Testnet trusted context not initialized")
+                })?;
+                context.add_known_contract(data_contract.clone());
             }
             dash_sdk::dpp::dashcore::Network::Dash => {
-                if let Some(ref context) = *crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
+                let guard = crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                let context = guard.as_ref().ok_or_else(|| {
+                    WasmSdkError::generic("Mainnet trusted context not initialized")
+                })?;
+                context.add_known_contract(data_contract.clone());
             }
-            _ => {} // Other networks don't use trusted context
+            dash_sdk::dpp::dashcore::Network::Regtest => {
+                let guard = crate::sdk::LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+                let context = guard.as_ref().ok_or_else(|| {
+                    WasmSdkError::generic("Local trusted context not initialized")
+                })?;
+                context.add_known_contract(data_contract.clone());
+            }
+            network => {
+                return Err(WasmSdkError::generic(format!(
+                    "Unsupported network for trusted context: {:?}",
+                    network
+                )));
+            }
         }
 
         Ok(data_contract)
@@ -109,6 +126,13 @@ export interface TokenMintOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed token minting.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -183,10 +207,7 @@ impl WasmSdk {
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let identity_id: Identifier = parsed.identity_id.into();
-        let recipient_id: Identifier = parsed
-            .recipient_id
-            .map(Into::into)
-            .unwrap_or(identity_id);
+        let recipient_id: Option<Identifier> = parsed.recipient_id.map(Into::into);
         let amount = parsed.amount as TokenAmount;
 
         // Extract identity key from options
@@ -197,16 +218,26 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
         let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(identity_id, contract_id, true, None)
+            .get_identity_contract_nonce(identity_id, contract_id, true, settings)
             .await?;
 
         // Create the mint transition
@@ -216,20 +247,17 @@ impl WasmSdk {
             contract_id,
             parsed.token_position,
             amount,
-            Some(recipient_id),
+            recipient_id,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create mint transition: {}", e)))?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         let result = state_transition
@@ -242,8 +270,11 @@ impl WasmSdk {
             _ => 0,
         };
 
+        // If no recipient was specified, tokens go to the issuer
+        let actual_recipient_id = recipient_id.unwrap_or(identity_id);
+
         Ok(TokenMintResultWasm {
-            recipient_id: recipient_id.into(),
+            recipient_id: actual_recipient_id.into(),
             new_balance,
         })
     }
@@ -295,6 +326,13 @@ export interface TokenBurnOptions {
    * Use IdentitySigner to add the private key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed token burning.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -377,16 +415,26 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
         let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(identity_id, contract_id, true, None)
+            .get_identity_contract_nonce(identity_id, contract_id, true, settings)
             .await?;
 
         // Create the burn transition
@@ -397,18 +445,15 @@ impl WasmSdk {
             parsed.token_position,
             amount,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create burn transition: {}", e)))?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         let result = state_transition
@@ -584,10 +629,13 @@ impl WasmSdk {
         // Calculate token ID
         let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(sender_id, contract_id, true, None)
+            .get_identity_contract_nonce(sender_id, contract_id, true, settings)
             .await?;
 
         // Create the transfer transition
@@ -603,7 +651,7 @@ impl WasmSdk {
             None, // private_encrypted_note
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
@@ -611,9 +659,6 @@ impl WasmSdk {
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create transfer transition: {}", e))
         })?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -669,6 +714,13 @@ export interface TokenFreezeOptions {
    * Use IdentitySigner to add the authentication key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed token freezing.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -746,16 +798,26 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
         let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, None)
+            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
             .await?;
 
         // Create the freeze transition
@@ -766,18 +828,15 @@ impl WasmSdk {
             parsed.token_position,
             frozen_identity_id,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create freeze transition: {}", e)))?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -831,6 +890,13 @@ export interface TokenUnfreezeOptions {
    * Use IdentitySigner to add the authentication key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed token unfreezing.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -912,16 +978,26 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
         let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, None)
+            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
             .await?;
 
         // Create the unfreeze transition
@@ -932,10 +1008,10 @@ impl WasmSdk {
             parsed.token_position,
             frozen_identity_id,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
@@ -943,9 +1019,6 @@ impl WasmSdk {
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create unfreeze transition: {}", e))
         })?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -999,6 +1072,13 @@ export interface TokenDestroyFrozenOptions {
    * Use IdentitySigner to add the authentication key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed token destruction.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -1080,16 +1160,26 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Calculate token ID
         let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, None)
+            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
             .await?;
 
         // Create the destroy frozen transition
@@ -1100,10 +1190,10 @@ impl WasmSdk {
             parsed.token_position,
             frozen_identity_id,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
@@ -1114,9 +1204,6 @@ impl WasmSdk {
                 e
             ))
         })?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -1170,6 +1257,13 @@ export interface TokenEmergencyActionOptions {
    * Use IdentitySigner to add the authentication key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed emergency actions.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -1263,6 +1357,13 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
@@ -1270,10 +1371,13 @@ impl WasmSdk {
         let token_id =
             Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, None)
+            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
             .await?;
 
         // Create the emergency action transition
@@ -1284,10 +1388,10 @@ impl WasmSdk {
             parsed.token_position,
             emergency_action,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
@@ -1295,9 +1399,6 @@ impl WasmSdk {
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create emergency action transition: {}", e))
         })?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -1457,10 +1558,13 @@ impl WasmSdk {
         let token_id =
             Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(identity_id, contract_id, true, None)
+            .get_identity_contract_nonce(identity_id, contract_id, true, settings)
             .await?;
 
         // Create the claim transition
@@ -1473,15 +1577,12 @@ impl WasmSdk {
             parsed.public_note,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create claim transition: {}", e)))?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -1537,6 +1638,13 @@ export interface TokenSetPriceOptions {
    * Use IdentitySigner to add the authentication key before calling.
    */
   signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed price changes.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
 
   /**
    * Optional settings for the broadcast operation.
@@ -1623,6 +1731,13 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
+        // Extract optional group info from options
+        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )?
+        .map(Into::into);
+
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
@@ -1630,10 +1745,13 @@ impl WasmSdk {
         let token_id =
             Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, None)
+            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
             .await?;
 
         // Create the set price transition
@@ -1644,10 +1762,10 @@ impl WasmSdk {
             parsed.token_position,
             pricing_schedule,
             parsed.public_note,
-            None, // using_group_info
+            group_info,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
@@ -1655,9 +1773,6 @@ impl WasmSdk {
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create set price transition: {}", e))
         })?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
@@ -1807,10 +1922,13 @@ impl WasmSdk {
         let token_id =
             Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
 
+        // Extract settings from options
+        let settings = extract_settings_from_options(&options_value)?;
+
         // Get identity nonce for the token contract
         let identity_nonce = self
             .inner_sdk()
-            .get_identity_contract_nonce(buyer_id, contract_id, true, None)
+            .get_identity_contract_nonce(buyer_id, contract_id, true, settings)
             .await?;
 
         // Create the direct purchase transition
@@ -1823,7 +1941,7 @@ impl WasmSdk {
             max_total_cost,
             &identity_key,
             identity_nonce,
-            UserFeeIncrease::default(),
+            get_user_fee_increase(settings.as_ref()),
             &signer,
             self.inner_sdk().version(),
             None, // options
@@ -1831,9 +1949,6 @@ impl WasmSdk {
         .map_err(|e| {
             WasmSdkError::generic(format!("Failed to create direct purchase transition: {}", e))
         })?;
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Broadcast the transition
         state_transition
