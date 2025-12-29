@@ -33,12 +33,16 @@ rm -rf "$DEST_XCFRAMEWORK_DIR"
 cp -R "$SRC_XCFRAMEWORK_DIR" "$DEST_XCFRAMEWORK_DIR"
 
 # Verify required SPV symbols are present in the binary
-LIB_SIM_MAIN="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/librs_sdk_ffi.a"
-LIB_SIM_SPV="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libdash_spv_ffi.a"
-if [[ ! -f "$LIB_SIM_MAIN" ]]; then
-  echo "❌ Missing simulator library at $LIB_SIM_MAIN"
+# Look for combined lib first (merged with SPV), then fallback to standalone
+if [[ -f "$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libDashSDKFFI_combined.a" ]]; then
+  LIB_SIM_MAIN="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libDashSDKFFI_combined.a"
+elif [[ -f "$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/librs_sdk_ffi.a" ]]; then
+  LIB_SIM_MAIN="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/librs_sdk_ffi.a"
+else
+  echo "❌ Missing simulator library in $DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/"
   exit 1
 fi
+LIB_SIM_SPV="$DEST_XCFRAMEWORK_DIR/ios-arm64-simulator/libdash_spv_ffi.a"
 echo "   - Verifying required SPV symbols are present in XCFramework libs"
 # Prefer ripgrep if available; fall back to grep for portability
 # Avoid -q with pipefail, which can cause nm to SIGPIPE and fail the check.
@@ -49,23 +53,26 @@ else
 fi
 
 CHECK_OK=1
-if nm -gU "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
+# Use nm -g (global symbols) and grep. Disable pipefail for this check to avoid SIGPIPE issues with large archives.
+set +o pipefail
+if nm -g "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
   :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -gU "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
+elif [[ -f "$LIB_SIM_SPV" ]] && nm -g "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
   :
 else
   echo "❌ Missing symbol: dash_spv_ffi_config_add_peer (in both main and spv libs)"
   CHECK_OK=0
 fi
 
-if nm -gU "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
+if nm -g "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
   :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -gU "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
+elif [[ -f "$LIB_SIM_SPV" ]] && nm -g "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
   :
 else
   echo "❌ Missing symbol: dash_spv_ffi_config_set_restrict_to_configured_peers (in both main and spv libs)"
   CHECK_OK=0
 fi
+set -o pipefail
 
 if [[ $CHECK_OK -ne 1 ]]; then
   echo "   Please ensure dash-spv-ffi exports these symbols and is included in the XCFramework."
