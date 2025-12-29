@@ -1394,7 +1394,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
               options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
-
           });
 
         return configFile;

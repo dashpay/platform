@@ -1,7 +1,10 @@
 /**
  * Requirements for wasm-sdk functional tests.
- * These IDs/contracts should exist on the target network (seeded via SDK_TEST_DATA=true yarn start).
+ * These IDs/contracts should exist on the target network
+ * (seeded via SDK_TEST_DATA=true yarn start).
+ * @returns {object} Test requirements object
  */
+// eslint-disable-next-line import/prefer-default-export
 export function wasmFunctionalTestRequirements() {
   return {
     // Seeded via SDK_TEST_DATA=true (identity id = 32 bytes of 0x01)

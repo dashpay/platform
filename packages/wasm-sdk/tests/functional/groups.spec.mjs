@@ -19,7 +19,9 @@ describe('Group queries', function describeGroupQueries() {
   });
 
   it('fetches identity groups and group members', async () => {
-    const { dpnsContractId: DPNS_CONTRACT, identityId: IDENTITY } = wasmFunctionalTestRequirements();
+    const { dpnsContractId: DPNS_CONTRACT, identityId: IDENTITY } = (
+      wasmFunctionalTestRequirements()
+    );
     // These calls may fail in offline runs; permit network errors
     await client.getIdentityGroups({
       identityId: IDENTITY,

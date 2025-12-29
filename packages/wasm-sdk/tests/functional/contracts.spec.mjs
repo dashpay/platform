@@ -55,10 +55,11 @@ describe('Data contract queries', function describeDataContractQueries() {
   });
 
   // TODO: fix dash drive: proof: corrupted error for historical contract
-  it.skip('getDataContractHistory() returns history for contract', async () => {
+  it.skip('getDataContractHistory() returns history for contract', async function skip() {
     const tokenContractId = tokenContracts[0]?.contractId;
     if (!tokenContractId) {
-      return this.skip();
+      this.skip();
+      return;
     }
 
     const res = await client.getDataContractHistory({

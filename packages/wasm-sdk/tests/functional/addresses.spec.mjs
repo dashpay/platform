@@ -7,8 +7,8 @@ describe('Platform address queries', function describePlatformAddressQueries() {
   wasmFunctionalTestRequirements();
 
   let client;
-  let testHash1;  // P2pkh hash for address with balance
-  let testHash2;  // P2sh hash for address with balance
+  let testHash1; // P2pkh hash for address with balance
+  let testHash2; // P2sh hash for address with balance
 
   before(async () => {
     await init();
