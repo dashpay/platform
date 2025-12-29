@@ -10,6 +10,11 @@ use dpp::data_contract::associated_token::token_configuration_localization::Toke
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::config::DataContractConfig;
@@ -252,7 +257,15 @@ impl<C> Platform<C> {
             allow_transfer_to_frozen_balance: true,
             max_supply_change_rules: ChangeControlRulesV0::default().into(),
             distribution_rules: TokenDistributionRulesV0 {
-                perpetual_distribution: None,
+                perpetual_distribution: Some(
+                    TokenPerpetualDistribution::V0(TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10, // Distribute every 10 blocks
+                            function: DistributionFunction::FixedAmount { amount: 100 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                    }),
+                ),
                 perpetual_distribution_rules: ChangeControlRulesV0::default().into(),
                 pre_programmed_distribution: None,
                 new_tokens_destination_identity: None,

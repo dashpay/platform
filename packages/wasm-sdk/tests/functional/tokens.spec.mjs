@@ -47,6 +47,7 @@ describe('Token queries', function describeTokenQueries() {
   });
 
   it('getTokenPerpetualDistributionLastClaim', async () => {
-    await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, TOKEN_CONTRACT_3);
+    const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT_3, 0);
+    await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, tokenId);
   });
 });
