@@ -12,8 +12,10 @@ use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dpp::check_validation_result_with_data;
 
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_epoch_infos_v0(
@@ -61,9 +63,10 @@ impl<C> Platform<C> {
 
             GetEpochsInfoResponseV0 {
                 result: Some(get_epochs_info_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                        .map(|(_, proof)| proof)?,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let result = check_validation_result_with_data!(self.drive.get_epochs_infos(
@@ -90,7 +93,7 @@ impl<C> Platform<C> {
                 result: Some(get_epochs_info_response_v0::Result::Epochs(EpochInfos {
                     epoch_infos,
                 })),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

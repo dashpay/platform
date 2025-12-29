@@ -30,6 +30,10 @@ pub mod tokens;
 pub mod utils;
 pub mod voting;
 
+pub use core_script::CoreScriptWasm;
+pub use identity::signer::IdentitySignerWasm;
+pub use identity::transitions::pooling::PoolingWasm;
+
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DataContractWasm, DocumentWasm, tokens_configuration_from_js_value,
@@ -42,7 +46,11 @@ pub use identity::{
     IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
     MasternodeVoteTransitionWasm, PartialIdentityWasm,
 };
-pub use platform_address::PlatformAddressWasm;
+pub use platform_address::{
+    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressOutputWasm,
+    PlatformAddressSignerWasm, PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
+};
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
 pub use voting::{

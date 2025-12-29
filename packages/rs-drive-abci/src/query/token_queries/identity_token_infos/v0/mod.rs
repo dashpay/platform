@@ -11,6 +11,8 @@ use dpp::identifier::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_identity_token_infos_v0(
@@ -51,9 +53,10 @@ impl<C> Platform<C> {
 
             GetIdentityTokenInfosResponseV0 {
                 result: Some(get_identity_token_infos_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                        .map(|(_, proof)| proof)?,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let token_infos = self
@@ -80,7 +83,7 @@ impl<C> Platform<C> {
                 result: Some(get_identity_token_infos_response_v0::Result::TokenInfos(
                     TokenInfos { token_infos },
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

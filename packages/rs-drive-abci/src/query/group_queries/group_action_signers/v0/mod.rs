@@ -15,6 +15,8 @@ use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_group_action_signers_v0(
@@ -69,11 +71,12 @@ impl<C> Platform<C> {
                 platform_version,
             ));
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetGroupActionSignersResponseV0 {
-                result: Some(get_group_action_signers_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_group_action_signers_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let group_action_signers = self
@@ -100,7 +103,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

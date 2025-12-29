@@ -100,12 +100,12 @@ export class TokensFacade {
     return w.getTokenContractInfoWithProofInfo(contractId);
   }
 
-  async perpetualDistributionLastClaim(identityId: wasm.IdentifierLike, tokenId: wasm.IdentifierLike): Promise<wasm.TokenLastClaim | undefined> {
+  async perpetualDistributionLastClaim(identityId: wasm.IdentifierLike, tokenId: wasm.IdentifierLike): Promise<wasm.RewardDistributionMoment | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenPerpetualDistributionLastClaim(identityId, tokenId);
   }
 
-  async perpetualDistributionLastClaimWithProof(identityId: wasm.IdentifierLike, tokenId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.TokenLastClaim | undefined>> {
+  async perpetualDistributionLastClaimWithProof(identityId: wasm.IdentifierLike, tokenId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.RewardDistributionMoment | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenPerpetualDistributionLastClaimWithProofInfo(identityId, tokenId);
   }

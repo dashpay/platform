@@ -1534,6 +1534,68 @@ public final class PlatformGrpc {
     return getGetAddressesInfosMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse> getGetAddressesTrunkStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getAddressesTrunkState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse> getGetAddressesTrunkStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse> getGetAddressesTrunkStateMethod;
+    if ((getGetAddressesTrunkStateMethod = PlatformGrpc.getGetAddressesTrunkStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetAddressesTrunkStateMethod = PlatformGrpc.getGetAddressesTrunkStateMethod) == null) {
+          PlatformGrpc.getGetAddressesTrunkStateMethod = getGetAddressesTrunkStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getAddressesTrunkState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getAddressesTrunkState"))
+              .build();
+        }
+      }
+    }
+    return getGetAddressesTrunkStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse> getGetAddressesBranchStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getAddressesBranchState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse> getGetAddressesBranchStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse> getGetAddressesBranchStateMethod;
+    if ((getGetAddressesBranchStateMethod = PlatformGrpc.getGetAddressesBranchStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetAddressesBranchStateMethod = PlatformGrpc.getGetAddressesBranchStateMethod) == null) {
+          PlatformGrpc.getGetAddressesBranchStateMethod = getGetAddressesBranchStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getAddressesBranchState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getAddressesBranchState"))
+              .build();
+        }
+      }
+    }
+    return getGetAddressesBranchStateMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -1940,6 +2002,20 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetAddressesInfosMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getAddressesTrunkState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetAddressesTrunkStateMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getAddressesBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetAddressesBranchStateMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -2285,6 +2361,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesInfosRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesInfosResponse>(
                   this, METHODID_GET_ADDRESSES_INFOS)))
+          .addMethod(
+            getGetAddressesTrunkStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse>(
+                  this, METHODID_GET_ADDRESSES_TRUNK_STATE)))
+          .addMethod(
+            getGetAddressesBranchStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse>(
+                  this, METHODID_GET_ADDRESSES_BRANCH_STATE)))
           .build();
     }
   }
@@ -2709,6 +2799,22 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetAddressesInfosMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getAddressesTrunkState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetAddressesTrunkStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getAddressesBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetAddressesBranchStateMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -3081,6 +3187,20 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesInfosResponse getAddressesInfos(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesInfosRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetAddressesInfosMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse getAddressesTrunkState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetAddressesTrunkStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse getAddressesBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetAddressesBranchStateMethod(), getCallOptions(), request);
     }
   }
 
@@ -3504,6 +3624,22 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetAddressesInfosMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse> getAddressesTrunkState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetAddressesTrunkStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse> getAddressesBranchState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetAddressesBranchStateMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -3555,6 +3691,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 46;
   private static final int METHODID_GET_ADDRESS_INFO = 47;
   private static final int METHODID_GET_ADDRESSES_INFOS = 48;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 49;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 50;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -3769,6 +3907,14 @@ public final class PlatformGrpc {
           serviceImpl.getAddressesInfos((org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesInfosRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesInfosResponse>) responseObserver);
           break;
+        case METHODID_GET_ADDRESSES_TRUNK_STATE:
+          serviceImpl.getAddressesTrunkState((org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesTrunkStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_ADDRESSES_BRANCH_STATE:
+          serviceImpl.getAddressesBranchState((org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -3879,6 +4025,8 @@ public final class PlatformGrpc {
               .addMethod(getGetGroupActionSignersMethod())
               .addMethod(getGetAddressInfoMethod())
               .addMethod(getGetAddressesInfosMethod())
+              .addMethod(getGetAddressesTrunkStateMethod())
+              .addMethod(getGetAddressesBranchStateMethod())
               .build();
         }
       }
