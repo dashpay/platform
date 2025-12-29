@@ -1,5 +1,6 @@
 use super::PlatformAddressWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
 use crate::private_key::PrivateKeyWasm;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
@@ -144,36 +145,9 @@ impl PlatformAddressSignerWasm {
     pub fn private_keys(&self) -> &BTreeMap<PlatformAddressWasm, PrivateKeyWasm> {
         &self.private_keys
     }
-
-    /// Extracts a PlatformAddressSigner from a JS options object.
-    ///
-    /// This helper reads the "signer" field from an options object and converts it
-    /// to a PlatformAddressSignerWasm. Useful for state transition functions that
-    /// need a signer from their options.
-    pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> {
-        Self::try_from_options_with_field(options, "signer")
-    }
-
-    /// Extracts a PlatformAddressSigner from a JS options object with a custom field name.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a PlatformAddressSignerWasm.
-    pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let signer_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if signer_js.is_undefined() || signer_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        Self::try_from(&signer_js)
-    }
 }
+
+impl_try_from_options!(PlatformAddressSignerWasm, "PlatformAddressSigner", "signer");
 
 impl TryFrom<&JsValue> for PlatformAddressSignerWasm {
     type Error = WasmDppError;

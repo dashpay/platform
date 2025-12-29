@@ -4,6 +4,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
 use crate::serialization;
 use crate::utils::IntoWasm;
 use dpp::dashcore::Network;
@@ -348,27 +349,4 @@ impl IdentityPublicKeyWasm {
     }
 }
 
-impl IdentityPublicKeyWasm {
-    /// Extracts an IdentityPublicKey from a JS options object.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to an IdentityPublicKeyWasm.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let key_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if key_js.is_undefined() || key_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        key_js
-            .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
-            .map(|boxed| (*boxed).clone())
-            .map_err(|_| WasmDppError::invalid_argument("Expected an IdentityPublicKey object"))
-    }
-}
+impl_try_from_options!(IdentityPublicKeyWasm, "IdentityPublicKey");

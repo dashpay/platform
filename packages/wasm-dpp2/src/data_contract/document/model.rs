@@ -2,8 +2,9 @@ use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_options;
 use crate::serialization;
-use crate::utils::{IntoWasm, ToSerdeJSONExt};
+use crate::utils::ToSerdeJSONExt;
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
@@ -626,26 +627,4 @@ impl DocumentWasm {
     }
 }
 
-impl DocumentWasm {
-    /// Try to extract a Document from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a DocumentWasm.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let doc_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if doc_js.is_undefined() || doc_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        doc_js
-            .to_wasm::<DocumentWasm>("Document")
-            .map(|boxed| (*boxed).clone())
-    }
-}
+impl_try_from_options!(DocumentWasm, "Document");

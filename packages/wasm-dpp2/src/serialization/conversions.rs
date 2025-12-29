@@ -354,6 +354,112 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
     ))
 }
 
+/// Macro to implement `try_from_options` helper method for extracting a WASM type from an options object.
+///
+/// This generates a method that reads a named field from a JsValue options object and converts it
+/// to the WASM wrapper type using `to_wasm`.
+///
+/// # Usage
+///
+/// ```ignore
+/// // Basic form: requires field_name parameter
+/// impl_try_from_options!(MyTypeWasm, "MyType");
+///
+/// // With default field name: generates both try_from_options() and try_from_options_with_field()
+/// impl_try_from_options!(MySignerWasm, "MySigner", "signer");
+/// ```
+///
+/// The basic form generates:
+/// ```ignore
+/// impl MyTypeWasm {
+///     pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+/// }
+/// ```
+///
+/// The form with default field name generates:
+/// ```ignore
+/// impl MySignerWasm {
+///     pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> { ... }
+///     pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_try_from_options {
+    // Basic form: requires field_name parameter
+    ($wrapper:ty, $type_name:expr) => {
+        impl $wrapper {
+            /// Try to extract this type from an options object field.
+            ///
+            /// This helper reads the specified field from an options object and converts it
+            /// to the WASM wrapper type.
+            pub fn try_from_options(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Self> {
+                let value_js = js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                    .map_err(|_| {
+                        $crate::error::WasmDppError::invalid_argument(format!(
+                            "Missing '{}' field",
+                            field_name
+                        ))
+                    })?;
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Err($crate::error::WasmDppError::invalid_argument(format!(
+                        "'{}' is required",
+                        field_name
+                    )));
+                }
+
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                    .map(|boxed| (*boxed).clone())
+            }
+        }
+    };
+
+    // Form with default field name: generates try_from_options() with default and try_from_options_with_field()
+    ($wrapper:ty, $type_name:expr, $default_field:expr) => {
+        impl $wrapper {
+            /// Try to extract this type from an options object using the default field name.
+            ///
+            /// This helper reads the default field from an options object and converts it
+            /// to the WASM wrapper type.
+            pub fn try_from_options(
+                options: &wasm_bindgen::JsValue,
+            ) -> $crate::error::WasmDppResult<Self> {
+                Self::try_from_options_with_field(options, $default_field)
+            }
+
+            /// Try to extract this type from an options object with a custom field name.
+            ///
+            /// This helper reads the specified field from an options object and converts it
+            /// to the WASM wrapper type.
+            pub fn try_from_options_with_field(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Self> {
+                let value_js = js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                    .map_err(|_| {
+                        $crate::error::WasmDppError::invalid_argument(format!(
+                            "Missing '{}' field",
+                            field_name
+                        ))
+                    })?;
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Err($crate::error::WasmDppError::invalid_argument(format!(
+                        "'{}' is required",
+                        field_name
+                    )));
+                }
+
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                    .map(|boxed| (*boxed).clone())
+            }
+        }
+    };
+}
+
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
 /// for a wasm_bindgen newtype wrapper using the serialization::conversions module.
 ///

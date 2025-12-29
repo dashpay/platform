@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
-use crate::utils::{IntoWasm, ToSerdeJSONExt};
+use crate::utils::ToSerdeJSONExt;
+use crate::{impl_try_from_options, impl_wasm_conversions};
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -178,28 +178,5 @@ impl VotePollWasm {
     }
 }
 
-impl VotePollWasm {
-    /// Try to extract a VotePoll from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a VotePollWasm.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let poll_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if poll_js.is_undefined() || poll_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        poll_js
-            .to_wasm::<VotePollWasm>("VotePoll")
-            .map(|boxed| (*boxed).clone())
-    }
-}
-
+impl_try_from_options!(VotePollWasm, "VotePoll");
 impl_wasm_conversions!(VotePollWasm, VotePoll);

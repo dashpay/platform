@@ -1,8 +1,8 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::impl_try_from_options;
 use crate::serialization;
-use crate::utils::IntoWasm;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -178,26 +178,4 @@ impl IdentityWasm {
     }
 }
 
-impl IdentityWasm {
-    /// Try to extract an Identity from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to an IdentityWasm.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let identity_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if identity_js.is_undefined() || identity_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        identity_js
-            .to_wasm::<IdentityWasm>("Identity")
-            .map(|boxed| (*boxed).clone())
-    }
-}
+impl_try_from_options!(IdentityWasm, "Identity");

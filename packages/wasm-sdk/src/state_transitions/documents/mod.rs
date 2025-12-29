@@ -22,8 +22,18 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::try_to_u64;
+use wasm_dpp2::utils::{IntoWasm, get_class_type, try_to_u64};
 use wasm_dpp2::IdentitySignerWasm;
+
+/// Extracts a string field from a JS options object.
+fn extract_string_from_options(options: &JsValue, field_name: &str) -> Result<String, WasmSdkError> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
+        .map_err(|_| WasmSdkError::invalid_argument(format!("{} is required", field_name)))?;
+
+    value.as_string().ok_or_else(|| {
+        WasmSdkError::invalid_argument(format!("{} must be a string", field_name))
+    })
+}
 
 // ============================================================================
 // Document Create
@@ -265,11 +275,21 @@ const DOCUMENT_DELETE_OPTIONS_TS: &'static str = r#"
  */
 export interface DocumentDeleteOptions {
   /**
-   * The document to delete.
-   * Only needs id, ownerId, dataContractId, and documentTypeName set.
-   * Revision should match the current document revision.
+   * The document to delete - either a Document instance or an object with identifiers.
+   *
+   * @example
+   * // Using a Document instance
+   * { document: myDocument, ... }
+   *
+   * // Using individual fields
+   * { document: { id: "...", ownerId: "...", dataContractId: "...", documentTypeName: "note" }, ... }
    */
-  document: Document;
+  document: Document | {
+    id: IdentifierLike;
+    ownerId: IdentifierLike;
+    dataContractId: IdentifierLike;
+    documentTypeName: string;
+  };
 
   /**
    * The identity public key to use for signing the transition.
@@ -306,7 +326,7 @@ impl WasmSdk {
     /// 2. Creates and signs the document delete transition
     /// 3. Broadcasts and waits for confirmation
     ///
-    /// @param options - Delete options including document, identity key, and signer
+    /// @param options - Delete options including document (or document identifiers), identity key, and signer
     /// @returns Promise that resolves when the document is deleted
     #[wasm_bindgen(js_name = "documentDelete")]
     pub async fn document_delete(
@@ -315,13 +335,41 @@ impl WasmSdk {
     ) -> Result<(), WasmSdkError> {
         let options_value: JsValue = options.into();
 
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options_value, "document")?;
-        let document: Document = document_wasm.clone().into();
+        // Extract document field - can be either a Document instance or plain object
+        let document_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("document"))
+            .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
 
-        // Get metadata from document
-        let contract_id: Identifier = document_wasm.get_data_contract_id().into();
-        let document_type_name = document_wasm.get_document_type_name();
+        if document_js.is_undefined() || document_js.is_null() {
+            return Err(WasmSdkError::invalid_argument("document is required"));
+        }
+
+        // Check if it's a Document instance or a plain object with fields
+        let (document_id, owner_id, contract_id, document_type_name): (
+            Identifier,
+            Identifier,
+            Identifier,
+            String,
+        ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
+            // It's a Document instance - extract fields from it
+            let doc: DocumentWasm = document_js
+                .to_wasm::<DocumentWasm>("Document")
+                .map(|boxed| (*boxed).clone())?;
+            let doc_inner: Document = doc.clone().into();
+            (
+                doc.get_id().into(),
+                doc_inner.owner_id(),
+                doc.get_data_contract_id().into(),
+                doc.get_document_type_name(),
+            )
+        } else {
+            // It's a plain object - extract individual fields
+            (
+                IdentifierWasm::try_from_options(&document_js, "id")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
+                extract_string_from_options(&document_js, "documentTypeName")?,
+            )
+        };
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -340,10 +388,11 @@ impl WasmSdk {
         let settings = extract_settings_from_options(&options_value)?;
 
         // Build and execute delete transition using DocumentDeleteTransitionBuilder
-        let builder = DocumentDeleteTransitionBuilder::from_document(
+        let builder = DocumentDeleteTransitionBuilder::new(
             Arc::new(data_contract),
             document_type_name,
-            &document,
+            document_id,
+            owner_id,
         );
 
         let builder = if let Some(s) = settings {
