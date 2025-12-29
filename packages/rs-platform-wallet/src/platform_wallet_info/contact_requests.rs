@@ -335,7 +335,7 @@ impl PlatformWalletInfo {
         ecdh_provider: dash_sdk::platform::dashpay::EcdhProvider<F, Fut, G, Gut>,
     ) -> Result<(Identifier, Identifier), PlatformWalletError>
     where
-        S: Signer,
+        S: Signer<IdentityPublicKey>,
         F: FnOnce(&IdentityPublicKey, u32) -> Fut,
         Fut: std::future::Future<Output = Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>>,
         G: FnOnce(&dashcore::secp256k1::PublicKey) -> Gut,

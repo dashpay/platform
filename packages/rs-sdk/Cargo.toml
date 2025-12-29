@@ -152,6 +152,9 @@ core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
 
+# Platform wallet support
+wallet = ["core_key_wallet_manager", "core_key_wallet",]
+
 [[example]]
 
 name = "read_contract"

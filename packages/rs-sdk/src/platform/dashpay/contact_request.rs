@@ -114,7 +114,7 @@ pub struct ContactRequestResult {
 }
 
 /// Input for sending a contact request to the platform
-pub struct SendContactRequestInput<S: Signer> {
+pub struct SendContactRequestInput<S: Signer<IdentityPublicKey>> {
     /// The contact request input data
     pub contact_request: ContactRequestInput,
     /// The identity public key to use for signing
@@ -375,7 +375,7 @@ impl Sdk {
     /// Returns an error if:
     /// - Document creation fails (including ECDH encryption)
     /// - State transition submission fails
-    pub async fn send_contact_request<S: Signer, F, Fut, G, Gut, H, Hut>(
+    pub async fn send_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
         &self,
         input: SendContactRequestInput<S>,
         ecdh_provider: EcdhProvider<F, Fut, G, Gut>,

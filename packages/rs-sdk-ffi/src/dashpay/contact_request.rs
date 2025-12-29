@@ -69,7 +69,7 @@ async fn create_contact_request_with_private_key(
     .await
 }
 
-async fn send_contact_request_with_shared_secret<S: dash_sdk::dpp::identity::signer::Signer>(
+async fn send_contact_request_with_shared_secret<S: dash_sdk::dpp::identity::signer::Signer<IdentityPublicKey>>(
     sdk: &Sdk,
     send_input: SendContactRequestInput<S>,
     shared_secret: [u8; 32],
@@ -95,7 +95,7 @@ async fn send_contact_request_with_shared_secret<S: dash_sdk::dpp::identity::sig
     .await
 }
 
-async fn send_contact_request_with_private_key<S: dash_sdk::dpp::identity::signer::Signer>(
+async fn send_contact_request_with_private_key<S: dash_sdk::dpp::identity::signer::Signer<IdentityPublicKey>>(
     sdk: &Sdk,
     send_input: SendContactRequestInput<S>,
     private_key: SecretKey,
