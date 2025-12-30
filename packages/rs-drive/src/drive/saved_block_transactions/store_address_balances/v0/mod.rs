@@ -487,4 +487,257 @@ mod tests {
             Some(&CreditOperation::AddToCredits(400))
         );
     }
+
+    #[test]
+    fn should_query_compacted_data_with_start_height_filter() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Compact after every 2 blocks
+        let platform_version = create_test_platform_version_for_compaction(2, 1000);
+
+        // Create 3 compaction cycles: 100-101, 200-201, 300-301
+        for (base_block, addr) in [(100, ADDR_1), (200, ADDR_2), (300, ADDR_3)] {
+            let mut balances_1 = BTreeMap::new();
+            balances_1.insert(addr, CreditOperation::AddToCredits(100));
+            let mut balances_2 = BTreeMap::new();
+            balances_2.insert(addr, CreditOperation::AddToCredits(100));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances_1,
+                    base_block,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store");
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances_2,
+                    base_block + 1,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store and compact");
+        }
+
+        // Query all compacted data from height 0
+        let all_compacted = drive
+            .fetch_compacted_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(all_compacted.len(), 3, "should have 3 compacted entries");
+
+        // Query compacted data starting from height 150 (should skip first compaction)
+        let from_150 = drive
+            .fetch_compacted_address_balance_changes(150, None, None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(
+            from_150.len(),
+            2,
+            "should have 2 compacted entries when starting from 150"
+        );
+        assert_eq!(from_150[0].0, 200, "first result should start at 200");
+        assert_eq!(from_150[1].0, 300, "second result should start at 300");
+
+        // Query compacted data starting from height 250 (should skip first two)
+        let from_250 = drive
+            .fetch_compacted_address_balance_changes(250, None, None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(
+            from_250.len(),
+            1,
+            "should have 1 compacted entry when starting from 250"
+        );
+        assert_eq!(from_250[0].0, 300, "result should start at 300");
+
+        // Query from height 400 (should return empty)
+        let from_400 = drive
+            .fetch_compacted_address_balance_changes(400, None, None, &platform_version)
+            .expect("should fetch");
+        assert!(
+            from_400.is_empty(),
+            "should have no results when starting after all compactions"
+        );
+    }
+
+    #[test]
+    fn should_query_compacted_data_with_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Compact after every 2 blocks
+        let platform_version = create_test_platform_version_for_compaction(2, 1000);
+
+        // Create 4 compaction cycles
+        for (base_block, addr) in [(100, ADDR_1), (200, ADDR_2), (300, ADDR_3), (400, ADDR_4)] {
+            let mut balances_1 = BTreeMap::new();
+            balances_1.insert(addr, CreditOperation::AddToCredits(100));
+            let mut balances_2 = BTreeMap::new();
+            balances_2.insert(addr, CreditOperation::AddToCredits(100));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances_1,
+                    base_block,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store");
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances_2,
+                    base_block + 1,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store and compact");
+        }
+
+        // Query with limit of 2
+        let limited = drive
+            .fetch_compacted_address_balance_changes(0, Some(2), None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(limited.len(), 2, "should return only 2 entries with limit");
+        assert_eq!(limited[0].0, 100, "first should be 100-101");
+        assert_eq!(limited[1].0, 200, "second should be 200-201");
+
+        // Query with limit of 1
+        let limited_1 = drive
+            .fetch_compacted_address_balance_changes(0, Some(1), None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(limited_1.len(), 1, "should return only 1 entry");
+
+        // Query from height 200 with limit of 2
+        let from_200_limit_2 = drive
+            .fetch_compacted_address_balance_changes(200, Some(2), None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(from_200_limit_2.len(), 2, "should return 2 entries");
+        assert_eq!(from_200_limit_2[0].0, 200, "first should be 200-201");
+        assert_eq!(from_200_limit_2[1].0, 300, "second should be 300-301");
+    }
+
+    #[test]
+    fn should_have_both_recent_and_compacted_data() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Compact after every 3 blocks
+        let platform_version = create_test_platform_version_for_compaction(3, 1000);
+
+        // Store 3 blocks to trigger compaction (100, 101, 102)
+        for block in 100..=102 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(100));
+            drive
+                .store_address_balances_for_block_v0(&balances, block, None, &platform_version)
+                .expect("should store");
+        }
+
+        // Verify compaction happened
+        let compacted = drive
+            .fetch_compacted_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch compacted");
+        assert_eq!(compacted.len(), 1, "should have 1 compacted entry");
+        assert_eq!(compacted[0].0, 100, "start block should be 100");
+        assert_eq!(compacted[0].1, 102, "end block should be 102");
+
+        // Now store 1 more block (not enough to trigger another compaction)
+        let mut balances_103 = BTreeMap::new();
+        balances_103.insert(ADDR_2, CreditOperation::AddToCredits(500));
+        drive
+            .store_address_balances_for_block_v0(&balances_103, 103, None, &platform_version)
+            .expect("should store block 103");
+
+        // Verify we have both compacted AND recent data
+        let compacted_after = drive
+            .fetch_compacted_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch compacted");
+        assert_eq!(
+            compacted_after.len(),
+            1,
+            "should still have 1 compacted entry"
+        );
+
+        let recent = drive
+            .fetch_recent_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch recent");
+        assert_eq!(recent.len(), 1, "should have 1 recent block");
+        assert_eq!(recent[0].0, 103, "recent block should be 103");
+        assert_eq!(
+            recent[0].1.get(&ADDR_2),
+            Some(&CreditOperation::AddToCredits(500))
+        );
+
+        // Store another block - still not enough for compaction
+        let mut balances_104 = BTreeMap::new();
+        balances_104.insert(ADDR_3, CreditOperation::AddToCredits(600));
+        drive
+            .store_address_balances_for_block_v0(&balances_104, 104, None, &platform_version)
+            .expect("should store block 104");
+
+        let recent_2 = drive
+            .fetch_recent_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch recent");
+        assert_eq!(recent_2.len(), 2, "should have 2 recent blocks");
+
+        // Store block 105 - should trigger second compaction
+        let mut balances_105 = BTreeMap::new();
+        balances_105.insert(ADDR_4, CreditOperation::AddToCredits(700));
+        drive
+            .store_address_balances_for_block_v0(&balances_105, 105, None, &platform_version)
+            .expect("should store block 105 and trigger compaction");
+
+        // Verify we now have 2 compacted entries and no recent
+        let final_compacted = drive
+            .fetch_compacted_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch compacted");
+        assert_eq!(final_compacted.len(), 2, "should have 2 compacted entries");
+        assert_eq!(final_compacted[0].0, 100, "first compaction starts at 100");
+        assert_eq!(final_compacted[0].1, 102, "first compaction ends at 102");
+        assert_eq!(final_compacted[1].0, 103, "second compaction starts at 103");
+        assert_eq!(final_compacted[1].1, 105, "second compaction ends at 105");
+
+        let final_recent = drive
+            .fetch_recent_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch recent");
+        assert!(
+            final_recent.is_empty(),
+            "should have no recent blocks after second compaction"
+        );
+    }
+
+    #[test]
+    fn should_query_recent_data_with_start_height_filter() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // High threshold so no compaction happens
+        let platform_version = create_test_platform_version_for_compaction(100, 10000);
+
+        // Store blocks 100, 101, 102, 103
+        for block in 100..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(block));
+            drive
+                .store_address_balances_for_block_v0(&balances, block, None, &platform_version)
+                .expect("should store");
+        }
+
+        // Query all
+        let all = drive
+            .fetch_recent_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(all.len(), 4, "should have 4 blocks");
+
+        // Query from height 101
+        let from_101 = drive
+            .fetch_recent_address_balance_changes(101, None, None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(from_101.len(), 3, "should have 3 blocks from 101");
+        assert_eq!(from_101[0].0, 101, "first should be block 101");
+
+        // Query from height 103
+        let from_103 = drive
+            .fetch_recent_address_balance_changes(103, None, None, &platform_version)
+            .expect("should fetch");
+        assert_eq!(from_103.len(), 1, "should have 1 block from 103");
+
+        // Query from height 200 (after all blocks)
+        let from_200 = drive
+            .fetch_recent_address_balance_changes(200, None, None, &platform_version)
+            .expect("should fetch");
+        assert!(from_200.is_empty(), "should have no blocks from 200");
+    }
 }
