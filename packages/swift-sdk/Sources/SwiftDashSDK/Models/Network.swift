@@ -4,7 +4,18 @@ import Foundation
 public enum AppNetwork: String, CaseIterable, Codable, Sendable {
     case mainnet = "mainnet"
     case testnet = "testnet"
+    case regtest = "regtest"
     case devnet = "devnet"
+    
+    init(network: KeyWalletNetwork) {
+        switch network {
+        case .mainnet: self = .mainnet  // Dash = 0
+        case .testnet: self = .testnet  // Testnet = 1
+        case .regtest: self = .regtest  // Regtest = 2
+        case .devnet: self = .devnet   // Devnet = 3
+        default: self = .mainnet
+        }
+    }
 
     public var displayName: String {
         switch self {
@@ -12,6 +23,8 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
             return "Mainnet"
         case .testnet:
             return "Testnet"
+        case .regtest:
+            return "Regtest"
         case .devnet:
             return "Devnet"
         }
@@ -23,6 +36,8 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
             return DashSDKNetwork(rawValue: 0)
         case .testnet:
             return DashSDKNetwork(rawValue: 1)
+        case .regtest:
+            return DashSDKNetwork(rawValue: 2)
         case .devnet:
             return DashSDKNetwork(rawValue: 3)
         }
@@ -39,6 +54,8 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
             return .mainnet
         case .testnet:
             return .testnet
+        case .regtest:
+            return .regtest
         case .devnet:
             return .devnet
         }
