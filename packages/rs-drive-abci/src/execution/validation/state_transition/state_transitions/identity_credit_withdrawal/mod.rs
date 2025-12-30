@@ -273,7 +273,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
     }
 
@@ -348,7 +348,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
     }
 
@@ -422,7 +422,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
     }
 
@@ -496,7 +496,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
     }
 

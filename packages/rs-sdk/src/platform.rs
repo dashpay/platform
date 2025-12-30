@@ -39,6 +39,7 @@ pub use {
     fetch_unproved::FetchUnproved,
     query::{
         IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
+        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
 };

@@ -1,4 +1,5 @@
 mod decode_raw_state_transitions;
 mod execute_event;
 mod process_raw_state_transitions;
+mod store_address_balances_to_recent_block_storage;
 mod validate_fees_of_event;

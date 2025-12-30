@@ -39,6 +39,39 @@ pub const MAX_CREDITS: Credits = 9223372036854775807 as Credits; //i64 Max
 
 pub const CREDITS_PER_DUFF: Credits = 1000;
 
+/// An enum for credit operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub enum CreditOperation {
+    /// We are setting credit amounts
+    SetCredits(Credits),
+    /// We are adding to credits
+    AddToCredits(Credits),
+}
+
+impl CreditOperation {
+    /// Merges two credit operations, where `other` is applied after `self`.
+    ///
+    /// The merge logic:
+    /// - SetCredits + SetCredits = SetCredits (take the later value)
+    /// - SetCredits + AddToCredits = SetCredits (original set value + added amount)
+    /// - AddToCredits + SetCredits = SetCredits (take the later value)
+    /// - AddToCredits + AddToCredits = AddToCredits (sum of both)
+    pub fn merge(&self, other: &CreditOperation) -> CreditOperation {
+        match (self, other) {
+            // If other is SetCredits, it overrides (it's the most recent set)
+            (_, CreditOperation::SetCredits(value)) => CreditOperation::SetCredits(*value),
+            // If self is SetCredits and other adds, add to the set value
+            (CreditOperation::SetCredits(set_val), CreditOperation::AddToCredits(add_val)) => {
+                CreditOperation::SetCredits(set_val.saturating_add(*add_val))
+            }
+            // If both are AddToCredits, sum them
+            (CreditOperation::AddToCredits(val1), CreditOperation::AddToCredits(val2)) => {
+                CreditOperation::AddToCredits(val1.saturating_add(*val2))
+            }
+        }
+    }
+}
+
 /// Trait for signed and unsigned credits
 pub trait Creditable {
     /// Convert unsigned credit to singed

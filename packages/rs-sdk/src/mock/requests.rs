@@ -36,8 +36,8 @@ use drive::grovedb::GroveTrunkQueryResult;
 use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
-    ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
-    Voters,
+    ProposerBlockCounts, RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
+    RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -504,6 +504,8 @@ impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
 impl_mock_response!(PlatformAddress);
 impl_mock_response!(AddressInfo);
+impl_mock_response!(RecentAddressBalanceChanges);
+impl_mock_response!(RecentCompactedAddressBalanceChanges);
 
 /// MockResponse for GroveTrunkQueryResult - panics when called because the Tree type
 /// doesn't support serialization. Address sync operations should not be mocked.

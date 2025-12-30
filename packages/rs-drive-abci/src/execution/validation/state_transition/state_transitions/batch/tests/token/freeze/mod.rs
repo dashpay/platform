@@ -81,7 +81,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -179,10 +179,12 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::IdentityToFreezeDoesNotExistError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::IdentityToFreezeDoesNotExistError(_)
+                    ),
+                    ..
+                }]
             );
 
             platform
@@ -290,7 +292,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -350,7 +352,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -458,7 +460,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -520,7 +522,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -596,10 +598,12 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                        _
+                    )),
+                    ..
+                }]
             );
 
             platform
@@ -673,7 +677,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -735,7 +739,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -856,7 +860,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -918,10 +922,12 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::IdentityTokenAccountFrozenError(
+                        _
+                    )),
+                    ..
+                }]
             );
 
             platform
@@ -1053,10 +1059,10 @@ mod token_freeze_tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    ..
+                }]
             );
         }
 
@@ -1147,7 +1153,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 res.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1257,7 +1263,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 res.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1375,7 +1381,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1477,7 +1483,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1636,7 +1642,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1696,7 +1702,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1758,7 +1764,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1823,7 +1829,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1988,7 +1994,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2037,7 +2043,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2096,7 +2102,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2144,7 +2150,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2206,7 +2212,7 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2272,12 +2278,12 @@ mod token_freeze_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform

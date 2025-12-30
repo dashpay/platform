@@ -42,7 +42,9 @@ use dapi_grpc::platform::v0::{
     GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
+    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
+    GetRecentCompactedAddressBalanceChangesResponse, GetStatusRequest, GetStatusResponse,
     GetTokenContractInfoRequest, GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
     GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
     GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
@@ -849,6 +851,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_addresses_branch_state,
             "get_addresses_branch_state",
+        )
+        .await
+    }
+
+    async fn get_recent_address_balance_changes(
+        &self,
+        request: Request<GetRecentAddressBalanceChangesRequest>,
+    ) -> Result<Response<GetRecentAddressBalanceChangesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_recent_address_balance_changes,
+            "get_recent_address_balance_changes",
+        )
+        .await
+    }
+
+    async fn get_recent_compacted_address_balance_changes(
+        &self,
+        request: Request<GetRecentCompactedAddressBalanceChangesRequest>,
+    ) -> Result<Response<GetRecentCompactedAddressBalanceChangesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_recent_compacted_address_balance_changes,
+            "get_recent_compacted_address_balance_changes",
         )
         .await
     }

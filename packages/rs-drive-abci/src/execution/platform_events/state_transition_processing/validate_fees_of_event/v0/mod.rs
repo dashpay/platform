@@ -105,6 +105,7 @@ where
                 execution_operations,
                 additional_fixed_fee_cost: additional_fee_cost,
                 user_fee_increase,
+                ..
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
                     ExecutionError::CorruptedCodeExecution(

@@ -16,7 +16,8 @@ use crate::version::drive_versions::{
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformStateMethodVersions, DrivePlatformSystemMethodVersions,
     DrivePrefundedSpecializedMethodVersions, DriveProtocolUpgradeVersions,
-    DriveProveMethodVersions, DriveSystemEstimationCostsMethodVersions, DriveVersion,
+    DriveProveMethodVersions, DriveSavedBlockTransactionsMethodVersions,
+    DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
 use grovedb_version::version::v2::GROVE_V2;
 
@@ -106,6 +107,13 @@ pub const DRIVE_VERSION_V6: DriveVersion = DriveVersion {
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
+        saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
+            store_address_balances: 0,
+            fetch_address_balances: 0,
+            compact_address_balances: 0,
+            max_blocks_before_compaction: 64,
+            max_addresses_before_compaction: 2048,
+        },
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
     grove_version: GROVE_V2,

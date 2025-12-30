@@ -1,6 +1,9 @@
 //! Drive Initialization
 
 use crate::drive::address_funds::queries::CLEAR_ADDRESS_POOL;
+use crate::drive::saved_block_transactions::{
+    ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESS_BALANCES_KEY_U8,
+};
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -40,6 +43,17 @@ impl Drive {
             drive_version,
         )?;
 
+        // SavedBlockTransactions for address-based transaction sync
+        self.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::SavedBlockTransactions as u8],
+            TreeType::NormalTree,
+            transaction,
+            None,
+            &mut vec![],
+            drive_version,
+        )?;
+
         // On lower layers we can use batching
 
         let mut batch =
@@ -64,6 +78,25 @@ impl Drive {
             Self::addresses_path(),
             CLEAR_ADDRESS_POOL.to_vec(),
             Element::empty_provable_count_sum_tree(),
+        );
+
+        // Address balances subtree under SavedBlockTransactions for storing
+        // address balance changes per block. Uses a count sum tree where:
+        // - Each item is an ItemWithSumItem (serialized data + entry count as sum)
+        // - The tree tracks total block count and total address balance entry count
+        batch.add_insert(
+            Self::saved_block_transactions_path(),
+            vec![ADDRESS_BALANCES_KEY_U8],
+            Element::empty_count_sum_tree(),
+        );
+
+        // Compacted address balances subtree under SavedBlockTransactions for storing
+        // compacted/aggregated address balance changes spanning multiple blocks.
+        // Each item is stored with a (start_block, end_block) tuple key.
+        batch.add_insert(
+            Self::saved_block_transactions_path(),
+            vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
+            Element::empty_tree(),
         );
 
         Ok(())
