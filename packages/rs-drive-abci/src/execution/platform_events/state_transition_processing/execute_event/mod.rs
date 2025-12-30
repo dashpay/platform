@@ -41,6 +41,7 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn execute_event(
         &self,
         event: ExecutionEvent,

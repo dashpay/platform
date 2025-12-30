@@ -320,6 +320,7 @@ where
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
