@@ -1977,13 +1977,13 @@ message AddressInfoEntries {
 message AddressBalanceChange {
   bytes address = 1;
   oneof operation {
-    uint64 set_balance = 2;
-    uint64 add_to_balance = 3;
+    uint64 set_balance = 2 [ jstype = JS_STRING ];
+    uint64 add_to_balance = 3 [ jstype = JS_STRING ];
   }
 }
 
 message BlockAddressBalanceChanges {
-  uint64 block_height = 1;
+  uint64 block_height = 1 [ jstype = JS_STRING ];
   repeated AddressBalanceChange changes = 2;
 }
 
@@ -2053,7 +2053,7 @@ message GetAddressesBranchStateResponse {
 
 message GetRecentAddressBalanceChangesRequest {
   message GetRecentAddressBalanceChangesRequestV0 {
-    uint64 start_height = 1;
+    uint64 start_height = 1 [ jstype = JS_STRING ];
     bool prove = 2;
   }
   oneof version { GetRecentAddressBalanceChangesRequestV0 v0 = 1; }

@@ -2,10 +2,10 @@ use crate::drive::Drive;
 use crate::drive::RootTree;
 
 /// The subtree key for address balances storage
-pub const ADDRESS_BALANCES_KEY: &[u8; 1] = b"a";
+pub const ADDRESS_BALANCES_KEY: &[u8; 1] = b"m";
 
 /// The subtree key for address balances storage as u8
-pub const ADDRESS_BALANCES_KEY_U8: u8 = b'a';
+pub const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 
 impl Drive {
     /// Path to saved block transactions storage.
