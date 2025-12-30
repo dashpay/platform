@@ -146,13 +146,15 @@ where
                         estimated_fee_result,
                     ))
                 } else {
+                    let total_required =
+                        required_balance.saturating_add(removed_balance.unwrap_or_default());
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
                         vec![StateError::IdentityInsufficientBalanceError(
                             IdentityInsufficientBalanceError::new(
                                 identity.id,
                                 balance,
-                                required_balance,
+                                total_required,
                             ),
                         )
                         .into()],
