@@ -175,5 +175,5 @@ pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub process_raw_state_transitions: FeatureVersion,
     pub decode_raw_state_transitions: FeatureVersion,
     pub validate_fees_of_event: FeatureVersion,
-    pub store_address_balances_to_recent_block_storage: FeatureVersion,
+    pub store_address_balances_to_recent_block_storage: OptionalFeatureVersion,
 }

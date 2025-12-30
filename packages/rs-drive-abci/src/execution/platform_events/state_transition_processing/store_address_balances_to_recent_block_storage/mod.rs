@@ -44,13 +44,14 @@ where
             .state_transition_processing
             .store_address_balances_to_recent_block_storage
         {
-            0 => self.store_address_balances_to_recent_block_storage_v0(
+            None => Ok(()),
+            Some(0) => self.store_address_balances_to_recent_block_storage_v0(
                 address_balances,
                 block_info,
                 transaction,
                 platform_version,
             ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "store_address_balances_to_recent_block_storage".to_string(),
                 known_versions: vec![0],
                 received: version,
