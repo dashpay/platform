@@ -156,8 +156,8 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use platform_version::version::mocks::v2_test::TEST_PLATFORM_V2;
-    use platform_version::version::PlatformVersion;
+    use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
+    use dpp::version::PlatformVersion;
 
     // Test addresses
     const ADDR_1: PlatformAddress = PlatformAddress::P2pkh([1; 20]);
