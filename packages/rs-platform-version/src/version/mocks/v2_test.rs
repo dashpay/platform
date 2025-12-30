@@ -141,7 +141,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
             address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
-            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0 },
+            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, compact_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -413,6 +413,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 recent_address_balance_changes: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                recent_compacted_address_balance_changes: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

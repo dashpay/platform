@@ -7,6 +7,12 @@ pub const ADDRESS_BALANCES_KEY: &[u8; 1] = b"m";
 /// The subtree key for address balances storage as u8
 pub const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 
+/// The subtree key for address balances storage
+pub const COMPACTED_ADDRESS_BALANCES_KEY: &[u8; 1] = b"c";
+
+/// The subtree key for compacted address balances storage as u8
+pub const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
+
 impl Drive {
     /// Path to saved block transactions storage.
     pub fn saved_block_transactions_path() -> Vec<Vec<u8>> {
@@ -26,6 +32,22 @@ impl Drive {
         [
             Into::<&[u8; 1]>::into(RootTree::SavedBlockTransactions),
             &[ADDRESS_BALANCES_KEY_U8],
+        ]
+    }
+
+    /// Path to compacted address balances under saved block transactions.
+    pub fn saved_compacted_block_transactions_address_balances_path_vec() -> Vec<Vec<u8>> {
+        vec![
+            vec![RootTree::SavedBlockTransactions as u8],
+            vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
+        ]
+    }
+
+    /// Path to compacted address balances under saved block transactions.
+    pub fn saved_compacted_block_transactions_address_balances_path() -> [&'static [u8]; 2] {
+        [
+            Into::<&[u8; 1]>::into(RootTree::SavedBlockTransactions),
+            &[COMPACTED_ADDRESS_BALANCES_KEY_U8],
         ]
     }
 }

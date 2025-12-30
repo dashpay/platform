@@ -106,6 +106,9 @@ pub const DRIVE_VERSION_V4: DriveVersion = DriveVersion {
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
+            compact_address_balances: 0,
+            max_blocks_before_compaction: 64,
+            max_addresses_before_compaction: 2048,
         },
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,

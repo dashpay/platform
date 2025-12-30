@@ -4,7 +4,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -54,13 +54,14 @@ impl Drive {
             })?;
             let block_height = u64::from_be_bytes(height_bytes);
 
-            // Get the serialized data from the element
-            let serialized_data = element.into_item_bytes().map_err(|e| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                    "expected item element for address balances: {:?}",
-                    e
-                ))))
-            })?;
+            // Get the serialized data from the ItemWithSumItem element
+            let Element::ItemWithSumItem(serialized_data, _, _) = element else {
+                return Err(Error::Protocol(Box::new(
+                    ProtocolError::CorruptedSerialization(
+                        "expected item with sum item element for address balances".to_string(),
+                    ),
+                )));
+            };
 
             // Deserialize the address balance map
             let (address_balances, _): (BTreeMap<PlatformAddress, CreditOperation>, usize) =

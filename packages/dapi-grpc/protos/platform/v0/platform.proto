@@ -114,6 +114,8 @@ service Platform {
           returns (GetAddressesBranchStateResponse);
   rpc getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest)
           returns (GetRecentAddressBalanceChangesResponse);
+  rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest)
+          returns (GetRecentCompactedAddressBalanceChangesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -2070,4 +2072,31 @@ message GetRecentAddressBalanceChangesResponse {
   oneof version { GetRecentAddressBalanceChangesResponseV0 v0 = 1; }
 }
 
+message CompactedBlockAddressBalanceChanges {
+  uint64 start_block_height = 1 [ jstype = JS_STRING ];
+  uint64 end_block_height = 2 [ jstype = JS_STRING ];
+  repeated AddressBalanceChange changes = 3;
+}
 
+message CompactedAddressBalanceUpdateEntries {
+  repeated CompactedBlockAddressBalanceChanges compacted_block_changes = 1;
+}
+
+message GetRecentCompactedAddressBalanceChangesRequest {
+  message GetRecentCompactedAddressBalanceChangesRequestV0 {
+    uint64 start_block_height = 1 [ jstype = JS_STRING ];
+    bool prove = 2;
+  }
+  oneof version { GetRecentCompactedAddressBalanceChangesRequestV0 v0 = 1; }
+}
+
+message GetRecentCompactedAddressBalanceChangesResponse {
+  message GetRecentCompactedAddressBalanceChangesResponseV0 {
+    oneof result {
+      CompactedAddressBalanceUpdateEntries compacted_address_balance_update_entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetRecentCompactedAddressBalanceChangesResponseV0 v0 = 1; }
+}

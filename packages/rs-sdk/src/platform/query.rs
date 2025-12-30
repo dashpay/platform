@@ -897,3 +897,74 @@ impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for (EpochIndex, Vec<ProT
         .query(prove)
     }
 }
+
+/// Query for fetching recent address balance changes starting from a block height
+#[derive(Debug, Clone)]
+pub struct RecentAddressBalanceChangesQuery {
+    /// The block height to start fetching from
+    pub start_height: u64,
+}
+
+impl RecentAddressBalanceChangesQuery {
+    /// Create a new query starting from a specific block height
+    pub fn new(start_height: u64) -> Self {
+        Self { start_height }
+    }
+}
+
+impl Query<proto::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanceChangesQuery {
+    fn query(self, prove: bool) -> Result<proto::GetRecentAddressBalanceChangesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetRecentAddressBalanceChangesRequest {
+            version: Some(
+                proto::get_recent_address_balance_changes_request::Version::V0(
+                    proto::get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
+                        start_height: self.start_height,
+                        prove,
+                    },
+                ),
+            ),
+        })
+    }
+}
+
+/// Query for fetching recent compacted address balance changes starting from a block height
+#[derive(Debug, Clone)]
+pub struct RecentCompactedAddressBalanceChangesQuery {
+    /// The block height to start fetching from
+    pub start_block_height: u64,
+}
+
+impl RecentCompactedAddressBalanceChangesQuery {
+    /// Create a new query starting from a specific block height
+    pub fn new(start_block_height: u64) -> Self {
+        Self { start_block_height }
+    }
+}
+
+impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
+    for RecentCompactedAddressBalanceChangesQuery
+{
+    fn query(
+        self,
+        prove: bool,
+    ) -> Result<proto::GetRecentCompactedAddressBalanceChangesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(
+                proto::get_recent_compacted_address_balance_changes_request::Version::V0(
+                    proto::get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
+                        start_block_height: self.start_block_height,
+                        prove,
+                    },
+                ),
+            ),
+        })
+    }
+}
