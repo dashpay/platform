@@ -34,11 +34,11 @@ describe('IdentitiesFacade', () => {
     this.sinon.stub(wasmSdk, 'getIdentitiesContractKeysWithProofInfo').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'identityCreate').resolves('ok');
-    this.sinon.stub(wasmSdk, 'identityTopUp').resolves('ok');
-    this.sinon.stub(wasmSdk, 'identityCreditTransfer').resolves('ok');
-    this.sinon.stub(wasmSdk, 'identityCreditWithdrawal').resolves('ok');
-    this.sinon.stub(wasmSdk, 'identityUpdate').resolves('ok');
+    this.sinon.stub(wasmSdk, 'identityCreate').resolves();
+    this.sinon.stub(wasmSdk, 'identityTopUp').resolves(BigInt(1000));
+    this.sinon.stub(wasmSdk, 'identityCreditTransfer').resolves({ senderBalance: BigInt(500), recipientBalance: BigInt(500) });
+    this.sinon.stub(wasmSdk, 'identityCreditWithdrawal').resolves(BigInt(800));
+    this.sinon.stub(wasmSdk, 'identityUpdate').resolves();
   });
 
   it('fetch() and fetchWithProof() forward to instance methods', async () => {
@@ -135,74 +135,57 @@ describe('IdentitiesFacade', () => {
     expect(wasmSdk.getIdentityTokenBalancesWithProofInfo).to.be.calledOnceWithExactly('id', ['t2']);
   });
 
-  it('create() calls wasmSdk.identityCreate with JSON proof and keys', async () => {
-    await client.identities.create({
+  it('create() calls wasmSdk.identityCreate with options', async () => {
+    const options = {
       assetLockProof: { p: true },
-      assetLockPrivateKeyWif: 'w',
+      signer: { assetLockPrivateKeyWif: 'w' },
       publicKeys: [{ k: 1 }],
-    });
-    expect(wasmSdk.identityCreate).to.be.calledOnce();
-    const [proofJson, wif, keysJson] = wasmSdk.identityCreate.firstCall.args;
-    expect(proofJson).to.equal(JSON.stringify({ p: true }));
-    expect(wif).to.equal('w');
-    expect(keysJson).to.equal(JSON.stringify([{ k: 1 }]));
+    };
+    await client.identities.create(options);
+    expect(wasmSdk.identityCreate).to.be.calledOnceWithExactly(options);
   });
 
-  it('topUp() calls wasmSdk.identityTopUp with JSON proof', async () => {
-    await client.identities.topUp({
+  it('topUp() calls wasmSdk.identityTopUp with options', async () => {
+    const options = {
       identityId: 'id',
       assetLockProof: { p: 1 },
-      assetLockPrivateKeyWif: 'w',
-    });
-    expect(wasmSdk.identityTopUp).to.be.calledOnceWithExactly('id', JSON.stringify({ p: 1 }), 'w');
+      signer: { assetLockPrivateKeyWif: 'w' },
+    };
+    await client.identities.topUp(options);
+    expect(wasmSdk.identityTopUp).to.be.calledOnceWithExactly(options);
   });
 
-  it('creditTransfer() converts amount to BigInt', async () => {
-    await client.identities.creditTransfer({
+  it('creditTransfer() calls wasmSdk.identityCreditTransfer with options', async () => {
+    const options = {
       senderId: 's',
       recipientId: 'r',
-      amount: '5',
-      privateKeyWif: 'w',
-      keyId: 3,
-    });
-    const { args } = wasmSdk.identityCreditTransfer.firstCall;
-    expect(args[0]).to.equal('s');
-    expect(args[1]).to.equal('r');
-    expect(typeof args[2]).to.equal('bigint');
-    expect(args[2]).to.equal(BigInt(5));
-    expect(args.slice(3)).to.deep.equal(['w', 3]);
+      amount: BigInt(5),
+      signer: { privateKeyWif: 'w', keyId: 3 },
+    };
+    await client.identities.creditTransfer(options);
+    expect(wasmSdk.identityCreditTransfer).to.be.calledOnceWithExactly(options);
   });
 
-  it('creditWithdrawal() converts amount to BigInt and passes coreFeePerByte', async () => {
-    await client.identities.creditWithdrawal({
+  it('creditWithdrawal() calls wasmSdk.identityCreditWithdrawal with options', async () => {
+    const options = {
       identityId: 'i',
       toAddress: 'addr',
-      amount: 7,
+      amount: BigInt(7),
       coreFeePerByte: 2,
-      privateKeyWif: 'w',
-      keyId: 4,
-    });
-    const { args } = wasmSdk.identityCreditWithdrawal.firstCall;
-    expect(args[0]).to.equal('i');
-    expect(args[1]).to.equal('addr');
-    expect(args[2]).to.equal(BigInt(7));
-    expect(args[3]).to.equal(2);
-    expect(args[4]).to.equal('w');
-    expect(args[5]).to.equal(4);
+      signer: { privateKeyWif: 'w', keyId: 4 },
+    };
+    await client.identities.creditWithdrawal(options);
+    expect(wasmSdk.identityCreditWithdrawal).to.be.calledOnceWithExactly(options);
   });
 
-  it('update() passes JSON for keys and Uint32Array for disabled key ids', async () => {
-    await client.identities.update({
+  it('update() calls wasmSdk.identityUpdate with options', async () => {
+    const options = {
       identityId: 'i',
       addPublicKeys: [{ k: 1 }],
       disablePublicKeyIds: [10, 20],
-      privateKeyWif: 'w',
-    });
-    const { args } = wasmSdk.identityUpdate.firstCall;
-    expect(args[0]).to.equal('i');
-    expect(args[1]).to.equal(JSON.stringify([{ k: 1 }]));
-    expect(args[2]).to.be.instanceOf(Uint32Array);
-    expect(Array.from(args[2])).to.deep.equal([10, 20]);
-    expect(args[3]).to.equal('w');
+      signer: { privateKeyWif: 'w' },
+    };
+    await client.identities.update(options);
+    expect(wasmSdk.identityUpdate).to.be.calledOnceWithExactly(options);
   });
 });

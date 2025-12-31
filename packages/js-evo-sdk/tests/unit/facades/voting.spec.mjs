@@ -115,11 +115,17 @@ describe('VotingFacade', () => {
     });
   });
 
-  it('masternodeVote() stringifies array indexValues and forwards', async () => {
-    await client.voting.masternodeVote({
-      masternodeProTxHash: 'h', contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['x', 'y'], voteChoice: 'yes', votingKeyWif: 'w',
-    });
-    const { args } = wasmSdk.masternodeVote.firstCall;
-    expect(args).to.deep.equal(['h', 'c', 'dt', 'i', JSON.stringify(['x', 'y']), 'yes', 'w']);
+  it('masternodeVote() calls wasmSdk.masternodeVote with options', async () => {
+    const options = {
+      masternodeProTxHash: 'h',
+      contractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['x', 'y'],
+      voteChoice: 'yes',
+      signer: { votingKeyWif: 'w' },
+    };
+    await client.voting.masternodeVote(options);
+    expect(wasmSdk.masternodeVote).to.be.calledOnceWithExactly(options);
   });
 });

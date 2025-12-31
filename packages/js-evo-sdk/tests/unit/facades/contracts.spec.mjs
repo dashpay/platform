@@ -21,8 +21,8 @@ describe('ContractsFacade', () => {
     this.sinon.stub(wasmSdk, 'getDataContractHistoryWithProofInfo').resolves(true);
     this.sinon.stub(wasmSdk, 'getDataContracts').resolves(true);
     this.sinon.stub(wasmSdk, 'getDataContractsWithProofInfo').resolves(true);
-    this.sinon.stub(wasmSdk, 'contractCreate').resolves(true);
-    this.sinon.stub(wasmSdk, 'contractUpdate').resolves(true);
+    this.sinon.stub(wasmSdk, 'contractPublish').resolves(dataContract);
+    this.sinon.stub(wasmSdk, 'contractUpdate').resolves();
   });
 
   it('fetch() forwards to instance getDataContract', async () => {
@@ -65,24 +65,24 @@ describe('ContractsFacade', () => {
     expect(wasmSdk.getDataContractsWithProofInfo).to.be.calledOnceWithExactly(['x']);
   });
 
-  it('create() calls wasmSdk.contractCreate with JSON', async () => {
-    await client.contracts.create({
+  it('publish() calls wasmSdk.contractPublish with options', async () => {
+    const options = {
       ownerId: 'o',
       definition: { d: 1 },
-      privateKeyWif: 'w',
-      keyId: 2,
-    });
-    expect(wasmSdk.contractCreate).to.be.calledOnceWithExactly('o', JSON.stringify({ d: 1 }), 'w', 2);
+      signer: { privateKeyWif: 'w', keyId: 2 },
+    };
+    await client.contracts.publish(options);
+    expect(wasmSdk.contractPublish).to.be.calledOnceWithExactly(options);
   });
 
-  it('update() calls wasmSdk.contractUpdate with JSON', async () => {
-    await client.contracts.update({
+  it('update() calls wasmSdk.contractUpdate with options', async () => {
+    const options = {
       contractId: 'c',
       ownerId: 'o',
       updates: { u: true },
-      privateKeyWif: 'w',
-      keyId: 4,
-    });
-    expect(wasmSdk.contractUpdate).to.be.calledOnceWithExactly('c', 'o', JSON.stringify({ u: true }), 'w', 4);
+      signer: { privateKeyWif: 'w', keyId: 4 },
+    };
+    await client.contracts.update(options);
+    expect(wasmSdk.contractUpdate).to.be.calledOnceWithExactly(options);
   });
 });
