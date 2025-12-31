@@ -50,3 +50,24 @@ type NetworkLike = Network | string;
 - SDK builder methods
 - Wallet key derivation
 - Address generation/validation
+
+## Error Handling Improvements
+
+### Add Clone to Error Types for Better Retry Error Reporting
+
+**Problem:** When all DAPI addresses become banned due to retryable errors (like Proof verification errors), the SDK returns a generic "no available addresses to use" error instead of the actual underlying error.
+
+**Solution:** Add `Clone` derive to error types across crates to enable storing the last meaningful error in the retry loop.
+
+**Detailed plan:** See `packages/rs-sdk/docs/IMPROVE_RETRY_ERROR_HANDLING.md`
+
+**Affected crates:**
+
+- `rs-sdk` (Error enum)
+- `rs-dapi-client` (DapiClientError)
+- `rs-drive` (drive::error::Error, ProofError)
+- `rs-drive-proof-verifier` (Error)
+- `rs-dpp` (ProtocolError, ConsensusError)
+- `rs-context-provider` (ContextProviderError)
+
+**Blocked test:** `packages/wasm-sdk/tests/functional/contracts.spec.mjs` - `getDataContractHistory()` is skipped pending this fix

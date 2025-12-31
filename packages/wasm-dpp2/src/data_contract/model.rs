@@ -444,7 +444,12 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let schema = js_schema.with_serde_to_platform_value_map()?;
+        // Use platform_value_from_object to match getSchemas' to_object serialization
+        // This preserves integer types properly (avoids JSON round-trip which converts to strings)
+        let schema_value = serialization::platform_value_from_object(js_schema)?;
+        let schema = schema_value
+            .into_btree_string_map()
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         let definitions: Option<BTreeMap<String, Value>> = js_definitions
             .map(|definitions| serde_wasm_bindgen::from_value(definitions.into()))

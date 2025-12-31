@@ -5,20 +5,28 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
-use crate::settings::extract_settings_from_options;
+use crate::settings::{extract_settings_from_options, get_user_fee_increase};
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
-use crate::settings::get_user_fee_increase;
-use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
-use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
-use dash_sdk::dpp::tokens::calculate_token_id;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::tokens::builders::{
+    burn::TokenBurnTransitionBuilder, claim::TokenClaimTransitionBuilder,
+    destroy::TokenDestroyFrozenFundsTransitionBuilder,
+    emergency_action::TokenEmergencyActionTransitionBuilder, freeze::TokenFreezeTransitionBuilder,
+    mint::TokenMintTransitionBuilder, purchase::TokenDirectPurchaseTransitionBuilder,
+    set_price::TokenChangeDirectPurchasePriceTransitionBuilder,
+    transfer::TokenTransferTransitionBuilder, unfreeze::TokenUnfreezeTransitionBuilder,
+};
+use dash_sdk::platform::tokens::transitions::{
+    BurnResult, ClaimResult, DestroyFrozenFundsResult, DirectPurchaseResult, EmergencyActionResult,
+    FreezeResult, MintResult, SetPriceResult, TransferResult, UnfreezeResult,
+};
 use dash_sdk::platform::Fetch;
 use js_sys::BigInt;
 use serde::Deserialize;
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
@@ -167,24 +175,92 @@ fn deserialize_token_mint_options(options: JsValue) -> Result<TokenMintOptionsIn
 }
 
 /// Result of minting tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns recipient ID and new balance
+/// - Tokens with history: returns a document
+/// - Group-managed tokens: returns group power and action status
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenMintResult")]
 pub struct TokenMintResultWasm {
-    recipient_id: IdentifierWasm,
-    new_balance: u64,
+    /// For TokenBalance result - recipient identity ID
+    recipient_id: Option<IdentifierWasm>,
+    /// For TokenBalance or GroupActionWithBalance - the new balance
+    new_balance: Option<u64>,
+    /// For group actions - accumulated group power
+    group_power: Option<u32>,
+    /// For GroupActionWithBalance - action status
+    group_action_status: Option<String>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenMintResult)]
 impl TokenMintResultWasm {
-    /// The recipient's identity ID.
+    /// The recipient's identity ID (for balance results).
     #[wasm_bindgen(getter = "recipientId")]
-    pub fn recipient_id(&self) -> IdentifierWasm {
+    pub fn recipient_id(&self) -> Option<IdentifierWasm> {
         self.recipient_id.clone()
     }
 
     /// The new token balance after minting.
     #[wasm_bindgen(getter = "newBalance")]
-    pub fn new_balance(&self) -> BigInt {
-        BigInt::from(self.new_balance)
+    pub fn new_balance(&self) -> Option<BigInt> {
+        self.new_balance.map(BigInt::from)
+    }
+
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The group action status (for group actions).
+    #[wasm_bindgen(getter = "groupActionStatus")]
+    pub fn group_action_status(&self) -> Option<String> {
+        self.group_action_status.clone()
+    }
+
+    /// The historical document (for tokens with history tracking).
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<MintResult> for TokenMintResultWasm {
+    fn from(result: MintResult) -> Self {
+        match result {
+            MintResult::TokenBalance(recipient_id, balance) => TokenMintResultWasm {
+                recipient_id: Some(recipient_id.into()),
+                new_balance: Some(balance),
+                group_power: None,
+                group_action_status: None,
+                document: None,
+            },
+            MintResult::HistoricalDocument(doc) => TokenMintResultWasm {
+                recipient_id: None,
+                new_balance: None,
+                group_power: None,
+                group_action_status: None,
+                document: Some(doc.into()),
+            },
+            MintResult::GroupActionWithDocument(power, doc) => TokenMintResultWasm {
+                recipient_id: None,
+                new_balance: None,
+                group_power: Some(power as u32),
+                group_action_status: None,
+                document: doc.map(|d| d.into()),
+            },
+            MintResult::GroupActionWithBalance(power, status, balance) => TokenMintResultWasm {
+                recipient_id: None,
+                new_balance: balance,
+                group_power: Some(power as u32),
+                group_action_status: Some(format!("{:?}", status)),
+                document: None,
+            },
+        }
     }
 }
 
@@ -207,7 +283,6 @@ impl WasmSdk {
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let identity_id: Identifier = parsed.identity_id.into();
-        let recipient_id: Option<Identifier> = parsed.recipient_id.map(Into::into);
         let amount = parsed.amount as TokenAmount;
 
         // Extract identity key from options
@@ -218,65 +293,58 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(identity_id, contract_id, true, settings)
-            .await?;
-
-        // Create the mint transition
-        let state_transition = BatchTransition::new_token_mint_transition(
-            token_id,
-            identity_id,
-            contract_id,
+        // Build the mint transition using rs-sdk builder
+        let mut builder = TokenMintTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            identity_id,
             amount,
-            recipient_id,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create mint transition: {}", e)))?;
+        );
 
-        // Broadcast the transition
-        let result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional recipient
+        if let Some(recipient_id) = parsed.recipient_id {
+            builder = builder.issued_to_identity_id(recipient_id.into());
+        }
 
-        // Extract balance from result
-        let new_balance = match result {
-            StateTransitionProofResult::VerifiedTokenBalance(_, balance) => balance,
-            _ => 0,
-        };
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        // If no recipient was specified, tokens go to the issuer
-        let actual_recipient_id = recipient_id.unwrap_or(identity_id);
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
 
-        Ok(TokenMintResultWasm {
-            recipient_id: actual_recipient_id.into(),
-            new_balance,
-        })
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_mint method which handles signing, broadcasting, and result parsing
+        let result = self
+            .inner_sdk()
+            .token_mint(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to mint tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -365,24 +433,90 @@ fn deserialize_token_burn_options(options: JsValue) -> Result<TokenBurnOptionsIn
 }
 
 /// Result of burning tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns owner ID and remaining balance
+/// - Tokens with history: returns a document
+/// - Group-managed tokens: returns group power and action status
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenBurnResult")]
 pub struct TokenBurnResultWasm {
-    identity_id: IdentifierWasm,
-    new_balance: u64,
+    /// For TokenBalance result
+    owner_id: Option<IdentifierWasm>,
+    remaining_balance: Option<u64>,
+    /// For group actions
+    group_power: Option<u32>,
+    group_action_status: Option<String>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenBurnResult)]
 impl TokenBurnResultWasm {
-    /// The identity ID that burned tokens.
-    #[wasm_bindgen(getter = "identityId")]
-    pub fn identity_id(&self) -> IdentifierWasm {
-        self.identity_id.clone()
+    /// The owner's identity ID (for balance results).
+    #[wasm_bindgen(getter = "ownerId")]
+    pub fn owner_id(&self) -> Option<IdentifierWasm> {
+        self.owner_id.clone()
     }
 
-    /// The new token balance after burning.
-    #[wasm_bindgen(getter = "newBalance")]
-    pub fn new_balance(&self) -> BigInt {
-        BigInt::from(self.new_balance)
+    /// The remaining token balance after burning.
+    #[wasm_bindgen(getter = "remainingBalance")]
+    pub fn remaining_balance(&self) -> Option<BigInt> {
+        self.remaining_balance.map(BigInt::from)
+    }
+
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The group action status (for group actions).
+    #[wasm_bindgen(getter = "groupActionStatus")]
+    pub fn group_action_status(&self) -> Option<String> {
+        self.group_action_status.clone()
+    }
+
+    /// The historical document (for tokens with history tracking).
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<BurnResult> for TokenBurnResultWasm {
+    fn from(result: BurnResult) -> Self {
+        match result {
+            BurnResult::TokenBalance(owner_id, balance) => TokenBurnResultWasm {
+                owner_id: Some(owner_id.into()),
+                remaining_balance: Some(balance),
+                group_power: None,
+                group_action_status: None,
+                document: None,
+            },
+            BurnResult::HistoricalDocument(doc) => TokenBurnResultWasm {
+                owner_id: None,
+                remaining_balance: None,
+                group_power: None,
+                group_action_status: None,
+                document: Some(doc.into()),
+            },
+            BurnResult::GroupActionWithDocument(power, doc) => TokenBurnResultWasm {
+                owner_id: None,
+                remaining_balance: None,
+                group_power: Some(power as u32),
+                group_action_status: None,
+                document: doc.map(|d| d.into()),
+            },
+            BurnResult::GroupActionWithBalance(power, status, balance) => TokenBurnResultWasm {
+                owner_id: None,
+                remaining_balance: balance,
+                group_power: Some(power as u32),
+                group_action_status: Some(format!("{:?}", status)),
+                document: None,
+            },
+        }
     }
 }
 
@@ -391,7 +525,7 @@ impl WasmSdk {
     /// Burn tokens from an identity's balance.
     ///
     /// @param options - Burn options including contract ID, token position, amount, and signer
-    /// @returns Promise resolving to TokenBurnResult with the new balance
+    /// @returns Promise resolving to TokenBurnResult with the remaining balance
     #[wasm_bindgen(js_name = "tokenBurn")]
     pub async fn token_burn(
         &self,
@@ -415,61 +549,53 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(identity_id, contract_id, true, settings)
-            .await?;
-
-        // Create the burn transition
-        let state_transition = BatchTransition::new_token_burn_transition(
-            token_id,
-            identity_id,
-            contract_id,
+        // Build the burn transition using rs-sdk builder
+        let mut builder = TokenBurnTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            identity_id,
             amount,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create burn transition: {}", e)))?;
+        );
 
-        // Broadcast the transition
-        let result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        // Extract balance from result
-        let new_balance = match result {
-            StateTransitionProofResult::VerifiedTokenBalance(_, balance) => balance,
-            _ => 0,
-        };
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
 
-        Ok(TokenBurnResultWasm {
-            identity_id: identity_id.into(),
-            new_balance,
-        })
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_burn method
+        let result = self
+            .inner_sdk()
+            .token_burn(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to burn tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -515,6 +641,11 @@ export interface TokenTransferOptions {
   publicNote?: string;
 
   /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
    * Signer containing the private key for the sender's authentication key.
    * Use IdentitySigner to add the authentication key before calling.
    */
@@ -558,31 +689,80 @@ fn deserialize_token_transfer_options(
 }
 
 /// Result of transferring tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns identities balances
+/// - Tokens with history: returns a document
+/// - Group-managed tokens: returns group power and document
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenTransferResult")]
 pub struct TokenTransferResultWasm {
-    sender_id: IdentifierWasm,
-    recipient_id: IdentifierWasm,
-    amount: u64,
+    /// For IdentitiesBalances result - sender's new balance
+    sender_balance: Option<u64>,
+    /// For IdentitiesBalances result - recipient's new balance
+    recipient_balance: Option<u64>,
+    /// For group actions
+    group_power: Option<u32>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenTransferResult)]
 impl TokenTransferResultWasm {
-    /// The sender's identity ID.
-    #[wasm_bindgen(getter = "senderId")]
-    pub fn sender_id(&self) -> IdentifierWasm {
-        self.sender_id.clone()
+    /// The sender's new balance after transfer.
+    #[wasm_bindgen(getter = "senderBalance")]
+    pub fn sender_balance(&self) -> Option<BigInt> {
+        self.sender_balance.map(BigInt::from)
     }
 
-    /// The recipient's identity ID.
-    #[wasm_bindgen(getter = "recipientId")]
-    pub fn recipient_id(&self) -> IdentifierWasm {
-        self.recipient_id.clone()
+    /// The recipient's new balance after transfer.
+    #[wasm_bindgen(getter = "recipientBalance")]
+    pub fn recipient_balance(&self) -> Option<BigInt> {
+        self.recipient_balance.map(BigInt::from)
     }
 
-    /// The amount of tokens transferred.
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The historical document (for tokens with history tracking).
     #[wasm_bindgen(getter)]
-    pub fn amount(&self) -> BigInt {
-        BigInt::from(self.amount)
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<TransferResult> for TokenTransferResultWasm {
+    fn from(result: TransferResult) -> Self {
+        match result {
+            TransferResult::IdentitiesBalances(balances) => {
+                // Get the first two balances (sender and recipient)
+                let mut iter = balances.into_values();
+                let first_balance = iter.next();
+                let second_balance = iter.next();
+                TokenTransferResultWasm {
+                    sender_balance: first_balance,
+                    recipient_balance: second_balance,
+                    group_power: None,
+                    document: None,
+                }
+            }
+            TransferResult::HistoricalDocument(doc) => TokenTransferResultWasm {
+                sender_balance: None,
+                recipient_balance: None,
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            TransferResult::GroupActionWithDocument(power, doc) => TokenTransferResultWasm {
+                sender_balance: None,
+                recipient_balance: None,
+                group_power: Some(power as u32),
+                document: doc.map(|d| d.into()),
+            },
+        }
     }
 }
 
@@ -624,52 +804,45 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(sender_id, contract_id, true, settings)
-            .await?;
-
-        // Create the transfer transition
-        let state_transition = BatchTransition::new_token_transfer_transition(
-            token_id,
-            sender_id,
-            contract_id,
+        // Build the transfer transition using rs-sdk builder
+        let mut builder = TokenTransferTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
-            amount,
+            sender_id,
             recipient_id,
-            parsed.public_note,
-            None, // shared_encrypted_note
-            None, // private_encrypted_note
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create transfer transition: {}", e))
-        })?;
+            amount,
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        Ok(TokenTransferResultWasm {
-            sender_id: sender_id.into(),
-            recipient_id: recipient_id.into(),
-            amount: parsed.amount,
-        })
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_transfer method
+        let result = self
+            .inner_sdk()
+            .token_transfer(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to transfer tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -751,21 +924,76 @@ struct TokenFreezeOptionsInput {
 fn deserialize_token_freeze_options(
     options: JsValue,
 ) -> Result<TokenFreezeOptionsInput, WasmSdkError> {
-    deserialize_required_query(options, "Options object is required", "token freeze options")
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token freeze options",
+    )
 }
 
 /// Result of freezing tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns frozen identity ID
+/// - Tokens with history: returns a document
+/// - Group-managed tokens: returns group power and status
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenFreezeResult")]
 pub struct TokenFreezeResultWasm {
-    frozen_identity_id: IdentifierWasm,
+    /// For IdentityInfo result
+    frozen_identity_id: Option<IdentifierWasm>,
+    /// For group actions
+    group_power: Option<u32>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenFreezeResult)]
 impl TokenFreezeResultWasm {
     /// The identity ID that was frozen.
     #[wasm_bindgen(getter = "frozenIdentityId")]
-    pub fn frozen_identity_id(&self) -> IdentifierWasm {
+    pub fn frozen_identity_id(&self) -> Option<IdentifierWasm> {
         self.frozen_identity_id.clone()
+    }
+
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The historical document (for tokens with history tracking).
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<FreezeResult> for TokenFreezeResultWasm {
+    fn from(result: FreezeResult) -> Self {
+        match result {
+            FreezeResult::IdentityInfo(frozen_id, _info) => TokenFreezeResultWasm {
+                frozen_identity_id: Some(frozen_id.into()),
+                group_power: None,
+                document: None,
+            },
+            FreezeResult::HistoricalDocument(doc) => TokenFreezeResultWasm {
+                frozen_identity_id: None,
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            FreezeResult::GroupActionWithDocument(power, doc) => TokenFreezeResultWasm {
+                frozen_identity_id: None,
+                group_power: Some(power as u32),
+                document: doc.map(|d| d.into()),
+            },
+            FreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenFreezeResultWasm {
+                frozen_identity_id: None,
+                group_power: Some(power as u32),
+                document: None,
+            },
+        }
     }
 }
 
@@ -798,54 +1026,53 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
-            .await?;
-
-        // Create the freeze transition
-        let state_transition = BatchTransition::new_token_freeze_transition(
-            token_id,
-            authority_id,
-            contract_id,
+        // Build the freeze transition using rs-sdk builder
+        let mut builder = TokenFreezeTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            authority_id,
             frozen_identity_id,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create freeze transition: {}", e)))?;
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        Ok(TokenFreezeResultWasm {
-            frozen_identity_id: frozen_identity_id.into(),
-        })
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
+
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_freeze method
+        let result = self
+            .inner_sdk()
+            .token_freeze(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to freeze tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -935,17 +1162,68 @@ fn deserialize_token_unfreeze_options(
 }
 
 /// Result of unfreezing tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns unfrozen identity ID
+/// - Tokens with history: returns a document
+/// - Group-managed tokens: returns group power and status
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenUnfreezeResult")]
 pub struct TokenUnfreezeResultWasm {
-    unfrozen_identity_id: IdentifierWasm,
+    /// For IdentityInfo result
+    unfrozen_identity_id: Option<IdentifierWasm>,
+    /// For group actions
+    group_power: Option<u32>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenUnfreezeResult)]
 impl TokenUnfreezeResultWasm {
     /// The identity ID that was unfrozen.
     #[wasm_bindgen(getter = "unfrozenIdentityId")]
-    pub fn unfrozen_identity_id(&self) -> IdentifierWasm {
+    pub fn unfrozen_identity_id(&self) -> Option<IdentifierWasm> {
         self.unfrozen_identity_id.clone()
+    }
+
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The historical document (for tokens with history tracking).
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<UnfreezeResult> for TokenUnfreezeResultWasm {
+    fn from(result: UnfreezeResult) -> Self {
+        match result {
+            UnfreezeResult::IdentityInfo(unfrozen_id, _info) => TokenUnfreezeResultWasm {
+                unfrozen_identity_id: Some(unfrozen_id.into()),
+                group_power: None,
+                document: None,
+            },
+            UnfreezeResult::HistoricalDocument(doc) => TokenUnfreezeResultWasm {
+                unfrozen_identity_id: None,
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            UnfreezeResult::GroupActionWithDocument(power, doc) => TokenUnfreezeResultWasm {
+                unfrozen_identity_id: None,
+                group_power: Some(power as u32),
+                document: doc.map(|d| d.into()),
+            },
+            UnfreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenUnfreezeResultWasm {
+                unfrozen_identity_id: None,
+                group_power: Some(power as u32),
+                document: None,
+            },
+        }
     }
 }
 
@@ -978,56 +1256,53 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
-            .await?;
-
-        // Create the unfreeze transition
-        let state_transition = BatchTransition::new_token_unfreeze_transition(
-            token_id,
-            authority_id,
-            contract_id,
+        // Build the unfreeze transition using rs-sdk builder
+        let mut builder = TokenUnfreezeTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            authority_id,
             frozen_identity_id,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create unfreeze transition: {}", e))
-        })?;
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        Ok(TokenUnfreezeResultWasm {
-            unfrozen_identity_id: frozen_identity_id.into(),
-        })
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
+
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_unfreeze_identity method
+        let result = self
+            .inner_sdk()
+            .token_unfreeze_identity(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to unfreeze tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -1117,17 +1392,49 @@ fn deserialize_token_destroy_frozen_options(
 }
 
 /// Result of destroying frozen tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns historical document
+/// - Group-managed tokens: returns group power and document
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenDestroyFrozenResult")]
 pub struct TokenDestroyFrozenResultWasm {
-    destroyed_identity_id: IdentifierWasm,
+    /// For group actions
+    group_power: Option<u32>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenDestroyFrozenResult)]
 impl TokenDestroyFrozenResultWasm {
-    /// The identity ID whose tokens were destroyed.
-    #[wasm_bindgen(getter = "destroyedIdentityId")]
-    pub fn destroyed_identity_id(&self) -> IdentifierWasm {
-        self.destroyed_identity_id.clone()
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The historical document (for tokens with history tracking).
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<DestroyFrozenFundsResult> for TokenDestroyFrozenResultWasm {
+    fn from(result: DestroyFrozenFundsResult) -> Self {
+        match result {
+            DestroyFrozenFundsResult::HistoricalDocument(doc) => TokenDestroyFrozenResultWasm {
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            DestroyFrozenFundsResult::GroupActionWithDocument(power, doc) => {
+                TokenDestroyFrozenResultWasm {
+                    group_power: Some(power as u32),
+                    document: doc.map(|d| d.into()),
+                }
+            }
+        }
     }
 }
 
@@ -1160,59 +1467,55 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id = Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
-            .await?;
-
-        // Create the destroy frozen transition
-        let state_transition = BatchTransition::new_token_destroy_frozen_funds_transition(
-            token_id,
-            authority_id,
-            contract_id,
+        // Build the destroy frozen transition using rs-sdk builder
+        let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            authority_id,
             frozen_identity_id,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!(
-                "Failed to create destroy frozen transition: {}",
-                e
-            ))
-        })?;
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        Ok(TokenDestroyFrozenResultWasm {
-            destroyed_identity_id: frozen_identity_id.into(),
-        })
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
+
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_destroy_frozen_funds method
+        let result = self
+            .inner_sdk()
+            .token_destroy_frozen_funds(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to destroy frozen tokens: {}", e))
+            })?;
+
+        Ok(result.into())
     }
 }
 
@@ -1302,17 +1605,49 @@ fn deserialize_token_emergency_action_options(
 }
 
 /// Result of an emergency action.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns document
+/// - Group-managed tokens: returns group power and document
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenEmergencyActionResult")]
 pub struct TokenEmergencyActionResultWasm {
-    action: String,
+    /// For group actions
+    group_power: Option<u32>,
+    /// The document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenEmergencyActionResult)]
 impl TokenEmergencyActionResultWasm {
-    /// The action that was performed ("pause" or "resume").
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The document.
     #[wasm_bindgen(getter)]
-    pub fn action(&self) -> String {
-        self.action.clone()
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<EmergencyActionResult> for TokenEmergencyActionResultWasm {
+    fn from(result: EmergencyActionResult) -> Self {
+        match result {
+            EmergencyActionResult::Document(doc) => TokenEmergencyActionResultWasm {
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            EmergencyActionResult::GroupActionWithDocument(power, doc) => {
+                TokenEmergencyActionResultWasm {
+                    group_power: Some(power as u32),
+                    document: doc.map(|d| d.into()),
+                }
+            }
+        }
     }
 }
 
@@ -1327,8 +1662,6 @@ impl WasmSdk {
         &self,
         options: TokenEmergencyActionOptionsJs,
     ) -> Result<TokenEmergencyActionResultWasm, WasmSdkError> {
-        use dash_sdk::dpp::tokens::emergency_action::TokenEmergencyAction;
-
         let options_value: JsValue = options.into();
 
         // Deserialize and validate options
@@ -1338,17 +1671,6 @@ impl WasmSdk {
         let contract_id: Identifier = parsed.data_contract_id.into();
         let authority_id: Identifier = parsed.authority_id.into();
 
-        // Parse the action
-        let emergency_action = match parsed.action.to_lowercase().as_str() {
-            "pause" => TokenEmergencyAction::Pause,
-            "resume" => TokenEmergencyAction::Resume,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(
-                    "action must be 'pause' or 'resume'",
-                ))
-            }
-        };
-
         // Extract identity key from options
         let identity_key_wasm =
             IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
@@ -1357,57 +1679,67 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id =
-            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
+        // Build the emergency action transition using rs-sdk builder
+        // Use the appropriate constructor based on the action
+        let mut builder = match parsed.action.to_lowercase().as_str() {
+            "pause" => TokenEmergencyActionTransitionBuilder::pause(
+                Arc::new(data_contract),
+                parsed.token_position,
+                authority_id,
+            ),
+            "resume" => TokenEmergencyActionTransitionBuilder::resume(
+                Arc::new(data_contract),
+                parsed.token_position,
+                authority_id,
+            ),
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "action must be 'pause' or 'resume'",
+                ))
+            }
+        };
+
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
+
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_emergency_action method
+        let result = self
             .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
-            .await?;
+            .token_emergency_action(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to perform emergency action: {}", e))
+            })?;
 
-        // Create the emergency action transition
-        let state_transition = BatchTransition::new_token_emergency_action_transition(
-            token_id,
-            authority_id,
-            contract_id,
-            parsed.token_position,
-            emergency_action,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create emergency action transition: {}", e))
-        })?;
-
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
-
-        Ok(TokenEmergencyActionResultWasm {
-            action: parsed.action,
-        })
+        Ok(result.into())
     }
 }
 
@@ -1484,29 +1816,54 @@ struct TokenClaimOptionsInput {
     public_note: Option<String>,
 }
 
-fn deserialize_token_claim_options(options: JsValue) -> Result<TokenClaimOptionsInput, WasmSdkError> {
+fn deserialize_token_claim_options(
+    options: JsValue,
+) -> Result<TokenClaimOptionsInput, WasmSdkError> {
     deserialize_required_query(options, "Options object is required", "token claim options")
 }
 
 /// Result of claiming tokens.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns document
+/// - Group-managed tokens: returns group power and document
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenClaimResult")]
 pub struct TokenClaimResultWasm {
-    identity_id: IdentifierWasm,
-    distribution_type: String,
+    /// For group actions
+    group_power: Option<u32>,
+    /// The document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenClaimResult)]
 impl TokenClaimResultWasm {
-    /// The identity ID that claimed tokens.
-    #[wasm_bindgen(getter = "identityId")]
-    pub fn identity_id(&self) -> IdentifierWasm {
-        self.identity_id.clone()
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
     }
 
-    /// The distribution type that was claimed from.
-    #[wasm_bindgen(getter = "distributionType")]
-    pub fn distribution_type(&self) -> String {
-        self.distribution_type.clone()
+    /// The document.
+    #[wasm_bindgen(getter)]
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<ClaimResult> for TokenClaimResultWasm {
+    fn from(result: ClaimResult) -> Self {
+        match result {
+            ClaimResult::Document(doc) => TokenClaimResultWasm {
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            ClaimResult::GroupActionWithDocument(power, doc) => TokenClaimResultWasm {
+                group_power: Some(power as u32),
+                document: Some(doc.into()),
+            },
+        }
     }
 }
 
@@ -1552,47 +1909,44 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id =
-            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(identity_id, contract_id, true, settings)
-            .await?;
-
-        // Create the claim transition
-        let state_transition = BatchTransition::new_token_claim_transition(
-            token_id,
-            identity_id,
-            contract_id,
+        // Build the claim transition using rs-sdk builder
+        let mut builder = TokenClaimTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            identity_id,
             distribution_type,
-            parsed.public_note,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create claim transition: {}", e)))?;
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
 
-        Ok(TokenClaimResultWasm {
-            identity_id: identity_id.into(),
-            distribution_type: parsed.distribution_type,
-        })
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_claim method
+        let result = self
+            .inner_sdk()
+            .token_claim(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to claim tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -1684,17 +2038,70 @@ fn deserialize_token_set_price_options(
 }
 
 /// Result of setting the token price.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns pricing schedule
+/// - Tokens with history: returns document
+/// - Group-managed tokens: returns group power and status
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenSetPriceResult")]
 pub struct TokenSetPriceResultWasm {
-    price: Option<u64>,
+    /// For group actions
+    group_power: Option<u32>,
+    /// Group action status
+    group_action_status: Option<String>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenSetPriceResult)]
 impl TokenSetPriceResultWasm {
-    /// The new price that was set, or null if purchases are disabled.
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The group action status (for group actions).
+    #[wasm_bindgen(getter = "groupActionStatus")]
+    pub fn group_action_status(&self) -> Option<String> {
+        self.group_action_status.clone()
+    }
+
+    /// The historical document (for tokens with history tracking).
     #[wasm_bindgen(getter)]
-    pub fn price(&self) -> Option<BigInt> {
-        self.price.map(BigInt::from)
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<SetPriceResult> for TokenSetPriceResultWasm {
+    fn from(result: SetPriceResult) -> Self {
+        match result {
+            SetPriceResult::PricingSchedule(_owner_id, _schedule) => TokenSetPriceResultWasm {
+                group_power: None,
+                group_action_status: None,
+                document: None,
+            },
+            SetPriceResult::HistoricalDocument(doc) => TokenSetPriceResultWasm {
+                group_power: None,
+                group_action_status: None,
+                document: Some(doc.into()),
+            },
+            SetPriceResult::GroupActionWithDocument(power, doc) => TokenSetPriceResultWasm {
+                group_power: Some(power as u32),
+                group_action_status: None,
+                document: doc.map(|d| d.into()),
+            },
+            SetPriceResult::GroupActionWithPricingSchedule(power, status, _schedule) => {
+                TokenSetPriceResultWasm {
+                    group_power: Some(power as u32),
+                    group_action_status: Some(format!("{:?}", status)),
+                    document: None,
+                }
+            }
+        }
     }
 }
 
@@ -1731,57 +2138,57 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Extract optional group info from options
-        let group_info = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )?
-        .map(Into::into);
-
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id =
-            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(authority_id, contract_id, true, settings)
-            .await?;
-
-        // Create the set price transition
-        let state_transition = BatchTransition::new_token_change_direct_purchase_price_transition(
-            token_id,
-            authority_id,
-            contract_id,
+        // Build the set price transition using rs-sdk builder
+        let mut builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
-            pricing_schedule,
-            parsed.public_note,
-            group_info,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create set price transition: {}", e))
-        })?;
+            authority_id,
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Set pricing schedule
+        if let Some(schedule) = pricing_schedule {
+            builder = builder.with_token_pricing_schedule(schedule);
+        }
 
-        Ok(TokenSetPriceResultWasm {
-            price: parsed.price,
-        })
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        // Add optional group info
+        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
+            &options_value,
+            "groupInfo",
+        )? {
+            builder = builder.with_using_group_info(group_info.into());
+        }
+
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
+
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_set_price_for_direct_purchase method
+        let result = self
+            .inner_sdk()
+            .token_set_price_for_direct_purchase(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to set token price: {}", e)))?;
+
+        Ok(result.into())
     }
 }
 
@@ -1864,24 +2271,78 @@ fn deserialize_token_direct_purchase_options(
 }
 
 /// Result of a direct token purchase.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns balance
+/// - Tokens with history: returns document
+/// - Group-managed tokens: returns group power and document
+///
+/// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenDirectPurchaseResult")]
 pub struct TokenDirectPurchaseResultWasm {
-    buyer_id: IdentifierWasm,
-    amount: u64,
+    /// For TokenBalance result
+    buyer_id: Option<IdentifierWasm>,
+    /// New balance after purchase
+    new_balance: Option<u64>,
+    /// For group actions
+    group_power: Option<u32>,
+    /// For HistoricalDocument or GroupActionWithDocument - the document
+    document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenDirectPurchaseResult)]
 impl TokenDirectPurchaseResultWasm {
     /// The buyer's identity ID.
     #[wasm_bindgen(getter = "buyerId")]
-    pub fn buyer_id(&self) -> IdentifierWasm {
+    pub fn buyer_id(&self) -> Option<IdentifierWasm> {
         self.buyer_id.clone()
     }
 
-    /// The amount of tokens purchased.
+    /// The buyer's new balance after purchase.
+    #[wasm_bindgen(getter = "newBalance")]
+    pub fn new_balance(&self) -> Option<BigInt> {
+        self.new_balance.map(BigInt::from)
+    }
+
+    /// The accumulated group power (for group actions).
+    #[wasm_bindgen(getter = "groupPower")]
+    pub fn group_power(&self) -> Option<u32> {
+        self.group_power
+    }
+
+    /// The historical document (for tokens with history tracking).
     #[wasm_bindgen(getter)]
-    pub fn amount(&self) -> BigInt {
-        BigInt::from(self.amount)
+    pub fn document(&self) -> Option<DocumentWasm> {
+        self.document.clone()
+    }
+}
+
+impl From<DirectPurchaseResult> for TokenDirectPurchaseResultWasm {
+    fn from(result: DirectPurchaseResult) -> Self {
+        match result {
+            DirectPurchaseResult::TokenBalance(buyer_id, balance) => {
+                TokenDirectPurchaseResultWasm {
+                    buyer_id: Some(buyer_id.into()),
+                    new_balance: Some(balance),
+                    group_power: None,
+                    document: None,
+                }
+            }
+            DirectPurchaseResult::HistoricalDocument(doc) => TokenDirectPurchaseResultWasm {
+                buyer_id: None,
+                new_balance: None,
+                group_power: None,
+                document: Some(doc.into()),
+            },
+            DirectPurchaseResult::GroupActionWithDocument(power, doc) => {
+                TokenDirectPurchaseResultWasm {
+                    buyer_id: None,
+                    new_balance: None,
+                    group_power: Some(power as u32),
+                    document: doc.map(|d| d.into()),
+                }
+            }
+        }
     }
 }
 
@@ -1916,48 +2377,39 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
-
-        // Calculate token ID
-        let token_id =
-            Identifier::new(calculate_token_id(contract_id.as_bytes(), parsed.token_position));
+        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Get identity nonce for the token contract
-        let identity_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(buyer_id, contract_id, true, settings)
-            .await?;
-
-        // Create the direct purchase transition
-        let state_transition = BatchTransition::new_token_direct_purchase_transition(
-            token_id,
-            buyer_id,
-            contract_id,
+        // Build the direct purchase transition using rs-sdk builder
+        let mut builder = TokenDirectPurchaseTransitionBuilder::new(
+            Arc::new(data_contract),
             parsed.token_position,
+            buyer_id,
             amount,
             max_total_cost,
-            &identity_key,
-            identity_nonce,
-            get_user_fee_increase(settings.as_ref()),
-            &signer,
-            self.inner_sdk().version(),
-            None, // options
-        )
-        .map_err(|e| {
-            WasmSdkError::generic(format!("Failed to create direct purchase transition: {}", e))
-        })?;
+        );
 
-        // Broadcast the transition
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
-            .await?;
+        // Add settings
+        if let Some(settings) = settings {
+            builder = builder.with_settings(settings);
+        }
 
-        Ok(TokenDirectPurchaseResultWasm {
-            buyer_id: buyer_id.into(),
-            amount: parsed.amount,
-        })
+        // Add user fee increase from settings
+        let user_fee_increase =
+            get_user_fee_increase(extract_settings_from_options(&options_value)?.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_purchase method
+        let result = self
+            .inner_sdk()
+            .token_purchase(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to purchase tokens: {}", e)))?;
+
+        Ok(result.into())
     }
 }

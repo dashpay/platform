@@ -9,6 +9,7 @@ use crate::private_key::PrivateKeyWasm;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::signer;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -20,8 +21,8 @@ use wasm_bindgen::prelude::*;
 
 /// A signer for identity-based state transitions.
 ///
-/// This signer holds private keys mapped by their public key hash (for ECDSA_HASH160 keys)
-/// and can sign state transitions that require identity keys.
+/// Private keys are stored by their public key hash (20 bytes).
+/// Both ECDSA_HASH160 and ECDSA_SECP256K1 keys are looked up by hash160.
 #[wasm_bindgen(js_name = "IdentitySigner")]
 #[derive(Clone, Default)]
 pub struct IdentitySignerWasm {
@@ -37,8 +38,23 @@ impl fmt::Debug for IdentitySignerWasm {
     }
 }
 
+/// Compute hash160 (RIPEMD160(SHA256(data))) of a compressed public key.
+fn hash160(pubkey: &[u8]) -> [u8; 20] {
+    dpp::dashcore::hashes::hash160::Hash::hash(pubkey).to_byte_array()
+}
+
 #[wasm_bindgen(js_class = IdentitySigner)]
 impl IdentitySignerWasm {
+    #[wasm_bindgen(getter = __type)]
+    pub fn type_name(&self) -> String {
+        "IdentitySigner".to_string()
+    }
+
+    #[wasm_bindgen(getter = __struct)]
+    pub fn struct_name() -> String {
+        "IdentitySigner".to_string()
+    }
+
     /// Creates a new empty IdentitySigner.
     #[wasm_bindgen(constructor)]
     pub fn new() -> IdentitySignerWasm {
@@ -49,8 +65,7 @@ impl IdentitySignerWasm {
 
     /// Adds a private key to the signer.
     ///
-    /// The public key hash is derived automatically from the private key using
-    /// Hash160(compressed_public_key) where Hash160 = RIPEMD160(SHA256(x)).
+    /// The key is stored by public key hash (20 bytes): Hash160(compressed_public_key)
     ///
     /// @param privateKey - The PrivateKey object
     #[wasm_bindgen(js_name = "addKey")]
@@ -60,11 +75,12 @@ impl IdentitySignerWasm {
             .try_into()
             .map_err(|_| WasmDppError::invalid_argument("Private key must be 32 bytes"))?;
 
-        // Derive public key hash from private key using From<&PrivateKey> for PlatformAddress
+        // Derive public key hash from private key
         let platform_address = PlatformAddress::from(private_key.inner());
         let public_key_hash = *platform_address.hash();
 
         self.private_keys.insert(public_key_hash, private_key_bytes);
+
         Ok(())
     }
 
@@ -77,15 +93,46 @@ impl IdentitySignerWasm {
         self.add_key(&private_key)
     }
 
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentitySigner".to_string()
-    }
-
     /// Returns the number of keys in this signer.
     #[wasm_bindgen(getter = keyCount)]
     pub fn key_count(&self) -> usize {
         self.private_keys.len()
+    }
+}
+
+impl IdentitySignerWasm {
+    /// Get the public key hash from an identity public key.
+    /// For ECDSA_HASH160: the key data is already the hash.
+    /// For ECDSA_SECP256K1: compute hash160 of the compressed public key.
+    fn get_key_hash(identity_public_key: &IdentityPublicKey) -> Result<[u8; 20], ProtocolError> {
+        let key_data = identity_public_key.data().as_slice();
+
+        match identity_public_key.key_type() {
+            KeyType::ECDSA_HASH160 => {
+                if key_data.len() != 20 {
+                    return Err(ProtocolError::Generic(format!(
+                        "Expected 20-byte public key hash for ECDSA_HASH160, got {} bytes",
+                        key_data.len()
+                    )));
+                }
+                let mut key_hash = [0u8; 20];
+                key_hash.copy_from_slice(key_data);
+                Ok(key_hash)
+            }
+            KeyType::ECDSA_SECP256K1 => {
+                if key_data.len() != 33 {
+                    return Err(ProtocolError::Generic(format!(
+                        "Expected 33-byte compressed public key for ECDSA_SECP256K1, got {} bytes",
+                        key_data.len()
+                    )));
+                }
+                Ok(hash160(key_data))
+            }
+            _ => Err(ProtocolError::Generic(format!(
+                "IdentitySigner only supports ECDSA_HASH160 and ECDSA_SECP256K1 keys, got {:?}",
+                identity_public_key.key_type()
+            ))),
+        }
     }
 }
 
@@ -95,25 +142,7 @@ impl Signer<IdentityPublicKey> for IdentitySignerWasm {
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<BinaryData, ProtocolError> {
-        // Only support ECDSA_HASH160 keys for now
-        if identity_public_key.key_type() != KeyType::ECDSA_HASH160 {
-            return Err(ProtocolError::Generic(format!(
-                "IdentitySigner only supports ECDSA_HASH160 keys, got {:?}",
-                identity_public_key.key_type()
-            )));
-        }
-
-        // The key data is the public key hash (20 bytes)
-        let key_data = identity_public_key.data().as_slice();
-        if key_data.len() != 20 {
-            return Err(ProtocolError::Generic(format!(
-                "Expected 20-byte public key hash, got {} bytes",
-                key_data.len()
-            )));
-        }
-
-        let mut key_hash = [0u8; 20];
-        key_hash.copy_from_slice(key_data);
+        let key_hash = Self::get_key_hash(identity_public_key)?;
 
         let private_key = self.private_keys.get(&key_hash).ok_or_else(|| {
             ProtocolError::Generic(format!(
@@ -131,38 +160,23 @@ impl Signer<IdentityPublicKey> for IdentitySignerWasm {
         key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        // First, sign the data to get the signature
         let signature = self.sign(key, data)?;
 
-        // Create the appropriate AddressWitness based on the key type
-        // IdentitySigner only supports ECDSA_HASH160 keys
         match key.key_type() {
-            KeyType::ECDSA_HASH160 => {
-                // P2PKH witness only needs the signature - the public key is recovered
-                // during verification
+            KeyType::ECDSA_HASH160 | KeyType::ECDSA_SECP256K1 => {
                 Ok(AddressWitness::P2pkh { signature })
             }
             _ => Err(ProtocolError::Generic(format!(
-                "IdentitySigner only supports ECDSA_HASH160 keys, got {:?}",
+                "IdentitySigner only supports ECDSA_HASH160 and ECDSA_SECP256K1 keys, got {:?}",
                 key.key_type()
             ))),
         }
     }
 
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
-        if identity_public_key.key_type() != KeyType::ECDSA_HASH160 {
-            return false;
-        }
-
-        let key_data = identity_public_key.data().as_slice();
-        if key_data.len() != 20 {
-            return false;
-        }
-
-        let mut key_hash = [0u8; 20];
-        key_hash.copy_from_slice(key_data);
-
-        self.private_keys.contains_key(&key_hash)
+        Self::get_key_hash(identity_public_key)
+            .map(|hash| self.private_keys.contains_key(&hash))
+            .unwrap_or(false)
     }
 }
 

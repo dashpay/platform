@@ -54,18 +54,15 @@ describe('Data contract queries', function describeDataContractQueries() {
     expect(res.proof).to.be.ok();
   });
 
-  // TODO: fix dash drive: proof: corrupted error for historical contract
-  it.skip('getDataContractHistory() returns history for contract', async function skip() {
-    const tokenContractId = tokenContracts[0]?.contractId;
-    if (!tokenContractId) {
-      this.skip();
-      return;
-    }
-
+  // TODO: Skipped - returns "no available addresses" instead of actual error when proof verification fails.
+  // See packages/rs-sdk/docs/IMPROVE_RETRY_ERROR_HANDLING.md for the fix plan.
+  it.skip('getDataContractHistory() returns history for contract', async function testContractHistory() {
+    // Use DPNS contract to test history retrieval
+    // Note: This may return an empty map if the contract has no history (version = 1)
     const res = await client.getDataContractHistory({
-      dataContractId: tokenContractId,
-      limit: 1,
+      dataContractId: dpnsContractId,
+      limit: 10,
     });
-    expect(res).to.be.ok();
+    expect(res).to.be.instanceOf(Map);
   });
 });

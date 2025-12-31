@@ -22,17 +22,20 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{IntoWasm, get_class_type, try_to_u64};
+use wasm_dpp2::utils::{get_class_type, try_to_u64, IntoWasm};
 use wasm_dpp2::IdentitySignerWasm;
 
 /// Extracts a string field from a JS options object.
-fn extract_string_from_options(options: &JsValue, field_name: &str) -> Result<String, WasmSdkError> {
+fn extract_string_from_options(
+    options: &JsValue,
+    field_name: &str,
+) -> Result<String, WasmSdkError> {
     let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
         .map_err(|_| WasmSdkError::invalid_argument(format!("{} is required", field_name)))?;
 
-    value.as_string().ok_or_else(|| {
-        WasmSdkError::invalid_argument(format!("{} must be a string", field_name))
-    })
+    value
+        .as_string()
+        .ok_or_else(|| WasmSdkError::invalid_argument(format!("{} must be a string", field_name)))
 }
 
 // ============================================================================
@@ -107,9 +110,9 @@ impl WasmSdk {
         let document_type_name = document_wasm.get_document_type_name();
 
         // Get entropy from document
-        let entropy = document_wasm
-            .get_entropy()
-            .ok_or_else(|| WasmSdkError::invalid_argument("Document must have entropy set for creation"))?;
+        let entropy = document_wasm.get_entropy().ok_or_else(|| {
+            WasmSdkError::invalid_argument("Document must have entropy set for creation")
+        })?;
 
         if entropy.len() != 32 {
             return Err(WasmSdkError::invalid_argument(
@@ -618,8 +621,9 @@ impl WasmSdk {
         // Extract price from options
         let price_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("price"))
             .map_err(|_| WasmSdkError::invalid_argument("price is required"))?;
-        let price: Credits = try_to_u64(price_js)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e)))?;
+        let price: Credits = try_to_u64(price_js).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e))
+        })?;
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -736,8 +740,9 @@ impl WasmSdk {
         // Extract price from options
         let price_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("price"))
             .map_err(|_| WasmSdkError::invalid_argument("price is required"))?;
-        let price: Credits = try_to_u64(price_js)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e)))?;
+        let price: Credits = try_to_u64(price_js).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e))
+        })?;
 
         // Extract identity key from options
         let identity_key_wasm =

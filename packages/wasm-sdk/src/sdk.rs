@@ -117,6 +117,57 @@ impl WasmSdk {
     pub(crate) fn inner_clone(&self) -> Sdk {
         self.0.clone()
     }
+
+    /// Add a data contract to the context provider's cache.
+    /// This is needed so that subsequent operations (like document transitions)
+    /// can verify proofs that reference this contract.
+    pub(crate) fn add_contract_to_context_cache(
+        &self,
+        contract: &dash_sdk::dpp::data_contract::DataContract,
+    ) -> Result<(), crate::error::WasmSdkError> {
+        match self.network() {
+            dash_sdk::dpp::dashcore::Network::Testnet => {
+                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                if let Some(context) = guard.as_ref() {
+                    context.add_known_contract(contract.clone());
+                }
+            }
+            dash_sdk::dpp::dashcore::Network::Dash => {
+                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                if let Some(context) = guard.as_ref() {
+                    context.add_known_contract(contract.clone());
+                }
+            }
+            dash_sdk::dpp::dashcore::Network::Regtest => {
+                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+                if let Some(context) = guard.as_ref() {
+                    context.add_known_contract(contract.clone());
+                }
+            }
+            _ => {
+                // Other networks don't use trusted context, so nothing to cache
+            }
+        }
+        Ok(())
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Forces reload of the identity nonce from Platform on the next state transition.
+    ///
+    /// This clears the cached nonce for the given identity, ensuring that the next
+    /// state transition will fetch the current nonce from Platform instead of using
+    /// a potentially stale cached value.
+    ///
+    /// @param identityId - The identifier of the identity whose nonce cache should be cleared
+    #[wasm_bindgen(js_name = "refreshIdentityNonce")]
+    pub async fn refresh_identity_nonce(
+        &self,
+        identity_id: wasm_dpp2::identifier::IdentifierWasm,
+    ) {
+        self.0.refresh_identity_nonce(&identity_id.into()).await;
+    }
 }
 
 #[wasm_bindgen]
