@@ -272,7 +272,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -336,7 +336,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -399,7 +399,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -462,10 +462,12 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::BasicError(BasicError::ContestedUniqueIndexWithUniqueIndexError(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::ContestedUniqueIndexWithUniqueIndexError(_)
+                ),
+                ..
+            }]
         );
 
         platform
@@ -559,7 +561,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -687,7 +689,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -780,7 +782,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -896,7 +898,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1003,7 +1005,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1097,7 +1099,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1233,7 +1235,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1335,7 +1337,7 @@ mod tests {
                     .expect("expected to process state transition");
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1473,7 +1475,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -2062,12 +2064,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
                             StateError::IdentityInTokenConfigurationNotFoundError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2161,12 +2163,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
                             StateError::IdentityInTokenConfigurationNotFoundError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2296,12 +2298,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
                             StateError::IdentityInTokenConfigurationNotFoundError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2435,12 +2437,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::BasicError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
                             BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2550,10 +2552,10 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::DataContractNotFoundError(_)),
-                        _
-                    )]
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(StateError::DataContractNotFoundError(_)),
+                        ..
+                    }]
                 );
 
                 platform
@@ -2678,10 +2680,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenPositionStateError(_)),
-                        _
-                    )]
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::InvalidTokenPositionStateError(_)
+                        ),
+                        ..
+                    }]
                 );
 
                 platform
@@ -4208,7 +4212,7 @@ mod tests {
             // This time we expect success
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction since it's valid
@@ -4492,7 +4496,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit so we can query the state afterward
@@ -4677,7 +4681,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -4742,10 +4746,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_)),
-                    _
-                )]
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_)),
+                    ..
+                }]
             );
 
             platform

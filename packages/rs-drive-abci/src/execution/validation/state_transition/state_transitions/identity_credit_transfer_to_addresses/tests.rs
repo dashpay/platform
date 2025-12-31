@@ -297,7 +297,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -359,7 +359,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -430,7 +430,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -499,7 +499,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -578,7 +578,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -675,7 +675,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -766,7 +766,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -866,7 +866,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -903,7 +903,7 @@ mod tests {
 
             assert_matches!(
                 processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -1097,7 +1097,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the first transaction
@@ -1430,7 +1430,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1493,7 +1493,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1559,7 +1559,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1624,7 +1624,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1686,7 +1686,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1729,7 +1729,7 @@ mod tests {
 
             assert_matches!(
                 processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1811,7 +1811,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                     "Transfer {} should succeed",
                     i
                 );
@@ -1895,7 +1895,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2300,7 +2300,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2368,7 +2368,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -2494,7 +2494,7 @@ mod tests {
             // Skipping one nonce might be allowed depending on the nonce gap rules
             // This documents the actual behavior
             match processing_result.execution_results().as_slice() {
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }] => {
                     // Small gaps are allowed
                 }
                 [StateTransitionExecutionResult::UnpaidConsensusError(
@@ -2593,7 +2593,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                     "Transfer from identity {} should succeed",
                     id_num
                 );
@@ -2700,7 +2700,7 @@ mod tests {
             for (i, result) in processing_result.execution_results().iter().enumerate() {
                 assert_matches!(
                     result,
-                    StateTransitionExecutionResult::SuccessfulExecution(_, _),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
                     "Transition {} should succeed",
                     i
                 );
@@ -3251,7 +3251,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -3318,7 +3318,7 @@ mod tests {
 
             // Extract the fee from the result
             let fee_paid = match &processing_result.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.total_base_fee()
                 }
                 _ => panic!("Expected successful execution"),
@@ -3446,7 +3446,7 @@ mod tests {
                 .expect("expected to process");
 
             let fee1 = match &processing_result1.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.total_base_fee()
                 }
                 _ => panic!("Expected successful execution"),
@@ -3477,7 +3477,7 @@ mod tests {
                 .expect("expected to process");
 
             let fee2 = match &processing_result2.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.total_base_fee()
                 }
                 _ => panic!("Expected successful execution"),
@@ -3734,7 +3734,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -3825,7 +3825,7 @@ mod tests {
             for (i, result) in processing_result.execution_results().iter().enumerate() {
                 assert_matches!(
                     result,
-                    StateTransitionExecutionResult::SuccessfulExecution(_, _),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
                     "Transition {} should succeed",
                     i
                 );
@@ -3907,7 +3907,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -4329,7 +4329,7 @@ mod tests {
 
             assert_matches!(
                 &processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution(_, _),
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
                 "First transition should succeed"
             );
 
@@ -4407,7 +4407,7 @@ mod tests {
             for (i, result) in processing_result.execution_results().iter().enumerate() {
                 assert_matches!(
                     result,
-                    StateTransitionExecutionResult::SuccessfulExecution(_, _),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
                     "Transition {} should succeed",
                     i
                 );
@@ -4484,7 +4484,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -4747,7 +4747,7 @@ mod tests {
                 .expect("expected to process");
 
             let actual_fee = match &processing_result.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.total_base_fee()
                 }
                 _ => panic!("Expected successful execution to determine fee"),
@@ -4891,7 +4891,7 @@ mod tests {
                 .expect("expected to process");
 
             let actual_fee = match &processing_result.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.total_base_fee()
                 }
                 _ => panic!("Expected successful execution to determine fee"),
@@ -4944,7 +4944,7 @@ mod tests {
             // With count sum trees, fee estimation is now accurate enough that exact balance succeeds
             assert_matches!(
                 processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }] => {
                     // Success - fee estimation is now accurate enough with count sum trees
                 }
             );
@@ -5084,7 +5084,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -5265,7 +5265,7 @@ mod tests {
             // Should succeed - revision shouldn't affect credit transfers
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 

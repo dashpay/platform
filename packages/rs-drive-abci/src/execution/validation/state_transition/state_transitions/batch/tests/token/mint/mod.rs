@@ -69,7 +69,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -155,7 +155,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -243,10 +243,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+                    ..
+                }]
             );
 
             platform
@@ -334,7 +334,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -422,10 +422,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::RecipientIdentityDoesNotExistError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::RecipientIdentityDoesNotExistError(_)
+                    ),
+                    ..
+                }]
             );
 
             platform
@@ -511,12 +513,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::DestinationIdentityForTokenMintingNotSetError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -599,12 +601,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -696,12 +698,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -791,12 +793,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::DestinationIdentityForTokenMintingNotSetError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -882,12 +884,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -982,12 +984,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::ChoosingTokenMintRecipientNotAllowedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -1080,7 +1082,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1193,10 +1195,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    ..
+                }]
             );
 
             platform
@@ -1304,10 +1306,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    ..
+                }]
             );
 
             platform
@@ -1417,7 +1419,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1538,7 +1540,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1653,7 +1655,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1816,7 +1818,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1985,7 +1987,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2139,7 +2141,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2243,12 +2245,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -2386,7 +2388,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2473,12 +2475,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::GroupActionAlreadySignedByIdentityError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -2606,7 +2608,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2681,7 +2683,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2761,12 +2763,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::GroupActionAlreadySignedByIdentityError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -2895,7 +2897,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2970,7 +2972,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -3068,10 +3070,12 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::GroupActionAlreadyCompletedError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::GroupActionAlreadyCompletedError(_)
+                    ),
+                    ..
+                }]
             );
 
             platform
@@ -3194,10 +3198,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                    ..
+                }]
             );
 
             platform
@@ -3309,7 +3313,7 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -3384,10 +3388,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                    ..
+                }]
             );
 
             platform
@@ -3521,10 +3525,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::GroupActionDoesNotExistError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::GroupActionDoesNotExistError(_)),
+                    ..
+                }]
             );
 
             platform
@@ -3647,10 +3651,10 @@ mod token_mint_tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                    _
-                )]
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    ..
+                }]
             );
 
             platform

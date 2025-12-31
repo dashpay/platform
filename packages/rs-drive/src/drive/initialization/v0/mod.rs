@@ -316,7 +316,7 @@ mod tests {
                 &platform_version.drive,
             )
             .expect("expected to get root elements");
-        assert_eq!(elements.len(), 15);
+        assert_eq!(elements.len(), 16);
     }
 
     #[test]
@@ -1138,7 +1138,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 251); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+        assert_eq!(proof.len(), 287); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::AddressBalances as u8]);
@@ -1244,5 +1244,28 @@ mod tests {
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 250); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        // Merk Level 4
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::SavedBlockTransactions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 286); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent + great-grandparent sibling + great-great-grandparent
     }
 }

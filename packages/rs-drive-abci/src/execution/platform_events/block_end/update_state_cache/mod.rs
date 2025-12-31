@@ -2,9 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-
 use crate::platform_types::platform::Platform;
-
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
@@ -25,21 +23,14 @@ where
     ///
     /// * `extended_block_info` - Extended block information for the current block.
     /// * `block_platform_state` - The platform state for this block.
-    /// * `checkpointed` - Whether a checkpoint was created for this block.
     /// * `transaction` - The transaction associated with the block.
     /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
     ///   the method to call.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
-    ///   If there is a problem with the update, it returns an `Error`.
     ///
     pub fn update_state_cache(
         &self,
         extended_block_info: ExtendedBlockInfo,
         block_platform_state: PlatformState,
-        checkpointed: bool,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
@@ -52,7 +43,6 @@ where
             0 => self.update_state_cache_v0(
                 extended_block_info,
                 block_platform_state,
-                checkpointed,
                 transaction,
                 platform_version,
             ),
