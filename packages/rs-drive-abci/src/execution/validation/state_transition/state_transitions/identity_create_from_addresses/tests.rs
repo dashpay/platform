@@ -1036,7 +1036,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
         }
 
@@ -1135,7 +1135,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
         }
 
@@ -1240,7 +1240,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
         }
     }
@@ -1323,7 +1323,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
 
             // Commit the transaction
@@ -1441,7 +1441,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
 
             // Commit the transaction
@@ -1538,7 +1538,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
 
             // Commit the transaction
@@ -1898,7 +1898,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
 
             // Commit the first transaction
@@ -1952,12 +1952,12 @@ mod tests {
             // it's derived from input addresses + nonces. But the PUBLIC KEYS are duplicates.
             assert_matches!(
                 processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::DuplicatedIdentityPublicKeyIdStateError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
         }
 
@@ -2035,7 +2035,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
 
             // Commit the first transaction
@@ -2092,12 +2092,12 @@ mod tests {
             // Should fail because public key already exists in state
             assert_matches!(
                 processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::DuplicatedIdentityPublicKeyIdStateError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
         }
     }
@@ -2294,7 +2294,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
             );
 
             // Verify the identity was actually created and funded
@@ -2799,7 +2799,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
                 "Expected valid structure, got {:?}",
                 processing_result.execution_results()
             );
@@ -2997,7 +2997,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
                 "Expected valid structure with output, got {:?}",
                 processing_result.execution_results()
             );
@@ -3207,7 +3207,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
                 "Expected valid structure with two min inputs totaling min_identity_funding_amount, got {:?}",
                 processing_result.execution_results()
             );
@@ -3595,7 +3595,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
                 "Expected valid structure with single master key, got {:?}",
                 processing_result.execution_results()
             );
@@ -3670,7 +3670,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
                 "Expected valid structure with multiple keys, got {:?}",
                 processing_result.execution_results()
             );
@@ -3745,7 +3745,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)],
+                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
                 "Expected valid structure with max keys, got {:?}",
                 processing_result.execution_results()
             );
@@ -8025,12 +8025,12 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::DuplicatedIdentityPublicKeyIdBasicError(_)
                     ),
-                    _
-                )],
+                    ..
+                }],
                 "Expected DuplicatedIdentityPublicKeyIdBasicError, got {:?}",
                 processing_result.execution_results()
             );
@@ -8139,10 +8139,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)),
-                    _
-                )],
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)),
+                    ..
+                }],
                 "Expected BasicECDSAError, got {:?}",
                 processing_result.execution_results()
             );
@@ -8251,10 +8251,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::SignatureError(SignatureError::BasicBLSError(_)),
-                    _
-                )],
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::SignatureError(SignatureError::BasicBLSError(_)),
+                    ..
+                }],
                 "Expected BasicBLSError, got {:?}",
                 processing_result.execution_results()
             );

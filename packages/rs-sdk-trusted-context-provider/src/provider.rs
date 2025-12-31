@@ -221,10 +221,7 @@ impl TrustedHttpContextProvider {
     }
 
     /// Add multiple token configurations to the known token configurations cache
-    pub fn add_known_token_configurations(
-        &self,
-        configs: Vec<(Identifier, TokenConfiguration)>,
-    ) {
+    pub fn add_known_token_configurations(&self, configs: Vec<(Identifier, TokenConfiguration)>) {
         let mut known = self.known_token_configurations.lock().unwrap();
         for (token_id, config) in configs {
             known.insert(token_id, config);

@@ -68,6 +68,7 @@ where
                 errors,
                 state_read_guard.last_block_info(),
                 transaction,
+                None, // address_balances_in_update not needed for check_tx
                 platform_ref.state.current_platform_version()?,
                 platform_ref.state.previous_fee_versions(),
             )
@@ -3701,7 +3702,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform

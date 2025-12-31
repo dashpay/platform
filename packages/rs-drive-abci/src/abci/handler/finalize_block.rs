@@ -96,5 +96,10 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
+    // Create GroveDB checkpoint after the transaction is committed (so it captures committed state)
+    if block_finalization_outcome.checkpoint_needed {
+        app.platform().create_grovedb_checkpoint(platform_version)?;
+    }
+
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
