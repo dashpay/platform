@@ -20,9 +20,10 @@ use tracing::{debug, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
-/// Match a private key against a public key, supporting multiple key types.
-/// Returns true if the private key corresponds to the given public key.
-fn private_key_matches_public_key(
+/// Check if an ECDSA-derived public key matches an identity's public key.
+/// Supports ECDSA_SECP256K1 (33-byte comparison) and ECDSA_HASH160 (20-byte comparison).
+/// Returns false for non-ECDSA key types (BLS, EdDSA, etc.) since they require different derivation.
+fn ecdsa_public_key_matches_identity_key(
     public_key_bytes: &[u8],   // 33-byte compressed secp256k1 public key
     public_key_hash160: &[u8], // 20-byte hash160 of the public key
     key: &IdentityPublicKey,
@@ -674,7 +675,7 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     key.purpose() == Purpose::TRANSFER
-                        && private_key_matches_public_key(
+                        && ecdsa_public_key_matches_identity_key(
                             &public_key_bytes,
                             &public_key_hash160,
                             key,
@@ -693,7 +694,7 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::TRANSFER
-                        && private_key_matches_public_key(
+                        && ecdsa_public_key_matches_identity_key(
                             &public_key_bytes,
                             &public_key_hash160,
                             key,
@@ -861,7 +862,7 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     (key.purpose() == Purpose::TRANSFER || key.purpose() == Purpose::OWNER)
-                        && private_key_matches_public_key(
+                        && ecdsa_public_key_matches_identity_key(
                             &public_key_bytes,
                             &public_key_hash160,
                             key,
@@ -880,7 +881,7 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::TRANSFER
-                        && private_key_matches_public_key(
+                        && ecdsa_public_key_matches_identity_key(
                             &public_key_bytes,
                             &public_key_hash160,
                             key,
@@ -889,7 +890,7 @@ impl WasmSdk {
                 .or_else(|| {
                     identity.public_keys().iter().find(|(_, key)| {
                         key.purpose() == Purpose::OWNER
-                            && private_key_matches_public_key(
+                            && ecdsa_public_key_matches_identity_key(
                                 &public_key_bytes,
                                 &public_key_hash160,
                                 key,
@@ -1033,7 +1034,7 @@ impl WasmSdk {
             .find(|(_, key)| {
                 key.purpose() == Purpose::AUTHENTICATION
                     && key.security_level() == SecurityLevel::MASTER
-                    && private_key_matches_public_key(&public_key_bytes, &public_key_hash160, key)
+                    && ecdsa_public_key_matches_identity_key(&public_key_bytes, &public_key_hash160, key)
             })
             .map(|(id, _)| *id)
             .ok_or_else(|| {
@@ -1541,14 +1542,14 @@ mod tests {
 
         // Should match when comparing full public key bytes
         assert!(
-            private_key_matches_public_key(&public_key_bytes, &public_key_hash160, &secp_key),
+            ecdsa_public_key_matches_identity_key(&public_key_bytes, &public_key_hash160, &secp_key),
             "ECDSA_SECP256K1 key should match with correct public key bytes"
         );
 
         // Should not match with wrong public key
         let wrong_bytes = [0u8; 33];
         assert!(
-            !private_key_matches_public_key(&wrong_bytes, &public_key_hash160, &secp_key),
+            !ecdsa_public_key_matches_identity_key(&wrong_bytes, &public_key_hash160, &secp_key),
             "ECDSA_SECP256K1 key should not match with wrong public key bytes"
         );
     }
@@ -1575,14 +1576,14 @@ mod tests {
 
         // Should match when comparing hash160
         assert!(
-            private_key_matches_public_key(&public_key_bytes, &public_key_hash160, &hash160_key),
+            ecdsa_public_key_matches_identity_key(&public_key_bytes, &public_key_hash160, &hash160_key),
             "ECDSA_HASH160 key should match with correct hash160"
         );
 
         // Should not match with wrong hash
         let wrong_hash = [0u8; 20].to_vec();
         assert!(
-            !private_key_matches_public_key(&public_key_bytes, &wrong_hash, &hash160_key),
+            !ecdsa_public_key_matches_identity_key(&public_key_bytes, &wrong_hash, &hash160_key),
             "ECDSA_HASH160 key should not match with wrong hash160"
         );
     }
@@ -1607,7 +1608,7 @@ mod tests {
         let bls_key = create_test_key(KeyType::BLS12_381, vec![0u8; 48]);
 
         assert!(
-            !private_key_matches_public_key(&public_key_bytes, &public_key_hash160, &bls_key),
+            !ecdsa_public_key_matches_identity_key(&public_key_bytes, &public_key_hash160, &bls_key),
             "BLS12_381 key should not match with ECDSA private key"
         );
     }
@@ -1620,7 +1621,7 @@ mod tests {
         // BIP13_SCRIPT_HASH should not match
         let script_hash_key = create_test_key(KeyType::BIP13_SCRIPT_HASH, vec![0u8; 20]);
         assert!(
-            !private_key_matches_public_key(
+            !ecdsa_public_key_matches_identity_key(
                 &public_key_bytes,
                 &public_key_hash160,
                 &script_hash_key
@@ -1631,7 +1632,7 @@ mod tests {
         // EDDSA_25519_HASH160 should not match
         let eddsa_key = create_test_key(KeyType::EDDSA_25519_HASH160, vec![0u8; 20]);
         assert!(
-            !private_key_matches_public_key(&public_key_bytes, &public_key_hash160, &eddsa_key),
+            !ecdsa_public_key_matches_identity_key(&public_key_bytes, &public_key_hash160, &eddsa_key),
             "EDDSA_25519_HASH160 key should not match with ECDSA private key"
         );
     }
@@ -1663,7 +1664,7 @@ mod tests {
         // Before fix: This would return false because the code only checked ECDSA_HASH160
         // After fix: This correctly returns true
         assert!(
-            private_key_matches_public_key(&public_key_bytes, &public_key_hash160, &master_key),
+            ecdsa_public_key_matches_identity_key(&public_key_bytes, &public_key_hash160, &master_key),
             "REGRESSION: ECDSA_SECP256K1 master key must be matchable with the correct private key"
         );
     }
