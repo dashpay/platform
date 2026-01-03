@@ -20,6 +20,29 @@ use tracing::{debug, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
+/// Check if an ECDSA-derived public key matches an identity's public key.
+/// Supports ECDSA_SECP256K1 (33-byte comparison) and ECDSA_HASH160 (20-byte comparison).
+/// Returns false for non-ECDSA key types (BLS, EdDSA, etc.) since they require different derivation.
+fn ecdsa_public_key_matches_identity_key(
+    public_key_bytes: &[u8],   // 33-byte compressed secp256k1 public key
+    public_key_hash160: &[u8], // 20-byte hash160 of the public key
+    key: &IdentityPublicKey,
+) -> bool {
+    match key.key_type() {
+        KeyType::ECDSA_SECP256K1 => {
+            // Compare full 33-byte compressed public key
+            key.data().as_slice() == public_key_bytes
+        }
+        KeyType::ECDSA_HASH160 => {
+            // Compare 20-byte hash160
+            key.data().as_slice() == public_key_hash160
+        }
+        // BLS12_381 keys require separate BLS key derivation - not supported via ECDSA private key
+        // BIP13_SCRIPT_HASH and EDDSA_25519_HASH160 are also not derivable from ECDSA private key
+        _ => false,
+    }
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     /// Create a new identity on Dash Platform.
@@ -644,6 +667,7 @@ impl WasmSdk {
         };
 
         // Find matching key - prioritize key_id if provided, otherwise find any matching key
+        // Supports ECDSA_SECP256K1 and ECDSA_HASH160 key types
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
             sender_identity
@@ -651,8 +675,11 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     key.purpose() == Purpose::TRANSFER
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .ok_or_else(|| {
                     WasmSdkError::not_found(format!(
@@ -667,8 +694,11 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::TRANSFER
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .map(|(_, key)| key)
                 .ok_or_else(|| {
@@ -824,6 +854,7 @@ impl WasmSdk {
 
         // Find matching key - prioritize key_id if provided, otherwise find any matching key
         // For withdrawals, we can use either TRANSFER or OWNER keys
+        // Supports ECDSA_SECP256K1 and ECDSA_HASH160 key types
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
             identity
@@ -831,8 +862,11 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     (key.purpose() == Purpose::TRANSFER || key.purpose() == Purpose::OWNER)
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .ok_or_else(|| {
                     WasmSdkError::not_found(format!(
@@ -847,14 +881,20 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::TRANSFER
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .or_else(|| {
                     identity.public_keys().iter().find(|(_, key)| {
                         key.purpose() == Purpose::OWNER
-                            && key.key_type() == KeyType::ECDSA_HASH160
-                            && key.data().as_slice() == public_key_hash160.as_slice()
+                            && ecdsa_public_key_matches_identity_key(
+                                &public_key_bytes,
+                                &public_key_hash160,
+                                key,
+                            )
                     })
                 })
                 .map(|(_, key)| key)
@@ -987,15 +1027,18 @@ impl WasmSdk {
                 .to_vec()
         };
 
-        // Find matching master key
+        // Find matching master key (supports ECDSA_SECP256K1 and ECDSA_HASH160)
         let master_key = identity
             .public_keys()
             .iter()
             .find(|(_, key)| {
                 key.purpose() == Purpose::AUTHENTICATION
                     && key.security_level() == SecurityLevel::MASTER
-                    && key.key_type() == KeyType::ECDSA_HASH160
-                    && key.data().as_slice() == public_key_hash160.as_slice()
+                    && ecdsa_public_key_matches_identity_key(
+                        &public_key_bytes,
+                        &public_key_hash160,
+                        key,
+                    )
             })
             .map(|(id, _)| *id)
             .ok_or_else(|| {
@@ -1458,5 +1501,195 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::generic(format!("Failed to set message: {:?}", e)))?;
 
         Ok(result_obj.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+    /// Creates a test public key with the given key type and data
+    fn create_test_key(key_type: KeyType, data: Vec<u8>) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id: 0u32.into(),
+            key_type,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            read_only: false,
+            disabled_at: None,
+            data: data.into(),
+            contract_bounds: None,
+        }
+        .into()
+    }
+
+    #[test]
+    fn test_private_key_matches_ecdsa_secp256k1() {
+        // 33-byte compressed public key (typical ECDSA_SECP256K1 key)
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        // Hash160 of the public key (20 bytes)
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // Create ECDSA_SECP256K1 key with 33-byte data
+        let secp_key = create_test_key(KeyType::ECDSA_SECP256K1, public_key_bytes.to_vec());
+
+        // Should match when comparing full public key bytes
+        assert!(
+            ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &secp_key
+            ),
+            "ECDSA_SECP256K1 key should match with correct public key bytes"
+        );
+
+        // Should not match with wrong public key
+        let wrong_bytes = [0u8; 33];
+        assert!(
+            !ecdsa_public_key_matches_identity_key(&wrong_bytes, &public_key_hash160, &secp_key),
+            "ECDSA_SECP256K1 key should not match with wrong public key bytes"
+        );
+    }
+
+    #[test]
+    fn test_private_key_matches_ecdsa_hash160() {
+        // 33-byte compressed public key
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        // Hash160 of the public key (20 bytes)
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // Create ECDSA_HASH160 key with 20-byte hash data
+        let hash160_key = create_test_key(KeyType::ECDSA_HASH160, public_key_hash160.clone());
+
+        // Should match when comparing hash160
+        assert!(
+            ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &hash160_key
+            ),
+            "ECDSA_HASH160 key should match with correct hash160"
+        );
+
+        // Should not match with wrong hash
+        let wrong_hash = [0u8; 20].to_vec();
+        assert!(
+            !ecdsa_public_key_matches_identity_key(&public_key_bytes, &wrong_hash, &hash160_key),
+            "ECDSA_HASH160 key should not match with wrong hash160"
+        );
+    }
+
+    #[test]
+    fn test_private_key_does_not_match_bls_keys() {
+        // 33-byte compressed public key
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // BLS keys require separate BLS key derivation, so ECDSA private keys should never match
+        let bls_key = create_test_key(KeyType::BLS12_381, vec![0u8; 48]);
+
+        assert!(
+            !ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &bls_key
+            ),
+            "BLS12_381 key should not match with ECDSA private key"
+        );
+    }
+
+    #[test]
+    fn test_private_key_does_not_match_other_key_types() {
+        let public_key_bytes: [u8; 33] = [0x02; 33];
+        let public_key_hash160 = vec![0u8; 20];
+
+        // BIP13_SCRIPT_HASH should not match
+        let script_hash_key = create_test_key(KeyType::BIP13_SCRIPT_HASH, vec![0u8; 20]);
+        assert!(
+            !ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &script_hash_key
+            ),
+            "BIP13_SCRIPT_HASH key should not match with ECDSA private key"
+        );
+
+        // EDDSA_25519_HASH160 should not match
+        let eddsa_key = create_test_key(KeyType::EDDSA_25519_HASH160, vec![0u8; 20]);
+        assert!(
+            !ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &eddsa_key
+            ),
+            "EDDSA_25519_HASH160 key should not match with ECDSA private key"
+        );
+    }
+
+    #[test]
+    fn test_regression_secp256k1_key_not_mistaken_for_hash160() {
+        // This is the regression test for the original bug:
+        // identity_update was only checking for ECDSA_HASH160 keys,
+        // so ECDSA_SECP256K1 keys would never match even with the correct private key.
+
+        // Real public key bytes (33-byte compressed secp256k1)
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // The bug: Code was only checking ECDSA_HASH160 keys
+        // But most identities (DashPay) use ECDSA_SECP256K1 with the full 33-byte key
+        let master_key = create_test_key(KeyType::ECDSA_SECP256K1, public_key_bytes.to_vec());
+
+        // Before fix: This would return false because the code only checked ECDSA_HASH160
+        // After fix: This correctly returns true
+        assert!(
+            ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &master_key
+            ),
+            "REGRESSION: ECDSA_SECP256K1 master key must be matchable with the correct private key"
+        );
     }
 }
