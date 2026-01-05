@@ -160,6 +160,7 @@ struct WalletInfoView: View {
     @State private var isEditingName = false
     @State private var mainnetEnabled: Bool = false
     @State private var testnetEnabled: Bool = false
+    @State private var regtestEnabled: Bool = false
     @State private var devnetEnabled: Bool = false
     @State private var isUpdatingNetworks = false
     @State private var errorMessage: String?
@@ -324,7 +325,7 @@ struct WalletInfoView: View {
                         HStack {
                             Text("Mainnet")
                             Spacer()
-                            Text(formatHeight(wallet.syncFromMainnet))
+                            Text(formatHeight(wallet.syncBaseHeight))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -332,7 +333,7 @@ struct WalletInfoView: View {
                         HStack {
                             Text("Testnet")
                             Spacer()
-                            Text(formatHeight(wallet.syncFromTestnet))
+                            Text(formatHeight(wallet.syncBaseHeight))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -340,7 +341,7 @@ struct WalletInfoView: View {
                         HStack {
                             Text("Devnet")
                             Spacer()
-                            Text(formatHeight(wallet.syncFromDevnet))
+                            Text(formatHeight(wallet.syncBaseHeight))
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -404,29 +405,37 @@ struct WalletInfoView: View {
     }
     
     private func loadNetworkStates() {
-        // Check which networks this wallet is on
-        let networks = wallet.networks
-        mainnetEnabled = (networks & 1) != 0  // DASH
-        testnetEnabled = (networks & 2) != 0  // TESTNET
-        devnetEnabled = (networks & 8) != 0   // DEVNET
+        // TODO: Probably not needed this way anymore?
+        switch wallet.dashNetwork {
+        case .mainnet:
+            mainnetEnabled = true
+        case .testnet:
+            testnetEnabled = true
+        case .regtest:
+            // TODO: Handle this properly in the UI or somehow ignore it.
+            regtestEnabled = true
+        case .devnet:
+            devnetEnabled = true
+        }
     }
 
     private func loadAccountCounts() async {
+        // TODO: This can probably be refactored now with with single network manager?
         guard let manager = walletService.walletManager else { return }
         if mainnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .mainnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 mainnetAccountCount = list.count
             }
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .testnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 testnetAccountCount = list.count
             }
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .devnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 devnetAccountCount = list.count
             }
         } else { devnetAccountCount = nil }
@@ -455,19 +464,8 @@ struct WalletInfoView: View {
         defer { isUpdatingNetworks = false }
 
         do {
-            // Add the network to the wallet
-            let networkBit: UInt32
-            switch network {
-            case .mainnet:
-                networkBit = 1  // DASH
-            case .testnet:
-                networkBit = 2  // TESTNET
-            case .devnet:
-                networkBit = 8  // DEVNET
-            }
             
-            // Update the wallet's networks bitfield
-            wallet.networks = wallet.networks | networkBit
+            // TODO: This needs some love after single wallet refactoring.
             
             // Save to Core Data
             try modelContext.save()

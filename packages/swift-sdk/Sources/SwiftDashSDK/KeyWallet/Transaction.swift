@@ -46,7 +46,6 @@ public class Transaction {
         let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
             wallet_build_transaction(
                 wallet.ffiHandle,
-                NetworkSet(wallet.network).ffiNetworks,
                 accountIndex,
                 outputsPtr.baseAddress,
                 outputs.count,
@@ -93,7 +92,6 @@ public class Transaction {
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
             return wallet_sign_transaction(
                 wallet.ffiHandle,
-                NetworkSet(wallet.network).ffiNetworks,
                 txPtr, transactionData.count,
                 &signedTxPtr, &signedLen, &error)
         }
@@ -146,7 +144,6 @@ public class Transaction {
                     
                     return wallet_check_transaction(
                         wallet.ffiHandle,
-                        wallet.network.ffiValue,
                         txPtr, transactionData.count,
                         context.ffiValue, blockHeight, hashPtr,
                         timestamp, updateState, &result, &error)
@@ -154,7 +151,6 @@ public class Transaction {
             } else {
                 return wallet_check_transaction(
                     wallet.ffiHandle,
-                    wallet.network.ffiValue,
                     txPtr, transactionData.count,
                     context.ffiValue, blockHeight, nil,
                     timestamp, updateState, &result, &error)

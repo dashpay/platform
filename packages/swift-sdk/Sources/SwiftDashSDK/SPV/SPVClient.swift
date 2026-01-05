@@ -19,7 +19,8 @@ extension SPVClient {
     @MainActor
     public static func initializeLogging(_ level: SPVLogLevel) {
         level.rawValue.withCString { cstr in
-            _ = dash_spv_ffi_init_logging(cstr)
+            // TODO: provide valid log directory?
+            _ = dash_spv_ffi_init_logging(cstr, false, nil, 10)
         }
         LogInitState.manualInitialized = true
     }
@@ -288,7 +289,8 @@ public class SPVClient: ObservableObject {
         if !LogInitState.manualInitialized {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             _ = level.withCString { cstr in
-                dash_spv_ffi_init_logging(cstr)
+                // TODO: Provide valid log directory?
+                dash_spv_ffi_init_logging(cstr, false, nil, 10)
             }
         }
         if swiftLoggingEnabled {
@@ -494,16 +496,17 @@ public class SPVClient: ObservableObject {
     /// Clear only the persisted sync-state snapshot while keeping headers/filters.
     public func clearSyncState() throws {
         guard let client = client else { throw SPVError.notInitialized }
-
-        let rc = dash_spv_ffi_client_clear_sync_state(client)
-        if rc != 0 {
-            if let errorMsg = dash_spv_ffi_get_last_error() {
-                let message = String(cString: errorMsg)
-                throw SPVError.storageOperationFailed(message)
-            } else {
-                throw SPVError.storageOperationFailed("Failed to clear sync state (code \(rc))")
-            }
-        }
+        
+        // TODO: clear sync state doesnt exist anymore. Is it needed? Maybe wipe the directory?
+//        let rc = dash_spv_ffi_client_clear_sync_state(client)
+//        if rc != 0 {
+//            if let errorMsg = dash_spv_ffi_get_last_error() {
+//                let message = String(cString: errorMsg)
+//                throw SPVError.storageOperationFailed(message)
+//            } else {
+//                throw SPVError.storageOperationFailed("Failed to clear sync state (code \(rc))")
+//            }
+//        }
 
         self.syncProgress = nil
         self.lastError = nil
@@ -989,6 +992,7 @@ public class SPVClient: ObservableObject {
         switch network.rawValue {
         case 0: ffiNet = FFINetwork(rawValue: 0)
         case 1: ffiNet = FFINetwork(rawValue: 1)
+        case 2: ffiNet = FFINetwork(rawValue: 2)
         case 3: ffiNet = FFINetwork(rawValue: 3)
         default: ffiNet = FFINetwork(rawValue: 1)
         }
@@ -1009,6 +1013,7 @@ public class SPVClient: ObservableObject {
         switch net.rawValue {
         case 0: ffiNet = FFINetwork(rawValue: 0)
         case 1: ffiNet = FFINetwork(rawValue: 1)
+        case 2: ffiNet = FFINetwork(rawValue: 2)
         case 3: ffiNet = FFINetwork(rawValue: 3)
         default: ffiNet = FFINetwork(rawValue: 1)
         }
@@ -1028,6 +1033,7 @@ public class SPVClient: ObservableObject {
         switch network.rawValue {
             case 0: ffiNet = FFINetwork(rawValue: 0)
             case 1: ffiNet = FFINetwork(rawValue: 1)
+            case 2: ffiNet = FFINetwork(rawValue: 2)
             case 3: ffiNet = FFINetwork(rawValue: 3)
             default: ffiNet = FFINetwork(rawValue: 1)
         }

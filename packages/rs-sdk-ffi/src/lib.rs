@@ -142,7 +142,6 @@ pub use platform_wallet_ffi::{
     Handle,
     IdentifierArray,
     IdentifierBytes,
-    NetworkType,
     PlatformWalletFFIError,
     PlatformWalletFFIResult,
     NULL_HANDLE,

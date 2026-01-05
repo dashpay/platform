@@ -3,32 +3,6 @@ import DashSDKFFI
 
 // MARK: - Network Types
 
-/// Helper to create FFINetworks bitmap from multiple networks
-public struct NetworkSet {
-    public let networks: Set<KeyWalletNetwork>
-    
-    public init(_ networks: KeyWalletNetwork...) {
-        self.networks = Set(networks)
-    }
-    
-    public init(_ networks: [KeyWalletNetwork]) {
-        self.networks = Set(networks)
-    }
-    
-    public var ffiNetworks: FFINetworks {
-        var bitmap: UInt32 = 0
-        for network in networks {
-            switch network {
-            case .mainnet: bitmap |= (1 << 0)  // DASH_FLAG
-            case .testnet: bitmap |= (1 << 1)  // TESTNET_FLAG
-            case .regtest: bitmap |= (1 << 2)  // REGTEST_FLAG
-            case .devnet: bitmap |= (1 << 3)   // DEVNET_FLAG
-            }
-        }
-        return FFINetworks(rawValue: bitmap)
-    }
-}
-
 /// Network type for Dash networks
 public enum KeyWalletNetwork: UInt32 {
     case mainnet = 0  // DASH

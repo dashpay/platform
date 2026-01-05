@@ -210,7 +210,7 @@ public class WalletService: ObservableObject {
     private func currentDisplayBaseline() -> Int {
         let stored = Int(baseSyncHeightUI)
         if stored > 0 { return stored }
-        return Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
+        return Int(computeNetworkBaselineSyncFromHeight())
     }
 
     private init() {}
@@ -252,7 +252,7 @@ public class WalletService: ObservableObject {
                 let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
                 // Determine baseline from stored per-wallet per-network sync-from heights
                 let baseline: UInt32 = await MainActor.run {
-                    self.computeNetworkBaselineSyncFromHeight(for: net)
+                    self.computeNetworkBaselineSyncFromHeight()
                 }
                 SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(baseline) on \(net.rawValue) during initialize()", minimumLevel: .high)
 
@@ -331,7 +331,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
 
-    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: AppNetwork? = nil, networks: [AppNetwork]? = nil, isImport: Bool = false) async throws -> HDWallet {
+    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", isImport: Bool = false) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -347,14 +347,10 @@ public class WalletService: ObservableObject {
         do {
             // Create wallet using our refactored WalletManager that wraps FFI
             print("WalletManager available, creating wallet...")
-            let walletNetwork = network ?? currentNetwork
-            let dashNetwork = walletNetwork  // Already a DashNetwork
             let wallet = try await walletManager.createWallet(
                 label: label,
-                network: dashNetwork,
                 mnemonic: mnemonic,
                 pin: pin,
-                networks: networks,
                 isImport: isImport
             )
             
@@ -370,27 +366,26 @@ public class WalletService: ObservableObject {
             let isImported = isImport
             if isImported {
                 // Imported wallet: use fixed per-network baselines
-                wallet.syncFromMainnet = 730_000
-                wallet.syncFromTestnet = 0
-                wallet.syncFromDevnet = 0
+                wallet.syncBaseHeight = currentNetwork == .mainnet ? 730_000 : 0;
             } else {
-                // New wallet: per selected network, use the latest checkpoint height of that chain
-                let nets = networks ?? [walletNetwork]
-                for n in nets {
-                    switch n {
-                    case .mainnet:
-                        let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) ?? 0
-                        print("[WalletService] New wallet baseline mainnet checkpoint=\(cp)")
-                        wallet.syncFromMainnet = Int(cp)
-                    case .testnet:
-                        let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) ?? 0
-                        print("[WalletService] New wallet baseline testnet checkpoint=\(cp)")
-                        wallet.syncFromTestnet = Int(cp)
-                    case .devnet:
-                        let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) ?? 0
-                        print("[WalletService] New wallet baseline devnet checkpoint=\(cp)")
-                        wallet.syncFromDevnet = Int(cp)
-                    }
+                // New wallet: use the latest checkpoint height of that chain
+                switch currentNetwork {
+                case .mainnet:
+                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) ?? 0
+                    print("[WalletService] New wallet baseline mainnet checkpoint=\(cp)")
+                    wallet.syncBaseHeight = Int(cp)
+                case .testnet:
+                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) ?? 0
+                    print("[WalletService] New wallet baseline testnet checkpoint=\(cp)")
+                    wallet.syncBaseHeight = Int(cp)
+                case .regtest:
+                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) ?? 0
+                    print("[WalletService] New wallet baseline regtest checkpoint=\(cp)")
+                    wallet.syncBaseHeight = Int(cp)
+                case .devnet:
+                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 3)) ?? 0
+                    print("[WalletService] New wallet baseline devnet checkpoint=\(cp)")
+                    wallet.syncBaseHeight = Int(cp)
                 }
             }
 
@@ -474,12 +469,12 @@ public class WalletService: ObservableObject {
         }
 
         // Compute baseline from all wallets on the active network and apply before starting
-        let baseline: UInt32 = computeNetworkBaselineSyncFromHeight(for: currentNetwork)
+        let baseline: UInt32 = computeNetworkBaselineSyncFromHeight()
         do {
             try spvClient.setStartFromHeight(baseline)
             print("[SPV][Baseline] StartFromHeight applied=\(baseline) for \(currentNetwork.rawValue) before startSync()")
             // Also print per-wallet values for debugging
-            logPerWalletSyncFromHeights(for: currentNetwork)
+            logPerWalletSyncFromHeights()
         } catch {
             print("[SPV][Config] Failed to set StartFromHeight: \(error)")
         }
@@ -543,7 +538,7 @@ public class WalletService: ObservableObject {
 
             client.stopSync()
 
-            let baseline = Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
+            let baseline = Int(computeNetworkBaselineSyncFromHeight())
             let checkpoint = client.getLatestCheckpointHeight()
             let statsAfter = client.getStats() ?? statsBefore
             applyInitialSyncState(
@@ -619,7 +614,7 @@ public class WalletService: ObservableObject {
         masternodeProgress = 0
         transactionProgress = 0
 
-        let baseline = Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
+        let baseline = Int(computeNetworkBaselineSyncFromHeight())
         applyInitialSyncState(baseline: baseline, tip: nil, checkpoint: nil, snapshot: nil)
 
         latestHeaderHeight = 0
@@ -1060,33 +1055,22 @@ extension WalletService {
     /// Compute the baseline start-from height across all wallets enabled on the given network.
     /// Defaults: mainnet=730_000, testnet=0, devnet=0 when no wallets are present.
     @MainActor
-    func computeNetworkBaselineSyncFromHeight(for network: AppNetwork) -> UInt32 {
+    func computeNetworkBaselineSyncFromHeight() -> UInt32 {
         let defaults: [AppNetwork: Int] = [.mainnet: 730_000, .testnet: 0, .devnet: 0]
         guard let ctx = modelContainer?.mainContext else {
-            return UInt32(defaults[network] ?? 0)
+            return UInt32(defaults[currentNetwork] ?? 0)
         }
 
         let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
         // Filter to wallets that include this network
-        let filtered = wallets.filter { w in
-            switch network {
-            case .mainnet: return (w.networks & 1) != 0
-            case .testnet: return (w.networks & 2) != 0
-            case .devnet:  return (w.networks & 8) != 0
-            }
-        }
-        let perWalletHeights: [Int] = filtered.map { w in
-            switch network {
-            case .mainnet: return max(0, w.syncFromMainnet)
-            case .testnet: return max(0, w.syncFromTestnet)
-            case .devnet:  return max(0, w.syncFromDevnet)
-            }
+        let perWalletHeights: [Int] = wallets.map { w in
+            w.syncBaseHeight
         }
 
         if let minValue = perWalletHeights.min() {
             return UInt32(minValue)
         }
-        return UInt32(defaults[network] ?? 0)
+        return UInt32(defaults[currentNetwork] ?? 0)
     }
 
     /// Combine the persisted sync snapshot (if available) with the logical baseline so the UI reflects
@@ -1214,23 +1198,14 @@ extension WalletService {
 
     /// Print a concise list of per-wallet sync-from heights for debugging purposes.
     @MainActor
-    func logPerWalletSyncFromHeights(for network: AppNetwork) {
+    func logPerWalletSyncFromHeights() {
         guard let ctx = modelContainer?.mainContext else { return }
         let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
         let items: [(String, Int)] = wallets.compactMap { w in
-            // Show only wallets on this network
-            let enabled: Bool
-            let h: Int
-            switch network {
-            case .mainnet: enabled = (w.networks & 1) != 0; h = w.syncFromMainnet
-            case .testnet: enabled = (w.networks & 2) != 0; h = w.syncFromTestnet
-            case .devnet:  enabled = (w.networks & 8) != 0; h = w.syncFromDevnet
-            }
-            guard enabled else { return nil }
-            return (w.id.uuidString.prefix(8).description, max(0, h))
+            return (w.id.uuidString.prefix(8).description, max(0, w.syncBaseHeight))
         }
         let summary = items.map { "\($0.0):\($0.1)" }.joined(separator: ", ")
-        print("[SPV][Baseline] Per-wallet sync-from heights for \(network.rawValue): [\(summary)]")
+        print("[SPV][Baseline] Per-wallet sync-from heights: [\(summary)]")
     }
 }
 

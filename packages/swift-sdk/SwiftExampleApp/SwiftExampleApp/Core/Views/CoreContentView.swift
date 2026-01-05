@@ -11,24 +11,7 @@ struct CoreContentView: View {
     
     // Filter wallets by current network - show wallets that support the current network
     private var walletsForCurrentNetwork: [HDWallet] {
-        let currentNetwork = unifiedAppState.platformState.currentNetwork
-        // No conversion needed, just use currentNetwork directly
-        
-        // Check if wallet supports the current network using the networks bitfield
-        let networkBit: UInt32
-        switch currentNetwork {
-        case .mainnet:
-            networkBit = 1  // DASH
-        case .testnet:
-            networkBit = 2  // TESTNET
-        case .devnet:
-            networkBit = 8  // DEVNET
-        }
-        
-        return wallets.filter { wallet in
-            // Check if the wallet has this network enabled in its bitfield
-            (wallet.networks & networkBit) != 0
-        }
+        return wallets
     }
     // Progress values come from WalletService (kept in sync with SPV callbacks)
     
@@ -401,16 +384,7 @@ struct WalletRowView: View {
     private func getNetworksList() -> String {
         var networks: [String] = []
         
-        // Check each network bit
-        if (wallet.networks & 1) != 0 {
-            networks.append("Mainnet")
-        }
-        if (wallet.networks & 2) != 0 {
-            networks.append("Testnet")
-        }
-        if (wallet.networks & 8) != 0 {
-            networks.append("Devnet")
-        }
+        // TODO: This is probably not needed anymore?
         
         // If no networks set (shouldn't happen after migration), show the original network
         if networks.isEmpty {

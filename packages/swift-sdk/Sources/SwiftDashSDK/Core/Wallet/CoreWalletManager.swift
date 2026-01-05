@@ -56,7 +56,7 @@ public class CoreWalletManager: ObservableObject {
     }
     
     // MARK: - Wallet Management
-    func createWallet(label: String, network: AppNetwork, mnemonic: String? = nil, pin: String, networks: [AppNetwork]? = nil, isImport: Bool = false) async throws -> HDWallet {
+    func createWallet(label: String, mnemonic: String? = nil, pin: String, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
@@ -85,28 +85,24 @@ public class CoreWalletManager: ObservableObject {
         let walletId: Data
         let serializedBytes: Data
         do {
-            let selectedNetworks = networks ?? [network]
-            let keyWalletNetworks = selectedNetworks.map { $0.toKeyWalletNetwork() }
-
             // Calculate birthHeight based on wallet type
             // For imported wallets: use 730k for mainnet, 0 for test/devnets (need to sync from genesis)
             // For new wallets: use 0 to signal "use latest checkpoint" (FFI interprets 0 as None)
             let birthHeight: UInt32
             if isImport {
                 // Imported wallet should sync from a reasonable historical point
-                birthHeight = network == .mainnet ? 730_000 : 1 // Use 1 instead of 0 to avoid "latest checkpoint" interpretation
+                birthHeight = sdkWalletManager.network == .mainnet ? 730_000 : 1 // Use 1 instead of 0 to avoid "latest checkpoint" interpretation
             } else {
                 // New wallet: pass 0 to use latest checkpoint (FFI converts 0 -> None -> latest)
                 birthHeight = 0
             }
 
-            print("Creating wallet with birthHeight: \(birthHeight) (isImport: \(isImport), network: \(network))")
+            print("Creating wallet with birthHeight: \(birthHeight) (isImport: \(isImport)")
 
             // Add wallet using SDK's WalletManager with combined network bitfield and serialize
             let result = try sdkWalletManager.addWalletAndSerialize(
                 mnemonic: finalMnemonic,
                 passphrase: nil,
-                networks: keyWalletNetworks,
                 birthHeight: birthHeight,
                 accountOptions: .default,
                 downgradeToPublicKeyWallet: false,
@@ -120,9 +116,10 @@ public class CoreWalletManager: ObservableObject {
             print("Failed to add wallet: \(error)")
             throw WalletError.walletError("Failed to add wallet: \(error.localizedDescription)")
         }
-        
+    
         // Create HDWallet model for SwiftUI
-        let wallet = HDWallet(label: label, network: network, isImported: isImport)
+        let appNetwork = AppNetwork(network: sdkWalletManager.network)
+        let wallet = HDWallet(label: label, network: appNetwork, isImported: isImport)
         wallet.walletId = walletId
         
         // Persist serialized wallet bytes for restoration on next launch
@@ -147,44 +144,30 @@ public class CoreWalletManager: ObservableObject {
         // Sync complete wallet state from Rust managed info
         try await syncWalletFromManagedInfo(for: wallet)
         
-        // If multiple networks were specified, set the bitfield accordingly
-        if let networks = networks {
-            var bitfield: UInt32 = 0
-            for n in networks {
-                switch n {
-                case .mainnet: bitfield |= 1
-                case .testnet: bitfield |= 2
-                case .devnet: bitfield |= 8
-                }
-            }
-            wallet.networks = bitfield
-        }
-
         // Set per-network sync-from heights
         // These are used by WalletService.computeNetworkBaselineSyncFromHeight()
         // to determine the SPV sync starting point across all wallets
         if isImport {
             // Imported wallet: use fixed per-network baselines
-            wallet.syncFromMainnet = 730_000
-            wallet.syncFromTestnet = 1  // Use 1 instead of 0 to avoid conflicts
-            wallet.syncFromDevnet = 1
+            wallet.syncBaseHeight = sdkWalletManager.network == .mainnet ? 730_000 : 1;
         } else {
-            // New wallet: use the latest checkpoint height for each enabled network
-            let nets = networks ?? [network]
-            for n in nets {
-                switch n {
-                case .mainnet:
-                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) {
-                        wallet.syncFromMainnet = Int(cp)
-                    }
-                case .testnet:
-                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) {
-                        wallet.syncFromTestnet = Int(cp)
-                    }
-                case .devnet:
-                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) {
-                        wallet.syncFromDevnet = Int(cp)
-                    }
+            // New wallet: use the latest checkpoint height
+            switch sdkWalletManager.network {
+            case .mainnet:
+                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) {
+                    wallet.syncBaseHeight = Int(cp)
+                }
+            case .testnet:
+                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) {
+                    wallet.syncBaseHeight = Int(cp)
+                }
+            case .devnet:
+                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) {
+                    wallet.syncBaseHeight = Int(cp)
+                }
+            case .regtest:
+                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 3)) {
+                    wallet.syncBaseHeight = Int(cp)
                 }
             }
         }
@@ -199,7 +182,7 @@ public class CoreWalletManager: ObservableObject {
     }
     
     func importWallet(label: String, network: AppNetwork, mnemonic: String, pin: String) async throws -> HDWallet {
-        let wallet = try await createWallet(label: label, network: network, mnemonic: mnemonic, pin: pin)
+        let wallet = try await createWallet(label: label, mnemonic: mnemonic, pin: pin)
         wallet.isImported = true
         try modelContainer.mainContext.save()
         return wallet
@@ -213,8 +196,7 @@ public class CoreWalletManager: ObservableObject {
     /// Sync wallet data using SwiftDashSDK wrappers (no direct FFI in app)
     private func syncWalletFromManagedInfo(for wallet: HDWallet) async throws {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
         
         for account in wallet.accounts {
             if let managed = collection.getBIP44Account(at: account.accountNumber) {
@@ -285,11 +267,12 @@ public class CoreWalletManager: ObservableObject {
         return try storage.retrieveSeedWithBiometric()
     }
     
-    func createWatchOnlyWallet(label: String, network: AppNetwork, extendedPublicKey: String) async throws -> HDWallet {
+    func createWatchOnlyWallet(label: String, extendedPublicKey: String) async throws -> HDWallet {
         isLoading = true
         defer { isLoading = false }
         
-        let wallet = HDWallet(label: label, network: network, isWatchOnly: true)
+        let appNetwork = AppNetwork(network: sdkWalletManager.network)
+        let wallet = HDWallet(label: label, network: appNetwork, isWatchOnly: true)
         
         // Create account with extended public key
         let account = wallet.createAccount(at: 0)
@@ -332,12 +315,9 @@ public class CoreWalletManager: ObservableObject {
             throw WalletError.walletError("Wallet ID not available")
         }
 
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-
         // Get managed account
         let managedAccount = try sdkWalletManager.getManagedAccount(
             walletId: walletId,
-            network: network,
             accountIndex: accountIndex,
             accountType: .standardBIP44
         )
@@ -357,8 +337,7 @@ public class CoreWalletManager: ObservableObject {
     /// - Returns: Detailed account information
     public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
 
         // Resolve managed account from category and optional index
         var managed: ManagedAccount?
@@ -386,8 +365,10 @@ public class CoreWalletManager: ObservableObject {
         case .providerPlatformKeys:
             managed = collection.getProviderPlatformKeysAccount()
         }
-
-        let derivationPath = derivationPath(for: accountInfo.category, index: accountInfo.index, network: wallet.dashNetwork)
+        
+        let appNetwork = AppNetwork(network: sdkWalletManager.network)
+        
+        let derivationPath = derivationPath(for: accountInfo.category, index: accountInfo.index, network: appNetwork)
         var externalDetails: [AddressDetail] = []
         var internalDetails: [AddressDetail] = []
         var ffiType = FFIAccountType(rawValue: 0)
@@ -430,14 +411,13 @@ public class CoreWalletManager: ObservableObject {
     /// Derive a private key as WIF from seed using a specific path (deferred to SDK)
     public func derivePrivateKeyAsWIF(for wallet: HDWallet, accountInfo: AccountInfo, addressIndex: UInt32) async throws -> String {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let net = wallet.dashNetwork
         // Obtain a non-owning Wallet wrapper from manager
-        guard let sdkWallet = try sdkWalletManager.getWallet(id: walletId, network: net.toKeyWalletNetwork()) else {
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: walletId) else {
             throw WalletError.walletError("Wallet not found in manager")
         }
         
         // Map category to AccountType and master path root
-        let coinType = (net == .testnet) ? "1'" : "5'"
+        let coinType = (sdkWalletManager.network == .testnet) ? "1'" : "5'"
         let mapping: (AccountType, UInt32, String)? = {
             switch accountInfo.category {
             case .providerVotingKeys:
@@ -510,14 +490,12 @@ public class CoreWalletManager: ObservableObject {
     /// Get all accounts for a wallet from the FFI wallet manager
     /// - Parameters:
     ///   - wallet: The wallet model
-    ///   - network: Optional network override; defaults to wallet.dashNetwork
     /// - Returns: Account information including balances and address counts
-    public func getAccounts(for wallet: HDWallet, network: AppNetwork? = nil) async throws -> [AccountInfo] {
+    public func getAccounts(for wallet: HDWallet) async throws -> [AccountInfo] {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let effectiveNetwork = (network ?? wallet.dashNetwork).toKeyWalletNetwork()
         let collection: ManagedAccountCollection
         do {
-            collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: effectiveNetwork)
+            collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
         } catch let err as KeyWalletError {
             // If the managed wallet info isn't found (e.g., after fresh start), try restoring from serialized bytes
             if case .notFound = err, let bytes = wallet.serializedWalletBytes {
@@ -525,7 +503,7 @@ public class CoreWalletManager: ObservableObject {
                     let restoredId = try sdkWalletManager.importWallet(from: bytes)
                     if wallet.walletId != restoredId { wallet.walletId = restoredId }
                     // Retry once after import
-                    collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId!, network: effectiveNetwork)
+                    collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId!)
                 } catch {
                     throw err
                 }
@@ -686,7 +664,7 @@ public class CoreWalletManager: ObservableObject {
 
         // Get balance via SDK wrappers
         do {
-            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: wallet.dashNetwork.toKeyWalletNetwork())
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
             if let managed = collection.getBIP44Account(at: account.accountNumber) {
                 if let bal = try? managed.getBalance() {
                     account.confirmedBalance = bal.confirmed
@@ -704,10 +682,8 @@ public class CoreWalletManager: ObservableObject {
     func syncWalletStateFromRust(for wallet: HDWallet) async {
         guard let walletId = wallet.walletId else { return }
 
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-
         do {
-            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
 
             // Sync all accounts
             for account in wallet.accounts {
@@ -776,20 +752,6 @@ public class CoreWalletManager: ObservableObject {
             
             // Restore each wallet to the FFI wallet manager
             for wallet in wallets {
-                // Migrate networks field if not set (for existing wallets)
-                if wallet.networks == 0 {
-                    // Set networks based on the wallet's current network
-                    switch wallet.dashNetwork {
-                    case .mainnet:
-                        wallet.networks = 1 << 0  // DASH_FLAG
-                    case .testnet:
-                        wallet.networks = 1 << 1  // TESTNET_FLAG
-                    case .devnet:
-                        wallet.networks = 8  // DEVNET
-                    }
-                    print("Migrated networks field for wallet '\(wallet.label)' to \(wallet.networks)")
-                }
-                
                 if let walletBytes = wallet.serializedWalletBytes {
                     do {
                         // Restore wallet to FFI and update the wallet ID

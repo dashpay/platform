@@ -4,7 +4,6 @@ import DashSDKFFI
 /// Swift wrapper for a Dash wallet with HD key derivation
 public class Wallet {
     private let handle: UnsafeMutablePointer<FFIWallet>
-    internal let network: KeyWalletNetwork
     private let ownsHandle: Bool
     
     // MARK: - Static Methods
@@ -33,7 +32,6 @@ public class Wallet {
     public init(mnemonic: String, passphrase: String? = nil, 
                 network: KeyWalletNetwork = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
-        self.network = network
         
         var error = FFIError()
         let walletPtr: UnsafeMutablePointer<FFIWallet>?
@@ -50,7 +48,7 @@ public class Wallet {
                         wallet_create_from_mnemonic_with_options(
                             mnemonicCStr,
                             passphraseCStr,
-                            NetworkSet(network).ffiNetworks,
+                            network.ffiValue,
                             &options,
                             &error
                         )
@@ -59,7 +57,7 @@ public class Wallet {
                     return wallet_create_from_mnemonic_with_options(
                         mnemonicCStr,
                         nil,
-                        NetworkSet(network).ffiNetworks,
+                        network.ffiValue,
                         &options,
                         &error
                     )
@@ -73,7 +71,7 @@ public class Wallet {
                         wallet_create_from_mnemonic(
                             mnemonicCStr,
                             passphraseCStr,
-                            NetworkSet(network).ffiNetworks,
+                            network.ffiValue,
                             &error
                         )
                     }
@@ -81,7 +79,7 @@ public class Wallet {
                     return wallet_create_from_mnemonic(
                         mnemonicCStr,
                         nil,
-                        NetworkSet(network).ffiNetworks,
+                        network.ffiValue,
                         &error
                     )
                 }
@@ -109,7 +107,6 @@ public class Wallet {
     ///   - accountOptions: Account creation options
     public init(seed: Data, network: KeyWalletNetwork = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
-        self.network = network
         self.ownsHandle = true
         
         var error = FFIError()
@@ -121,7 +118,7 @@ public class Wallet {
                 return wallet_create_from_seed_with_options(
                     seedPtr,
                     seed.count,
-                    NetworkSet(network).ffiNetworks,
+                    network.ffiValue,
                     &options,
                     &error
                 )
@@ -129,7 +126,7 @@ public class Wallet {
                 return wallet_create_from_seed(
                     seedPtr,
                     seed.count,
-                    NetworkSet(network).ffiNetworks,
+                    network.ffiValue,
                     &error
                 )
             }
@@ -153,14 +150,12 @@ public class Wallet {
     ///   - xpub: The extended public key string
     ///   - network: The network type
     public init(xpub: String, network: KeyWalletNetwork = .mainnet) throws {
-        self.network = network
-        
         // Create an empty wallet first (no accounts)
         var error = FFIError()
         var options = AccountCreationOption.noAccounts.toFFIOptions()
         
         // Create a random wallet with no accounts
-        let walletPtr = wallet_create_random_with_options(NetworkSet(network).ffiNetworks, &options, &error)
+        let walletPtr = wallet_create_random_with_options(network.ffiValue, &options, &error)
         
         defer {
             if error.message != nil {
@@ -196,9 +191,9 @@ public class Wallet {
         
         if case .specificAccounts = accountOptions {
             var options = accountOptions.toFFIOptions()
-            walletPtr = wallet_create_random_with_options(NetworkSet(network).ffiNetworks, &options, &error)
+            walletPtr = wallet_create_random_with_options(network.ffiValue, &options, &error)
         } else {
-            walletPtr = wallet_create_random(NetworkSet(network).ffiNetworks, &error)
+            walletPtr = wallet_create_random(network.ffiValue, &error)
         }
         
         defer {
@@ -219,7 +214,6 @@ public class Wallet {
     /// Private initializer for internal use (takes ownership)
     private init(handle: UnsafeMutablePointer<FFIWallet>, network: KeyWalletNetwork) {
         self.handle = handle
-        self.network = network
         self.ownsHandle = true
     }
     
@@ -286,7 +280,7 @@ public class Wallet {
     ///   - index: The account index
     /// - Returns: An account handle
     public func getAccount(type: AccountType, index: UInt32 = 0) throws -> Account {
-        let result = wallet_get_account(handle, network.ffiValue, index, type.ffiValue)
+        let result = wallet_get_account(handle, index, type.ffiValue)
         
         defer {
             if result.error_message != nil {
@@ -312,7 +306,7 @@ public class Wallet {
     /// - Returns: An account handle
     public func getTopUpAccount(registrationIndex: UInt32) throws -> Account {
         let result = wallet_get_top_up_account_with_registration_index(
-            handle, network.ffiValue, registrationIndex)
+            handle, registrationIndex)
         
         defer {
             if result.error_message != nil {
@@ -345,11 +339,11 @@ public class Wallet {
         if let xpub = xpub {
             result = xpub.withCString { xpubCStr in
                 wallet_add_account_with_string_xpub(
-                    handle, network.ffiValue, type.ffiValue, index, xpubCStr)
+                    handle, type.ffiValue, index, xpubCStr)
             }
         } else {
             result = wallet_add_account(
-                handle, network.ffiValue, type.ffiValue, index)
+                handle, type.ffiValue, index)
         }
         
         defer {
@@ -374,7 +368,7 @@ public class Wallet {
     /// Get the number of accounts in the wallet
     public var accountCount: UInt32 {
         var error = FFIError()
-        let count = wallet_get_account_count(handle, network.ffiValue, &error)
+        let count = wallet_get_account_count(handle, &error)
         
         defer {
             if error.message != nil {
@@ -408,7 +402,7 @@ public class Wallet {
     /// - Returns: The extended public key string
     public func getAccountXpub(accountIndex: UInt32) throws -> String {
         var error = FFIError()
-        let xpubPtr = wallet_get_account_xpub(handle, network.ffiValue, accountIndex, &error)
+        let xpubPtr = wallet_get_account_xpub(handle, accountIndex, &error)
         
         defer {
             if error.message != nil {
@@ -435,7 +429,7 @@ public class Wallet {
         }
         
         var error = FFIError()
-        let xprivPtr = wallet_get_account_xpriv(handle, network.ffiValue, accountIndex, &error)
+        let xprivPtr = wallet_get_account_xpriv(handle, accountIndex, &error)
         
         defer {
             if error.message != nil {
@@ -463,7 +457,7 @@ public class Wallet {
         
         var error = FFIError()
         let wifPtr = path.withCString { pathCStr in
-            wallet_derive_private_key_as_wif(handle, network.ffiValue, pathCStr, &error)
+            wallet_derive_private_key_as_wif(handle, pathCStr, &error)
         }
         
         defer {
@@ -488,7 +482,7 @@ public class Wallet {
     public func derivePublicKey(path: String) throws -> String {
         var error = FFIError()
         let hexPtr = path.withCString { pathCStr in
-            wallet_derive_public_key_as_hex(handle, network.ffiValue, pathCStr, &error)
+            wallet_derive_public_key_as_hex(handle, pathCStr, &error)
         }
         
         defer {
@@ -515,11 +509,10 @@ public class Wallet {
     /// Get a collection of all accounts in this wallet
     /// - Parameter network: The network type
     /// - Returns: The account collection
-    public func getAccountCollection(network: KeyWalletNetwork? = nil) throws -> AccountCollection {
-        let targetNetwork = network ?? self.network
+    public func getAccountCollection() throws -> AccountCollection {
         var error = FFIError()
         
-        guard let collectionHandle = wallet_get_account_collection(handle, targetNetwork.ffiValue, &error) else {
+        guard let collectionHandle = wallet_get_account_collection(handle, &error) else {
             defer {
                 if error.message != nil {
                     error_message_free(error.message)
@@ -534,9 +527,8 @@ public class Wallet {
     internal var ffiHandle: UnsafeMutablePointer<FFIWallet> { handle }
 
     // Non-owning initializer for wallets obtained from WalletManager
-    public init(nonOwningHandle handle: UnsafeRawPointer, network: KeyWalletNetwork) {
+    public init(nonOwningHandle handle: UnsafeRawPointer) {
         self.handle = UnsafeMutablePointer<FFIWallet>(mutating: handle.bindMemory(to: FFIWallet.self, capacity: 1))
-        self.network = network
         self.ownsHandle = false
     }
 

@@ -1,6 +1,6 @@
 use crate::platform_wallet_info::PlatformWalletInfo;
 use async_trait::async_trait;
-use dashcore::{Network, Transaction};
+use dashcore::Transaction;
 use key_wallet::transaction_checking::{
     TransactionCheckResult, TransactionContext, WalletTransactionChecker,
 };
@@ -12,7 +12,6 @@ impl WalletTransactionChecker for PlatformWalletInfo {
     async fn check_transaction(
         &mut self,
         tx: &Transaction,
-        network: Network,
         context: TransactionContext,
         wallet: &mut Wallet,
         update_state: bool,
@@ -20,7 +19,7 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         // Check transaction with underlying wallet info
         let result = self
             .wallet_info
-            .check_transaction(tx, network, context, wallet, update_state)
+            .check_transaction(tx, context, wallet, update_state)
             .await;
 
         // If the transaction is relevant, and it's an asset lock, automatically fetch identities
@@ -31,16 +30,14 @@ impl WalletTransactionChecker for PlatformWalletInfo {
                 &tx.special_transaction_payload,
                 Some(TransactionPayload::AssetLockPayloadType(_))
             ) {
-                // Check if we have an SDK configured for this network
-                if let Some(identity_manager) = self.identity_managers.get(&network) {
-                    if identity_manager.sdk.is_some() {
-                        // Call the identity fetching logic
-                        if let Err(e) = self
-                            .fetch_identity_and_contacts_for_asset_lock(wallet, network, tx)
-                            .await
-                        {
-                            eprintln!("Failed to fetch identity for asset lock: {}", e);
-                        }
+                // Check if we have an SDK configured
+                if self.identity_manager().sdk.is_some() {
+                    // Call the identity fetching logic
+                    if let Err(e) = self
+                        .fetch_identity_and_contacts_for_asset_lock(wallet, tx)
+                        .await
+                    {
+                        eprintln!("Failed to fetch identity for asset lock: {}", e);
                     }
                 }
             }

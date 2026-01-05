@@ -11,22 +11,28 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::{
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{Utxo, Wallet, WalletBalance};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+use dpp::prelude::CoreBlockHeight;
+use crate::IdentityManager;
 
 /// Implement WalletInfoInterface for PlatformWalletInfo
 impl WalletInfoInterface for PlatformWalletInfo {
     fn from_wallet(wallet: &Wallet) -> Self {
         Self {
             wallet_info: ManagedWalletInfo::from_wallet(wallet),
-            identity_managers: BTreeMap::new(),
+            identity_manager: IdentityManager::new(),
         }
     }
 
     fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
         Self {
             wallet_info: ManagedWalletInfo::from_wallet_with_name(wallet, name),
-            identity_managers: BTreeMap::new(),
+            identity_manager: IdentityManager::new(),
         }
+    }
+
+    fn network(&self) -> Network {
+        self.wallet_info.network()
     }
 
     fn wallet_id(&self) -> [u8; 32] {
@@ -49,11 +55,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.set_description(description)
     }
 
-    fn birth_height(&self) -> Option<u32> {
+    fn birth_height(&self) -> CoreBlockHeight {
         self.wallet_info.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: Option<u32>) {
+    fn set_birth_height(&mut self, height: CoreBlockHeight) {
         self.wallet_info.set_birth_height(height)
     }
 
@@ -69,8 +75,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.update_last_synced(timestamp)
     }
 
-    fn monitored_addresses(&self, network: Network) -> Vec<DashAddress> {
-        self.wallet_info.monitored_addresses(network)
+    fn monitored_addresses(&self) -> Vec<DashAddress> {
+        self.wallet_info.monitored_addresses()
     }
 
     fn utxos(&self) -> BTreeSet<&Utxo> {
@@ -97,40 +103,38 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.transaction_history()
     }
 
-    fn accounts_mut(&mut self, network: Network) -> Option<&mut ManagedAccountCollection> {
-        self.wallet_info.accounts_mut(network)
+    fn accounts_mut(&mut self) -> &mut ManagedAccountCollection {
+        self.wallet_info.accounts_mut()
     }
 
-    fn accounts(&self, network: Network) -> Option<&ManagedAccountCollection> {
-        self.wallet_info.accounts(network)
+    fn accounts(&self) -> &ManagedAccountCollection {
+        self.wallet_info.accounts()
     }
 
     fn process_matured_transactions(
         &mut self,
-        network: Network,
         current_height: u32,
     ) -> Vec<ImmatureTransaction> {
         self.wallet_info
-            .process_matured_transactions(network, current_height)
+            .process_matured_transactions(current_height)
     }
 
-    fn add_immature_transaction(&mut self, network: Network, tx: ImmatureTransaction) {
+    fn add_immature_transaction(&mut self, tx: ImmatureTransaction) {
         // Delegate to the underlying wallet_info
-        self.wallet_info.add_immature_transaction(network, tx)
+        self.wallet_info.add_immature_transaction(tx)
     }
 
-    fn immature_transactions(&self, network: Network) -> Option<&ImmatureTransactionCollection> {
-        self.wallet_info.immature_transactions(network)
+    fn immature_transactions(&self) -> &ImmatureTransactionCollection {
+        self.wallet_info.immature_transactions()
     }
 
-    fn network_immature_balance(&self, network: Network) -> u64 {
-        self.wallet_info.network_immature_balance(network)
+    fn immature_balance(&self) -> u64 {
+        self.wallet_info.immature_balance()
     }
 
     fn create_unsigned_payment_transaction(
         &mut self,
         wallet: &Wallet,
-        network: Network,
         account_index: u32,
         account_type_pref: Option<AccountTypePreference>,
         recipients: Vec<(Address, u64)>,
@@ -139,7 +143,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
     ) -> Result<Transaction, TransactionError> {
         self.wallet_info.create_unsigned_payment_transaction(
             wallet,
-            network,
             account_index,
             account_type_pref,
             recipients,
@@ -148,9 +151,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
         )
     }
 
-    fn update_chain_height(&mut self, network: Network, current_height: u32) {
+    fn update_chain_height(&mut self, current_height: u32) {
         // Delegate to the underlying wallet_info
         self.wallet_info
-            .update_chain_height(network, current_height)
+            .update_chain_height(current_height)
     }
 }
