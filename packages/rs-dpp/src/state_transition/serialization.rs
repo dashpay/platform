@@ -13,8 +13,15 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use hex::ToHex;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use dashcore::hashes::Hash;
+    use platform_value::string_encoding::Encoding;
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::identity::state_transition::AssetLockProved;
+    use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -31,6 +38,7 @@ mod tests {
     use crate::state_transition::batch_transition::{
         BatchTransition, BatchTransitionV1,
     };
+    use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
@@ -46,11 +54,57 @@ mod tests {
     use crate::version::PlatformVersion;
     use crate::withdrawal::Pooling;
     use crate::ProtocolError;
+    use dashcore::transaction::special_transaction::TransactionPayload;
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+
+    #[test]
+    /// Given mainnet transaction 6CDCC15AC4EC68DBB414EE0DA692DFE363A996A0F285423BEFC3A29F87948A0D,
+    /// when deserialized, it should be identity create transition.
+    fn should_build_identity_create_transition_from_mainnet_asset_lock_transaction() {
+        const EXPECTED_STATE_TRANSITION_HASH: &str =
+            "6CDCC15AC4EC68DBB414EE0DA692DFE363A996A0F285423BEFC3A29F87948A0D";
+        const RAW_TRANSACTION_BASE64: &str = "AwADAAAAAAAAACEDeLqSkwVyfHvYThgegiZUvPu0+dU4kyd3PJKigGLC1spBH+wrzjjA/ZGZdQmUzpQyOiC3GyP2eBp8ga9cNlnIOkptMzAtfXPA2daH3xTqt25JQ+fZ6UKB3ypzTK3fOXaAATgAAQAAAgAAIQPoVeBC6iyS0jFV0Dly5WV0SEl6uDciQqqi4EATeUJutEEfAd6+/HbUM4FLS6+lNc6AH8vaD9lViiYny4GPsl/AlBxdr0WjJxxU/B0cNVH8kRMo+W6a+1iSN+NZS7MTyzmTHwACAAEDAAAhA6S0TKbm1a/xyrYMG+Y2odspJ1roL1TcoK9h552yE1VCQSA+KpHiQ8lDBseXI/1ZCMxEvu0qopdjDojaQ4FzaZMgUGfPBeXSfMbQGksLMNseKRBLob/g0DHJWqZAxSDOuAwZAfwAIQxGIDIHY9cjWxS0tJupeJuKMZwzFKmLxkU3NmqFTcFscilVAABBH9R3vwbfA3q5XJG4m4z87OAA1uG8wup915wGGKAxdEObXPSqIvPBWrHlGTf/Uymanc2cDH1uKdsniJyoORwauPBIqlz61/Kf9HDnubX4GoHRYdnb4WzE+Tdh+L39a2dN2A==";
+        const EXPECTED_IDENTITY_ADDRESS: &str = "5tf2QotaJw8kRNpQEa8TXtRQ6FLxwUrY4Mtee2JF2nco";
+        const EXPECTED_CORE_TRANSACTION_HASH: &str =
+            "5529726cc14d856a363745c68ba914339c318a9b78a99bb4b4145b23d7630732";
+        let raw_transaction = STANDARD
+            .decode(RAW_TRANSACTION_BASE64)
+            .expect("base64 transaction should decode");
+        let state_transition = StateTransition::deserialize_from_bytes(&raw_transaction)
+            .expect("State transition deserializes correctly");
+
+        assert_eq!(
+            &state_transition
+                .transaction_id()
+                .expect("expected transaction id")
+                .encode_hex_upper::<String>(),
+            EXPECTED_STATE_TRANSITION_HASH
+        );
+
+        let StateTransition::IdentityCreate(identity_create_transition) = state_transition else {
+            panic!("expected identity create transition");
+        };
+
+        let transaction = identity_create_transition
+            .asset_lock_proof()
+            .transaction()
+            .expect("should have asset lock proof transaction");
+
+        assert_eq!(
+            &transaction.txid().to_hex().to_lowercase(),
+            EXPECTED_CORE_TRANSACTION_HASH
+        );
+
+        let identity_address = identity_create_transition
+            .identity_id()
+            .to_string(Encoding::Base58);
+
+        assert_eq!(identity_address, EXPECTED_IDENTITY_ADDRESS);
+    }
 
     #[test]
     #[cfg(feature = "random-identities")]
