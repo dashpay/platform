@@ -110,7 +110,7 @@ dash-platform-macros = { path = "../rs-dash-platform-macros" }
 libc = "0.2"
 
 # For tests of grovedb verify
-rocksdb = { version = "0.24.0" }
+rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
