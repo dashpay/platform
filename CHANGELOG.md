@@ -1,3 +1,20 @@
+## [3.0.0-dev.10](///compare/v3.0.0-dev.9...v3.0.0-dev.10) (2026-01-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** clean up expired compacted address balances (#2948)
+
+### Features
+
+* **platform:** clean up expired compacted address balances ([#2948](undefined/undefined/undefined/issues/2948))
+
+
+### Bug Fixes
+
+* **dpp:** broken chain lock proof deserialization ([#2950](undefined/undefined/undefined/issues/2950))
+* **wasm-sdk:** enable identity_update to add ECDSA_SECP256K1 and BLS12_381 keys ([#2947](undefined/undefined/undefined/issues/2947))
+
 ## [3.0.0-dev.7](https://github.com/dashpay/platform/compare/v3.0.0-dev.6...v3.0.0-dev.7) (2025-12-30)
 
 
