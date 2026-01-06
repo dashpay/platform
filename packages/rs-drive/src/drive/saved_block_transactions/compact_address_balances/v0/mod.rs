@@ -174,9 +174,13 @@ impl Drive {
 
         let expiration_value = if let Some(Element::Item(existing_data, _)) = existing_ranges {
             // Deserialize existing vec of block ranges and append the new one
-            let mut ranges: Vec<(u64, u64)> = bincode::decode_from_slice(&existing_data, config)
-                .map(|(v, _)| v)
-                .unwrap_or_default();
+            let (mut ranges, _): (Vec<(u64, u64)>, usize) =
+                bincode::decode_from_slice(&existing_data, config).map_err(|e| {
+                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
+                        "cannot decode expiration block ranges: {}",
+                        e
+                    ))))
+                })?;
             ranges.push((start_block, end_block));
             bincode::encode_to_vec(&ranges, config).map_err(|e| {
                 Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
