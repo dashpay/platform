@@ -9,6 +9,9 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+/// One day in milliseconds (used for compacted address expiration)
+pub const ONE_DAY_IN_MS: u64 = 24 * 60 * 60 * 1000;
+
 impl Drive {
     /// Compacts address balance changes from recent blocks, including the current block,
     /// into a single compacted entry.
@@ -17,9 +20,13 @@ impl Drive {
     /// with the provided current block's address balances, and stores the result in
     /// the compacted address balances tree with a (start_block, end_block) key.
     ///
+    /// Also stores the expiration time (current block time + 1 day) in the
+    /// compacted addresses expiration time tree.
+    ///
     /// # Arguments
     /// * `current_address_balances` - The current block's address balance changes to include
     /// * `current_block_height` - The height of the current block
+    /// * `current_block_time_ms` - The current block time in milliseconds
     /// * `transaction` - Optional database transaction
     /// * `platform_version` - The platform version
     ///
@@ -30,6 +37,7 @@ impl Drive {
         &self,
         current_address_balances: &BTreeMap<PlatformAddress, CreditOperation>,
         current_block_height: u64,
+        current_block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(u64, u64), Error> {
@@ -42,6 +50,7 @@ impl Drive {
             0 => self.compact_address_balances_with_current_block_v0(
                 current_address_balances,
                 current_block_height,
+                current_block_time_ms,
                 transaction,
                 platform_version,
             ),

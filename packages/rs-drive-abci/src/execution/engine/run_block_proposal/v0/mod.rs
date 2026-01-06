@@ -337,6 +337,13 @@ where
             platform_version,
         )?;
 
+        // Clean up expired compacted address balance entries
+        self.cleanup_recent_block_storage_address_balances(
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
+
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue

@@ -445,8 +445,6 @@ pub fn create_identity_update_transition_add_keys(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
-    identity.bump_revision();
-
     let start_id = (identity
         .public_keys()
         .values()
@@ -487,6 +485,8 @@ pub fn create_identity_update_transition_add_keys(
         None,
     )
     .expect("expected to create an AddKeys transition");
+
+    identity.bump_revision();
 
     (state_transition, (identity.id(), add_public_keys))
 }
@@ -539,7 +539,6 @@ pub fn create_identity_update_transition_disable_keys(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Option<StateTransition> {
-    identity.bump_revision();
     // we want to find keys that are not disabled
     let key_ids_we_could_disable = identity
         .public_keys()
@@ -556,7 +555,6 @@ pub fn create_identity_update_transition_disable_keys(
         .collect::<Vec<_>>();
 
     if key_ids_we_could_disable.is_empty() {
-        identity.set_revision(identity.revision() - 1); //since we added 1 before
         return None;
     }
     let indices: Vec<_> = (0..key_ids_we_could_disable.len()).choose_multiple(rng, count as usize);
@@ -596,6 +594,8 @@ pub fn create_identity_update_transition_disable_keys(
         None,
     )
     .expect("expected to create a DisableKeys transition");
+
+    identity.bump_revision();
 
     Some(state_transition)
 }

@@ -1,3 +1,4 @@
+mod cleanup_expired_address_balances;
 mod compact_address_balances;
 mod fetch_address_balances;
 mod fetch_compacted_address_balances;

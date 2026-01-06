@@ -2,7 +2,8 @@
 
 use crate::drive::address_funds::queries::CLEAR_ADDRESS_POOL;
 use crate::drive::saved_block_transactions::{
-    ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESS_BALANCES_KEY_U8,
+    ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
+    COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
@@ -96,6 +97,16 @@ impl Drive {
         batch.add_insert(
             Self::saved_block_transactions_path(),
             vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
+            Element::empty_tree(),
+        );
+
+        // Compacted addresses expiration time subtree under SavedBlockTransactions for storing
+        // expiration timestamps (in milliseconds) for compacted address balance ranges.
+        // Each item uses the same (start_block, end_block) key as the compacted balances,
+        // with the value being the expiration time (block time + 1 day).
+        batch.add_insert(
+            Self::saved_block_transactions_path(),
+            vec![COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8],
             Element::empty_tree(),
         );
 
