@@ -1,4 +1,5 @@
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -27,17 +28,18 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
         identity_id: Option<IdentifierWasm>,
     ) -> Result<ContestedDocumentVotePollWinnerInfoWasm, JsValue> {
         match kind {
-            "none" | "NoWinner" | "NO_WINNER" => {
+            "NoWinner" | "noWinner" | "no_winner" | "none" | "NO_WINNER" => {
                 Ok(ContestedDocumentVotePollWinnerInfo::NoWinner.into())
             }
-            "identity" | "Identity" | "IDENTITY" => {
+            "WonByIdentity" | "wonByIdentity" | "won_by_identity" | "identity" | "Identity"
+            | "IDENTITY" => {
                 let identity = identity_id.ok_or_else(|| {
-                    JsValue::from_str("identityId is required when kind is 'identity'")
+                    JsValue::from_str("identityId is required when kind is 'WonByIdentity'")
                 })?;
 
                 Ok(ContestedDocumentVotePollWinnerInfo::WonByIdentity(identity.into()).into())
             }
-            "locked" | "Locked" | "LOCKED" => {
+            "Locked" | "locked" | "LOCKED" => {
                 Ok(ContestedDocumentVotePollWinnerInfo::Locked.into())
             }
             other => Err(JsValue::from_str(&format!(
@@ -50,9 +52,9 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
     #[wasm_bindgen(getter = kind)]
     pub fn kind(&self) -> String {
         match self.0 {
-            ContestedDocumentVotePollWinnerInfo::NoWinner => "none".to_string(),
-            ContestedDocumentVotePollWinnerInfo::WonByIdentity(_) => "identity".to_string(),
-            ContestedDocumentVotePollWinnerInfo::Locked => "locked".to_string(),
+            ContestedDocumentVotePollWinnerInfo::NoWinner => "NoWinner".to_string(),
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(_) => "WonByIdentity".to_string(),
+            ContestedDocumentVotePollWinnerInfo::Locked => "Locked".to_string(),
         }
     }
 
@@ -84,6 +86,11 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
         matches!(self.0, ContestedDocumentVotePollWinnerInfo::NoWinner)
     }
 }
+
+impl_wasm_conversions!(
+    ContestedDocumentVotePollWinnerInfoWasm,
+    ContestedDocumentVotePollWinnerInfo
+);
 
 impl ContestedDocumentVotePollWinnerInfoWasm {
     pub fn into_inner(self) -> ContestedDocumentVotePollWinnerInfo {

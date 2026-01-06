@@ -18,12 +18,13 @@ pub mod token_info;
 /// Token status
 pub mod token_status;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
-use dpp::prelude::{IdentityNonce, TimestampMillis};
+use dpp::prelude::{AddressNonce, IdentityNonce, TimestampMillis};
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
 pub use dpp::version::ProtocolVersionVoteCount;
@@ -111,6 +112,26 @@ pub type DataContractHistory = RetrievedValues<u64, DataContract>;
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = RetrievedObjects<Identifier, DataContract>;
+
+/// Information about a Platform address including its nonce and balance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize,),
+    platform_serialize(unversioned)
+)]
+pub struct AddressInfo {
+    /// Address that owns the balance.
+    pub address: PlatformAddress,
+    /// Nonce associated with the address.
+    pub nonce: AddressNonce,
+    /// Balance stored for the address.
+    pub balance: Credits,
+}
+
+/// Mapping between platform addresses and their balance/nonce information.
+/// Missing entries are represented as `None`.
+pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 
 /// Multiple contenders for a vote resolution.
 ///
@@ -641,3 +662,65 @@ pub struct ProposerBlockCountById(pub u64);
 
 /// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
 pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;
+
+/// Address balance changes for a single block.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct BlockAddressBalanceChanges {
+    /// The block height
+    pub block_height: u64,
+    /// The address balance changes in this block
+    pub changes: BTreeMap<PlatformAddress, dpp::balances::credits::CreditOperation>,
+}
+
+/// Recent address balance changes across multiple blocks.
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct RecentAddressBalanceChanges(pub Vec<BlockAddressBalanceChanges>);
+
+impl RecentAddressBalanceChanges {
+    /// Get the inner vector
+    pub fn into_inner(self) -> Vec<BlockAddressBalanceChanges> {
+        self.0
+    }
+}
+
+/// Compacted address balance changes for a range of blocks.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct CompactedBlockAddressBalanceChanges {
+    /// The start block height of the compacted range
+    pub start_block_height: u64,
+    /// The end block height of the compacted range
+    pub end_block_height: u64,
+    /// The merged address balance changes for this range
+    pub changes: BTreeMap<PlatformAddress, dpp::balances::credits::CreditOperation>,
+}
+
+/// Compacted address balance changes across multiple ranges.
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct RecentCompactedAddressBalanceChanges(pub Vec<CompactedBlockAddressBalanceChanges>);
+
+impl RecentCompactedAddressBalanceChanges {
+    /// Get the inner vector
+    pub fn into_inner(self) -> Vec<CompactedBlockAddressBalanceChanges> {
+        self.0
+    }
+}

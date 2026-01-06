@@ -1,4 +1,5 @@
 use super::broadcast::BroadcastStateTransition;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
@@ -16,7 +17,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
-pub trait PurchaseDocument<S: Signer>: Waitable {
+pub trait PurchaseDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Tries to purchase a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -48,7 +49,7 @@ pub trait PurchaseDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PurchaseDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> PurchaseDocument<S> for Document {
     async fn purchase_document(
         &self,
         price: Credits,
@@ -84,6 +85,7 @@ impl<S: Signer> PurchaseDocument<S> for Document {
             sdk.version(),
             settings.state_transition_creation_options,
         )?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         transition.broadcast(sdk, Some(settings)).await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result

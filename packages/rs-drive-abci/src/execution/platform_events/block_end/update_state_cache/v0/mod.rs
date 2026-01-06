@@ -21,13 +21,10 @@ where
     ///
     /// # Arguments
     ///
-    /// * `block_info` - Extended block information for the current block.
+    /// * `extended_block_info` - Extended block information for the current block.
+    /// * `block_platform_state` - The platform state for this block.
     /// * `transaction` - The transaction associated with the block.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
-    ///   If there is a problem with the update, it returns an `Error`.
+    /// * `platform_version` - The platform version.
     ///
     /// # Errors
     ///
@@ -43,7 +40,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // Update block state and store it in shared lock
-
         if let Some(next_validator_set_quorum_hash) =
             block_platform_state.take_next_validator_set_quorum_hash()
         {
@@ -56,10 +52,11 @@ where
         block_platform_state.set_genesis_block_info(None);
 
         // Persist block state
-
         self.store_platform_state(&block_platform_state, Some(transaction), platform_version)?;
 
-        self.state.store(Arc::new(block_platform_state));
+        let block_platform_state = Arc::new(block_platform_state);
+
+        self.state.store(block_platform_state);
 
         Ok(())
     }

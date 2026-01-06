@@ -1,3 +1,5 @@
+pub mod addresses;
+pub mod broadcast;
 pub mod contracts;
 pub mod documents;
 pub mod identity;

@@ -32,6 +32,9 @@ inputs:
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
+  build_args:
+    description: Additional build arguments to pass to Docker build (one per line)
+    default: ""
   cache_bucket:
     description: S3 bucket to use for caching (both sccache and layer cache)
     required: true
@@ -196,6 +199,7 @@ runs:
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           ADDITIONAL_FEATURES=${{ inputs.additional_features }}
+          ${{ inputs.build_args }}
           ${{ steps.sccache.outputs.env_vars }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}

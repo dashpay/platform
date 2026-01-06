@@ -6,11 +6,11 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::StateTransition;
+use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 
 use crate::state_transition::StateTransitionType::IdentityCreate;
 use crate::version::FeatureVersion;
@@ -31,26 +31,10 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     fn state_transition_type(&self) -> StateTransitionType {
         IdentityCreate
     }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
+
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.identity_id]
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 
     /// this is based on the asset lock
@@ -64,5 +48,27 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
 
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         self.user_fee_increase = user_fee_increase
+    }
+}
+
+impl StateTransitionSingleSigned for IdentityCreateTransitionV0 {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        &self.signature
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for IdentityCreateTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

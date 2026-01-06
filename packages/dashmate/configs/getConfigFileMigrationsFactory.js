@@ -1318,10 +1318,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '2.2.0-dev.1': (configFile) => {
+      '3.0.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:3';
+            if (options.platform?.dapi?.api) {
+              options.platform.dapi.api.docker.image = 'dashpay/dapi:3';
+            }
+            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:3';
 
             if (options.platform?.dapi?.deprecated) {
               delete options.platform.dapi.deprecated;
@@ -1387,6 +1393,24 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.platform.dapi?.rsDapi?.docker
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
               options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '3.0.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.quorumList) {
+              options.platform.quorumList = lodash.cloneDeep(defaultConfig.get('platform.quorumList'));
+            }
+
+            if (!options.core.rpc.users.quorum_list) {
+              options.core.rpc.users.quorum_list = lodash.cloneDeep(
+                defaultConfig.get('core.rpc.users.quorum_list'),
+              );
             }
           });
 

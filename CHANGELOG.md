@@ -1,3 +1,41 @@
+## [3.0.0-dev.7](https://github.com/dashpay/platform/compare/v3.0.0-dev.6...v3.0.0-dev.7) (2025-12-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** add quroum list service (#2868)
+
+### Features
+
+* **dashmate:** add quroum list service ([#2868](https://github.com/dashpay/platform/issues/2868))
+* **platform:** sdk support for platform addresses and checkpoint fix ([#2933](https://github.com/dashpay/platform/issues/2933))
+* **sdk:** support platform address state transitions in JS SDK ([#2931](https://github.com/dashpay/platform/issues/2931))
+
+
+### Bug Fixes
+
+* **drive:** failing to prove absent platform addressess ([#2934](https://github.com/dashpay/platform/issues/2934))
+* **sdk:** non proved JS SDK methods ([#2871](https://github.com/dashpay/platform/issues/2871))
+
+## [3.0.0-dev.5](///compare/v3.0.0-dev.4...v3.0.0-dev.5) (2025-12-23)
+
+
+### Bug Fixes
+
+* **drive-abci:** verify apphash in finalize_block ([#2878](undefined/undefined/undefined/issues/2878))
+
+
+### Build System
+
+* upgrade yarn to latest version ([#2926](undefined/undefined/undefined/issues/2926))
+
+## [3.0.0-dev.4](///compare/v3.0.0-dev.3...v3.0.0-dev.4) (2025-12-23)
+
+
+### Continuous Integration
+
+* fix NPM publish in release ([#2923](undefined/undefined/undefined/issues/2923))
+
 ## [2.2.0-dev.2](https://github.com/dashpay/platform/compare/v2.1.2...v2.2.0-dev.2) (2025-11-28)
 
 

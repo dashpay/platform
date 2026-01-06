@@ -1,3 +1,5 @@
+mod load_current_checkpoints;
+
 use crate::cache::SystemDataContracts;
 use crate::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
 use crate::config::DriveConfig;
@@ -5,6 +7,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::errors::ProtocolError;
 use grovedb::GroveDb;
+use load_current_checkpoints::load_current_checkpoints;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
 use std::sync::Arc;
@@ -29,8 +32,9 @@ impl Drive {
         config: Option<DriveConfig>,
     ) -> Result<(Self, Option<&'static PlatformVersion>), Error> {
         let config = config.unwrap_or_default();
+        let db_path = path.as_ref();
 
-        let grove = Arc::new(GroveDb::open(path)?);
+        let grove = Arc::new(GroveDb::open(db_path)?);
 
         #[cfg(feature = "grovedbg")]
         if config.grovedb_visualizer_enabled {
@@ -48,6 +52,9 @@ impl Drive {
             })
             .transpose()?;
 
+        // Load existing checkpoints from the checkpoints directory
+        let checkpoints = load_current_checkpoints(db_path)?;
+
         let drive = Drive {
             grove,
             config,
@@ -60,6 +67,7 @@ impl Drive {
                 protocol_versions_counter: parking_lot::RwLock::new(ProtocolVersionsCache::new()),
                 system_data_contracts: SystemDataContracts::load_genesis_system_contracts()?,
             },
+            checkpoints,
         };
 
         Ok((drive, maybe_platform_version))

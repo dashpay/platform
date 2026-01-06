@@ -104,7 +104,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -170,10 +170,10 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                ..
+            }]
         );
 
         platform
@@ -238,7 +238,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -348,10 +348,10 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimWrongClaimant(_)),
+                ..
+            }]
         );
 
         platform
@@ -469,7 +469,7 @@ mod perpetual_distribution_block {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -604,10 +604,10 @@ mod fixed_amount {
             base_time_ms: Default::default(),
             expected_balance: None,
             claim_transition_assertions: vec![|v| match v {
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
-                    _,
-                )] => Ok(()),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+                    ..
+                }] => Ok(()),
                 _ => Err(format!("expected TokenMintPastMaxSupplyError, got {:?}", v)),
             }],
         };
@@ -780,7 +780,6 @@ mod random {
                 name: format!("test_{}", i),
                 base_height: i - 1,
                 base_time_ms: Default::default(),
-
                 expected_balance: None,
                 claim_transition_assertions: Default::default(),
             })
@@ -3095,7 +3094,7 @@ mod test_suite {
                         Ok(())
                     },
                     |processing_results: &[_]| match processing_results {
-                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => Ok(()),
+                        [StateTransitionExecutionResult::SuccessfulExecution { .. }] => Ok(()),
                         _ => Err(format!(
                             "expected SuccessfulExecution, got {:?}",
                             processing_results
@@ -3110,7 +3109,7 @@ mod test_suite {
                         Ok(())
                     },
                     |processing_results: &[_]| match processing_results {
-                        [StateTransitionExecutionResult::SuccessfulExecution(_, _)] => {
+                        [StateTransitionExecutionResult::SuccessfulExecution { .. }] => {
                             Err("expected error, got SuccessfulExecution".into())
                         }
                         [StateTransitionExecutionResult::InternalError(e)] => {

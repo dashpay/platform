@@ -20,6 +20,273 @@ use tracing::{debug, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
+/// Parse a KeyType from its string representation.
+fn parse_key_type(s: Option<&str>) -> Result<KeyType, WasmSdkError> {
+    match s.ok_or_else(|| WasmSdkError::invalid_argument("keyType is required"))? {
+        "ECDSA_SECP256K1" => Ok(KeyType::ECDSA_SECP256K1),
+        "BLS12_381" => Ok(KeyType::BLS12_381),
+        "ECDSA_HASH160" => Ok(KeyType::ECDSA_HASH160),
+        "BIP13_SCRIPT_HASH" => Ok(KeyType::BIP13_SCRIPT_HASH),
+        "EDDSA_25519_HASH160" => Ok(KeyType::EDDSA_25519_HASH160),
+        s => Err(WasmSdkError::invalid_argument(format!(
+            "Unknown key type: {}",
+            s
+        ))),
+    }
+}
+
+/// Parse a Purpose from its string representation.
+fn parse_purpose(s: Option<&str>) -> Result<Purpose, WasmSdkError> {
+    match s.ok_or_else(|| WasmSdkError::invalid_argument("purpose is required"))? {
+        "AUTHENTICATION" => Ok(Purpose::AUTHENTICATION),
+        "ENCRYPTION" => Ok(Purpose::ENCRYPTION),
+        "DECRYPTION" => Ok(Purpose::DECRYPTION),
+        "TRANSFER" => Ok(Purpose::TRANSFER),
+        "SYSTEM" => Ok(Purpose::SYSTEM),
+        "VOTING" => Ok(Purpose::VOTING),
+        s => Err(WasmSdkError::invalid_argument(format!(
+            "Unknown purpose: {}",
+            s
+        ))),
+    }
+}
+
+/// Parse a SecurityLevel from its string representation.
+/// Defaults to HIGH for None or unknown values.
+fn parse_security_level(s: Option<&str>) -> SecurityLevel {
+    match s {
+        Some("MASTER") => SecurityLevel::MASTER,
+        Some("CRITICAL") => SecurityLevel::CRITICAL,
+        Some("HIGH") => SecurityLevel::HIGH,
+        Some("MEDIUM") => SecurityLevel::MEDIUM,
+        _ => SecurityLevel::HIGH,
+    }
+}
+
+/// Check if an ECDSA-derived public key matches an identity's public key.
+/// Supports ECDSA_SECP256K1 (33-byte comparison) and ECDSA_HASH160 (20-byte comparison).
+/// Returns false for non-ECDSA key types (BLS, EdDSA, etc.) since they require different derivation.
+fn ecdsa_public_key_matches_identity_key(
+    public_key_bytes: &[u8],   // 33-byte compressed secp256k1 public key
+    public_key_hash160: &[u8], // 20-byte hash160 of the public key
+    key: &IdentityPublicKey,
+) -> bool {
+    match key.key_type() {
+        KeyType::ECDSA_SECP256K1 => {
+            // Compare full 33-byte compressed public key
+            key.data().as_slice() == public_key_bytes
+        }
+        KeyType::ECDSA_HASH160 => {
+            // Compare 20-byte hash160
+            key.data().as_slice() == public_key_hash160
+        }
+        // BLS12_381 keys require separate BLS key derivation - not supported via ECDSA private key
+        // BIP13_SCRIPT_HASH and EDDSA_25519_HASH160 are also not derivable from ECDSA private key
+        _ => false,
+    }
+}
+
+/// Parse public keys from JSON for identity update operations.
+///
+/// This function handles the key parsing logic for `identity_update`, supporting:
+/// - ECDSA_SECP256K1: Requires `privateKeyHex` or `privateKeyWif`, adds to signer
+/// - BLS12_381: Requires `privateKeyHex` (WIF not supported), adds to signer
+/// - ECDSA_HASH160: Accepts `privateKeyHex` or `data` field, does NOT add to signer
+/// - BIP13_SCRIPT_HASH, EDDSA_25519_HASH160: Requires `data` field, does NOT add to signer
+///
+/// Signing key types (where `is_unique_key_type() == true`) are added to the signer
+/// so they can sign for themselves during the identity update transition.
+fn parse_keys_for_identity_update(
+    keys_json: &str,
+    starting_key_id: u32,
+    signer: &mut SimpleSigner,
+    network: dash_sdk::dpp::dashcore::Network,
+) -> Result<Vec<IdentityPublicKey>, WasmSdkError> {
+    let keys_data: serde_json::Value = serde_json::from_str(keys_json).map_err(|e| {
+        WasmSdkError::invalid_argument(format!("Invalid JSON for add_public_keys: {}", e))
+    })?;
+
+    let keys_array = keys_data
+        .as_array()
+        .ok_or_else(|| WasmSdkError::invalid_argument("add_public_keys must be a JSON array"))?;
+
+    let mut next_key_id = starting_key_id;
+    let mut keys_result = Vec::new();
+
+    for key_data in keys_array {
+        let key_type = parse_key_type(key_data["keyType"].as_str())?;
+        let purpose = parse_purpose(key_data["purpose"].as_str())?;
+        let security_level = parse_security_level(key_data["securityLevel"].as_str());
+
+        // Handle key data based on key type
+        // Signing key types (is_unique_key_type == true) require private key
+        // Non-signing key types use the data field
+        let (public_key_data, private_key_bytes_opt): (Vec<u8>, Option<[u8; 32]>) = match key_type {
+            KeyType::ECDSA_SECP256K1 => {
+                // For ECDSA signing keys, require private key (hex or WIF)
+                let private_key_bytes = if let Some(pk_hex) = key_data["privateKeyHex"].as_str() {
+                    let bytes = hex::decode(pk_hex).map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid private key hex: {}", e))
+                    })?;
+                    bytes.as_slice().try_into().map_err(|_| {
+                        WasmSdkError::invalid_argument(format!(
+                            "Private key must be 32 bytes, got {}",
+                            bytes.len()
+                        ))
+                    })?
+                } else if let Some(pk_wif) = key_data["privateKeyWif"].as_str() {
+                    let pk = PrivateKey::from_wif(pk_wif).map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid WIF private key: {}", e))
+                    })?;
+                    pk.inner.secret_bytes()
+                } else {
+                    return Err(WasmSdkError::invalid_argument(
+                        "ECDSA_SECP256K1 keys require either privateKeyHex or privateKeyWif",
+                    ));
+                };
+
+                // Derive public key from private key
+                let public_key_data = key_type
+                    .public_key_data_from_private_key_data(&private_key_bytes, network)
+                    .map_err(|e| {
+                        WasmSdkError::generic(format!(
+                            "Failed to derive ECDSA_SECP256K1 public key: {}",
+                            e
+                        ))
+                    })?;
+
+                (public_key_data, Some(private_key_bytes))
+            }
+            KeyType::BLS12_381 => {
+                // BLS keys only support hex format (WIF is not valid for BLS)
+                if key_data["privateKeyWif"].is_string() {
+                    return Err(WasmSdkError::invalid_argument(
+                        "BLS12_381 keys do not support WIF format, use privateKeyHex only",
+                    ));
+                }
+
+                let private_key_bytes = if let Some(pk_hex) = key_data["privateKeyHex"].as_str() {
+                    let bytes = hex::decode(pk_hex).map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid private key hex: {}", e))
+                    })?;
+                    bytes.as_slice().try_into().map_err(|_| {
+                        WasmSdkError::invalid_argument(format!(
+                            "Private key must be 32 bytes, got {}",
+                            bytes.len()
+                        ))
+                    })?
+                } else {
+                    return Err(WasmSdkError::invalid_argument(
+                        "BLS12_381 keys require privateKeyHex",
+                    ));
+                };
+
+                // Derive public key from private key
+                let public_key_data = key_type
+                    .public_key_data_from_private_key_data(&private_key_bytes, network)
+                    .map_err(|e| {
+                        WasmSdkError::generic(format!(
+                            "Failed to derive BLS12_381 public key: {}",
+                            e
+                        ))
+                    })?;
+
+                (public_key_data, Some(private_key_bytes))
+            }
+            KeyType::ECDSA_HASH160 => {
+                // ECDSA_HASH160: Accept privateKeyHex (to derive hash) or data field
+                if let Some(pk_hex) = key_data["privateKeyHex"].as_str() {
+                    let bytes = hex::decode(pk_hex).map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid private key hex: {}", e))
+                    })?;
+                    let private_key_bytes: [u8; 32] =
+                        bytes.as_slice().try_into().map_err(|_| {
+                            WasmSdkError::invalid_argument(format!(
+                                "Private key must be 32 bytes, got {}",
+                                bytes.len()
+                            ))
+                        })?;
+
+                    let derived_data = key_type
+                        .public_key_data_from_private_key_data(&private_key_bytes, network)
+                        .map_err(|e| {
+                            WasmSdkError::generic(format!(
+                                "Failed to derive ECDSA_HASH160 public key: {}",
+                                e
+                            ))
+                        })?;
+
+                    (derived_data, None) // No signing needed for HASH160
+                } else if let Some(data_str) = key_data["data"].as_str() {
+                    let key_data_bytes = dash_sdk::dpp::dashcore::base64::decode(data_str)
+                        .map_err(|e| {
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid base64 key data: {}",
+                                e
+                            ))
+                        })?;
+                    if key_data_bytes.len() != 20 {
+                        return Err(WasmSdkError::invalid_argument(format!(
+                            "ECDSA_HASH160 key data must be 20 bytes, got {}",
+                            key_data_bytes.len()
+                        )));
+                    }
+                    (key_data_bytes, None)
+                } else {
+                    return Err(WasmSdkError::invalid_argument(
+                        "ECDSA_HASH160 requires either 'privateKeyHex' or 'data' field",
+                    ));
+                }
+            }
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                // These only accept data field (backward compatible)
+                let data_str = key_data["data"].as_str().ok_or_else(|| {
+                    WasmSdkError::invalid_argument(format!(
+                        "{:?} keys require 'data' field",
+                        key_type
+                    ))
+                })?;
+                let key_data_bytes =
+                    dash_sdk::dpp::dashcore::base64::decode(data_str).map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid base64 key data: {}", e))
+                    })?;
+                // Validate expected length (20 bytes for hash-based key types)
+                if key_data_bytes.len() != 20 {
+                    return Err(WasmSdkError::invalid_argument(format!(
+                        "{:?} key data must be 20 bytes, got {}",
+                        key_type,
+                        key_data_bytes.len()
+                    )));
+                }
+                (key_data_bytes, None)
+            }
+        };
+
+        // Create the identity public key
+        use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: next_key_id,
+            key_type,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(public_key_data),
+            disabled_at: None,
+        });
+
+        // Add to signer if this is a signing key type (is_unique_key_type == true)
+        if let Some(pk_bytes) = private_key_bytes_opt {
+            signer.add_identity_public_key(public_key.clone(), pk_bytes);
+        }
+
+        keys_result.push(public_key);
+        next_key_id += 1;
+    }
+
+    Ok(keys_result)
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     /// Create a new identity on Dash Platform.
@@ -121,53 +388,9 @@ impl WasmSdk {
             .enumerate()
             .map(|(key, value)| (key as u32, value))
         {
-            let key_type_str = key_data["keyType"]
-                .as_str()
-                .ok_or_else(|| WasmSdkError::invalid_argument("keyType is required"))?;
-            let purpose_str = key_data["purpose"]
-                .as_str()
-                .ok_or_else(|| WasmSdkError::invalid_argument("purpose is required"))?;
-            let security_level_str = key_data["securityLevel"].as_str().unwrap_or("HIGH");
-
-            // Parse key type first
-            let key_type = match key_type_str {
-                "ECDSA_SECP256K1" => KeyType::ECDSA_SECP256K1,
-                "BLS12_381" => KeyType::BLS12_381,
-                "ECDSA_HASH160" => KeyType::ECDSA_HASH160,
-                "BIP13_SCRIPT_HASH" => KeyType::BIP13_SCRIPT_HASH,
-                "EDDSA_25519_HASH160" => KeyType::EDDSA_25519_HASH160,
-                _ => {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "Unknown key type: {}",
-                        key_type_str
-                    )));
-                }
-            };
-
-            // Parse purpose
-            let purpose = match purpose_str {
-                "AUTHENTICATION" => Purpose::AUTHENTICATION,
-                "ENCRYPTION" => Purpose::ENCRYPTION,
-                "DECRYPTION" => Purpose::DECRYPTION,
-                "TRANSFER" => Purpose::TRANSFER,
-                "SYSTEM" => Purpose::SYSTEM,
-                "VOTING" => Purpose::VOTING,
-                _ => {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "Unknown purpose: {}",
-                        purpose_str
-                    )));
-                }
-            };
-
-            // Parse security level
-            let security_level = match security_level_str {
-                "MASTER" => SecurityLevel::MASTER,
-                "CRITICAL" => SecurityLevel::CRITICAL,
-                "HIGH" => SecurityLevel::HIGH,
-                "MEDIUM" => SecurityLevel::MEDIUM,
-                _ => SecurityLevel::HIGH,
-            };
+            let key_type = parse_key_type(key_data["keyType"].as_str())?;
+            let purpose = parse_purpose(key_data["purpose"].as_str())?;
+            let security_level = parse_security_level(key_data["securityLevel"].as_str());
 
             // Handle key data based on key type
             let (public_key_data, private_key_bytes) = match key_type {
@@ -331,8 +554,8 @@ impl WasmSdk {
                 }
                 _ => {
                     return Err(WasmSdkError::invalid_argument(format!(
-                        "Unsupported key type for identity creation: {}",
-                        key_type_str
+                        "Unsupported key type for identity creation: {:?}",
+                        key_type
                     )));
                 }
             };
@@ -352,7 +575,7 @@ impl WasmSdk {
 
             // Add the public key and its private key to the signer (only for signing key types)
             if key_type != KeyType::ECDSA_HASH160 {
-                signer.add_key(public_key.clone(), private_key_bytes);
+                signer.add_identity_public_key(public_key.clone(), private_key_bytes);
             }
 
             identity_public_keys.insert(key_id, public_key);
@@ -644,6 +867,7 @@ impl WasmSdk {
         };
 
         // Find matching key - prioritize key_id if provided, otherwise find any matching key
+        // Supports ECDSA_SECP256K1 and ECDSA_HASH160 key types
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
             sender_identity
@@ -651,8 +875,11 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     key.purpose() == Purpose::TRANSFER
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .ok_or_else(|| {
                     WasmSdkError::not_found(format!(
@@ -667,8 +894,11 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::TRANSFER
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .map(|(_, key)| key)
                 .ok_or_else(|| {
@@ -824,6 +1054,7 @@ impl WasmSdk {
 
         // Find matching key - prioritize key_id if provided, otherwise find any matching key
         // For withdrawals, we can use either TRANSFER or OWNER keys
+        // Supports ECDSA_SECP256K1 and ECDSA_HASH160 key types
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
             identity
@@ -831,8 +1062,11 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     (key.purpose() == Purpose::TRANSFER || key.purpose() == Purpose::OWNER)
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .ok_or_else(|| {
                     WasmSdkError::not_found(format!(
@@ -847,14 +1081,20 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::TRANSFER
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .or_else(|| {
                     identity.public_keys().iter().find(|(_, key)| {
                         key.purpose() == Purpose::OWNER
-                            && key.key_type() == KeyType::ECDSA_HASH160
-                            && key.data().as_slice() == public_key_hash160.as_slice()
+                            && ecdsa_public_key_matches_identity_key(
+                                &public_key_bytes,
+                                &public_key_hash160,
+                                key,
+                            )
                     })
                 })
                 .map(|(_, key)| key)
@@ -987,115 +1227,40 @@ impl WasmSdk {
                 .to_vec()
         };
 
-        // Find matching master key
+        // Find matching master key (supports ECDSA_SECP256K1 and ECDSA_HASH160)
         let master_key = identity
             .public_keys()
             .iter()
             .find(|(_, key)| {
                 key.purpose() == Purpose::AUTHENTICATION
                     && key.security_level() == SecurityLevel::MASTER
-                    && key.key_type() == KeyType::ECDSA_HASH160
-                    && key.data().as_slice() == public_key_hash160.as_slice()
+                    && ecdsa_public_key_matches_identity_key(
+                        &public_key_bytes,
+                        &public_key_hash160,
+                        key,
+                    )
             })
             .map(|(id, _)| *id)
             .ok_or_else(|| {
                 WasmSdkError::invalid_argument("Provided private key does not match any master key")
             })?;
 
+        // Create signer with SimpleSigner to support multiple keys (including new signing keys)
+        let mut signer = SimpleSigner::default();
+
+        // Get the master public key object and add it to the signer
+        let master_public_key = identity
+            .public_keys()
+            .get(&master_key)
+            .ok_or_else(|| WasmSdkError::invalid_argument("Master key not found"))?
+            .clone();
+
+        signer.add_identity_public_key(master_public_key, private_key.inner.secret_bytes());
+
         // Parse and prepare keys to add
         let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_json) = add_public_keys {
-            // Parse JSON array of keys
-            let keys_data: serde_json::Value = serde_json::from_str(&keys_json).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid JSON for add_public_keys: {}", e))
-            })?;
-
-            let keys_array = keys_data.as_array().ok_or_else(|| {
-                WasmSdkError::invalid_argument("add_public_keys must be a JSON array")
-            })?;
-
-            // Get the current max key ID
-            let mut next_key_id = identity.public_keys().keys().max().copied().unwrap_or(0) + 1;
-
-            keys_array
-                .iter()
-                .map(|key_data| {
-                    let key_type_str = key_data["keyType"]
-                        .as_str()
-                        .ok_or_else(|| WasmSdkError::invalid_argument("keyType is required"))?;
-                    let purpose_str = key_data["purpose"]
-                        .as_str()
-                        .ok_or_else(|| WasmSdkError::invalid_argument("purpose is required"))?;
-                    let security_level_str = key_data["securityLevel"].as_str().unwrap_or("HIGH");
-                    let data_str = key_data["data"]
-                        .as_str()
-                        .ok_or_else(|| WasmSdkError::invalid_argument("data is required"))?;
-
-                    // Parse key type
-                    let key_type = match key_type_str {
-                        "ECDSA_SECP256K1" => KeyType::ECDSA_SECP256K1,
-                        "BLS12_381" => KeyType::BLS12_381,
-                        "ECDSA_HASH160" => KeyType::ECDSA_HASH160,
-                        "BIP13_SCRIPT_HASH" => KeyType::BIP13_SCRIPT_HASH,
-                        "EDDSA_25519_HASH160" => KeyType::EDDSA_25519_HASH160,
-                        _ => {
-                            return Err(WasmSdkError::invalid_argument(format!(
-                                "Unknown key type: {}",
-                                key_type_str
-                            )));
-                        }
-                    };
-
-                    // Parse purpose
-                    let purpose = match purpose_str {
-                        "AUTHENTICATION" => Purpose::AUTHENTICATION,
-                        "ENCRYPTION" => Purpose::ENCRYPTION,
-                        "DECRYPTION" => Purpose::DECRYPTION,
-                        "TRANSFER" => Purpose::TRANSFER,
-                        "SYSTEM" => Purpose::SYSTEM,
-                        "VOTING" => Purpose::VOTING,
-                        _ => {
-                            return Err(WasmSdkError::invalid_argument(format!(
-                                "Unknown purpose: {}",
-                                purpose_str
-                            )));
-                        }
-                    };
-
-                    // Parse security level
-                    let security_level = match security_level_str {
-                        "MASTER" => SecurityLevel::MASTER,
-                        "CRITICAL" => SecurityLevel::CRITICAL,
-                        "HIGH" => SecurityLevel::HIGH,
-                        "MEDIUM" => SecurityLevel::MEDIUM,
-                        _ => SecurityLevel::HIGH,
-                    };
-
-                    // Decode key data from base64
-                    let key_data =
-                        dash_sdk::dpp::dashcore::base64::decode(data_str).map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid base64 key data: {}",
-                                e
-                            ))
-                        })?;
-
-                    // Create the identity public key
-                    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-                    let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                        id: next_key_id,
-                        key_type,
-                        purpose,
-                        security_level,
-                        contract_bounds: None,
-                        read_only: false,
-                        data: BinaryData::new(key_data),
-                        disabled_at: None,
-                    });
-
-                    next_key_id += 1;
-                    Ok(public_key)
-                })
-                .collect::<Result<Vec<_>, WasmSdkError>>()?
+            let next_key_id = identity.public_keys().keys().max().copied().unwrap_or(0) + 1;
+            parse_keys_for_identity_update(&keys_json, next_key_id, &mut signer, self.network())?
         } else {
             Vec::new()
         };
@@ -1141,10 +1306,6 @@ impl WasmSdk {
             .get_identity_nonce(identifier, true, None)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to get identity nonce: {}", e)))?;
-
-        // Create signer
-        let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
-            .map_err(WasmSdkError::invalid_argument)?;
 
         // Create the identity update transition
         use dash_sdk::dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
@@ -1458,5 +1619,475 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::generic(format!("Failed to set message: {:?}", e)))?;
 
         Ok(result_obj.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+    /// Creates a test public key with the given key type and data
+    fn create_test_key(key_type: KeyType, data: Vec<u8>) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id: 0u32.into(),
+            key_type,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            read_only: false,
+            disabled_at: None,
+            data: data.into(),
+            contract_bounds: None,
+        }
+        .into()
+    }
+
+    #[test]
+    fn test_private_key_matches_ecdsa_secp256k1() {
+        // 33-byte compressed public key (typical ECDSA_SECP256K1 key)
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        // Hash160 of the public key (20 bytes)
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // Create ECDSA_SECP256K1 key with 33-byte data
+        let secp_key = create_test_key(KeyType::ECDSA_SECP256K1, public_key_bytes.to_vec());
+
+        // Should match when comparing full public key bytes
+        assert!(
+            ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &secp_key
+            ),
+            "ECDSA_SECP256K1 key should match with correct public key bytes"
+        );
+
+        // Should not match with wrong public key
+        let wrong_bytes = [0u8; 33];
+        assert!(
+            !ecdsa_public_key_matches_identity_key(&wrong_bytes, &public_key_hash160, &secp_key),
+            "ECDSA_SECP256K1 key should not match with wrong public key bytes"
+        );
+    }
+
+    #[test]
+    fn test_private_key_matches_ecdsa_hash160() {
+        // 33-byte compressed public key
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        // Hash160 of the public key (20 bytes)
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // Create ECDSA_HASH160 key with 20-byte hash data
+        let hash160_key = create_test_key(KeyType::ECDSA_HASH160, public_key_hash160.clone());
+
+        // Should match when comparing hash160
+        assert!(
+            ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &hash160_key
+            ),
+            "ECDSA_HASH160 key should match with correct hash160"
+        );
+
+        // Should not match with wrong hash
+        let wrong_hash = [0u8; 20].to_vec();
+        assert!(
+            !ecdsa_public_key_matches_identity_key(&public_key_bytes, &wrong_hash, &hash160_key),
+            "ECDSA_HASH160 key should not match with wrong hash160"
+        );
+    }
+
+    #[test]
+    fn test_private_key_does_not_match_bls_keys() {
+        // 33-byte compressed public key
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // BLS keys require separate BLS key derivation, so ECDSA private keys should never match
+        let bls_key = create_test_key(KeyType::BLS12_381, vec![0u8; 48]);
+
+        assert!(
+            !ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &bls_key
+            ),
+            "BLS12_381 key should not match with ECDSA private key"
+        );
+    }
+
+    #[test]
+    fn test_private_key_does_not_match_other_key_types() {
+        let public_key_bytes: [u8; 33] = [0x02; 33];
+        let public_key_hash160 = vec![0u8; 20];
+
+        // BIP13_SCRIPT_HASH should not match
+        let script_hash_key = create_test_key(KeyType::BIP13_SCRIPT_HASH, vec![0u8; 20]);
+        assert!(
+            !ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &script_hash_key
+            ),
+            "BIP13_SCRIPT_HASH key should not match with ECDSA private key"
+        );
+
+        // EDDSA_25519_HASH160 should not match
+        let eddsa_key = create_test_key(KeyType::EDDSA_25519_HASH160, vec![0u8; 20]);
+        assert!(
+            !ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &eddsa_key
+            ),
+            "EDDSA_25519_HASH160 key should not match with ECDSA private key"
+        );
+    }
+
+    #[test]
+    fn test_regression_secp256k1_key_not_mistaken_for_hash160() {
+        // This is the regression test for the original bug:
+        // identity_update was only checking for ECDSA_HASH160 keys,
+        // so ECDSA_SECP256K1 keys would never match even with the correct private key.
+
+        // Real public key bytes (33-byte compressed secp256k1)
+        let public_key_bytes: [u8; 33] = [
+            0x02, 0x10, 0x85, 0x8c, 0xce, 0x1f, 0x12, 0xbe, 0x35, 0xd1, 0x3c, 0x65, 0xba, 0xec,
+            0x1d, 0xcd, 0x75, 0x64, 0xd7, 0x53, 0xf0, 0x31, 0x10, 0x8e, 0xb2, 0x7b, 0x53, 0x8e,
+            0xe2, 0xd0, 0x74, 0xdb, 0x6b,
+        ];
+
+        let public_key_hash160 = {
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
+        };
+
+        // The bug: Code was only checking ECDSA_HASH160 keys
+        // But most identities (DashPay) use ECDSA_SECP256K1 with the full 33-byte key
+        let master_key = create_test_key(KeyType::ECDSA_SECP256K1, public_key_bytes.to_vec());
+
+        // Before fix: This would return false because the code only checked ECDSA_HASH160
+        // After fix: This correctly returns true
+        assert!(
+            ecdsa_public_key_matches_identity_key(
+                &public_key_bytes,
+                &public_key_hash160,
+                &master_key
+            ),
+            "REGRESSION: ECDSA_SECP256K1 master key must be matchable with the correct private key"
+        );
+    }
+
+    // Tests for parse_keys_for_identity_update helper function
+    // These test the fix for: identity_update cannot add ECDSA_SECP256K1 keys
+
+    #[test]
+    fn test_parse_keys_ecdsa_secp256k1_with_private_key_hex() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[{
+            "keyType": "ECDSA_SECP256K1",
+            "purpose": "AUTHENTICATION",
+            "securityLevel": "HIGH",
+            "privateKeyHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        }]"#;
+
+        let keys = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet)
+            .expect("Should parse ECDSA_SECP256K1 key with privateKeyHex");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_type(), KeyType::ECDSA_SECP256K1);
+        assert_eq!(keys[0].data().len(), 33); // Compressed public key
+        assert_eq!(keys[0].id(), 1);
+        assert_eq!(keys[0].purpose(), Purpose::AUTHENTICATION);
+        assert_eq!(keys[0].security_level(), SecurityLevel::HIGH);
+
+        // Key should be added to signer (is_unique_key_type == true)
+        assert_eq!(signer.private_keys.len(), 1);
+        assert!(signer.private_keys.contains_key(&keys[0]));
+    }
+
+    #[test]
+    fn test_parse_keys_ecdsa_secp256k1_with_private_key_wif() {
+        use dash_sdk::dpp::dashcore::{Network, PrivateKey};
+
+        // Generate valid WIF from known private key bytes
+        let private_key_bytes: [u8; 32] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
+        ];
+        let private_key = PrivateKey::from_byte_array(&private_key_bytes, Network::Testnet)
+            .expect("Valid private key bytes");
+        let wif = private_key.to_wif();
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = format!(
+            r#"[{{
+            "keyType": "ECDSA_SECP256K1",
+            "purpose": "AUTHENTICATION",
+            "securityLevel": "HIGH",
+            "privateKeyWif": "{}"
+        }}]"#,
+            wif
+        );
+
+        let keys = parse_keys_for_identity_update(&keys_json, 5, &mut signer, Network::Testnet)
+            .expect("Should parse ECDSA_SECP256K1 key with privateKeyWif");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_type(), KeyType::ECDSA_SECP256K1);
+        assert_eq!(keys[0].data().len(), 33);
+        assert_eq!(keys[0].id(), 5);
+
+        // Key should be added to signer
+        assert_eq!(signer.private_keys.len(), 1);
+        assert!(signer.private_keys.contains_key(&keys[0]));
+    }
+
+    #[test]
+    fn test_parse_keys_ecdsa_secp256k1_missing_private_key_fails() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[{
+            "keyType": "ECDSA_SECP256K1",
+            "purpose": "AUTHENTICATION",
+            "securityLevel": "HIGH"
+        }]"#;
+
+        let result = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("privateKeyHex or privateKeyWif"),
+            "Error should mention required fields"
+        );
+    }
+
+    #[test]
+    fn test_parse_keys_bls12_381_with_private_key_hex() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[{
+            "keyType": "BLS12_381",
+            "purpose": "VOTING",
+            "securityLevel": "HIGH",
+            "privateKeyHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        }]"#;
+
+        let keys = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet)
+            .expect("Should parse BLS12_381 key with privateKeyHex");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_type(), KeyType::BLS12_381);
+        assert_eq!(keys[0].data().len(), 48); // BLS public key is 48 bytes
+
+        // Key should be added to signer (is_unique_key_type == true)
+        assert_eq!(signer.private_keys.len(), 1);
+        assert!(signer.private_keys.contains_key(&keys[0]));
+    }
+
+    #[test]
+    fn test_parse_keys_bls12_381_rejects_wif() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[{
+            "keyType": "BLS12_381",
+            "purpose": "VOTING",
+            "securityLevel": "HIGH",
+            "privateKeyWif": "cNurmMT7bXe3S92JijPi2V5wSHvWzrk4vKJ7fgLPNo5Ajv2YAP3z"
+        }]"#;
+
+        let result = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("do not support WIF format"),
+            "Error should indicate WIF is not supported for BLS"
+        );
+    }
+
+    #[test]
+    fn test_parse_keys_ecdsa_hash160_not_added_to_signer() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[{
+            "keyType": "ECDSA_HASH160",
+            "purpose": "TRANSFER",
+            "securityLevel": "HIGH",
+            "privateKeyHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+        }]"#;
+
+        let keys = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet)
+            .expect("Should parse ECDSA_HASH160 key");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_type(), KeyType::ECDSA_HASH160);
+        assert_eq!(keys[0].data().len(), 20); // Hash160 is 20 bytes
+
+        // Key should NOT be added to signer (is_unique_key_type == false)
+        assert_eq!(signer.private_keys.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_keys_ecdsa_hash160_with_data_field() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        // Base64-encoded 20-byte hash (20 bytes = 27 base64 chars + 1 padding)
+        let keys_json = r#"[{
+            "keyType": "ECDSA_HASH160",
+            "purpose": "TRANSFER",
+            "securityLevel": "HIGH",
+            "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        }]"#;
+
+        let keys = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet)
+            .expect("Should parse ECDSA_HASH160 with data field");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_type(), KeyType::ECDSA_HASH160);
+        assert_eq!(keys[0].data().len(), 20);
+
+        // Key should NOT be added to signer
+        assert_eq!(signer.private_keys.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_keys_multiple_keys_mixed_types() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[
+            {
+                "keyType": "ECDSA_SECP256K1",
+                "purpose": "AUTHENTICATION",
+                "securityLevel": "HIGH",
+                "privateKeyHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+            },
+            {
+                "keyType": "ECDSA_HASH160",
+                "purpose": "TRANSFER",
+                "securityLevel": "HIGH",
+                "privateKeyHex": "2102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f21"
+            }
+        ]"#;
+
+        let keys = parse_keys_for_identity_update(keys_json, 10, &mut signer, Network::Testnet)
+            .expect("Should parse multiple keys");
+
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0].id(), 10);
+        assert_eq!(keys[1].id(), 11);
+        assert_eq!(keys[0].key_type(), KeyType::ECDSA_SECP256K1);
+        assert_eq!(keys[1].key_type(), KeyType::ECDSA_HASH160);
+
+        // Only ECDSA_SECP256K1 should be in signer
+        assert_eq!(signer.private_keys.len(), 1);
+        assert!(signer.private_keys.contains_key(&keys[0]));
+        assert!(!signer.private_keys.contains_key(&keys[1]));
+    }
+
+    #[test]
+    fn test_parse_keys_empty_array() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = "[]";
+
+        let keys = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet)
+            .expect("Should handle empty array");
+
+        assert_eq!(keys.len(), 0);
+        assert_eq!(signer.private_keys.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_keys_invalid_json_fails() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = "not valid json";
+
+        let result = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_keys_invalid_private_key_hex_fails() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        let keys_json = r#"[{
+            "keyType": "ECDSA_SECP256K1",
+            "purpose": "AUTHENTICATION",
+            "securityLevel": "HIGH",
+            "privateKeyHex": "not_valid_hex"
+        }]"#;
+
+        let result = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_keys_wrong_length_private_key_fails() {
+        use dash_sdk::dpp::dashcore::Network;
+
+        let mut signer = SimpleSigner::default();
+        // Only 16 bytes instead of 32
+        let keys_json = r#"[{
+            "keyType": "ECDSA_SECP256K1",
+            "purpose": "AUTHENTICATION",
+            "securityLevel": "HIGH",
+            "privateKeyHex": "0102030405060708090a0b0c0d0e0f10"
+        }]"#;
+
+        let result = parse_keys_for_identity_update(keys_json, 1, &mut signer, Network::Testnet);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("32 bytes"),
+            "Error should mention expected length"
+        );
     }
 }

@@ -427,6 +427,42 @@ type PlatformgetGroupActionSigners = {
   readonly responseType: typeof platform_pb.GetGroupActionSignersResponse;
 };
 
+type PlatformgetAddressInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressInfoRequest;
+  readonly responseType: typeof platform_pb.GetAddressInfoResponse;
+};
+
+type PlatformgetAddressesInfos = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesInfosRequest;
+  readonly responseType: typeof platform_pb.GetAddressesInfosResponse;
+};
+
+type PlatformgetAddressesTrunkState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesTrunkStateRequest;
+  readonly responseType: typeof platform_pb.GetAddressesTrunkStateResponse;
+};
+
+type PlatformgetAddressesBranchState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesBranchStateRequest;
+  readonly responseType: typeof platform_pb.GetAddressesBranchStateResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -476,6 +512,10 @@ export class Platform {
   static readonly getGroupInfos: PlatformgetGroupInfos;
   static readonly getGroupActions: PlatformgetGroupActions;
   static readonly getGroupActionSigners: PlatformgetGroupActionSigners;
+  static readonly getAddressInfo: PlatformgetAddressInfo;
+  static readonly getAddressesInfos: PlatformgetAddressesInfos;
+  static readonly getAddressesTrunkState: PlatformgetAddressesTrunkState;
+  static readonly getAddressesBranchState: PlatformgetAddressesBranchState;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -932,6 +972,42 @@ export class PlatformClient {
   getGroupActionSigners(
     requestMessage: platform_pb.GetGroupActionSignersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getAddressInfo(
+    requestMessage: platform_pb.GetAddressInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressInfoResponse|null) => void
+  ): UnaryResponse;
+  getAddressInfo(
+    requestMessage: platform_pb.GetAddressInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressInfoResponse|null) => void
+  ): UnaryResponse;
+  getAddressesInfos(
+    requestMessage: platform_pb.GetAddressesInfosRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesInfosResponse|null) => void
+  ): UnaryResponse;
+  getAddressesInfos(
+    requestMessage: platform_pb.GetAddressesInfosRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesInfosResponse|null) => void
+  ): UnaryResponse;
+  getAddressesTrunkState(
+    requestMessage: platform_pb.GetAddressesTrunkStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesTrunkStateResponse|null) => void
+  ): UnaryResponse;
+  getAddressesTrunkState(
+    requestMessage: platform_pb.GetAddressesTrunkStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesTrunkStateResponse|null) => void
+  ): UnaryResponse;
+  getAddressesBranchState(
+    requestMessage: platform_pb.GetAddressesBranchStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesBranchStateResponse|null) => void
+  ): UnaryResponse;
+  getAddressesBranchState(
+    requestMessage: platform_pb.GetAddressesBranchStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesBranchStateResponse|null) => void
   ): UnaryResponse;
 }
 

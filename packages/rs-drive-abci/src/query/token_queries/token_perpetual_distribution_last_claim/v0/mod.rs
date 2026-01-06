@@ -19,6 +19,8 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::reward_d
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_token_perpetual_distribution_last_claim_v0(
@@ -61,10 +63,11 @@ impl<C> Platform<C> {
             GetTokenPerpetualDistributionLastClaimResponseV0 {
                 result: Some(
                     get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
+                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                            .map(|(_, proof)| proof)?,
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else if let Some(ContractTokenInfo {
             contract_id,
@@ -143,7 +146,7 @@ impl<C> Platform<C> {
                         LastClaimInfo { paid_at },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let paid_at = self
@@ -162,7 +165,7 @@ impl<C> Platform<C> {
                         LastClaimInfo { paid_at },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

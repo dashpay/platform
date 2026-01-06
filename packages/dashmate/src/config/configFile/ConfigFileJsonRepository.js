@@ -22,9 +22,12 @@ export default class ConfigFileJsonRepository {
   /**
    * Load configs from file
    *
+   * @param {Object} [options={}]
+   * @param {boolean} [options.skipValidation=false] - Skip per-config schema validation
    * @returns {ConfigFile}
    */
-  read() {
+  read(options = {}) {
+    const { skipValidation = false } = options;
     if (!fs.existsSync(this.configFilePath)) {
       throw new ConfigFileNotFoundError(this.configFilePath);
     }
@@ -59,7 +62,7 @@ export default class ConfigFileJsonRepository {
     let configs;
     try {
       configs = Object.entries(migratedConfigFileData.configs)
-        .map(([name, options]) => new Config(name, options));
+        .map(([name, opts]) => new Config(name, opts, skipValidation));
     } catch (e) {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }

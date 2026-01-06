@@ -60,7 +60,7 @@ impl DocumentTransferTransitionWasm {
             };
 
         let rs_transfer_transition = generate_transfer_transition(
-            document.clone(),
+            document,
             identity_contract_nonce,
             document.get_document_type_name().to_string(),
             IdentifierWasm::try_from(js_recipient_owner_id)?.into(),

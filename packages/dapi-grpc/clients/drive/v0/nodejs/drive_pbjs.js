@@ -2145,6 +2145,138 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getAddressInfo}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getAddressInfoCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse} [response] GetAddressInfoResponse
+                         */
+
+                        /**
+                         * Calls getAddressInfo.
+                         * @function getAddressInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoRequest} request GetAddressInfoRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getAddressInfoCallback} callback Node-style callback called with the error, if any, and GetAddressInfoResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getAddressInfo = function getAddressInfo(request, callback) {
+                            return this.rpcCall(getAddressInfo, $root.org.dash.platform.dapi.v0.GetAddressInfoRequest, $root.org.dash.platform.dapi.v0.GetAddressInfoResponse, request, callback);
+                        }, "name", { value: "getAddressInfo" });
+
+                        /**
+                         * Calls getAddressInfo.
+                         * @function getAddressInfo
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoRequest} request GetAddressInfoRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetAddressInfoResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getAddressesInfos}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getAddressesInfosCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse} [response] GetAddressesInfosResponse
+                         */
+
+                        /**
+                         * Calls getAddressesInfos.
+                         * @function getAddressesInfos
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosRequest} request GetAddressesInfosRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getAddressesInfosCallback} callback Node-style callback called with the error, if any, and GetAddressesInfosResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getAddressesInfos = function getAddressesInfos(request, callback) {
+                            return this.rpcCall(getAddressesInfos, $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest, $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse, request, callback);
+                        }, "name", { value: "getAddressesInfos" });
+
+                        /**
+                         * Calls getAddressesInfos.
+                         * @function getAddressesInfos
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosRequest} request GetAddressesInfosRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetAddressesInfosResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getAddressesTrunkState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getAddressesTrunkStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse} [response] GetAddressesTrunkStateResponse
+                         */
+
+                        /**
+                         * Calls getAddressesTrunkState.
+                         * @function getAddressesTrunkState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateRequest} request GetAddressesTrunkStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getAddressesTrunkStateCallback} callback Node-style callback called with the error, if any, and GetAddressesTrunkStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getAddressesTrunkState = function getAddressesTrunkState(request, callback) {
+                            return this.rpcCall(getAddressesTrunkState, $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest, $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse, request, callback);
+                        }, "name", { value: "getAddressesTrunkState" });
+
+                        /**
+                         * Calls getAddressesTrunkState.
+                         * @function getAddressesTrunkState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateRequest} request GetAddressesTrunkStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getAddressesBranchState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getAddressesBranchStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse} [response] GetAddressesBranchStateResponse
+                         */
+
+                        /**
+                         * Calls getAddressesBranchState.
+                         * @function getAddressesBranchState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateRequest} request GetAddressesBranchStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getAddressesBranchStateCallback} callback Node-style callback called with the error, if any, and GetAddressesBranchStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getAddressesBranchState = function getAddressesBranchState(request, callback) {
+                            return this.rpcCall(getAddressesBranchState, $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest, $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse, request, callback);
+                        }, "name", { value: "getAddressesBranchState" });
+
+                        /**
+                         * Calls getAddressesBranchState.
+                         * @function getAddressesBranchState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateRequest} request GetAddressesBranchStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetAddressesBranchStateResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -74480,6 +74612,4139 @@ $root.org = (function() {
                         })();
 
                         return GetGroupActionSignersResponse;
+                    })();
+
+                    v0.GetAddressInfoRequest = (function() {
+
+                        /**
+                         * Properties of a GetAddressInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressInfoRequest
+                         * @property {org.dash.platform.dapi.v0.GetAddressInfoRequest.IGetAddressInfoRequestV0|null} [v0] GetAddressInfoRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressInfoRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressInfoRequest.
+                         * @implements IGetAddressInfoRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoRequest=} [properties] Properties to set
+                         */
+                        function GetAddressInfoRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressInfoRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressInfoRequest.IGetAddressInfoRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @instance
+                         */
+                        GetAddressInfoRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressInfoRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressInfoRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressInfoRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest} GetAddressInfoRequest instance
+                         */
+                        GetAddressInfoRequest.create = function create(properties) {
+                            return new GetAddressInfoRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressInfoRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoRequest} message GetAddressInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressInfoRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressInfoRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoRequest} message GetAddressInfoRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressInfoRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressInfoRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest} GetAddressInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressInfoRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressInfoRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressInfoRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest} GetAddressInfoRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressInfoRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressInfoRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressInfoRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressInfoRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest} GetAddressInfoRequest
+                         */
+                        GetAddressInfoRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressInfoRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressInfoRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressInfoRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressInfoRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressInfoRequest} message GetAddressInfoRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressInfoRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressInfoRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressInfoRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressInfoRequest.GetAddressInfoRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                             * @interface IGetAddressInfoRequestV0
+                             * @property {Uint8Array|null} [address] GetAddressInfoRequestV0 address
+                             * @property {boolean|null} [prove] GetAddressInfoRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetAddressInfoRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest
+                             * @classdesc Represents a GetAddressInfoRequestV0.
+                             * @implements IGetAddressInfoRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoRequest.IGetAddressInfoRequestV0=} [properties] Properties to set
+                             */
+                            function GetAddressInfoRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressInfoRequestV0 address.
+                             * @member {Uint8Array} address
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @instance
+                             */
+                            GetAddressInfoRequestV0.prototype.address = $util.newBuffer([]);
+
+                            /**
+                             * GetAddressInfoRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @instance
+                             */
+                            GetAddressInfoRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetAddressInfoRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoRequest.IGetAddressInfoRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0} GetAddressInfoRequestV0 instance
+                             */
+                            GetAddressInfoRequestV0.create = function create(properties) {
+                                return new GetAddressInfoRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressInfoRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoRequest.IGetAddressInfoRequestV0} message GetAddressInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressInfoRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.address != null && Object.hasOwnProperty.call(message, "address"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.address);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressInfoRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoRequest.IGetAddressInfoRequestV0} message GetAddressInfoRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressInfoRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressInfoRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0} GetAddressInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressInfoRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.address = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressInfoRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0} GetAddressInfoRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressInfoRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressInfoRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressInfoRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.address != null && message.hasOwnProperty("address"))
+                                    if (!(message.address && typeof message.address.length === "number" || $util.isString(message.address)))
+                                        return "address: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressInfoRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0} GetAddressInfoRequestV0
+                             */
+                            GetAddressInfoRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0();
+                                if (object.address != null)
+                                    if (typeof object.address === "string")
+                                        $util.base64.decode(object.address, message.address = $util.newBuffer($util.base64.length(object.address)), 0);
+                                    else if (object.address.length >= 0)
+                                        message.address = object.address;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressInfoRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0} message GetAddressInfoRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressInfoRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.address = "";
+                                    else {
+                                        object.address = [];
+                                        if (options.bytes !== Array)
+                                            object.address = $util.newBuffer(object.address);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.address != null && message.hasOwnProperty("address"))
+                                    object.address = options.bytes === String ? $util.base64.encode(message.address, 0, message.address.length) : options.bytes === Array ? Array.prototype.slice.call(message.address) : message.address;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressInfoRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressInfoRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressInfoRequestV0;
+                        })();
+
+                        return GetAddressInfoRequest;
+                    })();
+
+                    v0.AddressInfoEntry = (function() {
+
+                        /**
+                         * Properties of an AddressInfoEntry.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IAddressInfoEntry
+                         * @property {Uint8Array|null} [address] AddressInfoEntry address
+                         * @property {org.dash.platform.dapi.v0.IBalanceAndNonce|null} [balanceAndNonce] AddressInfoEntry balanceAndNonce
+                         */
+
+                        /**
+                         * Constructs a new AddressInfoEntry.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents an AddressInfoEntry.
+                         * @implements IAddressInfoEntry
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntry=} [properties] Properties to set
+                         */
+                        function AddressInfoEntry(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * AddressInfoEntry address.
+                         * @member {Uint8Array} address
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @instance
+                         */
+                        AddressInfoEntry.prototype.address = $util.newBuffer([]);
+
+                        /**
+                         * AddressInfoEntry balanceAndNonce.
+                         * @member {org.dash.platform.dapi.v0.IBalanceAndNonce|null|undefined} balanceAndNonce
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @instance
+                         */
+                        AddressInfoEntry.prototype.balanceAndNonce = null;
+
+                        /**
+                         * Creates a new AddressInfoEntry instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntry=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntry} AddressInfoEntry instance
+                         */
+                        AddressInfoEntry.create = function create(properties) {
+                            return new AddressInfoEntry(properties);
+                        };
+
+                        /**
+                         * Encodes the specified AddressInfoEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.AddressInfoEntry.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntry} message AddressInfoEntry message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressInfoEntry.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.address != null && Object.hasOwnProperty.call(message, "address"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.address);
+                            if (message.balanceAndNonce != null && Object.hasOwnProperty.call(message, "balanceAndNonce"))
+                                $root.org.dash.platform.dapi.v0.BalanceAndNonce.encode(message.balanceAndNonce, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified AddressInfoEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.AddressInfoEntry.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntry} message AddressInfoEntry message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressInfoEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an AddressInfoEntry message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntry} AddressInfoEntry
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressInfoEntry.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.AddressInfoEntry();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.address = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.balanceAndNonce = $root.org.dash.platform.dapi.v0.BalanceAndNonce.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an AddressInfoEntry message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntry} AddressInfoEntry
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressInfoEntry.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an AddressInfoEntry message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        AddressInfoEntry.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                if (!(message.address && typeof message.address.length === "number" || $util.isString(message.address)))
+                                    return "address: buffer expected";
+                            if (message.balanceAndNonce != null && message.hasOwnProperty("balanceAndNonce")) {
+                                var error = $root.org.dash.platform.dapi.v0.BalanceAndNonce.verify(message.balanceAndNonce);
+                                if (error)
+                                    return "balanceAndNonce." + error;
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates an AddressInfoEntry message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntry} AddressInfoEntry
+                         */
+                        AddressInfoEntry.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.AddressInfoEntry)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.AddressInfoEntry();
+                            if (object.address != null)
+                                if (typeof object.address === "string")
+                                    $util.base64.decode(object.address, message.address = $util.newBuffer($util.base64.length(object.address)), 0);
+                                else if (object.address.length >= 0)
+                                    message.address = object.address;
+                            if (object.balanceAndNonce != null) {
+                                if (typeof object.balanceAndNonce !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.AddressInfoEntry.balanceAndNonce: object expected");
+                                message.balanceAndNonce = $root.org.dash.platform.dapi.v0.BalanceAndNonce.fromObject(object.balanceAndNonce);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an AddressInfoEntry message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.AddressInfoEntry} message AddressInfoEntry
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        AddressInfoEntry.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                if (options.bytes === String)
+                                    object.address = "";
+                                else {
+                                    object.address = [];
+                                    if (options.bytes !== Array)
+                                        object.address = $util.newBuffer(object.address);
+                                }
+                                object.balanceAndNonce = null;
+                            }
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                object.address = options.bytes === String ? $util.base64.encode(message.address, 0, message.address.length) : options.bytes === Array ? Array.prototype.slice.call(message.address) : message.address;
+                            if (message.balanceAndNonce != null && message.hasOwnProperty("balanceAndNonce"))
+                                object.balanceAndNonce = $root.org.dash.platform.dapi.v0.BalanceAndNonce.toObject(message.balanceAndNonce, options);
+                            return object;
+                        };
+
+                        /**
+                         * Converts this AddressInfoEntry to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntry
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        AddressInfoEntry.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return AddressInfoEntry;
+                    })();
+
+                    v0.BalanceAndNonce = (function() {
+
+                        /**
+                         * Properties of a BalanceAndNonce.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IBalanceAndNonce
+                         * @property {number|Long|null} [balance] BalanceAndNonce balance
+                         * @property {number|null} [nonce] BalanceAndNonce nonce
+                         */
+
+                        /**
+                         * Constructs a new BalanceAndNonce.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a BalanceAndNonce.
+                         * @implements IBalanceAndNonce
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IBalanceAndNonce=} [properties] Properties to set
+                         */
+                        function BalanceAndNonce(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * BalanceAndNonce balance.
+                         * @member {number|Long} balance
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @instance
+                         */
+                        BalanceAndNonce.prototype.balance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * BalanceAndNonce nonce.
+                         * @member {number} nonce
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @instance
+                         */
+                        BalanceAndNonce.prototype.nonce = 0;
+
+                        /**
+                         * Creates a new BalanceAndNonce instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBalanceAndNonce=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.BalanceAndNonce} BalanceAndNonce instance
+                         */
+                        BalanceAndNonce.create = function create(properties) {
+                            return new BalanceAndNonce(properties);
+                        };
+
+                        /**
+                         * Encodes the specified BalanceAndNonce message. Does not implicitly {@link org.dash.platform.dapi.v0.BalanceAndNonce.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBalanceAndNonce} message BalanceAndNonce message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BalanceAndNonce.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.balance != null && Object.hasOwnProperty.call(message, "balance"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.balance);
+                            if (message.nonce != null && Object.hasOwnProperty.call(message, "nonce"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.nonce);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified BalanceAndNonce message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BalanceAndNonce.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBalanceAndNonce} message BalanceAndNonce message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BalanceAndNonce.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a BalanceAndNonce message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.BalanceAndNonce} BalanceAndNonce
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BalanceAndNonce.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BalanceAndNonce();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.balance = reader.uint64();
+                                    break;
+                                case 2:
+                                    message.nonce = reader.uint32();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a BalanceAndNonce message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.BalanceAndNonce} BalanceAndNonce
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BalanceAndNonce.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a BalanceAndNonce message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        BalanceAndNonce.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.balance != null && message.hasOwnProperty("balance"))
+                                if (!$util.isInteger(message.balance) && !(message.balance && $util.isInteger(message.balance.low) && $util.isInteger(message.balance.high)))
+                                    return "balance: integer|Long expected";
+                            if (message.nonce != null && message.hasOwnProperty("nonce"))
+                                if (!$util.isInteger(message.nonce))
+                                    return "nonce: integer expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a BalanceAndNonce message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.BalanceAndNonce} BalanceAndNonce
+                         */
+                        BalanceAndNonce.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.BalanceAndNonce)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.BalanceAndNonce();
+                            if (object.balance != null)
+                                if ($util.Long)
+                                    (message.balance = $util.Long.fromValue(object.balance)).unsigned = true;
+                                else if (typeof object.balance === "string")
+                                    message.balance = parseInt(object.balance, 10);
+                                else if (typeof object.balance === "number")
+                                    message.balance = object.balance;
+                                else if (typeof object.balance === "object")
+                                    message.balance = new $util.LongBits(object.balance.low >>> 0, object.balance.high >>> 0).toNumber(true);
+                            if (object.nonce != null)
+                                message.nonce = object.nonce >>> 0;
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a BalanceAndNonce message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.BalanceAndNonce} message BalanceAndNonce
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        BalanceAndNonce.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.balance = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.balance = options.longs === String ? "0" : 0;
+                                object.nonce = 0;
+                            }
+                            if (message.balance != null && message.hasOwnProperty("balance"))
+                                if (typeof message.balance === "number")
+                                    object.balance = options.longs === String ? String(message.balance) : message.balance;
+                                else
+                                    object.balance = options.longs === String ? $util.Long.prototype.toString.call(message.balance) : options.longs === Number ? new $util.LongBits(message.balance.low >>> 0, message.balance.high >>> 0).toNumber(true) : message.balance;
+                            if (message.nonce != null && message.hasOwnProperty("nonce"))
+                                object.nonce = message.nonce;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this BalanceAndNonce to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.BalanceAndNonce
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        BalanceAndNonce.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return BalanceAndNonce;
+                    })();
+
+                    v0.AddressInfoEntries = (function() {
+
+                        /**
+                         * Properties of an AddressInfoEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IAddressInfoEntries
+                         * @property {Array.<org.dash.platform.dapi.v0.IAddressInfoEntry>|null} [addressInfoEntries] AddressInfoEntries addressInfoEntries
+                         */
+
+                        /**
+                         * Constructs a new AddressInfoEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents an AddressInfoEntries.
+                         * @implements IAddressInfoEntries
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntries=} [properties] Properties to set
+                         */
+                        function AddressInfoEntries(properties) {
+                            this.addressInfoEntries = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * AddressInfoEntries addressInfoEntries.
+                         * @member {Array.<org.dash.platform.dapi.v0.IAddressInfoEntry>} addressInfoEntries
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @instance
+                         */
+                        AddressInfoEntries.prototype.addressInfoEntries = $util.emptyArray;
+
+                        /**
+                         * Creates a new AddressInfoEntries instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntries=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntries} AddressInfoEntries instance
+                         */
+                        AddressInfoEntries.create = function create(properties) {
+                            return new AddressInfoEntries(properties);
+                        };
+
+                        /**
+                         * Encodes the specified AddressInfoEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.AddressInfoEntries.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntries} message AddressInfoEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressInfoEntries.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.addressInfoEntries != null && message.addressInfoEntries.length)
+                                for (var i = 0; i < message.addressInfoEntries.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.AddressInfoEntry.encode(message.addressInfoEntries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified AddressInfoEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.AddressInfoEntries.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressInfoEntries} message AddressInfoEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressInfoEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an AddressInfoEntries message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntries} AddressInfoEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressInfoEntries.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.AddressInfoEntries();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.addressInfoEntries && message.addressInfoEntries.length))
+                                        message.addressInfoEntries = [];
+                                    message.addressInfoEntries.push($root.org.dash.platform.dapi.v0.AddressInfoEntry.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an AddressInfoEntries message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntries} AddressInfoEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressInfoEntries.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an AddressInfoEntries message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        AddressInfoEntries.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.addressInfoEntries != null && message.hasOwnProperty("addressInfoEntries")) {
+                                if (!Array.isArray(message.addressInfoEntries))
+                                    return "addressInfoEntries: array expected";
+                                for (var i = 0; i < message.addressInfoEntries.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.AddressInfoEntry.verify(message.addressInfoEntries[i]);
+                                    if (error)
+                                        return "addressInfoEntries." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates an AddressInfoEntries message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.AddressInfoEntries} AddressInfoEntries
+                         */
+                        AddressInfoEntries.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.AddressInfoEntries)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.AddressInfoEntries();
+                            if (object.addressInfoEntries) {
+                                if (!Array.isArray(object.addressInfoEntries))
+                                    throw TypeError(".org.dash.platform.dapi.v0.AddressInfoEntries.addressInfoEntries: array expected");
+                                message.addressInfoEntries = [];
+                                for (var i = 0; i < object.addressInfoEntries.length; ++i) {
+                                    if (typeof object.addressInfoEntries[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.AddressInfoEntries.addressInfoEntries: object expected");
+                                    message.addressInfoEntries[i] = $root.org.dash.platform.dapi.v0.AddressInfoEntry.fromObject(object.addressInfoEntries[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an AddressInfoEntries message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.AddressInfoEntries} message AddressInfoEntries
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        AddressInfoEntries.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.addressInfoEntries = [];
+                            if (message.addressInfoEntries && message.addressInfoEntries.length) {
+                                object.addressInfoEntries = [];
+                                for (var j = 0; j < message.addressInfoEntries.length; ++j)
+                                    object.addressInfoEntries[j] = $root.org.dash.platform.dapi.v0.AddressInfoEntry.toObject(message.addressInfoEntries[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this AddressInfoEntries to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.AddressInfoEntries
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        AddressInfoEntries.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return AddressInfoEntries;
+                    })();
+
+                    v0.GetAddressInfoResponse = (function() {
+
+                        /**
+                         * Properties of a GetAddressInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressInfoResponse
+                         * @property {org.dash.platform.dapi.v0.GetAddressInfoResponse.IGetAddressInfoResponseV0|null} [v0] GetAddressInfoResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressInfoResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressInfoResponse.
+                         * @implements IGetAddressInfoResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoResponse=} [properties] Properties to set
+                         */
+                        function GetAddressInfoResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressInfoResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressInfoResponse.IGetAddressInfoResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @instance
+                         */
+                        GetAddressInfoResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressInfoResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressInfoResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressInfoResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse} GetAddressInfoResponse instance
+                         */
+                        GetAddressInfoResponse.create = function create(properties) {
+                            return new GetAddressInfoResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressInfoResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoResponse} message GetAddressInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressInfoResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressInfoResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressInfoResponse} message GetAddressInfoResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressInfoResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressInfoResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse} GetAddressInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressInfoResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressInfoResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressInfoResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse} GetAddressInfoResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressInfoResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressInfoResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressInfoResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressInfoResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse} GetAddressInfoResponse
+                         */
+                        GetAddressInfoResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressInfoResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressInfoResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressInfoResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressInfoResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse} message GetAddressInfoResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressInfoResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressInfoResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressInfoResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressInfoResponse.GetAddressInfoResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                             * @interface IGetAddressInfoResponseV0
+                             * @property {org.dash.platform.dapi.v0.IAddressInfoEntry|null} [addressInfoEntry] GetAddressInfoResponseV0 addressInfoEntry
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetAddressInfoResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetAddressInfoResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetAddressInfoResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse
+                             * @classdesc Represents a GetAddressInfoResponseV0.
+                             * @implements IGetAddressInfoResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse.IGetAddressInfoResponseV0=} [properties] Properties to set
+                             */
+                            function GetAddressInfoResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressInfoResponseV0 addressInfoEntry.
+                             * @member {org.dash.platform.dapi.v0.IAddressInfoEntry|null|undefined} addressInfoEntry
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @instance
+                             */
+                            GetAddressInfoResponseV0.prototype.addressInfoEntry = null;
+
+                            /**
+                             * GetAddressInfoResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @instance
+                             */
+                            GetAddressInfoResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetAddressInfoResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @instance
+                             */
+                            GetAddressInfoResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetAddressInfoResponseV0 result.
+                             * @member {"addressInfoEntry"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetAddressInfoResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["addressInfoEntry", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetAddressInfoResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse.IGetAddressInfoResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0} GetAddressInfoResponseV0 instance
+                             */
+                            GetAddressInfoResponseV0.create = function create(properties) {
+                                return new GetAddressInfoResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressInfoResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse.IGetAddressInfoResponseV0} message GetAddressInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressInfoResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.addressInfoEntry != null && Object.hasOwnProperty.call(message, "addressInfoEntry"))
+                                    $root.org.dash.platform.dapi.v0.AddressInfoEntry.encode(message.addressInfoEntry, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressInfoResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse.IGetAddressInfoResponseV0} message GetAddressInfoResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressInfoResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressInfoResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0} GetAddressInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressInfoResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.addressInfoEntry = $root.org.dash.platform.dapi.v0.AddressInfoEntry.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressInfoResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0} GetAddressInfoResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressInfoResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressInfoResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressInfoResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.addressInfoEntry != null && message.hasOwnProperty("addressInfoEntry")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.AddressInfoEntry.verify(message.addressInfoEntry);
+                                        if (error)
+                                            return "addressInfoEntry." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressInfoResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0} GetAddressInfoResponseV0
+                             */
+                            GetAddressInfoResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0();
+                                if (object.addressInfoEntry != null) {
+                                    if (typeof object.addressInfoEntry !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.addressInfoEntry: object expected");
+                                    message.addressInfoEntry = $root.org.dash.platform.dapi.v0.AddressInfoEntry.fromObject(object.addressInfoEntry);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressInfoResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0} message GetAddressInfoResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressInfoResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.addressInfoEntry != null && message.hasOwnProperty("addressInfoEntry")) {
+                                    object.addressInfoEntry = $root.org.dash.platform.dapi.v0.AddressInfoEntry.toObject(message.addressInfoEntry, options);
+                                    if (options.oneofs)
+                                        object.result = "addressInfoEntry";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressInfoResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressInfoResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressInfoResponseV0;
+                        })();
+
+                        return GetAddressInfoResponse;
+                    })();
+
+                    v0.GetAddressesInfosRequest = (function() {
+
+                        /**
+                         * Properties of a GetAddressesInfosRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressesInfosRequest
+                         * @property {org.dash.platform.dapi.v0.GetAddressesInfosRequest.IGetAddressesInfosRequestV0|null} [v0] GetAddressesInfosRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressesInfosRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressesInfosRequest.
+                         * @implements IGetAddressesInfosRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosRequest=} [properties] Properties to set
+                         */
+                        function GetAddressesInfosRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressesInfosRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressesInfosRequest.IGetAddressesInfosRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @instance
+                         */
+                        GetAddressesInfosRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressesInfosRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressesInfosRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressesInfosRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest} GetAddressesInfosRequest instance
+                         */
+                        GetAddressesInfosRequest.create = function create(properties) {
+                            return new GetAddressesInfosRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesInfosRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosRequest} message GetAddressesInfosRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesInfosRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesInfosRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosRequest} message GetAddressesInfosRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesInfosRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressesInfosRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest} GetAddressesInfosRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesInfosRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressesInfosRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest} GetAddressesInfosRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesInfosRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressesInfosRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressesInfosRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressesInfosRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest} GetAddressesInfosRequest
+                         */
+                        GetAddressesInfosRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressesInfosRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressesInfosRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressesInfosRequest} message GetAddressesInfosRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressesInfosRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressesInfosRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressesInfosRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressesInfosRequest.GetAddressesInfosRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressesInfosRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                             * @interface IGetAddressesInfosRequestV0
+                             * @property {Array.<Uint8Array>|null} [addresses] GetAddressesInfosRequestV0 addresses
+                             * @property {boolean|null} [prove] GetAddressesInfosRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetAddressesInfosRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest
+                             * @classdesc Represents a GetAddressesInfosRequestV0.
+                             * @implements IGetAddressesInfosRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosRequest.IGetAddressesInfosRequestV0=} [properties] Properties to set
+                             */
+                            function GetAddressesInfosRequestV0(properties) {
+                                this.addresses = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressesInfosRequestV0 addresses.
+                             * @member {Array.<Uint8Array>} addresses
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @instance
+                             */
+                            GetAddressesInfosRequestV0.prototype.addresses = $util.emptyArray;
+
+                            /**
+                             * GetAddressesInfosRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @instance
+                             */
+                            GetAddressesInfosRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetAddressesInfosRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosRequest.IGetAddressesInfosRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0} GetAddressesInfosRequestV0 instance
+                             */
+                            GetAddressesInfosRequestV0.create = function create(properties) {
+                                return new GetAddressesInfosRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesInfosRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosRequest.IGetAddressesInfosRequestV0} message GetAddressesInfosRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesInfosRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.addresses != null && message.addresses.length)
+                                    for (var i = 0; i < message.addresses.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.addresses[i]);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesInfosRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosRequest.IGetAddressesInfosRequestV0} message GetAddressesInfosRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesInfosRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressesInfosRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0} GetAddressesInfosRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesInfosRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.addresses && message.addresses.length))
+                                            message.addresses = [];
+                                        message.addresses.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressesInfosRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0} GetAddressesInfosRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesInfosRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressesInfosRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressesInfosRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.addresses != null && message.hasOwnProperty("addresses")) {
+                                    if (!Array.isArray(message.addresses))
+                                        return "addresses: array expected";
+                                    for (var i = 0; i < message.addresses.length; ++i)
+                                        if (!(message.addresses[i] && typeof message.addresses[i].length === "number" || $util.isString(message.addresses[i])))
+                                            return "addresses: buffer[] expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressesInfosRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0} GetAddressesInfosRequestV0
+                             */
+                            GetAddressesInfosRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0();
+                                if (object.addresses) {
+                                    if (!Array.isArray(object.addresses))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0.addresses: array expected");
+                                    message.addresses = [];
+                                    for (var i = 0; i < object.addresses.length; ++i)
+                                        if (typeof object.addresses[i] === "string")
+                                            $util.base64.decode(object.addresses[i], message.addresses[i] = $util.newBuffer($util.base64.length(object.addresses[i])), 0);
+                                        else if (object.addresses[i].length >= 0)
+                                            message.addresses[i] = object.addresses[i];
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressesInfosRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0} message GetAddressesInfosRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressesInfosRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.addresses = [];
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.addresses && message.addresses.length) {
+                                    object.addresses = [];
+                                    for (var j = 0; j < message.addresses.length; ++j)
+                                        object.addresses[j] = options.bytes === String ? $util.base64.encode(message.addresses[j], 0, message.addresses[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.addresses[j]) : message.addresses[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressesInfosRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressesInfosRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressesInfosRequestV0;
+                        })();
+
+                        return GetAddressesInfosRequest;
+                    })();
+
+                    v0.GetAddressesInfosResponse = (function() {
+
+                        /**
+                         * Properties of a GetAddressesInfosResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressesInfosResponse
+                         * @property {org.dash.platform.dapi.v0.GetAddressesInfosResponse.IGetAddressesInfosResponseV0|null} [v0] GetAddressesInfosResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressesInfosResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressesInfosResponse.
+                         * @implements IGetAddressesInfosResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosResponse=} [properties] Properties to set
+                         */
+                        function GetAddressesInfosResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressesInfosResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressesInfosResponse.IGetAddressesInfosResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @instance
+                         */
+                        GetAddressesInfosResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressesInfosResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressesInfosResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressesInfosResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse} GetAddressesInfosResponse instance
+                         */
+                        GetAddressesInfosResponse.create = function create(properties) {
+                            return new GetAddressesInfosResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesInfosResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosResponse} message GetAddressesInfosResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesInfosResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesInfosResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesInfosResponse} message GetAddressesInfosResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesInfosResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressesInfosResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse} GetAddressesInfosResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesInfosResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressesInfosResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse} GetAddressesInfosResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesInfosResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressesInfosResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressesInfosResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressesInfosResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse} GetAddressesInfosResponse
+                         */
+                        GetAddressesInfosResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressesInfosResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressesInfosResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse} message GetAddressesInfosResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressesInfosResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressesInfosResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressesInfosResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressesInfosResponse.GetAddressesInfosResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressesInfosResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                             * @interface IGetAddressesInfosResponseV0
+                             * @property {org.dash.platform.dapi.v0.IAddressInfoEntries|null} [addressInfoEntries] GetAddressesInfosResponseV0 addressInfoEntries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetAddressesInfosResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetAddressesInfosResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetAddressesInfosResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse
+                             * @classdesc Represents a GetAddressesInfosResponseV0.
+                             * @implements IGetAddressesInfosResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse.IGetAddressesInfosResponseV0=} [properties] Properties to set
+                             */
+                            function GetAddressesInfosResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressesInfosResponseV0 addressInfoEntries.
+                             * @member {org.dash.platform.dapi.v0.IAddressInfoEntries|null|undefined} addressInfoEntries
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @instance
+                             */
+                            GetAddressesInfosResponseV0.prototype.addressInfoEntries = null;
+
+                            /**
+                             * GetAddressesInfosResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @instance
+                             */
+                            GetAddressesInfosResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetAddressesInfosResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @instance
+                             */
+                            GetAddressesInfosResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetAddressesInfosResponseV0 result.
+                             * @member {"addressInfoEntries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetAddressesInfosResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["addressInfoEntries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetAddressesInfosResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse.IGetAddressesInfosResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0} GetAddressesInfosResponseV0 instance
+                             */
+                            GetAddressesInfosResponseV0.create = function create(properties) {
+                                return new GetAddressesInfosResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesInfosResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse.IGetAddressesInfosResponseV0} message GetAddressesInfosResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesInfosResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.addressInfoEntries != null && Object.hasOwnProperty.call(message, "addressInfoEntries"))
+                                    $root.org.dash.platform.dapi.v0.AddressInfoEntries.encode(message.addressInfoEntries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesInfosResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse.IGetAddressesInfosResponseV0} message GetAddressesInfosResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesInfosResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressesInfosResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0} GetAddressesInfosResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesInfosResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.addressInfoEntries = $root.org.dash.platform.dapi.v0.AddressInfoEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressesInfosResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0} GetAddressesInfosResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesInfosResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressesInfosResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressesInfosResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.addressInfoEntries != null && message.hasOwnProperty("addressInfoEntries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.AddressInfoEntries.verify(message.addressInfoEntries);
+                                        if (error)
+                                            return "addressInfoEntries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressesInfosResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0} GetAddressesInfosResponseV0
+                             */
+                            GetAddressesInfosResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0();
+                                if (object.addressInfoEntries != null) {
+                                    if (typeof object.addressInfoEntries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.addressInfoEntries: object expected");
+                                    message.addressInfoEntries = $root.org.dash.platform.dapi.v0.AddressInfoEntries.fromObject(object.addressInfoEntries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressesInfosResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0} message GetAddressesInfosResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressesInfosResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.addressInfoEntries != null && message.hasOwnProperty("addressInfoEntries")) {
+                                    object.addressInfoEntries = $root.org.dash.platform.dapi.v0.AddressInfoEntries.toObject(message.addressInfoEntries, options);
+                                    if (options.oneofs)
+                                        object.result = "addressInfoEntries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressesInfosResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressesInfosResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressesInfosResponseV0;
+                        })();
+
+                        return GetAddressesInfosResponse;
+                    })();
+
+                    v0.GetAddressesTrunkStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetAddressesTrunkStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressesTrunkStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.IGetAddressesTrunkStateRequestV0|null} [v0] GetAddressesTrunkStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressesTrunkStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressesTrunkStateRequest.
+                         * @implements IGetAddressesTrunkStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateRequest=} [properties] Properties to set
+                         */
+                        function GetAddressesTrunkStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressesTrunkStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.IGetAddressesTrunkStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @instance
+                         */
+                        GetAddressesTrunkStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressesTrunkStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressesTrunkStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressesTrunkStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest} GetAddressesTrunkStateRequest instance
+                         */
+                        GetAddressesTrunkStateRequest.create = function create(properties) {
+                            return new GetAddressesTrunkStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesTrunkStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateRequest} message GetAddressesTrunkStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesTrunkStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesTrunkStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateRequest} message GetAddressesTrunkStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesTrunkStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressesTrunkStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest} GetAddressesTrunkStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesTrunkStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressesTrunkStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest} GetAddressesTrunkStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesTrunkStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressesTrunkStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressesTrunkStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressesTrunkStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest} GetAddressesTrunkStateRequest
+                         */
+                        GetAddressesTrunkStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressesTrunkStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest} message GetAddressesTrunkStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressesTrunkStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressesTrunkStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressesTrunkStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressesTrunkStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                             * @interface IGetAddressesTrunkStateRequestV0
+                             */
+
+                            /**
+                             * Constructs a new GetAddressesTrunkStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest
+                             * @classdesc Represents a GetAddressesTrunkStateRequestV0.
+                             * @implements IGetAddressesTrunkStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.IGetAddressesTrunkStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetAddressesTrunkStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new GetAddressesTrunkStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.IGetAddressesTrunkStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0} GetAddressesTrunkStateRequestV0 instance
+                             */
+                            GetAddressesTrunkStateRequestV0.create = function create(properties) {
+                                return new GetAddressesTrunkStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesTrunkStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.IGetAddressesTrunkStateRequestV0} message GetAddressesTrunkStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesTrunkStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesTrunkStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.IGetAddressesTrunkStateRequestV0} message GetAddressesTrunkStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesTrunkStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressesTrunkStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0} GetAddressesTrunkStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesTrunkStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressesTrunkStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0} GetAddressesTrunkStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesTrunkStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressesTrunkStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressesTrunkStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressesTrunkStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0} GetAddressesTrunkStateRequestV0
+                             */
+                            GetAddressesTrunkStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0();
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressesTrunkStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0} message GetAddressesTrunkStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressesTrunkStateRequestV0.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this GetAddressesTrunkStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressesTrunkStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressesTrunkStateRequestV0;
+                        })();
+
+                        return GetAddressesTrunkStateRequest;
+                    })();
+
+                    v0.GetAddressesTrunkStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetAddressesTrunkStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressesTrunkStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.IGetAddressesTrunkStateResponseV0|null} [v0] GetAddressesTrunkStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressesTrunkStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressesTrunkStateResponse.
+                         * @implements IGetAddressesTrunkStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateResponse=} [properties] Properties to set
+                         */
+                        function GetAddressesTrunkStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressesTrunkStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.IGetAddressesTrunkStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @instance
+                         */
+                        GetAddressesTrunkStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressesTrunkStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressesTrunkStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressesTrunkStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse} GetAddressesTrunkStateResponse instance
+                         */
+                        GetAddressesTrunkStateResponse.create = function create(properties) {
+                            return new GetAddressesTrunkStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesTrunkStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateResponse} message GetAddressesTrunkStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesTrunkStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesTrunkStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesTrunkStateResponse} message GetAddressesTrunkStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesTrunkStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressesTrunkStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse} GetAddressesTrunkStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesTrunkStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressesTrunkStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse} GetAddressesTrunkStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesTrunkStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressesTrunkStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressesTrunkStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressesTrunkStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse} GetAddressesTrunkStateResponse
+                         */
+                        GetAddressesTrunkStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressesTrunkStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse} message GetAddressesTrunkStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressesTrunkStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressesTrunkStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressesTrunkStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressesTrunkStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                             * @interface IGetAddressesTrunkStateResponseV0
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetAddressesTrunkStateResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetAddressesTrunkStateResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetAddressesTrunkStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse
+                             * @classdesc Represents a GetAddressesTrunkStateResponseV0.
+                             * @implements IGetAddressesTrunkStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.IGetAddressesTrunkStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetAddressesTrunkStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressesTrunkStateResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @instance
+                             */
+                            GetAddressesTrunkStateResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetAddressesTrunkStateResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @instance
+                             */
+                            GetAddressesTrunkStateResponseV0.prototype.metadata = null;
+
+                            /**
+                             * Creates a new GetAddressesTrunkStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.IGetAddressesTrunkStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0} GetAddressesTrunkStateResponseV0 instance
+                             */
+                            GetAddressesTrunkStateResponseV0.create = function create(properties) {
+                                return new GetAddressesTrunkStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesTrunkStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.IGetAddressesTrunkStateResponseV0} message GetAddressesTrunkStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesTrunkStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesTrunkStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.IGetAddressesTrunkStateResponseV0} message GetAddressesTrunkStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesTrunkStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressesTrunkStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0} GetAddressesTrunkStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesTrunkStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressesTrunkStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0} GetAddressesTrunkStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesTrunkStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressesTrunkStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressesTrunkStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressesTrunkStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0} GetAddressesTrunkStateResponseV0
+                             */
+                            GetAddressesTrunkStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0();
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressesTrunkStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0} message GetAddressesTrunkStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressesTrunkStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.proof = null;
+                                    object.metadata = null;
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressesTrunkStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressesTrunkStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressesTrunkStateResponseV0;
+                        })();
+
+                        return GetAddressesTrunkStateResponse;
+                    })();
+
+                    v0.GetAddressesBranchStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetAddressesBranchStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressesBranchStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.IGetAddressesBranchStateRequestV0|null} [v0] GetAddressesBranchStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressesBranchStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressesBranchStateRequest.
+                         * @implements IGetAddressesBranchStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateRequest=} [properties] Properties to set
+                         */
+                        function GetAddressesBranchStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressesBranchStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.IGetAddressesBranchStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @instance
+                         */
+                        GetAddressesBranchStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressesBranchStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressesBranchStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressesBranchStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest} GetAddressesBranchStateRequest instance
+                         */
+                        GetAddressesBranchStateRequest.create = function create(properties) {
+                            return new GetAddressesBranchStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesBranchStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateRequest} message GetAddressesBranchStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesBranchStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesBranchStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateRequest} message GetAddressesBranchStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesBranchStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressesBranchStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest} GetAddressesBranchStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesBranchStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressesBranchStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest} GetAddressesBranchStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesBranchStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressesBranchStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressesBranchStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressesBranchStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest} GetAddressesBranchStateRequest
+                         */
+                        GetAddressesBranchStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressesBranchStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest} message GetAddressesBranchStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressesBranchStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressesBranchStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressesBranchStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressesBranchStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                             * @interface IGetAddressesBranchStateRequestV0
+                             * @property {Uint8Array|null} [key] GetAddressesBranchStateRequestV0 key
+                             * @property {number|null} [depth] GetAddressesBranchStateRequestV0 depth
+                             */
+
+                            /**
+                             * Constructs a new GetAddressesBranchStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest
+                             * @classdesc Represents a GetAddressesBranchStateRequestV0.
+                             * @implements IGetAddressesBranchStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.IGetAddressesBranchStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetAddressesBranchStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressesBranchStateRequestV0 key.
+                             * @member {Uint8Array} key
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @instance
+                             */
+                            GetAddressesBranchStateRequestV0.prototype.key = $util.newBuffer([]);
+
+                            /**
+                             * GetAddressesBranchStateRequestV0 depth.
+                             * @member {number} depth
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @instance
+                             */
+                            GetAddressesBranchStateRequestV0.prototype.depth = 0;
+
+                            /**
+                             * Creates a new GetAddressesBranchStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.IGetAddressesBranchStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0} GetAddressesBranchStateRequestV0 instance
+                             */
+                            GetAddressesBranchStateRequestV0.create = function create(properties) {
+                                return new GetAddressesBranchStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesBranchStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.IGetAddressesBranchStateRequestV0} message GetAddressesBranchStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesBranchStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.key);
+                                if (message.depth != null && Object.hasOwnProperty.call(message, "depth"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.depth);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesBranchStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.IGetAddressesBranchStateRequestV0} message GetAddressesBranchStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesBranchStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressesBranchStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0} GetAddressesBranchStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesBranchStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.key = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.depth = reader.uint32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressesBranchStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0} GetAddressesBranchStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesBranchStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressesBranchStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressesBranchStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.key != null && message.hasOwnProperty("key"))
+                                    if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                        return "key: buffer expected";
+                                if (message.depth != null && message.hasOwnProperty("depth"))
+                                    if (!$util.isInteger(message.depth))
+                                        return "depth: integer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressesBranchStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0} GetAddressesBranchStateRequestV0
+                             */
+                            GetAddressesBranchStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0();
+                                if (object.key != null)
+                                    if (typeof object.key === "string")
+                                        $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                    else if (object.key.length >= 0)
+                                        message.key = object.key;
+                                if (object.depth != null)
+                                    message.depth = object.depth >>> 0;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressesBranchStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0} message GetAddressesBranchStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressesBranchStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.key = "";
+                                    else {
+                                        object.key = [];
+                                        if (options.bytes !== Array)
+                                            object.key = $util.newBuffer(object.key);
+                                    }
+                                    object.depth = 0;
+                                }
+                                if (message.key != null && message.hasOwnProperty("key"))
+                                    object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                if (message.depth != null && message.hasOwnProperty("depth"))
+                                    object.depth = message.depth;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressesBranchStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressesBranchStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressesBranchStateRequestV0;
+                        })();
+
+                        return GetAddressesBranchStateRequest;
+                    })();
+
+                    v0.GetAddressesBranchStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetAddressesBranchStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetAddressesBranchStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.IGetAddressesBranchStateResponseV0|null} [v0] GetAddressesBranchStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetAddressesBranchStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetAddressesBranchStateResponse.
+                         * @implements IGetAddressesBranchStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateResponse=} [properties] Properties to set
+                         */
+                        function GetAddressesBranchStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetAddressesBranchStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.IGetAddressesBranchStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @instance
+                         */
+                        GetAddressesBranchStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetAddressesBranchStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetAddressesBranchStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetAddressesBranchStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse} GetAddressesBranchStateResponse instance
+                         */
+                        GetAddressesBranchStateResponse.create = function create(properties) {
+                            return new GetAddressesBranchStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesBranchStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateResponse} message GetAddressesBranchStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesBranchStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetAddressesBranchStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetAddressesBranchStateResponse} message GetAddressesBranchStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetAddressesBranchStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetAddressesBranchStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse} GetAddressesBranchStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesBranchStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetAddressesBranchStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse} GetAddressesBranchStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetAddressesBranchStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetAddressesBranchStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetAddressesBranchStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetAddressesBranchStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse} GetAddressesBranchStateResponse
+                         */
+                        GetAddressesBranchStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetAddressesBranchStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse} message GetAddressesBranchStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetAddressesBranchStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetAddressesBranchStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetAddressesBranchStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetAddressesBranchStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                             * @interface IGetAddressesBranchStateResponseV0
+                             * @property {Uint8Array|null} [merkProof] GetAddressesBranchStateResponseV0 merkProof
+                             */
+
+                            /**
+                             * Constructs a new GetAddressesBranchStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse
+                             * @classdesc Represents a GetAddressesBranchStateResponseV0.
+                             * @implements IGetAddressesBranchStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.IGetAddressesBranchStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetAddressesBranchStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetAddressesBranchStateResponseV0 merkProof.
+                             * @member {Uint8Array} merkProof
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @instance
+                             */
+                            GetAddressesBranchStateResponseV0.prototype.merkProof = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new GetAddressesBranchStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.IGetAddressesBranchStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0} GetAddressesBranchStateResponseV0 instance
+                             */
+                            GetAddressesBranchStateResponseV0.create = function create(properties) {
+                                return new GetAddressesBranchStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesBranchStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.IGetAddressesBranchStateResponseV0} message GetAddressesBranchStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesBranchStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.merkProof != null && Object.hasOwnProperty.call(message, "merkProof"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.merkProof);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetAddressesBranchStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.IGetAddressesBranchStateResponseV0} message GetAddressesBranchStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetAddressesBranchStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetAddressesBranchStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0} GetAddressesBranchStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesBranchStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 2:
+                                        message.merkProof = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetAddressesBranchStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0} GetAddressesBranchStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetAddressesBranchStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetAddressesBranchStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetAddressesBranchStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.merkProof != null && message.hasOwnProperty("merkProof"))
+                                    if (!(message.merkProof && typeof message.merkProof.length === "number" || $util.isString(message.merkProof)))
+                                        return "merkProof: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetAddressesBranchStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0} GetAddressesBranchStateResponseV0
+                             */
+                            GetAddressesBranchStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0();
+                                if (object.merkProof != null)
+                                    if (typeof object.merkProof === "string")
+                                        $util.base64.decode(object.merkProof, message.merkProof = $util.newBuffer($util.base64.length(object.merkProof)), 0);
+                                    else if (object.merkProof.length >= 0)
+                                        message.merkProof = object.merkProof;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetAddressesBranchStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0} message GetAddressesBranchStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetAddressesBranchStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.merkProof = "";
+                                    else {
+                                        object.merkProof = [];
+                                        if (options.bytes !== Array)
+                                            object.merkProof = $util.newBuffer(object.merkProof);
+                                    }
+                                if (message.merkProof != null && message.hasOwnProperty("merkProof"))
+                                    object.merkProof = options.bytes === String ? $util.base64.encode(message.merkProof, 0, message.merkProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.merkProof) : message.merkProof;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetAddressesBranchStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetAddressesBranchStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetAddressesBranchStateResponseV0;
+                        })();
+
+                        return GetAddressesBranchStateResponse;
                     })();
 
                     return v0;

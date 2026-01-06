@@ -1,3 +1,4 @@
+use dpp::address_funds::AddressWitness;
 use dpp::dashcore;
 use dpp::dashcore::signer;
 use dpp::dashcore::Network;
@@ -77,7 +78,7 @@ impl SingleKeySigner {
     }
 }
 
-impl Signer for SingleKeySigner {
+impl Signer<IdentityPublicKey> for SingleKeySigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
@@ -98,6 +99,29 @@ impl Signer for SingleKeySigner {
                     identity_public_key.key_type()
                 )))
             }
+        }
+    }
+
+    fn sign_create_witness(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        // First, sign the data to get the signature
+        let signature = self.sign(key, data)?;
+
+        // Create the appropriate AddressWitness based on the key type
+        // SingleKeySigner only supports ECDSA keys
+        match key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                // P2PKH witness only needs the signature - the public key is recovered
+                // during verification, saving 33 bytes per witness
+                Ok(AddressWitness::P2pkh { signature })
+            }
+            _ => Err(ProtocolError::Generic(format!(
+                "SingleKeySigner only supports ECDSA keys, got {:?}",
+                key.key_type()
+            ))),
         }
     }
 

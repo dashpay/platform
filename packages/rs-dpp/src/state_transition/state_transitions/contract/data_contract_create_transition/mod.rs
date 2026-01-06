@@ -4,6 +4,7 @@ mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
+mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -159,7 +160,9 @@ mod test {
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::traits::StateTransitionLike;
-    use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
+    use crate::state_transition::{
+        StateTransitionOwned, StateTransitionType, StateTransitionValueConvert,
+    };
     use crate::tests::fixtures::get_data_contract_fixture;
 
     use crate::version::LATEST_PLATFORM_VERSION;

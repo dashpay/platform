@@ -162,6 +162,11 @@ export default function setupLocalPresetTaskFactory(
                   // Disable platform for the seed node
                   config.set('platform.enable', false);
                   config.set('platform.drive.tenderdash.mode', 'seed');
+
+                  // Enable quorum list sidecar for SDK local testing
+                  config.set('platform.quorumList.enabled', true);
+                  config.set('platform.quorumList.versionCheckHost', 'host.docker.internal');
+                  config.set('platform.quorumList.addressHostOverride', '127.0.0.1');
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 

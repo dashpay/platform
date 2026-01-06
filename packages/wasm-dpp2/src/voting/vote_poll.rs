@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use crate::utils::ToSerdeJSONExt;
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
@@ -176,3 +177,5 @@ impl VotePollWasm {
         Ok(())
     }
 }
+
+impl_wasm_conversions!(VotePollWasm, VotePoll);

@@ -15,8 +15,14 @@ services:
         SCCACHE_BUCKET: ${SCCACHE_BUCKET}
         SCCACHE_REGION: ${SCCACHE_REGION}
         SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
+      secrets:
+        - GITHUB_TOKEN
       cache_from:
         - ${CACHE_DASHMATE_HELPER_FROM:-${DASHMATE_HELPER_DOCKER_IMAGE}}
       cache_to:
         - ${CACHE_DASHMATE_HELPER_TO:-type=inline}
     image: dashmate-helper:local
+
+secrets:
+  GITHUB_TOKEN:
+    environment: GITHUB_TOKEN

@@ -55,7 +55,7 @@ pub struct CheckTxResult {
     /// The level used when checking the transaction
     pub level: CheckTxLevel,
     /// The fee_result if there was one
-    /// There might not be one in the case of a very cheep recheck
+    /// There might not be one in the case of a very cheap recheck
     pub fee_result: Option<FeeResult>,
     /// A set of unique identifiers, if any are found already in the mempool then tenderdash should
     /// reject the transition. All transitions return only 1 unique identifier except the documents

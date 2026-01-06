@@ -13,6 +13,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::tokens::distribution::queries::QueryPreProgrammedDistributionStartAt;
 use drive::error::query::QuerySyntaxError;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_token_pre_programmed_distributions_v0(
@@ -92,10 +94,11 @@ impl<C> Platform<C> {
             GetTokenPreProgrammedDistributionsResponseV0 {
                 result: Some(
                     get_token_pre_programmed_distributions_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
+                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                            .map(|(_, proof)| proof)?,
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let token_distributions = self
@@ -131,7 +134,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 
