@@ -1,3 +1,4 @@
+mod cleanup_recent_block_storage_address_balances;
 mod decode_raw_state_transitions;
 mod execute_event;
 mod process_raw_state_transitions;

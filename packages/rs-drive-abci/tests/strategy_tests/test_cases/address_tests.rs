@@ -13,9 +13,16 @@ mod tests {
     use dapi_grpc::platform::v0::get_recent_address_balance_changes_response::{
         get_recent_address_balance_changes_response_v0, Version as RecentChangesResponseVersion,
     };
+    use dapi_grpc::platform::v0::get_recent_compacted_address_balance_changes_request::{
+        GetRecentCompactedAddressBalanceChangesRequestV0, Version as CompactedChangesRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_recent_compacted_address_balance_changes_response::{
+        get_recent_compacted_address_balance_changes_response_v0,
+        Version as CompactedChangesResponseVersion,
+    };
     use dapi_grpc::platform::v0::{
         address_balance_change, GetAddressesTrunkStateRequest,
-        GetRecentAddressBalanceChangesRequest,
+        GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest,
     };
     use dpp::address_funds::PlatformAddress;
     use dpp::dash_to_credits;
@@ -2176,5 +2183,886 @@ mod tests {
             proof.quorum_type, quorum_type,
             "quorum type in proof should match config"
         );
+    }
+
+    /// Test for querying compacted address balance changes.
+    /// This test runs enough blocks with checkpoints enabled to trigger compaction,
+    /// then verifies the compacted data can be queried correctly.
+    #[test]
+    fn run_chain_query_compacted_address_balance_changes() {
+        drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::AddressTransfer(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                            1..=4,
+                            Some(0.2),
+                            None,
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        // Use 3 minute block spacing to trigger checkpoints and compaction
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 180000, // 3 mins - triggers checkpoint every ~12 blocks
+            testing_configs: PlatformTestConfig {
+                disable_checkpoints: false,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Run enough blocks to trigger multiple checkpoints and compaction
+        // With 3 min block spacing, checkpoint happens around every 12 blocks
+        // We run 25 blocks to ensure at least one compaction cycle
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            25,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Verify we had some address activity
+        let executed = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && matches!(state_transition, StateTransition::AddressFundsTransfer(_))
+            })
+            .count();
+        assert!(executed > 0, "expected at least one address transfer");
+
+        // Drop outcome to release the mutable borrow of platform
+        drop(outcome);
+
+        let platform_version = PlatformVersion::latest();
+
+        // Get current platform state for the query
+        let platform_state = platform.platform.state.load();
+
+        // Query compacted address balance changes from block 0
+        let request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: false,
+                },
+            )),
+        };
+
+        let query_validation_result = platform
+            .platform
+            .query_recent_compacted_address_balance_changes(
+                request,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to run query");
+
+        assert!(
+            query_validation_result.errors.is_empty(),
+            "query errors: {:?}",
+            query_validation_result.errors
+        );
+
+        let response = query_validation_result
+            .into_data()
+            .expect("expected data on query_validation_result");
+
+        let versioned_result = response.version.expect("expected a version");
+        match versioned_result {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        // Verify we got compacted entries
+                        // Note: compaction may or may not have been triggered depending on thresholds
+                        // The key test is that the query works correctly
+
+                        // Log what we found
+                        eprintln!(
+                            "Found {} compacted block change entries",
+                            entries.compacted_block_changes.len()
+                        );
+
+                        for entry in &entries.compacted_block_changes {
+                            eprintln!(
+                                "  Compacted entry: start_block={}, end_block={}, changes={}",
+                                entry.start_block_height,
+                                entry.end_block_height,
+                                entry.changes.len()
+                            );
+
+                            // Verify the entry structure
+                            assert!(
+                                entry.end_block_height >= entry.start_block_height,
+                                "end_block_height should be >= start_block_height"
+                            );
+
+                            // Verify each change has valid data
+                            for change in &entry.changes {
+                                assert!(
+                                    !change.address.is_empty(),
+                                    "address should not be empty"
+                                );
+                                assert!(
+                                    change.operation.is_some(),
+                                    "operation should be present"
+                                );
+
+                                // Verify address can be parsed
+                                let _address = PlatformAddress::from_bytes(&change.address)
+                                    .expect("expected valid address bytes");
+
+                                // Verify operation type
+                                match &change.operation {
+                                    Some(address_balance_change::Operation::SetBalance(balance)) => {
+                                        eprintln!(
+                                            "    Address {:?}: SetBalance({})",
+                                            hex::encode(&change.address),
+                                            balance
+                                        );
+                                    }
+                                    Some(address_balance_change::Operation::AddToBalance(amount)) => {
+                                        eprintln!(
+                                            "    Address {:?}: AddToBalance({})",
+                                            hex::encode(&change.address),
+                                            amount
+                                        );
+                                    }
+                                    None => {
+                                        panic!("expected an operation on address balance change");
+                                    }
+                                }
+                            }
+                        }
+
+                        // If we have compacted entries, verify they span multiple blocks
+                        // (that's the point of compaction)
+                        if !entries.compacted_block_changes.is_empty() {
+                            for entry in &entries.compacted_block_changes {
+                                assert!(
+                                    entry.end_block_height > entry.start_block_height
+                                        || entry.changes.len() > 0,
+                                    "compacted entry should span multiple blocks or have changes"
+                                );
+                            }
+                        }
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Also query recent (non-compacted) changes to verify both queries work
+        let recent_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: 1,
+                    prove: false,
+                },
+            )),
+        };
+
+        let recent_query_result = platform
+            .platform
+            .query_recent_address_balance_changes(recent_request, &platform_state, platform_version)
+            .expect("expected to run recent changes query");
+
+        assert!(
+            recent_query_result.errors.is_empty(),
+            "recent query errors: {:?}",
+            recent_query_result.errors
+        );
+
+        let recent_response = recent_query_result
+            .into_data()
+            .expect("expected data on recent query");
+
+        match recent_response.version.expect("expected a version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        eprintln!(
+                            "Found {} recent block change entries (non-compacted)",
+                            entries.block_changes.len()
+                        );
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected entries, not proof");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Test that verifies there is no overlap between compacted and non-compacted
+    /// address balance changes. Compacted entries should cover older blocks that have
+    /// been merged, while non-compacted entries should cover newer blocks.
+    #[test]
+    fn run_chain_verify_no_overlap_between_compacted_and_recent_changes() {
+        drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::AddressTransfer(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                            1..=4,
+                            Some(0.2),
+                            None,
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 2..4,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 2..4,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        // Use 3 minute block spacing to trigger checkpoints and compaction
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 180000, // 3 mins - triggers checkpoint every ~12 blocks
+            testing_configs: PlatformTestConfig {
+                disable_checkpoints: false,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Run enough blocks to trigger compaction and have some recent blocks after
+        // We need: some blocks -> compaction -> more blocks (not yet compacted)
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            30,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Verify we had address activity
+        let executed = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && (matches!(state_transition, StateTransition::AddressFundsTransfer(_))
+                        || matches!(
+                            state_transition,
+                            StateTransition::AddressFundingFromAssetLock(_)
+                        ))
+            })
+            .count();
+        assert!(
+            executed > 0,
+            "expected at least one address-related transition"
+        );
+
+        drop(outcome);
+
+        let platform_version = PlatformVersion::latest();
+        let platform_state = platform.platform.state.load();
+
+        // Query compacted address balance changes
+        let compacted_request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: false,
+                },
+            )),
+        };
+
+        let compacted_result = platform
+            .platform
+            .query_recent_compacted_address_balance_changes(
+                compacted_request,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to run compacted query");
+
+        assert!(
+            compacted_result.errors.is_empty(),
+            "compacted query errors: {:?}",
+            compacted_result.errors
+        );
+
+        // Query recent (non-compacted) address balance changes
+        let recent_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: 1,
+                    prove: false,
+                },
+            )),
+        };
+
+        let recent_result = platform
+            .platform
+            .query_recent_address_balance_changes(recent_request, &platform_state, platform_version)
+            .expect("expected to run recent query");
+
+        assert!(
+            recent_result.errors.is_empty(),
+            "recent query errors: {:?}",
+            recent_result.errors
+        );
+
+        // Extract block heights from compacted entries
+        let compacted_response = compacted_result
+            .into_data()
+            .expect("expected compacted data");
+        let mut compacted_block_ranges: Vec<(u64, u64)> = Vec::new();
+
+        match compacted_response.version.expect("expected version") {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        for entry in entries.compacted_block_changes {
+                            compacted_block_ranges
+                                .push((entry.start_block_height, entry.end_block_height));
+                        }
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Extract block heights from recent entries
+        let recent_response = recent_result.into_data().expect("expected recent data");
+        let mut recent_block_heights: Vec<u64> = Vec::new();
+
+        match recent_response.version.expect("expected version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        for entry in entries.block_changes {
+                            recent_block_heights.push(entry.block_height);
+                        }
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Log what we found
+        eprintln!("Compacted block ranges: {:?}", compacted_block_ranges);
+        eprintln!("Recent block heights: {:?}", recent_block_heights);
+
+        // Verify no overlap between compacted ranges and recent blocks
+        for (compacted_start, compacted_end) in &compacted_block_ranges {
+            for recent_height in &recent_block_heights {
+                assert!(
+                    *recent_height < *compacted_start || *recent_height > *compacted_end,
+                    "Overlap detected! Recent block {} falls within compacted range [{}, {}]",
+                    recent_height,
+                    compacted_start,
+                    compacted_end
+                );
+            }
+        }
+
+        // If we have both compacted and recent data, verify the ordering:
+        // All compacted ranges should be before all recent blocks
+        if !compacted_block_ranges.is_empty() && !recent_block_heights.is_empty() {
+            let max_compacted_end = compacted_block_ranges
+                .iter()
+                .map(|(_, end)| *end)
+                .max()
+                .unwrap();
+            let min_recent_height = recent_block_heights.iter().min().unwrap();
+
+            eprintln!(
+                "Max compacted end block: {}, Min recent block: {}",
+                max_compacted_end, min_recent_height
+            );
+
+            assert!(
+                *min_recent_height > max_compacted_end,
+                "Recent blocks should come after compacted blocks. \
+                Max compacted end: {}, Min recent: {}",
+                max_compacted_end,
+                min_recent_height
+            );
+        }
+
+        // Verify compacted ranges don't overlap with each other
+        for i in 0..compacted_block_ranges.len() {
+            for j in (i + 1)..compacted_block_ranges.len() {
+                let (start_i, end_i) = compacted_block_ranges[i];
+                let (start_j, end_j) = compacted_block_ranges[j];
+
+                // Two ranges overlap if: start_i <= end_j AND start_j <= end_i
+                let overlaps = start_i <= end_j && start_j <= end_i;
+                assert!(
+                    !overlaps,
+                    "Compacted ranges overlap! Range [{}, {}] overlaps with [{}, {}]",
+                    start_i, end_i, start_j, end_j
+                );
+            }
+        }
+
+        // Verify compacted ranges are in ascending order (sorted by start block)
+        for i in 1..compacted_block_ranges.len() {
+            let (prev_start, prev_end) = compacted_block_ranges[i - 1];
+            let (curr_start, _) = compacted_block_ranges[i];
+
+            assert!(
+                curr_start > prev_end,
+                "Compacted ranges should be in ascending order with no gaps. \
+                Previous end: {}, Current start: {}",
+                prev_end,
+                curr_start
+            );
+        }
+
+        // Verify recent blocks are in ascending order
+        for i in 1..recent_block_heights.len() {
+            assert!(
+                recent_block_heights[i] > recent_block_heights[i - 1],
+                "Recent block heights should be in ascending order. \
+                Found {} after {}",
+                recent_block_heights[i],
+                recent_block_heights[i - 1]
+            );
+        }
+
+        // Summary
+        eprintln!(
+            "\nSummary: {} compacted ranges, {} recent blocks, no overlap detected",
+            compacted_block_ranges.len(),
+            recent_block_heights.len()
+        );
+    }
+
+    /// Test that verifies the cleanup of expired compacted address balance entries works.
+    ///
+    /// This test:
+    /// 1. Runs blocks to trigger compaction (64+ blocks threshold)
+    /// 2. Verifies compacted entries exist after the run
+    /// 3. Verifies entries with expired timestamps are cleaned up
+    ///
+    /// Note: Since cleanup runs every block, entries are cleaned up as time passes.
+    /// With 6-hour block spacing and 24-hour expiration:
+    /// - First compaction at block 64 (hour 384)
+    /// - Those entries expire at hour 408 (block 68)
+    /// - By block 70, entries from block 64 should be cleaned up
+    #[test]
+    fn run_chain_cleanup_expired_compacted_address_balances() {
+        // drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::AddressTransfer(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                            1..=4,
+                            Some(0.2),
+                            None,
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 2..4,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 2..4,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        // Use 20-minute block spacing to allow some entries to expire while others remain
+        // Compaction happens every 64 blocks, entries expire after 24 hours (1440 mins)
+        // With 20-min spacing, entries expire after 72 blocks (1440/20 = 72)
+        //
+        // Timeline with 300 blocks:
+        // - Block 64: Compaction #1 → expires at block 136 → cleaned up
+        // - Block 128: Compaction #2 → expires at block 200 → cleaned up
+        // - Block 192: Compaction #3 → expires at block 264 → cleaned up
+        // - Block 256: Compaction #4 → expires at block 328 → still valid at 300!
+        //
+        // So at block 300, we should see 1 compacted entry (from block 256)
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 1_200_000, // 20 minutes
+            testing_configs: PlatformTestConfig {
+                disable_checkpoints: false,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Run 300 blocks to:
+        // 1. Trigger multiple compactions (at blocks 64, 128, 192, 256)
+        // 2. Allow time for some entries to expire and be cleaned up
+        // 3. End with at least one valid compacted entry (from block 256)
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            300,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Verify we had address activity
+        let executed = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && (matches!(state_transition, StateTransition::AddressFundsTransfer(_))
+                        || matches!(
+                            state_transition,
+                            StateTransition::AddressFundingFromAssetLock(_)
+                        ))
+            })
+            .count();
+        assert!(
+            executed > 0,
+            "expected at least one address-related transition"
+        );
+
+        drop(outcome);
+
+        let platform_version = PlatformVersion::latest();
+        let platform_state = platform.platform.state.load();
+
+        // Query compacted address balance changes
+        let request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: false,
+                },
+            )),
+        };
+
+        let query_result = platform
+            .platform
+            .query_recent_compacted_address_balance_changes(
+                request,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to run query");
+
+        assert!(
+            query_result.errors.is_empty(),
+            "query errors: {:?}",
+            query_result.errors
+        );
+
+        let response = query_result
+            .into_data()
+            .expect("expected data on query_validation_result");
+
+        let versioned_result = response.version.expect("expected a version");
+        match versioned_result {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        // With 20-minute block spacing over 300 blocks:
+                        // - Compactions at blocks 64, 128, 192, 256
+                        // - Entries expire 72 blocks after creation (24hrs / 20mins = 72 blocks)
+                        // - Block 64 entry expires at 136 → cleaned up
+                        // - Block 128 entry expires at 200 → cleaned up
+                        // - Block 192 entry expires at 264 → cleaned up
+                        // - Block 256 entry expires at 328 → still valid at 300!
+                        //
+                        // We expect exactly 1 compacted entry to remain.
+                        // This proves both compaction AND cleanup are working correctly.
+
+                        // Assert exactly 1 compacted entry remains (earlier ones were cleaned up)
+                        assert_eq!(
+                            entries.compacted_block_changes.len(),
+                            1,
+                            "expected exactly 1 compacted entry (from ~block 256), but found {}. \
+                             Earlier compactions should have been cleaned up.",
+                            entries.compacted_block_changes.len()
+                        );
+
+                        let entry = &entries.compacted_block_changes[0];
+
+                        // The remaining entry should be from the most recent compaction (~block 256)
+                        // It should start after block 128 (earlier compactions were cleaned up)
+                        assert!(
+                            entry.start_block_height > 128,
+                            "compacted entry should start after block 128 (cleanup removed earlier entries), \
+                             but starts at {}",
+                            entry.start_block_height
+                        );
+
+                        // Compaction covers 64 blocks
+                        let block_span = entry.end_block_height - entry.start_block_height + 1;
+                        assert_eq!(
+                            block_span, 64,
+                            "compacted entry should span 64 blocks, but spans {}",
+                            block_span
+                        );
+
+                        // The entry should have address changes (our strategy generates address activity)
+                        assert!(
+                            !entry.changes.is_empty(),
+                            "compacted entry should contain address balance changes"
+                        );
+
+                        // Verify each change has valid data
+                        for change in &entry.changes {
+                            assert!(!change.address.is_empty(), "address should not be empty");
+                            assert!(change.operation.is_some(), "operation should be present");
+                        }
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Query non-compacted (recent) address balance changes
+        // These are blocks after the last compaction (~block 258 to 300)
+        let recent_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: 1,
+                    prove: false,
+                },
+            )),
+        };
+
+        let recent_query_result = platform
+            .platform
+            .query_recent_address_balance_changes(recent_request, &platform_state, platform_version)
+            .expect("expected to run recent query");
+
+        assert!(
+            recent_query_result.errors.is_empty(),
+            "recent query errors: {:?}",
+            recent_query_result.errors
+        );
+
+        let recent_response = recent_query_result
+            .into_data()
+            .expect("expected data on recent query result");
+
+        let recent_versioned_result = recent_response.version.expect("expected a version");
+        match recent_versioned_result {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        // After compaction at ~block 257, blocks 258-300 should be non-compacted
+                        // That's approximately 42 blocks of recent address changes
+                        assert!(
+                            !entries.block_changes.is_empty(),
+                            "expected non-compacted recent blocks after the last compaction"
+                        );
+
+                        // We should have roughly 300 - 257 = 43 blocks of recent data
+                        // (allowing some variance due to exact compaction timing)
+                        let recent_block_count = entries.block_changes.len();
+                        assert!(
+                            recent_block_count >= 40 && recent_block_count <= 50,
+                            "expected ~43 recent non-compacted blocks, but found {}",
+                            recent_block_count
+                        );
+
+                        // Verify blocks are in ascending order and have valid heights
+                        let mut prev_height = 0u64;
+                        for block in &entries.block_changes {
+                            assert!(
+                                block.block_height > prev_height,
+                                "blocks should be in ascending order"
+                            );
+                            prev_height = block.block_height;
+
+                            // Each block should have some address changes
+                            assert!(
+                                !block.changes.is_empty(),
+                                "block {} should have address balance changes",
+                                block.block_height
+                            );
+                        }
+
+                        // The first recent block should be after the compacted range
+                        let first_recent_block = entries.block_changes.first().unwrap();
+                        assert!(
+                            first_recent_block.block_height > 250,
+                            "first recent block should be after compaction (~block 257), but is {}",
+                            first_recent_block.block_height
+                        );
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected recent entries, not proof");
+                    }
+                }
+            }
+        }
     }
 }

@@ -38,6 +38,7 @@ where
         self.drive.store_address_balances_for_block(
             address_balances,
             block_info.height,
+            block_info.time_ms,
             Some(transaction),
             platform_version,
         )?;

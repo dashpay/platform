@@ -1,12 +1,15 @@
+use crate::drive::saved_block_transactions::compact_address_balances::ONE_DAY_IN_MS;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
+use crate::util::grove_operations::DirectQueryType;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::CreditOperation;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb_path::SubtreePath;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -18,11 +21,15 @@ impl Drive {
     /// and stores the result in the compacted address balances tree
     /// with a (start_block, end_block) key.
     ///
+    /// Also stores the expiration time (current block time + 1 day) in the
+    /// compacted addresses expiration time tree with the same (start_block, end_block) key.
+    ///
     /// Returns the range of blocks that were compacted (start_block, end_block).
     pub(super) fn compact_address_balances_with_current_block_v0(
         &self,
         current_address_balances: &BTreeMap<PlatformAddress, CreditOperation>,
         current_block_height: u64,
+        current_block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(u64, u64), Error> {
@@ -143,8 +150,57 @@ impl Drive {
         // Insert the compacted entry
         batch.add_insert(
             Self::saved_compacted_block_transactions_address_balances_path_vec(),
-            compacted_key,
+            compacted_key.clone(),
             Element::new_item(serialized),
+        );
+
+        // Calculate expiration time (current block time + 1 day)
+        let expiration_time_ms = current_block_time_ms.saturating_add(ONE_DAY_IN_MS);
+        let expiration_key = expiration_time_ms.to_be_bytes().to_vec();
+
+        // Check if an entry with this expiration time already exists
+        // If so, we need to append to the existing vec of block ranges
+        let expiration_path = Self::saved_compacted_addresses_expiration_time_path();
+
+        let mut drive_operations = vec![];
+        let existing_ranges = self.grove_get_raw_optional(
+            SubtreePath::from(expiration_path.as_ref()),
+            &expiration_key,
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut drive_operations,
+            &platform_version.drive,
+        )?;
+
+        let expiration_value = if let Some(Element::Item(existing_data, _)) = existing_ranges {
+            // Deserialize existing vec of block ranges and append the new one
+            let mut ranges: Vec<(u64, u64)> = bincode::decode_from_slice(&existing_data, config)
+                .map(|(v, _)| v)
+                .unwrap_or_default();
+            ranges.push((start_block, end_block));
+            bincode::encode_to_vec(&ranges, config).map_err(|e| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
+                    "cannot encode expiration block ranges: {}",
+                    e
+                ))))
+            })?
+        } else {
+            // No existing entry, create new vec with single range
+            let ranges: Vec<(u64, u64)> = vec![(start_block, end_block)];
+            bincode::encode_to_vec(&ranges, config).map_err(|e| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
+                    "cannot encode expiration block ranges: {}",
+                    e
+                ))))
+            })?
+        };
+
+        // Store in the expiration tree: key = expiration_time, value = vec of (start_block, end_block)
+        // This allows efficient querying for expired entries by time
+        batch.add_insert(
+            Self::saved_compacted_addresses_expiration_time_path_vec(),
+            expiration_key,
+            Element::new_item(expiration_value),
         );
 
         // Apply the batch

@@ -141,6 +141,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 decode_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
                 store_address_balances_to_recent_block_storage: None,
+                cleanup_recent_block_storage_address_balances: None,
             },
             epoch: DriveAbciEpochMethodVersions {
                 gather_epoch_info: 0,

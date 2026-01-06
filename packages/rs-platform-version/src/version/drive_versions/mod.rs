@@ -79,6 +79,7 @@ pub struct DriveSavedBlockTransactionsMethodVersions {
     pub store_address_balances: FeatureVersion,
     pub fetch_address_balances: FeatureVersion,
     pub compact_address_balances: FeatureVersion,
+    pub cleanup_expired_address_balances: FeatureVersion,
     /// Maximum number of blocks to store before compaction is triggered
     pub max_blocks_before_compaction: u16,
     /// Maximum number of address balance entries before compaction is triggered
