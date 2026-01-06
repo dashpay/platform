@@ -555,7 +555,6 @@ pub fn create_identity_update_transition_disable_keys(
         .collect::<Vec<_>>();
 
     if key_ids_we_could_disable.is_empty() {
-        identity.set_revision(identity.revision() - 1); //since we added 1 before
         return None;
     }
     let indices: Vec<_> = (0..key_ids_we_could_disable.len()).choose_multiple(rng, count as usize);
