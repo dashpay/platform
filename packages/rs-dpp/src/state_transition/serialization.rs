@@ -89,13 +89,16 @@ mod tests {
             panic!("expected identity create transition");
         };
 
-        let transaction = identity_create_transition
-            .asset_lock_proof()
-            .transaction()
-            .expect("should have asset lock proof transaction");
+        // This mainnet transaction uses a ChainAssetLockProof (not InstantAssetLockProof)
+        // ChainAssetLockProof doesn't embed the full transaction, just the out_point reference
+        let asset_lock_proof = identity_create_transition.asset_lock_proof();
+        let AssetLockProof::Chain(chain_proof) = asset_lock_proof else {
+            panic!("expected chain asset lock proof for this mainnet transaction");
+        };
 
+        // Verify the out_point references the expected transaction
         assert_eq!(
-            &transaction.txid().to_hex().to_lowercase(),
+            &chain_proof.out_point.txid.to_string().to_lowercase(),
             EXPECTED_CORE_TRANSACTION_HASH
         );
 
