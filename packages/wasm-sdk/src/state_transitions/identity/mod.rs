@@ -16,6 +16,7 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::Fetch;
 use js_sys;
 use simple_signer::{signer::SimpleSigner, SingleKeySigner};
+use std::collections::BTreeMap;
 use tracing::{debug, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -285,6 +286,68 @@ fn parse_keys_for_identity_update(
     }
 
     Ok(keys_result)
+}
+
+/// Validates keys for an identity update operation.
+///
+/// This function enforces the platform's XOR rule for MASTER keys:
+/// - At most 1 MASTER key can be disabled at a time
+/// - At most 1 MASTER key can be added at a time
+/// - If disabling 1 MASTER key, must add exactly 1 MASTER key (and vice versa)
+///
+/// Note: CRITICAL/AUTH/ECDSA keys and TRANSFER keys have no special restrictions
+/// beyond normal platform validation. The platform allows disabling these keys.
+///
+/// # Arguments
+/// * `keys_to_add` - Vector of public keys to add
+/// * `keys_to_disable` - Vector of key IDs to disable
+/// * `identity_public_keys` - The identity's current public keys
+///
+/// # Returns
+/// * `Ok(())` if validation passes
+/// * `Err(WasmSdkError)` if validation fails
+fn validate_identity_update_keys(
+    keys_to_add: &[IdentityPublicKey],
+    keys_to_disable: &[u32],
+    identity_public_keys: &BTreeMap<u32, IdentityPublicKey>,
+) -> Result<(), WasmSdkError> {
+    // Validate MASTER key operations (platform XOR rule from validate_not_disabling_last_master_key)
+    // Rule: Can only disable a MASTER key if adding exactly one replacement MASTER key
+    let master_keys_to_add_count = keys_to_add
+        .iter()
+        .filter(|k| k.security_level() == SecurityLevel::MASTER)
+        .count();
+
+    let master_keys_to_disable_count = keys_to_disable
+        .iter()
+        .filter_map(|key_id| identity_public_keys.get(key_id))
+        .filter(|key| key.security_level() == SecurityLevel::MASTER)
+        .count();
+
+    if master_keys_to_disable_count > 1 {
+        return Err(WasmSdkError::invalid_argument(
+            "Cannot disable more than one master key at a time",
+        ));
+    }
+    if master_keys_to_add_count > 1 {
+        return Err(WasmSdkError::invalid_argument(
+            "Cannot add more than one master key at a time",
+        ));
+    }
+    if (master_keys_to_disable_count == 1) ^ (master_keys_to_add_count == 1) {
+        return Err(WasmSdkError::invalid_argument(
+            "Must add a replacement master key when disabling a master key",
+        ));
+    }
+
+    // Validate all keys to disable exist
+    for key_id in keys_to_disable {
+        if identity_public_keys.get(key_id).is_none() {
+            return Err(WasmSdkError::not_found(format!("Key {} not found", key_id)));
+        }
+    }
+
+    Ok(())
 }
 
 #[wasm_bindgen]
@@ -1272,34 +1335,8 @@ impl WasmSdk {
         let added_keys_count = keys_to_add.len();
         let disabled_keys_count = keys_to_disable.len();
 
-        // Validate keys to disable (cannot disable master, critical auth, or transfer keys)
-        for key_id in &keys_to_disable {
-            if let Some(key) = identity.public_keys().get(key_id) {
-                if key.security_level() == SecurityLevel::MASTER {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "Cannot disable master key {}",
-                        key_id
-                    )));
-                }
-                if key.purpose() == Purpose::AUTHENTICATION
-                    && key.security_level() == SecurityLevel::CRITICAL
-                    && key.key_type() == KeyType::ECDSA_SECP256K1
-                {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "Cannot disable critical authentication key {}",
-                        key_id
-                    )));
-                }
-                if key.purpose() == Purpose::TRANSFER {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "Cannot disable transfer key {}",
-                        key_id
-                    )));
-                }
-            } else {
-                return Err(WasmSdkError::not_found(format!("Key {} not found", key_id)));
-            }
-        }
+        // Validate keys for update operation
+        validate_identity_update_keys(&keys_to_add, &keys_to_disable, identity.public_keys())?;
 
         // Get identity nonce
         let identity_nonce = sdk
@@ -1641,6 +1678,33 @@ mod tests {
         }
         .into()
     }
+
+    /// Helper to create a test identity public key for identity update validation tests
+    fn create_identity_update_test_key(
+        id: u32,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+    ) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]), // Dummy public key data
+            disabled_at: None,
+        })
+    }
+
+    /// Helper to create an identity's public keys map
+    fn create_identity_keys(keys: Vec<IdentityPublicKey>) -> BTreeMap<u32, IdentityPublicKey> {
+        keys.into_iter().map(|k| (k.id(), k)).collect()
+    }
+
+    // ==========================================================================
+    // ECDSA PUBLIC KEY MATCHING TESTS
+    // ==========================================================================
 
     #[test]
     fn test_private_key_matches_ecdsa_secp256k1() {
@@ -2089,5 +2153,212 @@ mod tests {
             err.to_string().contains("32 bytes"),
             "Error should mention expected length"
         );
+    }
+
+    // ==========================================================================
+    // MASTER KEY VALIDATION TESTS (XOR Rule)
+    // ==========================================================================
+
+    #[test]
+    fn test_master_key_rotation_allowed() {
+        // Can disable 1 MASTER key when adding 1 MASTER key (rotation)
+        let identity_keys = create_identity_keys(vec![
+            create_identity_update_test_key(0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+        ]);
+
+        let keys_to_add = vec![create_identity_update_test_key(
+            2,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )];
+        let keys_to_disable = vec![0]; // Disable the old MASTER key
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(result.is_ok(), "Should allow MASTER key rotation");
+    }
+
+    #[test]
+    fn test_master_key_disable_without_replacement_rejected() {
+        // Cannot disable MASTER key without adding a replacement
+        let identity_keys = create_identity_keys(vec![
+            create_identity_update_test_key(0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+        ]);
+
+        let keys_to_add = vec![]; // No replacement
+        let keys_to_disable = vec![0]; // Try to disable MASTER key
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(
+            result.is_err(),
+            "Should reject MASTER key disable without replacement"
+        );
+        assert!(result.unwrap_err().message().contains("replacement"));
+    }
+
+    #[test]
+    fn test_master_key_add_without_disable_rejected() {
+        // Cannot add MASTER key without disabling an existing one
+        let identity_keys = create_identity_keys(vec![create_identity_update_test_key(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )]);
+
+        let keys_to_add = vec![create_identity_update_test_key(
+            1,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )];
+        let keys_to_disable = vec![]; // Not disabling the old one
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(
+            result.is_err(),
+            "Should reject adding MASTER key without disabling old one"
+        );
+        assert!(result.unwrap_err().message().contains("replacement"));
+    }
+
+    #[test]
+    fn test_cannot_disable_multiple_master_keys() {
+        // Cannot disable more than 1 MASTER key at a time
+        let identity_keys = create_identity_keys(vec![
+            create_identity_update_test_key(0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(1, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(2, Purpose::AUTHENTICATION, SecurityLevel::HIGH),
+        ]);
+
+        let keys_to_add = vec![
+            create_identity_update_test_key(3, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(4, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+        ];
+        let keys_to_disable = vec![0, 1]; // Try to disable 2 MASTER keys
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(
+            result.is_err(),
+            "Should reject disabling multiple MASTER keys"
+        );
+        assert!(result.unwrap_err().message().contains("more than one"));
+    }
+
+    #[test]
+    fn test_cannot_add_multiple_master_keys() {
+        // Cannot add more than 1 MASTER key at a time
+        let identity_keys = create_identity_keys(vec![create_identity_update_test_key(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )]);
+
+        let keys_to_add = vec![
+            create_identity_update_test_key(1, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(2, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+        ];
+        let keys_to_disable = vec![0];
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(result.is_err(), "Should reject adding multiple MASTER keys");
+        assert!(result.unwrap_err().message().contains("more than one"));
+    }
+
+    // ==========================================================================
+    // REGRESSION TESTS: Previously blocked operations that should now be allowed
+    // ==========================================================================
+
+    #[test]
+    fn test_critical_auth_ecdsa_key_can_be_disabled() {
+        // REGRESSION TEST: Previously the SDK blocked disabling CRITICAL+AUTH+ECDSA keys
+        // Platform allows this, so SDK should too
+        let identity_keys = create_identity_keys(vec![
+            create_identity_update_test_key(0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(1, Purpose::AUTHENTICATION, SecurityLevel::CRITICAL), // CRITICAL AUTH ECDSA
+        ]);
+
+        let keys_to_add = vec![];
+        let keys_to_disable = vec![1]; // Disable CRITICAL AUTH key
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(
+            result.is_ok(),
+            "Should allow disabling CRITICAL+AUTH+ECDSA keys (platform allows this)"
+        );
+    }
+
+    #[test]
+    fn test_transfer_key_can_be_disabled() {
+        // REGRESSION TEST: Previously the SDK blocked disabling TRANSFER keys
+        // Platform allows this, so SDK should too
+        let identity_keys = create_identity_keys(vec![
+            create_identity_update_test_key(0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(1, Purpose::TRANSFER, SecurityLevel::CRITICAL),
+        ]);
+
+        let keys_to_add = vec![];
+        let keys_to_disable = vec![1]; // Disable TRANSFER key
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(
+            result.is_ok(),
+            "Should allow disabling TRANSFER keys (platform allows this)"
+        );
+    }
+
+    #[test]
+    fn test_multiple_transfer_keys_can_be_disabled() {
+        // REGRESSION TEST: Can disable multiple TRANSFER keys in one update
+        let identity_keys = create_identity_keys(vec![
+            create_identity_update_test_key(0, Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            create_identity_update_test_key(1, Purpose::TRANSFER, SecurityLevel::CRITICAL),
+            create_identity_update_test_key(2, Purpose::TRANSFER, SecurityLevel::CRITICAL),
+        ]);
+
+        let keys_to_add = vec![];
+        let keys_to_disable = vec![1, 2]; // Disable both TRANSFER keys
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(
+            result.is_ok(),
+            "Should allow disabling multiple TRANSFER keys"
+        );
+    }
+
+    // ==========================================================================
+    // KEY EXISTENCE VALIDATION TESTS
+    // ==========================================================================
+
+    #[test]
+    fn test_cannot_disable_nonexistent_key() {
+        let identity_keys = create_identity_keys(vec![create_identity_update_test_key(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )]);
+
+        let keys_to_add = vec![];
+        let keys_to_disable = vec![999]; // Key doesn't exist
+
+        let result = validate_identity_update_keys(&keys_to_add, &keys_to_disable, &identity_keys);
+        assert!(result.is_err(), "Should reject disabling nonexistent key");
+        assert!(result.unwrap_err().message().contains("not found"));
+    }
+
+    // ==========================================================================
+    // EDGE CASE TESTS
+    // ==========================================================================
+
+    #[test]
+    fn test_empty_update_is_valid() {
+        // No keys to add or disable is valid (noop)
+        let identity_keys = create_identity_keys(vec![create_identity_update_test_key(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+        )]);
+
+        let result = validate_identity_update_keys(&[], &[], &identity_keys);
+        assert!(result.is_ok(), "Empty update should be valid");
     }
 }
