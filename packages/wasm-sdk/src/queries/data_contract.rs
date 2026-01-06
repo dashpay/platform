@@ -1,7 +1,10 @@
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
-use crate::sdk::WasmSdk;
+use crate::sdk::{
+    WasmSdk, LOCAL_CACHING_CONTEXT, MAINNET_CACHING_CONTEXT, TESTNET_CACHING_CONTEXT,
+};
 use crate::WasmSdkError;
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::platform::query::LimitQuery;
 use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};
@@ -11,6 +14,23 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::DataContractWasm;
+
+/// Cache a data contract in the appropriate global caching context based on network.
+/// Silently ignores errors (e.g., poisoned mutex) to avoid panics.
+fn cache_contract(network: Network, contract: &DataContract) {
+    let guard = match network {
+        Network::Dash => MAINNET_CACHING_CONTEXT.lock().ok(),
+        Network::Testnet => TESTNET_CACHING_CONTEXT.lock().ok(),
+        Network::Regtest => LOCAL_CACHING_CONTEXT.lock().ok(),
+        _ => return,
+    };
+
+    if let Some(guard) = guard {
+        if let Some(ref ctx) = *guard {
+            ctx.cache_contract(contract.clone());
+        }
+    }
+}
 
 #[wasm_bindgen(typescript_custom_section)]
 const DATA_CONTRACT_HISTORY_QUERY_TS: &'static str = r#"
@@ -105,11 +125,14 @@ impl WasmSdk {
             })?
             .into();
 
-        let data_contract = DataContract::fetch_by_identifier(self.as_ref(), id)
-            .await?
-            .map(DataContractWasm::from);
+        let fetched_contract = DataContract::fetch_by_identifier(self.as_ref(), id).await?;
 
-        Ok(data_contract)
+        // Cache the contract for future use
+        if let Some(ref contract) = fetched_contract {
+            cache_contract(self.network(), contract);
+        }
+
+        Ok(fetched_contract.map(DataContractWasm::from))
     }
 
     #[wasm_bindgen(
@@ -133,6 +156,8 @@ impl WasmSdk {
 
         contract
             .map(|contract| {
+                // Cache the contract for future use
+                cache_contract(self.network(), &contract);
                 ProofMetadataResponseWasm::from_sdk_parts(
                     DataContractWasm::from(contract),
                     metadata,
@@ -159,6 +184,8 @@ impl WasmSdk {
 
         if let Some(history) = history_result {
             for (block_time_ms, contract) in history {
+                // Cache the latest version (highest block time) for future use
+                cache_contract(self.network(), &contract);
                 let contract_js = JsValue::from(DataContractWasm::from(contract));
                 let key = JsValue::from(BigInt::from(block_time_ms));
 
@@ -200,7 +227,11 @@ impl WasmSdk {
 
         for (id, contract) in contracts_result {
             let key = JsValue::from(IdentifierWasm::from(id));
-            let value = contract.map(DataContractWasm::from);
+            let value = contract.map(|c| {
+                // Cache each contract for future use
+                cache_contract(self.network(), &c);
+                DataContractWasm::from(c)
+            });
             contracts_map.set(&key, &JsValue::from(value));
         }
 
@@ -228,6 +259,8 @@ impl WasmSdk {
 
         if let Some(history) = history_result {
             for (block_time_ms, contract) in history {
+                // Cache each version for future use
+                cache_contract(self.network(), &contract);
                 let contract_js = JsValue::from(DataContractWasm::from(contract));
                 let key = JsValue::from(BigInt::from(block_time_ms));
 
@@ -274,7 +307,11 @@ impl WasmSdk {
 
         for (id, contract_opt) in contracts_result {
             let key = JsValue::from(IdentifierWasm::from(id));
-            let value = contract_opt.map(DataContractWasm::from);
+            let value = contract_opt.map(|c| {
+                // Cache each contract for future use
+                cache_contract(self.network(), &c);
+                DataContractWasm::from(c)
+            });
 
             contracts_map.set(&key, &JsValue::from(value));
         }

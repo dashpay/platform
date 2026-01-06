@@ -15,6 +15,15 @@ pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>
     Lazy::new(|| Mutex::new(None));
 pub(crate) static LOCAL_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
     Lazy::new(|| Mutex::new(None));
+
+// Global caching contexts for non-trusted mode (shares contract cache across SDK instances)
+pub(crate) static MAINNET_CACHING_CONTEXT: Lazy<Mutex<Option<WasmContext>>> =
+    Lazy::new(|| Mutex::new(None));
+pub(crate) static TESTNET_CACHING_CONTEXT: Lazy<Mutex<Option<WasmContext>>> =
+    Lazy::new(|| Mutex::new(None));
+pub(crate) static LOCAL_CACHING_CONTEXT: Lazy<Mutex<Option<WasmContext>>> =
+    Lazy::new(|| Mutex::new(None));
+
 const DEFAULT_LOCAL_QUORUM_URL: &str = "http://127.0.0.1:2444";
 static MAINNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
@@ -319,10 +328,19 @@ impl WasmSdkBuilder {
             .clone()
             .unwrap_or_else(default_mainnet_addresses);
 
+        // Use cached context if available, otherwise create a new one
+        let context = {
+            let mut guard = MAINNET_CACHING_CONTEXT.lock().unwrap();
+            if guard.is_none() {
+                *guard = Some(WasmContext::new_mainnet());
+            }
+            guard.clone().unwrap()
+        };
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
-            .with_context_provider(WasmContext {});
+            .with_context_provider(context);
 
         Self(sdk_builder)
     }
@@ -331,12 +349,21 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name = "local")]
     pub fn new_local() -> Self {
         // Dashmate local gateway defaults to 2443
-        let local_addresses = vec!["https://127.0.0.1:2443".parse().unwrap()];
+        let local_addresses = default_local_addresses();
+
+        // Use cached context if available, otherwise create a new one
+        let context = {
+            let mut guard = LOCAL_CACHING_CONTEXT.lock().unwrap();
+            if guard.is_none() {
+                *guard = Some(WasmContext::new_local());
+            }
+            guard.clone().unwrap()
+        };
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
-            .with_context_provider(WasmContext {});
+            .with_context_provider(context);
 
         Self(sdk_builder)
     }
@@ -402,10 +429,19 @@ impl WasmSdkBuilder {
             .clone()
             .unwrap_or_else(default_testnet_addresses);
 
+        // Use cached context if available, otherwise create a new one
+        let context = {
+            let mut guard = TESTNET_CACHING_CONTEXT.lock().unwrap();
+            if guard.is_none() {
+                *guard = Some(WasmContext::new_testnet());
+            }
+            guard.clone().unwrap()
+        };
+
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
-            .with_context_provider(WasmContext {});
+            .with_context_provider(context);
 
         Self(sdk_builder)
     }

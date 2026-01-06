@@ -1,5 +1,7 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::platform::ContextProvider;
 use dash_sdk::{
     dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
@@ -8,14 +10,84 @@ use dash_sdk::{
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 
+/// A caching context provider for non-trusted WASM mode.
+/// Caches data contracts but does NOT verify proofs (no quorum access).
+/// If cache initialization fails, operates in non-caching mode gracefully.
 #[wasm_bindgen]
 #[derive(Clone)]
-pub struct WasmContext {}
+pub struct WasmContext {
+    inner: Option<Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>>,
+}
 
 /// A wrapper for TrustedHttpContextProvider that works in WASM
 #[derive(Clone)]
 pub struct WasmTrustedContext {
     inner: std::sync::Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>,
+}
+
+impl WasmContext {
+    /// Create a new WasmContext for mainnet
+    pub fn new_mainnet() -> Self {
+        Self::new(Network::Dash)
+    }
+
+    /// Create a new WasmContext for testnet
+    pub fn new_testnet() -> Self {
+        Self::new(Network::Testnet)
+    }
+
+    /// Create a new WasmContext for local/regtest
+    pub fn new_local() -> Self {
+        Self::new(Network::Regtest)
+    }
+
+    /// Create a new WasmContext for the specified network.
+    /// If initialization fails, returns a context that operates without caching.
+    pub fn new(network: Network) -> Self {
+        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
+            network,
+            None,                            // No fallback provider
+            NonZeroUsize::new(100).unwrap(), // Quorum cache size (unused but required)
+        ) {
+            Ok(provider) => Self {
+                inner: Some(Arc::new(provider)),
+            },
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to initialize contract cache for {:?}: {}. Operating without cache.",
+                    network,
+                    e
+                );
+                Self { inner: None }
+            }
+        }
+    }
+
+    /// Add a data contract to the cache
+    pub fn cache_contract(&self, contract: DataContract) {
+        if let Some(ref inner) = self.inner {
+            inner.add_known_contract(contract);
+        }
+    }
+
+    /// Invalidate a cached contract (for reactive refresh when schema mismatch detected)
+    pub fn invalidate_contract(&self, id: &Identifier) {
+        if let Some(ref inner) = self.inner {
+            inner.remove_known_contract(id);
+        }
+    }
+
+    /// Add a token configuration to the cache
+    pub fn cache_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
+        if let Some(ref inner) = self.inner {
+            inner.add_known_token_configuration(token_id, config);
+        }
+    }
+
+    /// Check if caching is enabled
+    pub fn has_cache(&self) -> bool {
+        self.inner.is_some()
+    }
 }
 
 impl ContextProvider for WasmContext {
@@ -25,43 +97,39 @@ impl ContextProvider for WasmContext {
         _quorum_hash: [u8; 32],
         _core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
+        // Non-trusted mode does not verify proofs
         Err(ContextProviderError::Generic(
-            "Non-trusted mode is not supported in WASM. Please use the trusted SDK builders (new_mainnet_trusted or new_testnet_trusted) instead.".to_string()
+            "Non-trusted mode does not support proof verification. Use trusted SDK builders (new_mainnet_trusted or new_testnet_trusted) for proof verification.".to_string()
         ))
     }
 
     fn get_data_contract(
         &self,
-        _id: &Identifier,
-        _platform_version: &PlatformVersion,
+        id: &Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // Return None for now - this means the contract will be fetched from the network
-        Ok(None)
+        // Delegate to inner provider's cache if available
+        if let Some(ref inner) = self.inner {
+            inner.get_data_contract(id, platform_version)
+        } else {
+            // No cache available, return None (will be fetched from network)
+            Ok(None)
+        }
     }
 
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
-        // For WASM context without trusted provider, we need to fetch token configuration
-        // from the network. This is a simplified implementation that would need to be
-        // enhanced with actual network fetching logic in a production environment.
-
-        // TODO: Implement actual token configuration fetching from network
-        // For now, we'll return None which will cause the proof verification to fail
-        // with a clearer error message indicating missing token configuration
-
-        tracing::warn!(
-            token_id = %token_id,
-            "Token configuration not available in WASM context - this will cause proof verification to fail. Use trusted context builders for proof verification."
-        );
-
-        Ok(None)
+        if let Some(ref inner) = self.inner {
+            inner.get_token_configuration(token_id)
+        } else {
+            Ok(None)
+        }
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         // Return a reasonable default for platform activation height
-        // This is the height at which Platform was activated on testnet
         Ok(1)
     }
 }
@@ -179,6 +247,11 @@ impl WasmTrustedContext {
     /// Add a data contract to the known contracts cache
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
+    }
+
+    /// Remove a data contract from the known contracts cache (for cache invalidation)
+    pub fn remove_known_contract(&self, id: &Identifier) {
+        self.inner.remove_known_contract(id);
     }
 
     /// Add a token configuration to the known token configurations cache

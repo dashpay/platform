@@ -228,6 +228,12 @@ impl TrustedHttpContextProvider {
         }
     }
 
+    /// Remove a data contract from the known contracts cache (for cache invalidation)
+    pub fn remove_known_contract(&self, id: &Identifier) {
+        let mut known = self.known_contracts.lock().unwrap();
+        known.remove(id);
+    }
+
     /// Update the quorum caches by fetching current and previous quorums
     pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
         // Fetch current quorums

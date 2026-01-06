@@ -1,14 +1,16 @@
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
-use crate::sdk::WasmSdk;
+use crate::sdk::{
+    WasmSdk, LOCAL_CACHING_CONTEXT, MAINNET_CACHING_CONTEXT, TESTNET_CACHING_CONTEXT,
+};
 use crate::WasmSdkError;
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::{platform_value, Value};
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
-use dash_sdk::platform::Fetch;
-use dash_sdk::platform::FetchMany;
+use dash_sdk::platform::{DataContract, Fetch, FetchMany};
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use js_sys::Map;
 use serde::Deserialize;
@@ -17,6 +19,40 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
+
+/// Cache a data contract in the appropriate global caching context based on network.
+/// Silently ignores errors (e.g., poisoned mutex) to avoid panics.
+fn cache_contract(network: Network, contract: &DataContract) {
+    let guard = match network {
+        Network::Dash => MAINNET_CACHING_CONTEXT.lock().ok(),
+        Network::Testnet => TESTNET_CACHING_CONTEXT.lock().ok(),
+        Network::Regtest => LOCAL_CACHING_CONTEXT.lock().ok(),
+        _ => return,
+    };
+
+    if let Some(guard) = guard {
+        if let Some(ref ctx) = *guard {
+            ctx.cache_contract(contract.clone());
+        }
+    }
+}
+
+/// Invalidate a cached contract (for reactive refresh when schema mismatch detected).
+/// Silently ignores errors (e.g., poisoned mutex) to avoid panics.
+fn invalidate_contract(network: Network, id: &Identifier) {
+    let guard = match network {
+        Network::Dash => MAINNET_CACHING_CONTEXT.lock().ok(),
+        Network::Testnet => TESTNET_CACHING_CONTEXT.lock().ok(),
+        Network::Regtest => LOCAL_CACHING_CONTEXT.lock().ok(),
+        _ => return,
+    };
+
+    if let Some(guard) = guard {
+        if let Some(ref ctx) = *guard {
+            ctx.invalidate_contract(id);
+        }
+    }
+}
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -138,6 +174,9 @@ async fn build_documents_query(
     let mut query =
         DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, &document_type_name)
             .await?;
+
+    // Cache the contract that was fetched during query construction
+    cache_contract(sdk.network(), &query.data_contract);
 
     query.limit = limit.unwrap_or(100);
 
@@ -426,6 +465,9 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
+        // Cache the contract for future use
+        cache_contract(self.network(), &data_contract);
+
         data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
@@ -476,6 +518,9 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
+        // Cache the contract for future use
+        cache_contract(self.network(), &data_contract);
+
         data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
@@ -492,5 +537,25 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+
+    /// Invalidate a cached data contract, forcing it to be refetched on next use.
+    /// Use this when you detect that a contract has been updated (e.g., documents
+    /// contain fields not in the cached schema).
+    #[wasm_bindgen(js_name = "invalidateDataContractCache")]
+    pub fn invalidate_data_contract_cache(
+        &self,
+        #[wasm_bindgen(js_name = "contractId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract_id: JsValue,
+    ) -> Result<(), WasmSdkError> {
+        let id: Identifier = IdentifierWasm::try_from(&contract_id)
+            .map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+            })?
+            .into();
+
+        invalidate_contract(self.network(), &id);
+        Ok(())
     }
 }
