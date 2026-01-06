@@ -10,8 +10,11 @@ use dash_sdk::dpp::identity::{KeyType, Purpose};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_contract::PutContract;
+use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::Fetch;
 use js_sys;
 use simple_signer::SingleKeySigner;
@@ -129,10 +132,23 @@ impl WasmSdk {
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(WasmSdkError::invalid_argument)?;
 
-        // Create and broadcast the contract
-        let created_contract = data_contract
-            .put_to_platform_and_wait_for_response(&sdk, matching_key, &signer, None)
+        // Create the state transition (to get transaction hash)
+        let state_transition = data_contract
+            .put_to_platform(&sdk, matching_key, &signer, None)
             .await?;
+
+        // Get transaction hash before broadcasting
+        let transaction_id_hex =
+            state_transition
+                .transaction_id()
+                .map(hex::encode)
+                .map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+                })?;
+
+        // Broadcast and wait for the contract to be created
+        let created_contract =
+            DataContract::wait_for_response(&sdk, state_transition, None).await?;
 
         // Create JavaScript result object
         let result_obj = js_sys::Object::new();
@@ -179,6 +195,13 @@ impl WasmSdk {
             &doc_types_array,
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set documentTypes: {:?}", e)))?;
+
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
 
         js_sys::Reflect::set(
             &result_obj,
@@ -354,10 +377,15 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
         // Broadcast the transition
-        use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         let result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
+
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
 
         // Extract updated contract from result
         let updated_version = match result {
@@ -386,6 +414,12 @@ impl WasmSdk {
             &JsValue::from_f64(updated_version as f64),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set version: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("message"),

@@ -12,6 +12,7 @@ use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::dpp::tokens::calculate_token_id;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
@@ -92,13 +93,15 @@ impl WasmSdk {
     fn format_token_result(
         &self,
         proof_result: StateTransitionProofResult,
+        transaction_id_hex: &str,
     ) -> Result<JsValue, WasmSdkError> {
         match proof_result {
             StateTransitionProofResult::VerifiedTokenBalance(recipient_id, new_balance) => {
                 to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenBalance",
                     "recipientId": recipient_id.to_string(Encoding::Base58),
-                    "newBalance": new_balance.to_string()
+                    "newBalance": new_balance.to_string(),
+                    "transitionHash": transaction_id_hex
                 }))
                 .map_err(|e| {
                     WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
@@ -108,7 +111,8 @@ impl WasmSdk {
                 to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenActionWithDocument",
                     "documentId": doc.id().to_string(Encoding::Base58),
-                    "message": "Token operation recorded successfully"
+                    "message": "Token operation recorded successfully",
+                    "transitionHash": transaction_id_hex
                 }))
                 .map_err(|e| {
                     WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
@@ -118,7 +122,8 @@ impl WasmSdk {
                 to_json_compatible(&serde_json::json!({
                     "type": "VerifiedTokenGroupActionWithDocument",
                     "groupPower": power,
-                    "document": doc.is_some()
+                    "document": doc.is_some(),
+                    "transitionHash": transaction_id_hex
                 }))
                 .map_err(|e| {
                     WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
@@ -132,7 +137,8 @@ impl WasmSdk {
                 "type": "VerifiedTokenGroupActionWithTokenBalance",
                 "groupPower": power,
                 "status": format!("{:?}", status),
-                "balance": balance.map(|b| b.to_string())
+                "balance": balance.map(|b| b.to_string()),
+                "transitionHash": transaction_id_hex
             }))
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e))),
             _ => Err(WasmSdkError::generic(
@@ -237,8 +243,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Burn tokens, permanently removing them from circulation.
@@ -322,8 +334,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Transfer tokens between identities.
@@ -419,8 +437,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Freeze tokens for a specific identity.
@@ -514,8 +538,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Unfreeze tokens for a specific identity.
@@ -612,8 +642,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Destroy frozen tokens.
@@ -710,8 +746,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Set or update the price for direct token purchases.
@@ -861,6 +903,12 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result based on the proof result type
         match proof_result {
             StateTransitionProofResult::VerifiedTokenPricingSchedule(owner_id, schedule) => {
@@ -882,7 +930,8 @@ impl WasmSdk {
                                 "prices": price_map
                             })
                         }
-                    })
+                    }),
+                    "transitionHash": transaction_id_hex
                 }))
                 .map_err(|e| {
                     WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
@@ -911,10 +960,11 @@ impl WasmSdk {
                             "prices": price_map
                         })
                     }
-                })
+                }),
+                "transitionHash": transaction_id_hex
             }))
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e))),
-            _ => self.format_token_result(proof_result),
+            _ => self.format_token_result(proof_result, &transaction_id_hex),
         }
     }
 
@@ -1061,8 +1111,14 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transition: {}", e)))?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Claim tokens from a distribution
@@ -1164,8 +1220,14 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 
     /// Update token configuration settings.
@@ -1402,7 +1464,13 @@ impl WasmSdk {
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Format and return result
-        self.format_token_result(proof_result)
+        self.format_token_result(proof_result, &transaction_id_hex)
     }
 }

@@ -3,6 +3,7 @@ use crate::queries::utils::identifier_from_js;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::identity::core_script::CoreScript;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::{string_encoding::Encoding, BinaryData, Identifier};
@@ -10,9 +11,18 @@ use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dash_sdk::dpp::state_transition::identity_credit_withdrawal_transition::methods::{
+    IdentityCreditWithdrawalTransitionMethodsV0, PreferredKeyPurposeForSigningWithdrawal,
+};
+use dash_sdk::dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+use dash_sdk::dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dash_sdk::dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+use dash_sdk::dpp::state_transition::StateTransition;
+use dash_sdk::dpp::withdrawal::Pooling;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
-use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::Fetch;
 use js_sys;
 use simple_signer::{signer::SimpleSigner, SingleKeySigner};
@@ -593,18 +603,12 @@ impl WasmSdk {
         // Use the SimpleSigner we built with all the identity keys
         // The signer now contains all private keys for signing each public key individually
 
-        // Put identity to platform and wait
-        let created_identity = match identity
-            .put_to_platform_and_wait_for_response(
-                &sdk,
-                asset_lock_proof,
-                &private_key,
-                &signer,
-                None,
-            )
+        // Put identity to platform (returns StateTransition)
+        let state_transition = match identity
+            .put_to_platform(&sdk, asset_lock_proof, &private_key, &signer, None)
             .await
         {
-            Ok(identity) => identity,
+            Ok(st) => st,
             Err(e) => {
                 // Extract more detailed error information
                 let error_msg = format!("Failed to create identity: {}", e);
@@ -615,6 +619,22 @@ impl WasmSdk {
             }
         };
 
+        // Get transaction hash
+        let transaction_id_hex =
+            state_transition
+                .transaction_id()
+                .map(hex::encode)
+                .map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+                })?;
+
+        // Wait for response
+        let created_identity = Identity::wait_for_response(&sdk, state_transition, None)
+            .await
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to wait for identity creation: {}", e))
+            })?;
+
         // Create JavaScript result object
         let result_obj = js_sys::Object::new();
 
@@ -624,6 +644,12 @@ impl WasmSdk {
             &JsValue::from_str("success"),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
@@ -736,16 +762,40 @@ impl WasmSdk {
         // Get the initial balance
         let initial_balance = identity.balance();
 
-        // Top up the identity
-        let new_balance = match identity
-            .top_up_identity(&sdk, asset_lock_proof, &private_key, None, None)
+        // Create the top up transition
+        let state_transition = IdentityTopUpTransition::try_from_identity(
+            &identity,
+            asset_lock_proof,
+            private_key.inner.as_ref(),
+            UserFeeIncrease::default(),
+            sdk.version(),
+            None,
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create top up transition: {}", e)))?;
+
+        // Broadcast and wait for result
+        let proof_result: StateTransitionProofResult = state_transition
+            .broadcast_and_wait(&sdk, None)
             .await
-        {
-            Ok(balance) => balance,
-            Err(e) => {
-                let error_msg = format!("Failed to top up identity: {}", e);
-                error!(target : "wasm_sdk", % error_msg);
-                return Err(WasmSdkError::from(e));
+            .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
+
+        // Get transaction hash
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
+        // Extract new balance from proof result
+        let new_balance = match proof_result {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+                partial_identity.balance.ok_or_else(|| {
+                    WasmSdkError::generic("Expected identity balance in proof result")
+                })?
+            }
+            _ => {
+                return Err(WasmSdkError::generic(
+                    "Unexpected proof result type for identity top up",
+                ));
             }
         };
 
@@ -760,6 +810,12 @@ impl WasmSdk {
             &JsValue::from_str("success"),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
@@ -935,11 +991,25 @@ impl WasmSdk {
         })?;
 
         // Broadcast the transition
-        use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
-        let _result = state_transition
+        let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transfer: {}", e)))?;
+
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
+        // Extract balances from proof result
+        let (sender_new_balance, recipient_new_balance) = match proof_result {
+            StateTransitionProofResult::VerifiedBalanceTransfer(
+                sender_partial,
+                recipient_partial,
+            ) => (sender_partial.balance, recipient_partial.balance),
+            _ => (None, None),
+        };
 
         // Create JavaScript result object
         let result_obj = js_sys::Object::new();
@@ -968,6 +1038,32 @@ impl WasmSdk {
             &JsValue::from_f64(amount as f64),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set amount: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
+        if let Some(balance) = sender_new_balance {
+            js_sys::Reflect::set(
+                &result_obj,
+                &JsValue::from_str("senderNewBalance"),
+                &JsValue::from_f64(balance as f64),
+            )
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to set senderNewBalance: {:?}", e))
+            })?;
+        }
+        if let Some(balance) = recipient_new_balance {
+            js_sys::Reflect::set(
+                &result_obj,
+                &JsValue::from_str("recipientNewBalance"),
+                &JsValue::from_f64(balance as f64),
+            )
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to set recipientNewBalance: {:?}", e))
+            })?;
+        }
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("message"),
@@ -1109,22 +1205,57 @@ impl WasmSdk {
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(WasmSdkError::invalid_argument)?;
 
-        // Import the withdraw trait
-        use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+        // Get identity nonce
+        let new_identity_nonce = sdk
+            .get_identity_nonce(identity.id(), true, None)
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to get identity nonce: {}", e)))?;
 
-        // Perform the withdrawal
-        let remaining_balance = identity
-            .withdraw(
-                &sdk,
-                Some(address),
-                amount,
-                core_fee_per_byte,
-                Some(matching_key),
-                signer,
-                None,
-            )
+        // Create the withdrawal transition
+        let script = CoreScript::new(address.script_pubkey());
+        let state_transition = IdentityCreditWithdrawalTransition::try_from_identity(
+            &identity,
+            Some(script),
+            amount,
+            Pooling::Never,
+            core_fee_per_byte.unwrap_or(1),
+            UserFeeIncrease::default(),
+            signer,
+            Some(matching_key),
+            PreferredKeyPurposeForSigningWithdrawal::TransferPreferred,
+            new_identity_nonce,
+            sdk.version(),
+            None,
+        )
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create withdrawal transition: {}", e))
+        })?;
+
+        // Broadcast and wait for result
+        let proof_result: StateTransitionProofResult = state_transition
+            .broadcast_and_wait(&sdk, None)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Withdrawal failed: {}", e)))?;
+
+        // Get transaction hash
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
+        // Extract remaining balance from proof result
+        let remaining_balance = match proof_result {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+                partial_identity.balance.ok_or_else(|| {
+                    WasmSdkError::generic("Expected identity balance in proof result")
+                })?
+            }
+            _ => {
+                return Err(WasmSdkError::generic(
+                    "Unexpected proof result type for withdrawal",
+                ));
+            }
+        };
 
         // Create JavaScript result object
         let result_obj = js_sys::Object::new();
@@ -1135,6 +1266,12 @@ impl WasmSdk {
             &JsValue::from_str("success"),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
@@ -1325,11 +1462,16 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
         // Broadcast the transition
-        use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         let result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast update: {}", e)))?;
+
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
 
         // Extract updated identity from result
         let updated_revision = match result {
@@ -1375,6 +1517,12 @@ impl WasmSdk {
             &JsValue::from_f64(disabled_keys_count as f64),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set disabledKeys: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("transitionHash"),
+            &JsValue::from_str(&transaction_id_hex),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to set transitionHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("message"),

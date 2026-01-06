@@ -326,6 +326,12 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transition: {}", e)))?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Log the result for debugging
         tracing::debug!(
             target = "wasm_sdk",
@@ -358,6 +364,13 @@ impl WasmSdk {
                             &js_result,
                             &JsValue::from_str("type"),
                             &JsValue::from_str("DocumentCreated"),
+                        )
+                        .unwrap();
+
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("transitionHash"),
+                            &JsValue::from_str(&transaction_id_hex),
                         )
                         .unwrap();
 
@@ -472,6 +485,13 @@ impl WasmSdk {
 
                         js_sys::Reflect::set(
                             &js_result,
+                            &JsValue::from_str("transitionHash"),
+                            &JsValue::from_str(&transaction_id_hex),
+                        )
+                        .unwrap();
+
+                        js_sys::Reflect::set(
+                            &js_result,
                             &JsValue::from_str("documentId"),
                             &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
                         )
@@ -494,6 +514,13 @@ impl WasmSdk {
                         &js_result,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("DocumentCreated"),
+                    )
+                    .unwrap();
+
+                    js_sys::Reflect::set(
+                        &js_result,
+                        &JsValue::from_str("transitionHash"),
+                        &JsValue::from_str(&transaction_id_hex),
                     )
                     .unwrap();
 
@@ -522,6 +549,13 @@ impl WasmSdk {
                     &js_result,
                     &JsValue::from_str("type"),
                     &JsValue::from_str("DocumentCreated"),
+                )
+                .unwrap();
+
+                js_sys::Reflect::set(
+                    &js_result,
+                    &JsValue::from_str("transitionHash"),
+                    &JsValue::from_str(&transaction_id_hex),
                 )
                 .unwrap();
 
@@ -670,6 +704,12 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transition: {}", e)))?;
 
+        // Get transaction hash (consumes state_transition - no clone needed)
+        let st: StateTransition = state_transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Convert result to JsValue based on the type
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {
@@ -682,6 +722,13 @@ impl WasmSdk {
                             &js_result,
                             &JsValue::from_str("type"),
                             &JsValue::from_str("DocumentReplaced"),
+                        )
+                        .unwrap();
+
+                        js_sys::Reflect::set(
+                            &js_result,
+                            &JsValue::from_str("transitionHash"),
+                            &JsValue::from_str(&transaction_id_hex),
                         )
                         .unwrap();
 
@@ -796,6 +843,13 @@ impl WasmSdk {
 
                         js_sys::Reflect::set(
                             &js_result,
+                            &JsValue::from_str("transitionHash"),
+                            &JsValue::from_str(&transaction_id_hex),
+                        )
+                        .unwrap();
+
+                        js_sys::Reflect::set(
+                            &js_result,
                             &JsValue::from_str("documentId"),
                             &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
                         )
@@ -818,6 +872,13 @@ impl WasmSdk {
                         &js_result,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("DocumentReplaced"),
+                    )
+                    .unwrap();
+
+                    js_sys::Reflect::set(
+                        &js_result,
+                        &JsValue::from_str("transitionHash"),
+                        &JsValue::from_str(&transaction_id_hex),
                     )
                     .unwrap();
 
@@ -846,6 +907,13 @@ impl WasmSdk {
                     &js_result,
                     &JsValue::from_str("type"),
                     &JsValue::from_str("DocumentReplaced"),
+                )
+                .unwrap();
+
+                js_sys::Reflect::set(
+                    &js_result,
+                    &JsValue::from_str("transitionHash"),
+                    &JsValue::from_str(&transaction_id_hex),
                 )
                 .unwrap();
 
@@ -987,11 +1055,23 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
+        // Get transaction hash
+        let transaction_id_hex =
+            state_transition
+                .transaction_id()
+                .map(hex::encode)
+                .map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+                })?;
+
         // Return the result with document ID
         Self::build_js_result_object(
             "DocumentDeleted",
             &document_id_base58,
-            vec![("deleted", JsValue::from_bool(true))],
+            vec![
+                ("transitionHash", JsValue::from_str(&transaction_id_hex)),
+                ("deleted", JsValue::from_bool(true)),
+            ],
         )
     }
 
@@ -1118,11 +1198,21 @@ impl WasmSdk {
         // Broadcast the state transition
         state_transition.broadcast(&sdk, None).await?;
 
+        // Get transaction hash
+        let transaction_id_hex =
+            state_transition
+                .transaction_id()
+                .map(hex::encode)
+                .map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+                })?;
+
         // Return the result with document ID and new owner
         Self::build_js_result_object(
             "DocumentTransferred",
             &document_id_base58,
             vec![
+                ("transitionHash", JsValue::from_str(&transaction_id_hex)),
                 ("newOwnerId", JsValue::from_str(&recipient_base58)),
                 ("transferred", JsValue::from_bool(true)),
             ],
@@ -1264,11 +1354,18 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast purchase: {}", e)))?;
 
+        // Get transaction hash (consumes transition - no clone needed)
+        let st: StateTransition = transition.into();
+        let transaction_id_hex = st.transaction_id().map(hex::encode).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+        })?;
+
         // Handle the proof result
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {
                 // Document purchase was successful
                 let mut additional_fields = vec![
+                    ("transitionHash", JsValue::from_str(&transaction_id_hex)),
                     ("status", JsValue::from_str("success")),
                     ("newOwnerId", JsValue::from_str(&buyer_base58)),
                     ("pricePaid", JsValue::from_f64(price as f64)),
@@ -1297,6 +1394,7 @@ impl WasmSdk {
                 "DocumentPurchased",
                 &document_id_base58,
                 vec![
+                    ("transitionHash", JsValue::from_str(&transaction_id_hex)),
                     ("status", JsValue::from_str("success")),
                     ("message", JsValue::from_str("Document purchase processed")),
                 ],
@@ -1430,11 +1528,21 @@ impl WasmSdk {
         // Broadcast the state transition
         state_transition.broadcast(&sdk, None).await?;
 
+        // Get transaction hash
+        let transaction_id_hex =
+            state_transition
+                .transaction_id()
+                .map(hex::encode)
+                .map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to compute transaction ID: {}", e))
+                })?;
+
         // Return the result with document ID and price
         Self::build_js_result_object(
             "DocumentPriceSet",
             &document_id_base58,
             vec![
+                ("transitionHash", JsValue::from_str(&transaction_id_hex)),
                 ("price", JsValue::from_f64(price as f64)),
                 ("priceSet", JsValue::from_bool(true)),
             ],
