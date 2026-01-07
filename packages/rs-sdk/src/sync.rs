@@ -181,7 +181,7 @@ where
     let mut last_meaningful_error: Option<rs_dapi_client::ExecutionError<Error>> = None;
 
     loop {
-        let result = future_factory_fn(current_settings.clone()).await;
+        let result = future_factory_fn(current_settings).await;
 
         // Ban or unban the address based on the result
         update_address_ban_status(address_list, &result, &current_settings.finalize());
