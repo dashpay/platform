@@ -64,8 +64,7 @@ impl CanRetry for DapiClientError {
     fn is_no_available_addresses(&self) -> bool {
         matches!(
             self,
-            DapiClientError::NoAvailableAddresses
-                | DapiClientError::NoAvailableAddressesToRetry(_)
+            DapiClientError::NoAvailableAddresses | DapiClientError::NoAvailableAddressesToRetry(_)
         )
     }
 }
