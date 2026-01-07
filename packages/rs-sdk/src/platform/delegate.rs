@@ -34,9 +34,14 @@ macro_rules! delegate_transport_request_variant {
 
             const SETTINGS_OVERRIDES: $crate::platform::dapi::RequestSettings = $crate::platform::dapi::RequestSettings::default();
 
-            /// TODO: Not sure how to do that
             fn method_name(&self) -> &'static str {
-                ""
+                use $request::*;
+
+                match self {
+                    $(
+                        $variant(request) => request.method_name(),
+                    )*
+                }
             }
 
             fn execute_transport<'c>(
