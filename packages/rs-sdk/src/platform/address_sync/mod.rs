@@ -520,8 +520,8 @@ mod tests {
 
     #[test]
     fn test_extract_balance() {
-        let sum_item = Element::SumItem(1000, None);
-        assert_eq!(extract_balance_from_element(&sum_item), 1000);
+        let item_with_sum_item = Element::ItemWithSumItem(vec![], 1000, None);
+        assert_eq!(extract_balance_from_element(&item_with_sum_item), 1000);
 
         let item = Element::Item(vec![1, 2, 3], None);
         assert_eq!(extract_balance_from_element(&item), 0);
