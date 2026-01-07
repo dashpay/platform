@@ -24,6 +24,7 @@ mod tests {
         address_balance_change, GetAddressesTrunkStateRequest,
         GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest,
     };
+    use dash_platform_macros::stack_size;
     use dpp::address_funds::PlatformAddress;
     use dpp::dash_to_credits;
     use dpp::dashcore::hashes::Hash;
@@ -1963,6 +1964,21 @@ mod tests {
                 }
             }
         }
+
+        // Count each type of state transition
+        // let mut funding_count = 0u32;
+        // let mut transfer_count = 0u32;
+        // let mut withdrawal_count = 0u32;
+        // let mut identity_create_from_addresses_count = 0u32;
+        // let mut identity_topup_from_addresses_count = 0u32;
+        tracing::info!(
+            funding_count,
+            transfer_count,
+            withdrawal_count,
+            identity_create_from_addresses_count,
+            identity_topup_from_addresses_count,
+            "run_chain_all_address_transitions completed successfully"
+        );
     }
 
     /// Test that verifies proof signatures using the rs-sdk FromProof pattern.
@@ -2723,7 +2739,7 @@ mod tests {
 
         // Verify compacted ranges are in ascending order (sorted by start block)
         for i in 1..compacted_block_ranges.len() {
-            let (prev_start, prev_end) = compacted_block_ranges[i - 1];
+            let (_prev_start, prev_end) = compacted_block_ranges[i - 1];
             let (curr_start, _) = compacted_block_ranges[i];
 
             assert!(
@@ -2767,6 +2783,7 @@ mod tests {
     /// - Those entries expire at hour 408 (block 68)
     /// - By block 70, entries from block 64 should be cleaned up
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_cleanup_expired_compacted_address_balances() {
         // drive_abci::logging::init_for_tests(LogLevel::Debug);
 
