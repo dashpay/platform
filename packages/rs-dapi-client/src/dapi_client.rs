@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// General DAPI request error type.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum DapiClientError {
     /// The error happened on transport layer
@@ -287,17 +287,11 @@ impl DapiRequestExecutor for DapiClient {
                             address: Some(address.clone()),
                         };
 
-                        // Update ban status
-                        let error_result: ExecutionResult<R::Response, DapiClientError> =
-                            Err(execution_error);
                         update_address_ban_status::<R::Response, DapiClientError>(
                             &self.address_list,
-                            &error_result,
+                            &Err(execution_error.clone()),
                             &applied_settings,
                         );
-
-                        // Unwrap the error back
-                        let execution_error = error_result.unwrap_err();
 
                         if can_retry_error && retries < max_retries {
                             // Store last transport error
