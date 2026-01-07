@@ -16,12 +16,10 @@ mod tests {
     use hex::ToHex;
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
-    use dashcore::hashes::Hash;
     use platform_value::string_encoding::Encoding;
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::state_transition::AssetLockProved;
-    use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
     use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -54,7 +52,6 @@ mod tests {
     use crate::version::PlatformVersion;
     use crate::withdrawal::Pooling;
     use crate::ProtocolError;
-    use dashcore::transaction::special_transaction::TransactionPayload;
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
