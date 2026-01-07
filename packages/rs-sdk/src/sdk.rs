@@ -356,10 +356,7 @@ impl Sdk {
             }
         }?;
 
-        self.verify_response_metadata(method_name, &metadata)
-            .inspect_err(|err| {
-                tracing::warn!(%err,method_name,"Response metadata validation failed");
-            })?;
+        self.verify_response_metadata(method_name, &metadata)?;
 
         Ok((object, metadata, proof))
     }
