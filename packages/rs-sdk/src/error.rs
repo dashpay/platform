@@ -249,6 +249,13 @@ impl CanRetry for Error {
             Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_)
         )
     }
+
+    fn is_no_available_addresses(&self) -> bool {
+        matches!(
+            self,
+            Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+        )
+    }
 }
 
 /// Server returned stale metadata

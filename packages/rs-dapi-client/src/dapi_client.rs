@@ -55,6 +55,10 @@ impl CanRetry for DapiClientError {
             Mock(_) => false,
         }
     }
+
+    fn is_no_available_addresses(&self) -> bool {
+        matches!(self, DapiClientError::NoAvailableAddresses)
+    }
 }
 
 /// Serialization of [DapiClientError].

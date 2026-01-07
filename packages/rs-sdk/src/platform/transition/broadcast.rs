@@ -21,12 +21,12 @@ use tracing::{trace, warn};
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error>;
-    async fn wait_for_response<T: TryFrom<StateTransitionProofResult>>(
+    async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error>;
-    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult>>(
+    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
@@ -91,7 +91,7 @@ impl BroadcastStateTransition for StateTransition {
         }
         result
     }
-    async fn wait_for_response<T: TryFrom<StateTransitionProofResult>>(
+    async fn wait_for_response<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
@@ -260,7 +260,7 @@ impl BroadcastStateTransition for StateTransition {
         }
     }
 
-    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult>>(
+    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult> + Send>(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
