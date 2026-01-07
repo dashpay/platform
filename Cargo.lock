@@ -1445,6 +1445,7 @@ dependencies = [
  "drive-proof-verifier",
  "envy",
  "futures",
+ "gloo-timers",
  "hex",
  "http",
  "js-sys",

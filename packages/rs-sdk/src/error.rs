@@ -95,6 +95,11 @@ pub enum Error {
     /// Error returned when trying to broadcast a state transition
     #[error(transparent)]
     StateTransitionBroadcastError(#[from] StateTransitionBroadcastError),
+
+    /// All available addresses have been exhausted (banned due to errors).
+    /// Contains the last meaningful error that caused addresses to be banned.
+    #[error("no available addresses to retry, last error: {0}")]
+    NoAvailableAddressesToRetry(Box<Error>),
 }
 
 /// State transition broadcast error
@@ -254,6 +259,7 @@ impl CanRetry for Error {
         matches!(
             self,
             Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+                | Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(_))
         )
     }
 }

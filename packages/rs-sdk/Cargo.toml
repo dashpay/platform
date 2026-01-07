@@ -47,6 +47,7 @@ tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.64"
+gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client" }
