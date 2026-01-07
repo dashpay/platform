@@ -127,14 +127,30 @@ pub async fn sync_address_balances<P: AddressProvider>(
     process_trunk_result(&trunk_result, provider, &mut result, &mut tracker);
 
     // Step 3: Iterative branch queries
+    let min_query_depth = platform_version
+        .drive
+        .methods
+        .address_funds
+        .address_funds_query_min_depth;
+    let max_query_depth = platform_version
+        .drive
+        .methods
+        .address_funds
+        .address_funds_query_max_depth;
+
     let mut iterations = 0;
     while !tracker.is_empty() && iterations < config.max_iterations {
         iterations += 1;
         result.metrics.iterations = iterations;
 
         // Get leaves that need querying (apply privacy adjustment)
-        let leaves_to_query =
-            get_privacy_adjusted_leaves(&tracker, &trunk_result, config.min_privacy_count);
+        let leaves_to_query = get_privacy_adjusted_leaves(
+            &tracker,
+            &trunk_result,
+            config.min_privacy_count,
+            min_query_depth,
+            max_query_depth,
+        );
 
         if leaves_to_query.is_empty() {
             break;
@@ -265,10 +281,14 @@ fn process_trunk_result<P: AddressProvider>(
 /// Get privacy-adjusted leaves to query.
 ///
 /// For leaves with count below min_privacy_count, find an ancestor with sufficient count.
+/// The depth is clamped to [min_query_depth, max_query_depth] to stay within platform limits.
+/// Returns None for leaves where the subtree is too small to query (depth < min after clamping).
 fn get_privacy_adjusted_leaves(
     tracker: &KeyLeafTracker,
     trunk_result: &GroveTrunkQueryResult,
     min_privacy_count: u64,
+    min_query_depth: u8,
+    max_query_depth: u8,
 ) -> Vec<(LeafBoundaryKey, LeafInfo, u8)> {
     let active_leaves = tracker.active_leaves();
     let mut result = Vec::new();
@@ -277,11 +297,13 @@ fn get_privacy_adjusted_leaves(
     for (leaf_key, info) in active_leaves {
         let count = info.count.unwrap_or(0);
         let tree_depth = calculate_max_tree_depth_from_count(count);
+        // Clamp to allowed depth range
+        let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
 
         if count >= min_privacy_count {
             // Leaf has sufficient privacy, use it directly
             if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, tree_depth));
+                result.push((leaf_key, info, clamped_depth));
             }
         } else {
             // Need to find an ancestor with more elements
@@ -293,14 +315,16 @@ fn get_privacy_adjusted_leaves(
                         hash: ancestor_hash,
                         count: Some(_count),
                     };
-                    // Reduce depth based on how many levels up we went
-                    let depth = tree_depth.saturating_sub(levels_up);
-                    result.push((ancestor_key, ancestor_info, depth.max(1)));
+                    // Reduce depth based on how many levels up we went, then clamp
+                    let depth = tree_depth
+                        .saturating_sub(levels_up)
+                        .clamp(min_query_depth, max_query_depth);
+                    result.push((ancestor_key, ancestor_info, depth));
                 }
             } else {
                 // No suitable ancestor found, use the leaf anyway
                 if seen_ancestors.insert(leaf_key.clone()) {
-                    result.push((leaf_key, info, tree_depth));
+                    result.push((leaf_key, info, clamped_depth));
                 }
             }
         }
