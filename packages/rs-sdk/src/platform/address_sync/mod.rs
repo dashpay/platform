@@ -430,11 +430,25 @@ fn process_branch_result<P: AddressProvider>(
     // Get all target keys that were in this leaf's subtree
     let target_keys = tracker.keys_for_leaf(queried_leaf_key);
 
+    tracing::debug!(
+        "process_branch_result: queried_leaf_key={}, target_keys={}, branch_elements={}",
+        hex::encode(queried_leaf_key),
+        target_keys.len(),
+        branch_result.elements.len()
+    );
+
     for target_key in target_keys {
         let index = key_to_index.get(&target_key).copied().unwrap_or(0);
 
+        tracing::debug!(
+            "  checking target_key={} (index={})",
+            hex::encode(&target_key),
+            index
+        );
+
         // Check if found in elements
         if let Some(element) = branch_result.elements.get(&target_key) {
+            tracing::debug!("    found in elements!");
             let balance = extract_balance_from_element(element);
             result.found.insert((index, target_key.clone()), balance);
             provider.on_address_found(index, &target_key, balance);
@@ -457,10 +471,12 @@ fn process_branch_result<P: AddressProvider>(
 
 /// Extract balance from a GroveDB Element.
 ///
-/// The address funds tree stores balances as sum items.
+/// The address funds tree stores balances as sum items or items with sum items.
+/// ItemWithSumItem stores both item data (like nonce) and the sum value (balance).
 fn extract_balance_from_element(element: &Element) -> u64 {
     match element {
         Element::SumItem(value, _) => *value as u64,
+        Element::ItemWithSumItem(_, value, _) => *value as u64,
         _ => 0,
     }
 }
