@@ -33,7 +33,7 @@ pub async fn sleep(duration: Duration) {
 /// Sleep for the given duration.
 #[cfg(target_arch = "wasm32")]
 pub async fn sleep(duration: Duration) {
-    gloo_timers::future::sleep(duration).await;
+    wasm_channel::into_send_sleep(duration).await;
 }
 
 /// Generic transport layer request.

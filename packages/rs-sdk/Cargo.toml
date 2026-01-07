@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 
 arc-swap = { version = "1.7.1" }
-backon = { version = "1.2", default-features = false }
 chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
@@ -47,7 +46,6 @@ tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.64"
-gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client" }

@@ -202,7 +202,6 @@ pub fn update_address_ban_status<R, E>(
 #[async_trait]
 impl DapiRequestExecutor for DapiClient {
     /// Execute the [DapiRequest](crate::DapiRequest).
-    #[tracing::instrument(name = "request_routine", skip_all)]
     async fn execute<R>(
         &self,
         request: R,
@@ -379,6 +378,7 @@ impl DapiRequestExecutor for DapiClient {
                 }
             }
         }
+        .instrument(tracing::info_span!("request routine"))
         .await;
 
         if let Err(error) = &result {

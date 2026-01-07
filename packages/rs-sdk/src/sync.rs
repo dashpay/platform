@@ -7,22 +7,11 @@
 use crate::error::Error;
 use dash_context_provider::ContextProviderError;
 use rs_dapi_client::{
-    update_address_ban_status, AddressList, CanRetry, ExecutionResult, RequestSettings,
+    transport::sleep, update_address_ban_status, AddressList, CanRetry, ExecutionResult,
+    RequestSettings,
 };
 use std::time::Duration;
 use std::{fmt::Debug, future::Future, sync::mpsc::SendError};
-
-/// Sleep for the given duration.
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn sleep(duration: Duration) {
-    tokio::time::sleep(duration).await;
-}
-
-/// Sleep for the given duration.
-#[cfg(target_arch = "wasm32")]
-pub async fn sleep(duration: Duration) {
-    gloo_timers::future::sleep(duration).await;
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
