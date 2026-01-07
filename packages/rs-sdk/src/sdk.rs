@@ -356,7 +356,10 @@ impl Sdk {
             }
         }?;
 
-        self.verify_response_metadata(method_name, &metadata)?;
+        self.verify_response_metadata(method_name, &metadata)
+            .inspect_err(|err| {
+                tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
+            })?;
 
         Ok((object, metadata, proof))
     }
@@ -662,12 +665,6 @@ pub(crate) fn verify_metadata_time(
 
     // metadata_time - tolerance_ms <= now_ms <= metadata_time + tolerance_ms
     if now_ms.abs_diff(metadata_time) > tolerance_ms {
-        tracing::warn!(
-            expected_time = now_ms,
-            received_time = metadata_time,
-            tolerance_ms,
-            "received response with stale time; you should retry with another server"
-        );
         return Err(StaleNodeError::Time {
             expected_timestamp_ms: now_ms,
             received_timestamp_ms: metadata_time,
@@ -708,12 +705,6 @@ fn verify_metadata_height(
 
     // If expected_height <= tolerance, then Sdk just started, so we just assume what we got is correct.
     if expected_height > tolerance && received_height < expected_height - tolerance {
-        tracing::warn!(
-            expected_height,
-            received_height,
-            tolerance,
-            "received message with stale height; you should retry with another server"
-        );
         return Err(StaleNodeError::Height {
             expected_height,
             received_height,
