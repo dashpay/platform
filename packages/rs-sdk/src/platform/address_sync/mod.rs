@@ -281,8 +281,8 @@ fn process_trunk_result<P: AddressProvider>(
 /// Get privacy-adjusted leaves to query.
 ///
 /// For leaves with count below min_privacy_count, find an ancestor with sufficient count.
-/// The depth is clamped to [min_query_depth, max_query_depth] to stay within platform limits.
-/// Returns None for leaves where the subtree is too small to query (depth < min after clamping).
+/// Returns a `Vec` of `(LeafBoundaryKey, LeafInfo, u8)` tuples where the `u8` is the query depth
+/// clamped to [`min_query_depth`, `max_query_depth`] to stay within platform limits.
 fn get_privacy_adjusted_leaves(
     tracker: &KeyLeafTracker,
     trunk_result: &GroveTrunkQueryResult,
