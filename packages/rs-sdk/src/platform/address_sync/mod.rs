@@ -458,7 +458,6 @@ fn process_branch_result<P: AddressProvider>(
 /// Extract balance from a GroveDB Element.
 ///
 /// The address funds tree stores balances as sum items or items with sum items.
-/// ItemWithSumItem stores both item data (like nonce) and the sum value (balance).
 fn extract_balance_from_element(element: &Element) -> u64 {
     match element {
         Element::SumItem(value, _) => *value as u64,
