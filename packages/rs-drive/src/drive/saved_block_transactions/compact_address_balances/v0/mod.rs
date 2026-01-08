@@ -5,7 +5,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::CreditOperation;
+use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
@@ -59,8 +59,10 @@ impl Drive {
         let mut start_block: u64 = current_block_height;
         let mut end_block: u64 = current_block_height;
 
-        // Start with empty map - we'll merge in chronological order
-        let mut merged_balances: BTreeMap<PlatformAddress, CreditOperation> = BTreeMap::new();
+        // Start with empty map - we'll merge in chronological order using BlockAwareCreditOperation
+        // This preserves block heights for AddToCredits operations while collapsing SetCredits
+        let mut merged_balances: BTreeMap<PlatformAddress, BlockAwareCreditOperation> =
+            BTreeMap::new();
         let mut keys_to_delete: Vec<Vec<u8>> = Vec::new();
 
         // First, process stored blocks in chronological order (ascending by block height)
@@ -100,16 +102,17 @@ impl Drive {
                     ))))
                 })?;
 
-            // Merge into the combined map - stored blocks come first chronologically
-            // existing.merge(operation) means: apply existing first, then operation (later)
+            // Merge into the combined map using BlockAwareCreditOperation
+            // This preserves block heights for AddToCredits, collapses when SetCredits is seen
             for (address, operation) in address_balances {
                 merged_balances
                     .entry(address)
                     .and_modify(|existing| {
-                        // existing is from earlier blocks, operation is from this (later) block
-                        *existing = existing.merge(&operation);
+                        existing.merge(block_height, &operation);
                     })
-                    .or_insert(operation);
+                    .or_insert_with(|| {
+                        BlockAwareCreditOperation::from_operation(block_height, &operation)
+                    });
             }
 
             keys_to_delete.push(key);
@@ -120,10 +123,11 @@ impl Drive {
             merged_balances
                 .entry(*address)
                 .and_modify(|existing| {
-                    // existing is from stored blocks (earlier), operation is from current (latest)
-                    *existing = existing.merge(operation);
+                    existing.merge(current_block_height, operation);
                 })
-                .or_insert(*operation);
+                .or_insert_with(|| {
+                    BlockAwareCreditOperation::from_operation(current_block_height, operation)
+                });
         }
 
         // Serialize the merged balances

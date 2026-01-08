@@ -706,7 +706,7 @@ pub struct CompactedBlockAddressBalanceChanges {
     /// The end block height of the compacted range
     pub end_block_height: u64,
     /// The merged address balance changes for this range
-    pub changes: BTreeMap<PlatformAddress, dpp::balances::credits::CreditOperation>,
+    pub changes: BTreeMap<PlatformAddress, dpp::balances::credits::BlockAwareCreditOperation>,
 }
 
 /// Compacted address balance changes across multiple ranges.
