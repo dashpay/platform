@@ -15,6 +15,10 @@ use std::collections::BTreeMap;
 use super::VerifiedAddressBalanceChangesPerBlock;
 
 impl Drive {
+    /// Verifies recent address balance changes proof.
+    ///
+    /// Uses the same query as the prove function: a simple range query
+    /// starting from start_block_height.
     pub(super) fn verify_recent_address_balance_changes_v0(
         proof: &[u8],
         start_block_height: u64,
@@ -27,29 +31,25 @@ impl Drive {
             vec![ADDRESS_BALANCES_KEY_U8],
         ];
 
-        // Create a range query starting from the specified height
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+
+        // Create the same range query as the prove function
         let mut query = Query::new();
         query.insert_range_from(start_block_height.to_be_bytes().to_vec()..);
 
         let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
 
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_with_absence_proof(
+            GroveDb::verify_subset_query(
                 proof,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?
         } else {
-            GroveDb::verify_query_with_absence_proof(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
-
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
 
         let mut address_balance_changes = Vec::new();
 

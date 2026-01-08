@@ -414,6 +414,73 @@ mod tests {
                 }
             }
         }
+
+        // Also test prove: true to verify the prove/verify cycle works
+        let proof_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: 1,
+                    prove: true,
+                },
+            )),
+        };
+
+        let proof_query_result = platform
+            .query_recent_address_balance_changes(proof_request, &platform_state, platform_version)
+            .expect("expected to run proof query");
+
+        assert!(
+            proof_query_result.errors.is_empty(),
+            "proof query errors: {:?}",
+            proof_query_result.errors
+        );
+
+        let proof_response = proof_query_result
+            .into_data()
+            .expect("expected data on proof query result");
+
+        match proof_response.version.expect("expected a version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::Proof(proof) => {
+                        // Verify the proof can be validated
+                        assert!(
+                            !proof.grovedb_proof.is_empty(),
+                            "proof should not be empty"
+                        );
+
+                        // Verify the proof using Drive's verification function
+                        let verified = Drive::verify_recent_address_balance_changes(
+                            &proof.grovedb_proof,
+                            1, // start_height
+                            None,
+                            false,
+                            platform_version,
+                        );
+
+                        assert!(
+                            verified.is_ok(),
+                            "proof verification failed: {:?}",
+                            verified.err()
+                        );
+
+                        let (root_hash, verified_changes) = verified.unwrap();
+                        assert!(
+                            !root_hash.is_empty(),
+                            "root hash should not be empty"
+                        );
+                        assert!(
+                            !verified_changes.is_empty(),
+                            "verified changes should not be empty"
+                        );
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(_) => {
+                        panic!("expected proof, not entries");
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -2426,6 +2493,74 @@ mod tests {
                     }
                     get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
                         panic!("expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Also test prove: true to verify the prove/verify cycle works for compacted changes
+        let proof_request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: true,
+                },
+            )),
+        };
+
+        let proof_query_result = platform
+            .platform
+            .query_recent_compacted_address_balance_changes(
+                proof_request,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to run proof query");
+
+        assert!(
+            proof_query_result.errors.is_empty(),
+            "proof query errors: {:?}",
+            proof_query_result.errors
+        );
+
+        let proof_response = proof_query_result
+            .into_data()
+            .expect("expected data on proof query result");
+
+        match proof_response.version.expect("expected a version") {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(proof) => {
+                        // Verify the proof can be validated
+                        assert!(
+                            !proof.grovedb_proof.is_empty(),
+                            "proof should not be empty"
+                        );
+
+                        // Verify the proof using Drive's verification function
+                        let verified = Drive::verify_compacted_address_balance_changes(
+                            &proof.grovedb_proof,
+                            0, // start_block_height
+                            None,
+                            platform_version,
+                        );
+
+                        assert!(
+                            verified.is_ok(),
+                            "proof verification failed: {:?}",
+                            verified.err()
+                        );
+
+                        let (root_hash, verified_changes) = verified.unwrap();
+                        assert!(
+                            !root_hash.is_empty(),
+                            "root hash should not be empty"
+                        );
+                        // Note: verified_changes might be empty if no compaction occurred
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(_) => {
+                        panic!("expected proof, not entries");
                     }
                 }
             }
