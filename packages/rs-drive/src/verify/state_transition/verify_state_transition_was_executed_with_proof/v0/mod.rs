@@ -989,7 +989,7 @@ impl Drive {
                 })?;
                 let (root_hash_identity, identity) = Drive::verify_full_identity_by_identity_id(
                     proof,
-                    false,
+                    true,
                     identity_id.into_buffer(),
                     platform_version,
                 )?;
@@ -1006,7 +1006,7 @@ impl Drive {
                 ) = Drive::verify_addresses_infos(
                     proof,
                     addresses_to_check,
-                    false,
+                    true,
                     platform_version,
                 )?;
 

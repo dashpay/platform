@@ -1,6 +1,8 @@
+use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
-use crate::prelude::Revision;
+use crate::prelude::{AddressNonce, Revision};
+use crate::state_transition::identity_id_from_input_addresses;
 
 #[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;
@@ -116,6 +118,29 @@ impl Identity {
                 received: version,
             }),
         }
+    }
+
+    /// Create a new identity using input [PlatformAddress]es.
+    ///
+    /// This function derives the identity ID from the provided input addresses.
+    ///
+    /// ## Arguments
+    ///
+    /// * `inputs` - A map of PlatformAddress to AddressNonce tuples used to derive the identity id; the nonces
+    ///   should represent state after creation of the identity (eg. be incremented by 1).
+    /// * `public_keys` - A map of KeyID to IdentityPublicKey tuples representing the public keys for the identity.
+    /// * `platform_version` - The platform version to use for identity creation.
+    ///
+    /// ## Returns
+    ///
+    /// * `Result<Identity, ProtocolError>` - Returns the newly created Identity or a ProtocolError if the operation fails.
+    pub fn new_with_input_addresses_and_keys(
+        inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identity, ProtocolError> {
+        let identity_id = identity_id_from_input_addresses(inputs)?;
+        Self::new_with_id_and_keys(identity_id, public_keys, platform_version)
     }
 
     /// Convenience method to get Partial Identity Info
