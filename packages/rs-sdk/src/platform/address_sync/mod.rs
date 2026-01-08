@@ -231,9 +231,8 @@ async fn execute_trunk_query(
 
     metrics.trunk_queries += 1;
 
-    let trunk_state = trunk_state.ok_or_else(|| {
-        Error::InvalidProvedResponse("Trunk query returned no state".to_string())
-    })?;
+    let trunk_state = trunk_state
+        .ok_or_else(|| Error::InvalidProvedResponse("Trunk query returned no state".to_string()))?;
 
     metrics.total_elements_seen += trunk_state.elements.len();
 
