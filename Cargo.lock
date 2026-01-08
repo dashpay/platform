@@ -856,7 +856,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "check-features"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "toml 0.8.23",
 ]
@@ -1290,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "dash-platform-macros",
  "futures-core",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "dash-context-provider"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "dpp",
  "drive",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-balance-checker"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "anyhow",
  "clap",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "dash-platform-macros"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "heck 0.5.0",
  "quote",
@@ -1424,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "dash-sdk"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1596,7 +1596,7 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1606,7 +1606,7 @@ dependencies = [
 
 [[package]]
 name = "data-contracts"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1755,7 +1755,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -1765,7 +1765,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1822,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1863,7 +1863,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "arc-swap",
  "assert_matches",
@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "drive-proof-verifier"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dapi-grpc",
@@ -2171,7 +2171,7 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "feature-flags-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -3344,7 +3344,7 @@ dependencies = [
 
 [[package]]
 name = "json-schema-compatibility-validator"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "assert_matches",
  "json-patch",
@@ -3463,7 +3463,7 @@ dependencies = [
 
 [[package]]
 name = "keyword-search-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "base58",
  "platform-value",
@@ -3610,7 +3610,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -4278,7 +4278,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "platform-serialization"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
@@ -4286,7 +4286,7 @@ dependencies = [
 
 [[package]]
 name = "platform-serialization-derive"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4296,7 +4296,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "base64 0.22.1",
  "bincode 2.0.0-rc.3",
@@ -4315,7 +4315,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "quote",
  "syn 2.0.111",
@@ -4323,7 +4323,7 @@ dependencies = [
 
 [[package]]
 name = "platform-version"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "grovedb-version",
@@ -4334,7 +4334,7 @@ dependencies = [
 
 [[package]]
 name = "platform-versioning"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4343,7 +4343,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "dashcore",
  "dpp",
@@ -5108,7 +5108,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "async-trait",
  "axum 0.8.8",
@@ -5157,7 +5157,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dapi-client"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "backon",
  "chrono",
@@ -5182,7 +5182,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dash-event-bus"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "metrics",
  "tokio",
@@ -5191,7 +5191,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk-ffi"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bs58",
@@ -5220,7 +5220,7 @@ dependencies = [
 
 [[package]]
 name = "rs-sdk-trusted-context-provider"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "arc-swap",
  "dash-context-provider",
@@ -5895,7 +5895,7 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-signer"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "base64 0.22.1",
  "bincode 2.0.0-rc.3",
@@ -5992,7 +5992,7 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
@@ -6385,7 +6385,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "token-history-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -7128,7 +7128,7 @@ dependencies = [
 
 [[package]]
 name = "wallet-utils-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "platform-value",
  "platform-version",
@@ -7260,7 +7260,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7284,7 +7284,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp2"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -7301,7 +7301,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-drive-verify"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "base64 0.22.1",
  "bincode 2.0.0-rc.3",
@@ -7334,7 +7334,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-sdk"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "base64 0.22.1",
  "bip39",
@@ -7795,7 +7795,7 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 
 [[package]]
 name = "withdrawals-contract"
-version = "3.0.0-dev.10"
+version = "3.0.0-dev.11"
 dependencies = [
  "num_enum 0.5.11",
  "platform-value",
