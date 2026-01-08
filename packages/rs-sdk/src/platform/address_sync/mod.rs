@@ -232,9 +232,7 @@ async fn execute_trunk_query(
     metrics.trunk_queries += 1;
 
     let trunk_state = trunk_state.ok_or_else(|| {
-        Error::Protocol(dpp::ProtocolError::CorruptedCodeExecution(
-            "Trunk query returned no state".to_string(),
-        ))
+        Error::InvalidProvedResponse("Trunk query returned no state".to_string())
     })?;
 
     metrics.total_elements_seen += trunk_state.elements.len();
@@ -432,9 +430,7 @@ async fn execute_single_branch_query(
                 Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
                 None => {
                     return Err(ExecutionError {
-                        inner: Error::Protocol(dpp::ProtocolError::CorruptedCodeExecution(
-                            "Missing version in branch response".to_string(),
-                        )),
+                        inner: Error::Proof(drive_proof_verifier::Error::EmptyVersion),
                         address: Some(address),
                         retries,
                     });
