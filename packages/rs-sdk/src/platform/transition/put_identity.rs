@@ -1,7 +1,6 @@
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
-    address_inputs::{collect_address_infos_from_proof, fetch_inputs_with_nonce, nonce_inc},
-    broadcast::BroadcastStateTransition,
+    address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
 };
 use crate::{Error, Sdk};
 
@@ -47,18 +46,12 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     where
         Self: Sized;
 
-    /// Creates an identity funded by Platform addresses (nonces fetched automatically).
-    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
-        &self,
-        sdk: &Sdk,
-        inputs: BTreeMap<PlatformAddress, Credits>,
-        output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &IS,
-        input_address_signer: &AS,
-        settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error>;
-
     /// Creates an identity funded by Platform addresses using explicit nonces.
+    ///
+    /// Use [Identity::new_with_input_addresses_and_keys](dpp::identity::Identity::new_with_input_addresses_and_keys)
+    /// to create an identity. Then use this method to put it to the platform.
+    ///
+    /// This is a preferred method, as you need to use the same nonces when creating the identity.
     async fn put_with_address_funding_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
@@ -110,27 +103,6 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
-    }
-
-    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
-        &self,
-        sdk: &Sdk,
-        inputs: BTreeMap<PlatformAddress, Credits>,
-        output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &IS,
-        input_address_signer: &AS,
-        settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error> {
-        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
-        self.put_with_address_funding_with_nonce(
-            sdk,
-            inputs_with_nonce,
-            output,
-            identity_signer,
-            input_address_signer,
-            settings,
-        )
-        .await
     }
 
     async fn put_with_address_funding_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
