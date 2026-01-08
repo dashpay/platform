@@ -1082,6 +1082,32 @@ impl FromProof<platform::GetAddressesTrunkStateRequest> for GroveTrunkQueryResul
     }
 }
 
+impl FromProof<platform::GetAddressesTrunkStateRequest> for PlatformAddressTrunkState {
+    type Request = platform::GetAddressesTrunkStateRequest;
+    type Response = platform::GetAddressesTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        PlatformAddressTrunkState: 'a,
+    {
+        let (result, metadata, proof) = GroveTrunkQueryResult::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+
+        Ok((result.map(PlatformAddressTrunkState), metadata, proof))
+    }
+}
+
 impl FromProof<platform::GetDataContractRequest> for DataContract {
     type Request = platform::GetDataContractRequest;
     type Response = platform::GetDataContractResponse;

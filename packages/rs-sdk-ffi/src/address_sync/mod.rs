@@ -14,6 +14,7 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
+use dash_sdk::RequestSettings;
 use tracing::{debug, error, info};
 
 /// Synchronize address balances using trunk/branch chunk queries.
@@ -56,6 +57,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
             min_privacy_count: (*config).min_privacy_count,
             max_concurrent_requests: (*config).max_concurrent_requests as usize,
             max_iterations: (*config).max_iterations as usize,
+            request_settings: RequestSettings::default(),
         })
     };
 
@@ -134,6 +136,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
             min_privacy_count: (*config).min_privacy_count,
             max_concurrent_requests: (*config).max_concurrent_requests as usize,
             max_iterations: (*config).max_iterations as usize,
+            request_settings: RequestSettings::default(),
         })
     };
 

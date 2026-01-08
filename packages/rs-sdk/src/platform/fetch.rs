@@ -324,3 +324,7 @@ impl Fetch for drive_proof_verifier::types::RecentAddressBalanceChanges {
 impl Fetch for drive_proof_verifier::types::RecentCompactedAddressBalanceChanges {
     type Request = platform_proto::GetRecentCompactedAddressBalanceChangesRequest;
 }
+
+impl Fetch for drive_proof_verifier::types::PlatformAddressTrunkState {
+    type Request = platform_proto::GetAddressesTrunkStateRequest;
+}

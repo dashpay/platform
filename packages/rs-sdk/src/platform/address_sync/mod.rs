@@ -47,11 +47,12 @@ pub use types::{
 };
 
 use crate::error::Error;
+use crate::platform::Fetch;
+use crate::sync::retry;
 use crate::Sdk;
 use dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
-    get_addresses_trunk_state_request, GetAddressesBranchStateRequest,
-    GetAddressesTrunkStateRequest,
+    GetAddressesBranchStateRequest,
 };
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -59,8 +60,11 @@ use drive::grovedb::{
     calculate_max_tree_depth_from_count, Element, GroveBranchQueryResult, GroveTrunkQueryResult,
     LeafInfo,
 };
+use drive_proof_verifier::types::PlatformAddressTrunkState;
 use futures::stream::{FuturesUnordered, StreamExt};
-use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
+use rs_dapi_client::{
+    DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
+};
 use std::collections::{BTreeSet, HashMap};
 use tracing::{debug, trace, warn};
 use tracker::KeyLeafTracker;
@@ -114,7 +118,8 @@ pub async fn sync_address_balances<P: AddressProvider>(
     }
 
     // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height) = execute_trunk_query(sdk, &mut result.metrics).await?;
+    let (trunk_result, checkpoint_height) =
+        execute_trunk_query(sdk, config.request_settings, &mut result.metrics).await?;
     result.checkpoint_height = checkpoint_height;
 
     trace!(
@@ -171,6 +176,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
             checkpoint_height,
             &mut result.metrics,
             config.max_concurrent_requests,
+            config.request_settings,
             platform_version,
         )
         .await?;
@@ -217,37 +223,20 @@ pub async fn sync_address_balances<P: AddressProvider>(
 /// Execute the trunk query and return the verified result.
 async fn execute_trunk_query(
     sdk: &Sdk,
+    settings: RequestSettings,
     metrics: &mut AddressSyncMetrics,
 ) -> Result<(GroveTrunkQueryResult, u64), Error> {
-    let request = GetAddressesTrunkStateRequest {
-        version: Some(get_addresses_trunk_state_request::Version::V0(
-            get_addresses_trunk_state_request::GetAddressesTrunkStateRequestV0 {},
-        )),
-    };
-
-    let response: dapi_grpc::platform::v0::GetAddressesTrunkStateResponse = request
-        .execute(sdk, RequestSettings::default())
-        .await?
-        .into_inner();
+    let (trunk_state, metadata) =
+        PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
 
     metrics.trunk_queries += 1;
 
-    // Parse and verify the proof using the standard SDK pattern
-    let (trunk_state, metadata) = sdk
-        .parse_proof_with_metadata::<GetAddressesTrunkStateRequest, GroveTrunkQueryResult>(
-            request, response,
-        )
-        .await?;
-
-    let trunk_state = trunk_state.ok_or_else(|| {
-        Error::Protocol(dpp::ProtocolError::CorruptedCodeExecution(
-            "Trunk query returned no state".to_string(),
-        ))
-    })?;
+    let trunk_state = trunk_state
+        .ok_or_else(|| Error::InvalidProvedResponse("Trunk query returned no state".to_string()))?;
 
     metrics.total_elements_seen += trunk_state.elements.len();
 
-    Ok((trunk_state, metadata.height))
+    Ok((trunk_state.into_inner(), metadata.height))
 }
 
 /// Process the trunk query result.
@@ -341,6 +330,7 @@ async fn execute_branch_queries(
     checkpoint_height: u64,
     metrics: &mut AddressSyncMetrics,
     max_concurrent: usize,
+    settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<(LeafBoundaryKey, GroveBranchQueryResult)>, Error> {
     let mut futures = FuturesUnordered::new();
@@ -358,6 +348,7 @@ async fn execute_branch_queries(
                 depth_u32,
                 expected_hash,
                 checkpoint_height,
+                settings,
                 platform_version,
             )
             .await
@@ -397,13 +388,17 @@ async fn execute_branch_queries(
     Ok(results)
 }
 
-/// Execute a single branch query.
+/// Execute a single branch query with retry logic.
+///
+/// If proof verification fails, the request will be retried with a different node
+/// according to the retry settings.
 async fn execute_single_branch_query(
     sdk: &Sdk,
     key: LeafBoundaryKey,
     depth: u32,
     expected_hash: [u8; 32],
     checkpoint_height: u64,
+    settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<GroveBranchQueryResult, Error> {
     let request = GetAddressesBranchStateRequest {
@@ -416,31 +411,56 @@ async fn execute_single_branch_query(
         )),
     };
 
-    let response: dapi_grpc::platform::v0::GetAddressesBranchStateResponse = request
-        .execute(sdk, RequestSettings::default())
-        .await?
-        .into_inner();
+    let fut = |settings: RequestSettings| {
+        let request = request.clone();
+        let key = key.clone();
+        async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .execute(sdk, settings)
+                .await
+                .map_err(|execution_error| execution_error.inner_into())?;
 
-    // Extract merk proof
-    let proof_bytes = match response.version {
-        Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
-        None => {
-            return Err(Error::Protocol(dpp::ProtocolError::CorruptedCodeExecution(
-                "Missing version in branch response".to_string(),
-            )));
+            // Extract merk proof
+            let proof_bytes = match response.version {
+                Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
+                None => {
+                    return Err(ExecutionError {
+                        inner: Error::Proof(drive_proof_verifier::Error::EmptyVersion),
+                        address: Some(address),
+                        retries,
+                    });
+                }
+            };
+
+            // Verify the proof
+            let branch_result = Drive::verify_address_funds_branch_query(
+                &proof_bytes,
+                key,
+                depth as u8,
+                expected_hash,
+                platform_version,
+            )
+            .map_err(|e| ExecutionError {
+                inner: e.into(),
+                address: Some(address.clone()),
+                retries,
+            })?;
+
+            Ok(ExecutionResponse {
+                inner: branch_result,
+                address,
+                retries,
+            })
         }
     };
 
-    // Verify the proof
-    let branch_result = Drive::verify_address_funds_branch_query(
-        &proof_bytes,
-        key,
-        depth as u8,
-        expected_hash,
-        platform_version,
-    )?;
+    let settings = sdk.dapi_client_settings.override_by(settings);
 
-    Ok(branch_result)
+    retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
 /// Process a branch query result.
