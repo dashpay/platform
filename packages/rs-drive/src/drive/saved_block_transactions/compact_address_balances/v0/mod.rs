@@ -1,4 +1,4 @@
-use crate::drive::saved_block_transactions::compact_address_balances::ONE_DAY_IN_MS;
+use crate::drive::saved_block_transactions::compact_address_balances::ONE_WEEK_IN_MS;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -21,7 +21,7 @@ impl Drive {
     /// and stores the result in the compacted address balances tree
     /// with a (start_block, end_block) key.
     ///
-    /// Also stores the expiration time (current block time + 1 day) in the
+    /// Also stores the expiration time (current block time + 1 week) in the
     /// compacted addresses expiration time tree with the same (start_block, end_block) key.
     ///
     /// Returns the range of blocks that were compacted (start_block, end_block).
@@ -154,8 +154,8 @@ impl Drive {
             Element::new_item(serialized),
         );
 
-        // Calculate expiration time (current block time + 1 day)
-        let expiration_time_ms = current_block_time_ms.saturating_add(ONE_DAY_IN_MS);
+        // Calculate expiration time (current block time + 1 week)
+        let expiration_time_ms = current_block_time_ms.saturating_add(ONE_WEEK_IN_MS);
         let expiration_key = expiration_time_ms.to_be_bytes().to_vec();
 
         // Check if an entry with this expiration time already exists
