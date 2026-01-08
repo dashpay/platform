@@ -14,7 +14,7 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::platform::address_sync::{AddressSyncConfig, AddressSyncResult};
-use rs_dapi_client::RequestSettings;
+use dash_sdk::RequestSettings;
 use tracing::{debug, error, info};
 
 /// Synchronize address balances using trunk/branch chunk queries.
