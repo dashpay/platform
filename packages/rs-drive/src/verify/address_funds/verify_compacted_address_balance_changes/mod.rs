@@ -5,14 +5,17 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::CreditOperation;
+use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 /// Result type for verified compacted address balance changes
 /// Each entry is (start_block, end_block, address_balance_changes)
-pub type VerifiedCompactedAddressBalanceChanges =
-    Vec<(u64, u64, BTreeMap<PlatformAddress, CreditOperation>)>;
+pub type VerifiedCompactedAddressBalanceChanges = Vec<(
+    u64,
+    u64,
+    BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
+)>;
 
 impl Drive {
     /// Verifies the proof of compacted address balance changes starting from a given block height.

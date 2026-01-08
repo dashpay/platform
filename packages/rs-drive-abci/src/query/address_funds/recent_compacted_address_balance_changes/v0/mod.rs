@@ -9,10 +9,11 @@ use dapi_grpc::platform::v0::get_recent_compacted_address_balance_changes_respon
     GetRecentCompactedAddressBalanceChangesResponseV0,
 };
 use dapi_grpc::platform::v0::{
-    address_balance_change, AddressBalanceChange, CompactedAddressBalanceUpdateEntries,
+    compacted_address_balance_change, AddToCreditsOperations, BlockHeightCreditEntry,
+    CompactedAddressBalanceChange, CompactedAddressBalanceUpdateEntries,
     CompactedBlockAddressBalanceChanges,
 };
-use dpp::balances::credits::CreditOperation;
+use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::version::PlatformVersion;
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -61,18 +62,34 @@ impl<C> Platform<C> {
                 compacted_address_balance_changes
                     .into_iter()
                     .map(|(start_block, end_block, changes)| {
-                        let address_changes: Vec<AddressBalanceChange> = changes
+                        let address_changes: Vec<CompactedAddressBalanceChange> = changes
                             .into_iter()
                             .map(|(address, operation)| {
                                 let op = match operation {
-                                    CreditOperation::SetCredits(credits) => {
-                                        address_balance_change::Operation::SetBalance(credits)
+                                    BlockAwareCreditOperation::SetCredits(credits) => {
+                                        compacted_address_balance_change::Operation::SetCredits(
+                                            credits,
+                                        )
                                     }
-                                    CreditOperation::AddToCredits(credits) => {
-                                        address_balance_change::Operation::AddToBalance(credits)
+                                    BlockAwareCreditOperation::AddToCreditsOperations(
+                                        block_credits_map,
+                                    ) => {
+                                        let entries: Vec<BlockHeightCreditEntry> =
+                                            block_credits_map
+                                                .into_iter()
+                                                .map(|(block_height, credits)| {
+                                                    BlockHeightCreditEntry {
+                                                        block_height,
+                                                        credits,
+                                                    }
+                                                })
+                                                .collect();
+                                        compacted_address_balance_change::Operation::AddToCreditsOperations(
+                                            AddToCreditsOperations { entries },
+                                        )
                                     }
                                 };
-                                AddressBalanceChange {
+                                CompactedAddressBalanceChange {
                                     address: address.to_bytes(),
                                     operation: Some(op),
                                 }

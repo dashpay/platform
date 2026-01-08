@@ -21,7 +21,7 @@ mod tests {
         Version as CompactedChangesResponseVersion,
     };
     use dapi_grpc::platform::v0::{
-        address_balance_change, GetAddressesTrunkStateRequest,
+        address_balance_change, compacted_address_balance_change, GetAddressesTrunkStateRequest,
         GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest,
     };
     use dash_platform_macros::stack_size;
@@ -2391,19 +2391,26 @@ mod tests {
 
                                 // Verify operation type
                                 match &change.operation {
-                                    Some(address_balance_change::Operation::SetBalance(balance)) => {
+                                    Some(compacted_address_balance_change::Operation::SetCredits(credits)) => {
                                         eprintln!(
-                                            "    Address {:?}: SetBalance({})",
+                                            "    Address {:?}: SetCredits({})",
                                             hex::encode(&change.address),
-                                            balance
+                                            credits
                                         );
                                     }
-                                    Some(address_balance_change::Operation::AddToBalance(amount)) => {
+                                    Some(compacted_address_balance_change::Operation::AddToCreditsOperations(ops)) => {
                                         eprintln!(
-                                            "    Address {:?}: AddToBalance({})",
+                                            "    Address {:?}: AddToCreditsOperations({} entries)",
                                             hex::encode(&change.address),
-                                            amount
+                                            ops.entries.len()
                                         );
+                                        for entry in &ops.entries {
+                                            eprintln!(
+                                                "      block {}: {} credits",
+                                                entry.block_height,
+                                                entry.credits
+                                            );
+                                        }
                                     }
                                     None => {
                                         panic!("expected an operation on address balance change");
@@ -3077,6 +3084,290 @@ mod tests {
                     }
                     get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
                         panic!("expected recent entries, not proof");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Test that verifies AddToCreditsOperations preserves block heights for partial sync.
+    ///
+    /// This test:
+    /// 1. Only uses AddressFundingFromAssetLock (which creates AddToCredits, not SetCredits)
+    /// 2. Runs 70+ blocks to trigger compaction (threshold is 64 blocks)
+    /// 3. Verifies the compacted data has AddToCreditsOperations with preserved block heights
+    /// 4. Simulates a client sync scenario where we filter by block height
+    #[test]
+    #[stack_size(4 * 1024 * 1024)]
+    fn run_chain_verify_add_to_credits_operations_for_partial_sync() {
+        // drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        // Only use AddressFundingFromAssetLock - no transfers that spend from addresses
+        // This ensures we only get AddToCredits operations, not SetCredits
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::AddressFundingFromCoreAssetLock(
+                        dash_to_credits!(10)..=dash_to_credits!(10),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 2..4,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        // Use 3 minute block spacing
+        // Compaction happens every 64 blocks, so we need to run at least 70 blocks
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 180000, // 3 mins
+            testing_configs: PlatformTestConfig {
+                disable_checkpoints: false,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        // Run 70 blocks to trigger compaction (threshold is 64 blocks)
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            70,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Verify we had some successful address fundings
+        let successful_fundings = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(state_transition, result)| {
+                result.code == 0
+                    && matches!(
+                        state_transition,
+                        StateTransition::AddressFundingFromAssetLock(_)
+                    )
+            })
+            .count();
+        assert!(
+            successful_fundings > 0,
+            "expected at least one successful address funding"
+        );
+
+        drop(outcome);
+
+        let platform_version = PlatformVersion::latest();
+        let platform_state = platform.platform.state.load();
+
+        // Query compacted address balance changes
+        let request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: false,
+                },
+            )),
+        };
+
+        let query_result = platform
+            .platform
+            .query_recent_compacted_address_balance_changes(
+                request,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to run query");
+
+        assert!(
+            query_result.errors.is_empty(),
+            "query errors: {:?}",
+            query_result.errors
+        );
+
+        let response = query_result.into_data().expect("expected data");
+        let versioned_result = response.version.expect("expected a version");
+
+        match versioned_result {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected a result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        // Assert we have at least one compacted entry
+                        assert!(
+                            !entries.compacted_block_changes.is_empty(),
+                            "expected at least one compacted entry after 70 blocks"
+                        );
+
+                        let mut total_add_operations = 0usize;
+                        let mut total_set_operations = 0usize;
+
+                        for entry in &entries.compacted_block_changes {
+                            // Assert valid block range
+                            assert!(
+                                entry.end_block_height >= entry.start_block_height,
+                                "end_block should be >= start_block"
+                            );
+                            assert!(
+                                !entry.changes.is_empty(),
+                                "compacted entry should have changes"
+                            );
+
+                            let range_start = entry.start_block_height;
+                            let range_end = entry.end_block_height;
+
+                            for change in &entry.changes {
+                                // Assert valid address
+                                let _address = PlatformAddress::from_bytes(&change.address)
+                                    .expect("should be valid address bytes");
+
+                                match &change.operation {
+                                    Some(compacted_address_balance_change::Operation::SetCredits(_)) => {
+                                        total_set_operations += 1;
+                                    }
+                                    Some(compacted_address_balance_change::Operation::AddToCreditsOperations(ops)) => {
+                                        total_add_operations += 1;
+
+                                        // Assert entries are not empty
+                                        assert!(
+                                            !ops.entries.is_empty(),
+                                            "AddToCreditsOperations should have at least one entry"
+                                        );
+
+                                        // Assert all block heights are within the compacted range
+                                        for block_entry in &ops.entries {
+                                            assert!(
+                                                block_entry.block_height >= range_start
+                                                    && block_entry.block_height <= range_end,
+                                                "block height {} should be within range [{}, {}]",
+                                                block_entry.block_height,
+                                                range_start,
+                                                range_end
+                                            );
+                                            assert!(
+                                                block_entry.credits > 0,
+                                                "credits should be positive"
+                                            );
+                                        }
+
+                                        // Simulate partial sync: client synced at midpoint
+                                        let synced_at = (range_start + range_end) / 2;
+
+                                        let credits_before: u64 = ops
+                                            .entries
+                                            .iter()
+                                            .filter(|e| e.block_height <= synced_at)
+                                            .map(|e| e.credits)
+                                            .sum();
+
+                                        let credits_after: u64 = ops
+                                            .entries
+                                            .iter()
+                                            .filter(|e| e.block_height > synced_at)
+                                            .map(|e| e.credits)
+                                            .sum();
+
+                                        let total_credits: u64 =
+                                            ops.entries.iter().map(|e| e.credits).sum();
+
+                                        // Assert partition is correct
+                                        assert_eq!(
+                                            credits_before + credits_after,
+                                            total_credits,
+                                            "partitioned credits should sum to total"
+                                        );
+
+                                        // Assert we can filter by block height
+                                        let blocks_before: Vec<u64> = ops
+                                            .entries
+                                            .iter()
+                                            .filter(|e| e.block_height <= synced_at)
+                                            .map(|e| e.block_height)
+                                            .collect();
+
+                                        let blocks_after: Vec<u64> = ops
+                                            .entries
+                                            .iter()
+                                            .filter(|e| e.block_height > synced_at)
+                                            .map(|e| e.block_height)
+                                            .collect();
+
+                                        // Assert all "before" blocks are actually <= synced_at
+                                        for bh in &blocks_before {
+                                            assert!(
+                                                *bh <= synced_at,
+                                                "block {} should be <= synced_at {}",
+                                                bh,
+                                                synced_at
+                                            );
+                                        }
+
+                                        // Assert all "after" blocks are actually > synced_at
+                                        for bh in &blocks_after {
+                                            assert!(
+                                                *bh > synced_at,
+                                                "block {} should be > synced_at {}",
+                                                bh,
+                                                synced_at
+                                            );
+                                        }
+                                    }
+                                    None => {
+                                        panic!("expected operation to be present");
+                                    }
+                                }
+                            }
+                        }
+
+                        // Assert we have AddToCreditsOperations (our strategy only funds addresses)
+                        assert!(
+                            total_add_operations > 0,
+                            "expected AddToCreditsOperations since we only use AddressFundingFromAssetLock"
+                        );
+
+                        // Since we only fund addresses (no transfers that spend),
+                        // we should have mostly or all AddToCreditsOperations
+                        assert!(
+                            total_add_operations > total_set_operations,
+                            "expected more AddToCreditsOperations ({}) than SetCredits ({})",
+                            total_add_operations,
+                            total_set_operations
+                        );
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("expected entries, not proof");
                     }
                 }
             }
