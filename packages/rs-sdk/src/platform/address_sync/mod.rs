@@ -115,6 +115,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
 
     // Step 1: Execute trunk query
     let (trunk_result, checkpoint_height) = execute_trunk_query(sdk, &mut result.metrics).await?;
+    result.checkpoint_height = checkpoint_height;
 
     trace!(
         "Trunk query returned {} elements, {} leaf_keys",
