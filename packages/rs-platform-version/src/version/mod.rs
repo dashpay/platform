@@ -12,7 +12,6 @@ pub mod feature_initial_protocol_versions;
 pub mod fee;
 #[cfg(feature = "mock-versions")]
 pub mod mocks;
-pub mod patches;
 pub mod system_data_contract_versions;
 mod system_limits;
 pub mod v1;

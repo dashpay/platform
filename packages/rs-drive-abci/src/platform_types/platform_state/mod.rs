@@ -1,6 +1,5 @@
 mod accessors;
 mod masternode_list_changes;
-mod patch_platform_version;
 mod platform_state_for_saving;
 
 use crate::error::Error;
@@ -46,10 +45,6 @@ pub struct PlatformState {
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
     pub next_validator_set_quorum_hash: Option<QuorumHash>,
-    /// This is a modified current platform version based on
-    /// `current_protocol_version_in_consensus` with some function versions
-    /// changed to fix an urgent bug that is not a part of normal upgrade process
-    pub patched_platform_version: Option<&'static PlatformVersion>,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
@@ -109,7 +104,6 @@ impl Debug for PlatformState {
             )
             .field("full_masternode_list", &self.full_masternode_list)
             .field("hpmn_masternode_list", &self.hpmn_masternode_list)
-            .field("patched_platform_version", &self.patched_platform_version)
             .field("previous_fee_versions", &self.previous_fee_versions)
             .field(
                 "chain_lock_validating_quorums",
@@ -142,7 +136,6 @@ impl PlatformState {
             next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
-            patched_platform_version: None,
             validator_sets: Default::default(),
             chain_lock_validating_quorums: SignatureVerificationQuorumSet::new(
                 &config.chain_lock,
