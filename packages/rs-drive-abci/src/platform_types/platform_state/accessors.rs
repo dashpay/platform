@@ -50,7 +50,7 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo>;
     /// Returns the current protocol version that is in consensus.
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion;
-    /// Get the current platform version or patched if present
+    /// Get the current platform version
     fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
         PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::from)
     }
