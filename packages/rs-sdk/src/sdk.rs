@@ -56,6 +56,8 @@ pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The default identity nonce stale time in seconds
 pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 minutes
+/// The default metadata time tolerance for checkpoint queries in milliseconds
+const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
@@ -251,11 +253,24 @@ impl Sdk {
         response: O::Response,
     ) -> Result<Option<O>, Error>
     where
-        O::Request: Mockable,
+        O::Request: Mockable + TransportRequest,
     {
         self.parse_proof_with_metadata(request, response)
             .await
             .map(|result| result.0)
+    }
+
+    /// Return freshness criteria (height tolerance and time tolerance) for given request method.
+    fn freshness_criteria(&self, method_name: &str) -> (Option<u64>, Option<u64>) {
+        match method_name {
+            "get_addresses_trunk_state" | "get_addresses_branch_state" => {
+                (None, Some(ADDRESS_STATE_TIME_TOLERANCE_MS))
+            }
+            _ => (
+                self.metadata_height_tolerance,
+                self.metadata_time_tolerance_ms,
+            ),
+        }
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
@@ -272,7 +287,7 @@ impl Sdk {
         response: O::Response,
     ) -> Result<(Option<O>, ResponseMetadata), Error>
     where
-        O::Request: Mockable,
+        O::Request: Mockable + TransportRequest,
     {
         let (object, metadata, _proof) = self
             .parse_proof_with_metadata_and_proof(request, response)
@@ -282,15 +297,21 @@ impl Sdk {
     }
 
     /// Verify response metadata against the current state of the SDK.
-    pub fn verify_response_metadata(&self, metadata: &ResponseMetadata) -> Result<(), Error> {
-        if let Some(height_tolerance) = self.metadata_height_tolerance {
+    pub fn verify_response_metadata(
+        &self,
+        method_name: &str,
+        metadata: &ResponseMetadata,
+    ) -> Result<(), Error> {
+        let (metadata_height_tolerance, metadata_time_tolerance_ms) =
+            self.freshness_criteria(method_name);
+        if let Some(height_tolerance) = metadata_height_tolerance {
             verify_metadata_height(
                 metadata,
                 height_tolerance,
                 Arc::clone(&(self.metadata_last_seen_height)),
             )?;
         };
-        if let Some(time_tolerance) = self.metadata_time_tolerance_ms {
+        if let Some(time_tolerance) = metadata_time_tolerance_ms {
             let now = chrono::Utc::now().timestamp_millis() as u64;
             verify_metadata_time(metadata, now, time_tolerance)?;
         };
@@ -313,11 +334,12 @@ impl Sdk {
         response: O::Response,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
-        O::Request: Mockable,
+        O::Request: Mockable + TransportRequest,
     {
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
+        let method_name = request.method_name();
 
         let (object, metadata, proof) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(
@@ -334,8 +356,10 @@ impl Sdk {
             }
         }?;
 
-        // TODO: We should verify freshness (light check) before we validate proofs (heavy check)
-        self.verify_response_metadata(&metadata)?;
+        self.verify_response_metadata(method_name, &metadata)
+            .inspect_err(|err| {
+                tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
+            })?;
 
         Ok((object, metadata, proof))
     }
@@ -641,12 +665,6 @@ pub(crate) fn verify_metadata_time(
 
     // metadata_time - tolerance_ms <= now_ms <= metadata_time + tolerance_ms
     if now_ms.abs_diff(metadata_time) > tolerance_ms {
-        tracing::warn!(
-            expected_time = now_ms,
-            received_time = metadata_time,
-            tolerance_ms,
-            "received response with stale time; you should retry with another server"
-        );
         return Err(StaleNodeError::Time {
             expected_timestamp_ms: now_ms,
             received_timestamp_ms: metadata_time,
@@ -687,12 +705,6 @@ fn verify_metadata_height(
 
     // If expected_height <= tolerance, then Sdk just started, so we just assume what we got is correct.
     if expected_height > tolerance && received_height < expected_height - tolerance {
-        tracing::warn!(
-            expected_height,
-            received_height,
-            tolerance,
-            "received message with stale height; you should retry with another server"
-        );
         return Err(StaleNodeError::Height {
             expected_height,
             received_height,
@@ -1223,7 +1235,8 @@ pub fn prettify_proof(proof: &Proof) -> String {
 mod test {
     use std::sync::Arc;
 
-    use dapi_grpc::platform::v0::ResponseMetadata;
+    use dapi_grpc::platform::v0::{GetIdentityRequest, ResponseMetadata};
+    use rs_dapi_client::transport::TransportRequest;
     use test_case::test_matrix;
 
     use crate::SdkBuilder;
@@ -1268,7 +1281,9 @@ mod test {
             ..Default::default()
         };
 
-        sdk1.verify_response_metadata(&metadata)
+        // use dummy request type to satisfy generic parameter
+        let request = GetIdentityRequest::default();
+        sdk1.verify_response_metadata(request.method_name(), &metadata)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -1287,7 +1302,9 @@ mod test {
             height: 2,
             ..Default::default()
         };
-        sdk2.verify_response_metadata(&metadata)
+        // use dummy request type to satisfy generic parameter
+        let request = GetIdentityRequest::default();
+        sdk2.verify_response_metadata(request.method_name(), &metadata)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -1308,7 +1325,9 @@ mod test {
             height: 3,
             ..Default::default()
         };
-        sdk3.verify_response_metadata(&metadata)
+        // use dummy request type to satisfy generic parameter
+        let request = GetIdentityRequest::default();
+        sdk3.verify_response_metadata(request.method_name(), &metadata)
             .expect("metadata should be valid");
 
         assert_eq!(
@@ -1331,7 +1350,8 @@ mod test {
             ..Default::default()
         };
 
-        sdk1.verify_response_metadata(&metadata)
+        let request = GetIdentityRequest::default();
+        sdk1.verify_response_metadata(request.method_name(), &metadata)
             .expect_err("metadata should be invalid");
     }
 
