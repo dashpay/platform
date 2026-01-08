@@ -1,9 +1,12 @@
 use crate::execution::types::block_state_info::BlockStateInfo;
+use std::collections::BTreeMap;
 
 use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// V0 of the Block execution context
@@ -15,6 +18,8 @@ pub struct BlockExecutionContextV0 {
     pub epoch_info: EpochInfo,
     /// Unsigned withdrawal transactions to be available for extend and verify votes handlers
     pub unsigned_withdrawal_transactions: UnsignedWithdrawalTxs,
+    /// Recent address balance changes
+    pub block_address_balance_changes: BTreeMap<PlatformAddress, Credits>,
     /// Block state
     pub block_platform_state: PlatformState,
     /// The response prepare proposal if proposed by us

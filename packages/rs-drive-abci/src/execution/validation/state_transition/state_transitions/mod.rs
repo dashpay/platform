@@ -522,7 +522,7 @@ pub(in crate::execution) mod tests {
             .expect("expected to process state transition");
 
         let fee_results = processing_result.execution_results().iter().map(|result| {
-            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => fee_result);
+            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. } => fee_result);
             fee_result.clone()
         }).collect();
 
@@ -542,6 +542,7 @@ pub(in crate::execution) mod tests {
             }),
             epoch_info: EpochInfo::V0(EpochInfoV0::default()),
             unsigned_withdrawal_transactions: Default::default(),
+            block_address_balance_changes: Default::default(),
             block_platform_state: platform_state.clone(),
             proposer_results: None,
         });
@@ -885,7 +886,7 @@ pub(in crate::execution) mod tests {
             .expect("expected to commit transaction");
 
         let execution_result = processing_result.into_execution_results().remove(0);
-        assert_matches!(execution_result, SuccessfulExecution(..));
+        assert_matches!(execution_result, SuccessfulExecution { .. });
 
         data_contract
     }
@@ -1332,7 +1333,7 @@ pub(in crate::execution) mod tests {
                 .filter(|result| {
                     assert_matches!(
                         result,
-                        StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                        StateTransitionExecutionResult::SuccessfulExecution { .. }
                     );
                     true
                 })
@@ -1377,7 +1378,7 @@ pub(in crate::execution) mod tests {
             .filter(|result| {
                 assert_matches!(
                     result,
-                    StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 );
                 true
             })
@@ -1843,7 +1844,10 @@ pub(in crate::execution) mod tests {
         if let Some(expected_err) = expect_err {
             let result = processing_result.into_execution_results().remove(0);
 
-            let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result
+            let StateTransitionExecutionResult::PaidConsensusError {
+                error: consensus_error,
+                ..
+            } = result
             else {
                 panic!("expected a paid consensus error");
             };
@@ -2138,7 +2142,7 @@ pub(in crate::execution) mod tests {
             };
             assert_eq!(consensus_error.to_string(), error_msg)
         } else {
-            assert_matches!(execution_result, SuccessfulExecution(..));
+            assert_matches!(execution_result, SuccessfulExecution { .. });
         }
     }
 
@@ -2718,8 +2722,8 @@ pub(in crate::execution) mod tests {
             let execution_result = processing_result.into_execution_results().remove(0);
             assert_matches!(
                 execution_result,
-                StateTransitionExecutionResult::PaidConsensusError(err, _)
-                    if err.to_string().contains("not allowed because of the document type's creation restriction mode")
+                StateTransitionExecutionResult::PaidConsensusError{ error, .. }
+                    if error.to_string().contains("not allowed because of the document type's creation restriction mode")
             );
         }
 
@@ -2781,8 +2785,8 @@ pub(in crate::execution) mod tests {
             let execution_result = processing_result.into_execution_results().remove(0);
             assert_matches!(
                 execution_result,
-                StateTransitionExecutionResult::PaidConsensusError(err, _)
-                    if err.to_string().contains("not allowed because of the document type's creation restriction mode")
+                StateTransitionExecutionResult::PaidConsensusError{ error, .. }
+                    if error.to_string().contains("not allowed because of the document type's creation restriction mode")
             );
         }
 
@@ -2844,8 +2848,8 @@ pub(in crate::execution) mod tests {
             let execution_result = processing_result.into_execution_results().remove(0);
             assert_matches!(
                 execution_result,
-                StateTransitionExecutionResult::PaidConsensusError(err, _)
-                    if err.to_string().contains("not allowed because of the document type's creation restriction mode")
+                StateTransitionExecutionResult::PaidConsensusError{ error, .. }
+                    if error.to_string().contains("not allowed because of the document type's creation restriction mode")
             );
         }
 
@@ -2909,7 +2913,7 @@ pub(in crate::execution) mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2988,7 +2992,7 @@ pub(in crate::execution) mod tests {
 
             assert_matches!(
                 processing_result.into_execution_results().remove(0),
-                SuccessfulExecution(..)
+                SuccessfulExecution { .. }
             );
         }
 
@@ -3053,12 +3057,12 @@ pub(in crate::execution) mod tests {
                 .expect("process");
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [PaidConsensusError(
-                    ConsensusError::BasicError(
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(
                         BasicError::InvalidDocumentTransitionActionError { .. }
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
         }
     }

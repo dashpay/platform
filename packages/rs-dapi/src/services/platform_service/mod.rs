@@ -543,4 +543,16 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetAddressesBranchStateRequest,
         dapi_grpc::platform::v0::GetAddressesBranchStateResponse
     );
+
+    drive_method!(
+        get_recent_address_balance_changes,
+        dapi_grpc::platform::v0::GetRecentAddressBalanceChangesRequest,
+        dapi_grpc::platform::v0::GetRecentAddressBalanceChangesResponse
+    );
+
+    drive_method!(
+        get_recent_compacted_address_balance_changes,
+        dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesRequest,
+        dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesResponse
+    );
 }

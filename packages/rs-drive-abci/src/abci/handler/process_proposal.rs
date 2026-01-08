@@ -307,8 +307,8 @@ where
         .filter(|execution_result| {
             matches!(
                 execution_result,
-                StateTransitionExecutionResult::SuccessfulExecution(..)
-                    | StateTransitionExecutionResult::PaidConsensusError(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+                    | StateTransitionExecutionResult::PaidConsensusError { .. }
             )
         })
         .filter_map(|execution_result| {

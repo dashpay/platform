@@ -2,6 +2,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::GroveDBToUse;
+use dpp::prelude::BlockHeight;
 use dpp::version::PlatformVersion;
 use grovedb::PathBranchChunkQuery;
 
@@ -10,11 +12,13 @@ impl Drive {
         &self,
         key: Vec<u8>,
         depth: u8,
+        checkpoint_height: BlockHeight,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         self.prove_address_funds_branch_query_operations_v0(
             key,
             depth,
+            checkpoint_height,
             &mut vec![],
             platform_version,
         )
@@ -24,6 +28,7 @@ impl Drive {
         &self,
         key: Vec<u8>,
         depth: u8,
+        checkpoint_height: BlockHeight,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -48,6 +53,11 @@ impl Drive {
         let path = Self::clear_addresses_path();
         let query = PathBranchChunkQuery { path, key, depth };
 
-        self.grove_get_proved_branch_chunk_query(&query, drive_operations, &platform_version.drive)
+        self.grove_get_proved_branch_chunk_query(
+            &query,
+            GroveDBToUse::Checkpoint(checkpoint_height),
+            drive_operations,
+            &platform_version.drive,
+        )
     }
 }
