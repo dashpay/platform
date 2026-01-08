@@ -3,8 +3,8 @@ mod tests {
     use crate::addresses_with_balance::AddressesWithBalance;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::strategy::{
-        ChainExecutionOutcome, ChainExecutionParameters,
-        NetworkStrategy, StrategyRandomness, UpgradingInfo,
+        ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
+        UpgradingInfo,
     };
     use dash_platform_macros::stack_size;
     use dpp::block::epoch::Epoch;

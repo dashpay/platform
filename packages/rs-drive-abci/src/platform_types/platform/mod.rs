@@ -239,8 +239,9 @@ impl<C> Platform<C> {
         C: CoreRPCLike,
     {
         let height = platform_state.last_committed_block_height();
-        let platform_version = PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
-            .map_err(Error::from)?;
+        let platform_version =
+            PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
+                .map_err(Error::from)?;
 
         PlatformVersion::set_current(platform_version);
 
