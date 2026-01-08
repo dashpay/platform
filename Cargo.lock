@@ -1429,7 +1429,6 @@ dependencies = [
  "arc-swap",
  "assert_matches",
  "async-trait",
- "backon",
  "base64 0.22.1",
  "bip37-bloom-filter",
  "chrono",

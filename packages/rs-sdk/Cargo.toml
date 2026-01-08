@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 
 arc-swap = { version = "1.7.1" }
-backon = { version = "1.2", default-features = false }
 chrono = { version = "0.4.38" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "dash-sdk-features",
