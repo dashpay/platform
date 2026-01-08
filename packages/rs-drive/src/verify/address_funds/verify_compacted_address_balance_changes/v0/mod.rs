@@ -7,7 +7,7 @@ use dpp::address_funds::PlatformAddress;
 
 /// The subtree key for compacted address balances storage as u8
 const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
-use dpp::balances::credits::CreditOperation;
+use dpp::balances::credits::BlockAwareCreditOperation;
 use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -127,13 +127,15 @@ impl Drive {
             };
 
             // Deserialize the address balance map
-            let (address_balances, _): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode compacted address balances: {}",
-                        e
-                    )))
-                })?;
+            let (address_balances, _): (
+                BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
+                usize,
+            ) = bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
+                Error::Proof(ProofError::CorruptedProof(format!(
+                    "cannot decode compacted address balances: {}",
+                    e
+                )))
+            })?;
 
             compacted_changes.push((start_block, end_block, address_balances));
         }

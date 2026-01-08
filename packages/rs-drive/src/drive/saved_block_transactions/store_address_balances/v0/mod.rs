@@ -160,6 +160,7 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::balances::credits::BlockAwareCreditOperation;
     use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
     use dpp::version::PlatformVersion;
 
@@ -261,17 +262,24 @@ mod tests {
         assert_eq!(*start_block, 100, "start block should be 100");
         assert_eq!(*end_block, 102, "end block should be 102");
         assert_eq!(merged.len(), 3, "should have 3 addresses in merged data");
+        // Each address has AddToCredits from its respective block
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::AddToCredits(1000))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(100, 1000)].into_iter().collect()
+            ))
         );
         assert_eq!(
             merged.get(&ADDR_2),
-            Some(&CreditOperation::AddToCredits(2000))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(101, 2000)].into_iter().collect()
+            ))
         );
         assert_eq!(
             merged.get(&ADDR_3),
-            Some(&CreditOperation::AddToCredits(3000))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(102, 3000)].into_iter().collect()
+            ))
         );
     }
 
@@ -380,11 +388,14 @@ mod tests {
 
         let (_, _, merged) = &compacted[0];
         assert_eq!(merged.len(), 1, "should have 1 address");
-        // 1000 + 500 = 1500
+        // Block 100: AddToCredits(1000), Block 101: AddToCredits(500)
+        // Each block's add is preserved separately
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::AddToCredits(1500)),
-            "should merge add operations"
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(100, 1000), (101, 500)].into_iter().collect()
+            )),
+            "should preserve add operations by block"
         );
     }
 
@@ -432,7 +443,7 @@ mod tests {
         assert_eq!(merged.len(), 1, "should have 1 address");
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::SetCredits(1500)),
+            Some(&BlockAwareCreditOperation::SetCredits(1500)),
             "should merge set + add to set"
         );
     }
@@ -481,7 +492,7 @@ mod tests {
         assert_eq!(merged.len(), 1, "should have 1 address");
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::SetCredits(500)),
+            Some(&BlockAwareCreditOperation::SetCredits(500)),
             "later SetCredits should override"
         );
     }
@@ -572,22 +583,26 @@ mod tests {
             .expect("should fetch compacted changes");
         assert_eq!(compacted.len(), 2, "should have 2 compacted entries");
 
-        // First compaction: blocks 100-101 with ADDR_1 having 200 credits
+        // First compaction: blocks 100-101 with ADDR_1 having adds from both blocks
         let (start1, end1, merged1) = &compacted[0];
         assert_eq!(*start1, 100);
         assert_eq!(*end1, 101);
         assert_eq!(
             merged1.get(&ADDR_1),
-            Some(&CreditOperation::AddToCredits(200))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(100, 100), (101, 100)].into_iter().collect()
+            ))
         );
 
-        // Second compaction: blocks 200-201 with ADDR_2 having 400 credits
+        // Second compaction: blocks 200-201 with ADDR_2 having adds from both blocks
         let (start2, end2, merged2) = &compacted[1];
         assert_eq!(*start2, 200);
         assert_eq!(*end2, 201);
         assert_eq!(
             merged2.get(&ADDR_2),
-            Some(&CreditOperation::AddToCredits(400))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(200, 200), (201, 200)].into_iter().collect()
+            ))
         );
     }
 
