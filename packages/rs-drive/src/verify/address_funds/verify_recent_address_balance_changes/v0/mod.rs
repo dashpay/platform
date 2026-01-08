@@ -42,11 +42,7 @@ impl Drive {
         let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
 
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
