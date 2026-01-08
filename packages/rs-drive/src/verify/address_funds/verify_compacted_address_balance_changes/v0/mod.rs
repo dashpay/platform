@@ -58,10 +58,11 @@ impl Drive {
         // Otherwise use (start_block_height, start_block_height) since end_block >= start_block always
         let mut start_key: Option<Vec<u8>> = None;
         for (_path, key, maybe_element) in &subset_results {
-            if maybe_element.is_some() && key.len() == 16 {
-                if start_key.is_none() || key < start_key.as_ref().unwrap() {
-                    start_key = Some(key.clone());
-                }
+            if maybe_element.is_some()
+                && key.len() == 16
+                && (start_key.is_none() || key < start_key.as_ref().unwrap())
+            {
+                start_key = Some(key.clone());
             }
         }
 
