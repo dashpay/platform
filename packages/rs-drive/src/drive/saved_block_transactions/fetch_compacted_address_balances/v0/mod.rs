@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::CreditOperation;
+use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
@@ -10,8 +10,11 @@ use std::collections::BTreeMap;
 
 /// Result type for fetched compacted address balance changes
 /// Each entry is (start_block, end_block, address_balance_map)
-pub type CompactedAddressBalanceChanges =
-    Vec<(u64, u64, BTreeMap<PlatformAddress, CreditOperation>)>;
+pub type CompactedAddressBalanceChanges = Vec<(
+    u64,
+    u64,
+    BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
+)>;
 
 impl Drive {
     /// Version 0 implementation of fetching compacted address balance changes.
@@ -91,13 +94,15 @@ impl Drive {
                     )));
                 };
 
-                let (address_balances, _): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
-                    bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                            "cannot decode compacted address balances: {}",
-                            e
-                        ))))
-                    })?;
+                let (address_balances, _): (
+                    BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
+                    usize,
+                ) = bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
+                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
+                        "cannot decode compacted address balances: {}",
+                        e
+                    ))))
+                })?;
 
                 compacted_changes.push((start_block, end_block, address_balances));
             }
@@ -166,13 +171,15 @@ impl Drive {
                 )));
             };
 
-            let (address_balances, _): (BTreeMap<PlatformAddress, CreditOperation>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                        "cannot decode compacted address balances: {}",
-                        e
-                    ))))
-                })?;
+            let (address_balances, _): (
+                BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
+                usize,
+            ) = bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
+                    "cannot decode compacted address balances: {}",
+                    e
+                ))))
+            })?;
 
             compacted_changes.push((start_block, end_block, address_balances));
         }
