@@ -1090,4 +1090,132 @@ mod tests {
             panic!("expected Item element for block ranges");
         }
     }
+
+    #[test]
+    fn should_fetch_compacted_range_when_start_height_falls_within_range() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Set compaction threshold to 4 blocks so we can trigger compaction easily
+        let platform_version = create_test_platform_version_for_compaction(4, 1000);
+
+        // Store 4 blocks (100-103) to trigger compaction into range (100, 103)
+        for block_height in 100u64..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(1000));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances,
+                    block_height,
+                    1700000000000,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store block");
+        }
+
+        // Verify compaction happened - fetch from block 0 should return the compacted range
+        let all_results = drive
+            .fetch_compacted_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch compacted changes");
+
+        assert_eq!(all_results.len(), 1, "should have 1 compacted entry");
+        let (start, end, _) = &all_results[0];
+        assert_eq!(*start, 100, "compacted range should start at 100");
+        assert_eq!(*end, 103, "compacted range should end at 103");
+
+        // Now query with start_height=101, which falls WITHIN the compacted range (100-103)
+        // We should still get this range since block 101 is within it
+        let results_from_101 = drive
+            .fetch_compacted_address_balance_changes(101, None, None, &platform_version)
+            .expect("should fetch compacted changes from 101");
+
+        assert_eq!(
+            results_from_101.len(),
+            1,
+            "should include compacted range (100, 103) when querying from block 101 \
+             since 101 falls within that range"
+        );
+    }
+
+    #[test]
+    fn should_prove_and_verify_compacted_address_balances() {
+        use crate::drive::Drive;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Set compaction threshold to 4 blocks
+        let platform_version = create_test_platform_version_for_compaction(4, 1000);
+
+        // Store 4 blocks (100-103) to trigger compaction into range (100, 103)
+        for block_height in 100u64..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(1000));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances,
+                    block_height,
+                    1700000000000,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store block");
+        }
+
+        // Generate proof with limit (required for verify_query_with_absence_proof)
+        let limit = Some(100u16);
+        let proof = drive
+            .prove_compacted_address_balance_changes(0, limit, None, &platform_version)
+            .expect("should generate proof");
+
+        // Verify proof
+        let (root_hash, verified_changes) =
+            Drive::verify_compacted_address_balance_changes(&proof, 0, limit, &platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(verified_changes.len(), 1, "should have 1 compacted entry");
+        assert_eq!(verified_changes[0].0, 100, "start block should be 100");
+        assert_eq!(verified_changes[0].1, 103, "end block should be 103");
+    }
+
+    #[test]
+    fn should_prove_and_verify_with_containing_range() {
+        use crate::drive::Drive;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Set compaction threshold to 4 blocks
+        let platform_version = create_test_platform_version_for_compaction(4, 1000);
+
+        // Store 4 blocks (100-103) to trigger compaction
+        for block_height in 100u64..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(1000));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances,
+                    block_height,
+                    1700000000000,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store block");
+        }
+
+        // Generate proof starting from block 101 (which falls within range 100-103)
+        let limit = Some(100u16);
+        let proof = drive
+            .prove_compacted_address_balance_changes(101, limit, None, &platform_version)
+            .expect("should generate proof");
+
+        // Verify proof - should include range (100, 103) since 101 is within it
+        let (root_hash, verified_changes) =
+            Drive::verify_compacted_address_balance_changes(&proof, 101, limit, &platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(verified_changes.len(), 1, "should have 1 compacted entry");
+        assert_eq!(verified_changes[0].0, 100, "start block should be 100");
+        assert_eq!(verified_changes[0].1, 103, "end block should be 103");
+    }
 }

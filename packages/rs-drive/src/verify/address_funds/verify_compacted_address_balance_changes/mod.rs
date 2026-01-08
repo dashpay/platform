@@ -24,7 +24,6 @@ impl Drive {
     /// - `proof`: A byte slice containing the cryptographic proof for the compacted address balance changes.
     /// - `start_block_height`: The block height to start verifying from.
     /// - `limit`: Optional maximum number of compacted entries to verify.
-    /// - `verify_subset_of_proof`: A boolean flag indicating whether to verify only a subset of the proof.
     /// - `platform_version`: A reference to the platform version.
     ///
     /// # Returns
@@ -36,7 +35,6 @@ impl Drive {
         proof: &[u8],
         start_block_height: u64,
         limit: Option<u16>,
-        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, VerifiedCompactedAddressBalanceChanges), Error> {
         match platform_version
@@ -50,7 +48,6 @@ impl Drive {
                 proof,
                 start_block_height,
                 limit,
-                verify_subset_of_proof,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
