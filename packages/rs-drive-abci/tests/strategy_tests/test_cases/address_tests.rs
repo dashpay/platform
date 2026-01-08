@@ -2840,15 +2840,15 @@ mod tests {
             ..Default::default()
         };
 
-        // Use 20-minute block spacing to allow some entries to expire while others remain
-        // Compaction happens every 64 blocks, entries expire after 24 hours (1440 mins)
-        // With 20-min spacing, entries expire after 72 blocks (1440/20 = 72)
+        // Use 3-hour block spacing to allow some entries to expire while others remain
+        // Compaction happens every 64 blocks, entries expire after 1 week (168 hours)
+        // With 3-hour spacing, entries expire after 56 blocks (168/3 = 56)
         //
         // Timeline with 300 blocks:
-        // - Block 64: Compaction #1 → expires at block 136 → cleaned up
-        // - Block 128: Compaction #2 → expires at block 200 → cleaned up
-        // - Block 192: Compaction #3 → expires at block 264 → cleaned up
-        // - Block 256: Compaction #4 → expires at block 328 → still valid at 300!
+        // - Block 64: Compaction #1 → expires at block 120 → cleaned up
+        // - Block 128: Compaction #2 → expires at block 184 → cleaned up
+        // - Block 192: Compaction #3 → expires at block 248 → cleaned up
+        // - Block 256: Compaction #4 → expires at block 312 → still valid at 300!
         //
         // So at block 300, we should see 1 compacted entry (from block 256)
         let config = PlatformConfig {
@@ -2859,7 +2859,7 @@ mod tests {
                 verify_sum_trees: true,
                 ..Default::default()
             },
-            block_spacing_ms: 1_200_000, // 20 minutes
+            block_spacing_ms: 10_800_000, // 3 hours
             testing_configs: PlatformTestConfig {
                 disable_checkpoints: false,
                 ..PlatformTestConfig::default_minimal_verifications()
@@ -2944,13 +2944,13 @@ mod tests {
                 let result = v0.result.expect("expected a result");
                 match result {
                     get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
-                        // With 20-minute block spacing over 300 blocks:
+                        // With 3-hour block spacing over 300 blocks:
                         // - Compactions at blocks 64, 128, 192, 256
-                        // - Entries expire 72 blocks after creation (24hrs / 20mins = 72 blocks)
-                        // - Block 64 entry expires at 136 → cleaned up
-                        // - Block 128 entry expires at 200 → cleaned up
-                        // - Block 192 entry expires at 264 → cleaned up
-                        // - Block 256 entry expires at 328 → still valid at 300!
+                        // - Entries expire 56 blocks after creation (1 week / 3hrs = 56 blocks)
+                        // - Block 64 entry expires at 120 → cleaned up
+                        // - Block 128 entry expires at 184 → cleaned up
+                        // - Block 192 entry expires at 248 → cleaned up
+                        // - Block 256 entry expires at 312 → still valid at 300!
                         //
                         // We expect exactly 1 compacted entry to remain.
                         // This proves both compaction AND cleanup are working correctly.
