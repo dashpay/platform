@@ -481,10 +481,10 @@ fn process_branch_result<P: AddressProvider>(
 
 /// Extract balance from a GroveDB Element.
 ///
-/// The address funds tree stores balances as sum items.
+/// The address funds tree stores balances as items with sum items.
 fn extract_balance_from_element(element: &Element) -> u64 {
     match element {
-        Element::SumItem(value, _) => *value as u64,
+        Element::ItemWithSumItem(_, value, _) => *value as u64,
         _ => 0,
     }
 }
@@ -544,8 +544,8 @@ mod tests {
 
     #[test]
     fn test_extract_balance() {
-        let sum_item = Element::SumItem(1000, None);
-        assert_eq!(extract_balance_from_element(&sum_item), 1000);
+        let item_with_sum_item = Element::ItemWithSumItem(vec![], 1000, None);
+        assert_eq!(extract_balance_from_element(&item_with_sum_item), 1000);
 
         let item = Element::Item(vec![1, 2, 3], None);
         assert_eq!(extract_balance_from_element(&item), 0);
