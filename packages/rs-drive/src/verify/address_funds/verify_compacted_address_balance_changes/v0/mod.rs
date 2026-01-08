@@ -53,18 +53,30 @@ impl Drive {
             &platform_version.drive.grove_version,
         )?;
 
-        // Find the first entry (smallest key) from the proof
-        // If it contains start_block_height, use its exact key
-        // Otherwise use (start_block_height, start_block_height) since end_block >= start_block always
-        let mut start_key: Option<Vec<u8>> = None;
-        for (_path, key, maybe_element) in &subset_results {
-            if maybe_element.is_some()
-                && key.len() == 16
-                && (start_key.is_none() || key < start_key.as_ref().unwrap())
-            {
-                start_key = Some(key.clone());
+        // Collect results into a BTreeMap to ensure proper ordering by key
+        let results_map: BTreeMap<Vec<u8>, Element> = subset_results
+            .into_iter()
+            .filter_map(|(_, key, maybe_element)| maybe_element.map(|element| (key, element)))
+            .collect();
+
+        // Get the first entry and check if it's a containing range
+        // Only use the key from the proof if it contains start_block_height
+        // (start <= start_block_height <= end)
+        // Otherwise fall back to (start_block_height, start_block_height)
+        let start_key = results_map.first_key_value().and_then(|(key, _)| {
+            if key.len() != 16 {
+                return None;
             }
-        }
+            let start_block = u64::from_be_bytes(key[0..8].try_into().unwrap());
+            let end_block = u64::from_be_bytes(key[8..16].try_into().unwrap());
+
+            // Only return the key if it's a containing range
+            if start_block <= start_block_height && start_block_height <= end_block {
+                Some(key.clone())
+            } else {
+                None
+            }
+        });
 
         // Step 2: Verify the proof using the start_key discovered from the proof
         // The smallest key in the proof is what the prove function used as its starting point
