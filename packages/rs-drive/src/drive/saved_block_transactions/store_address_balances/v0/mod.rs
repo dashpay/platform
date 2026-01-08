@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn should_store_expiration_time_when_compacting() {
-        use crate::drive::saved_block_transactions::compact_address_balances::ONE_DAY_IN_MS;
+        use crate::drive::saved_block_transactions::compact_address_balances::ONE_WEEK_IN_MS;
         use crate::drive::saved_block_transactions::COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8;
         use grovedb::query_result_type::QueryResultType;
         use grovedb::{PathQuery, Query, SizedQuery};
@@ -941,15 +941,15 @@ mod tests {
         let key_elements = results.to_key_elements();
         assert_eq!(key_elements.len(), 1, "should have 1 expiration entry");
 
-        // Verify the key is the expiration time (block_time + 1 day)
+        // Verify the key is the expiration time (block_time + 1 week)
         let (key, element) = &key_elements[0];
         assert_eq!(key.len(), 8, "key should be 8 bytes (u64 expiration time)");
 
         let expiration_time = u64::from_be_bytes(key.as_slice().try_into().unwrap());
-        let expected_expiration = block_time_ms + ONE_DAY_IN_MS;
+        let expected_expiration = block_time_ms + ONE_WEEK_IN_MS;
         assert_eq!(
             expiration_time, expected_expiration,
-            "key should be expiration time (block_time + 1 day)"
+            "key should be expiration time (block_time + 1 week)"
         );
 
         // Verify the value is a vec of block ranges
@@ -970,7 +970,7 @@ mod tests {
 
     #[test]
     fn should_append_to_expiration_time_when_same_time() {
-        use crate::drive::saved_block_transactions::compact_address_balances::ONE_DAY_IN_MS;
+        use crate::drive::saved_block_transactions::compact_address_balances::ONE_WEEK_IN_MS;
         use crate::drive::saved_block_transactions::COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8;
         use grovedb::query_result_type::QueryResultType;
         use grovedb::{PathQuery, Query, SizedQuery};
@@ -1063,7 +1063,7 @@ mod tests {
         // Verify the key is the expiration time
         let (key, element) = &key_elements[0];
         let expiration_time = u64::from_be_bytes(key.as_slice().try_into().unwrap());
-        let expected_expiration = block_time_ms + ONE_DAY_IN_MS;
+        let expected_expiration = block_time_ms + ONE_WEEK_IN_MS;
         assert_eq!(expiration_time, expected_expiration);
 
         // Verify the value contains BOTH block ranges

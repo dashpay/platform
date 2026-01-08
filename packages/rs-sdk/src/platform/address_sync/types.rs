@@ -74,6 +74,12 @@ pub struct AddressSyncResult {
 
     /// Metrics about the sync process.
     pub metrics: AddressSyncMetrics,
+
+    /// The checkpoint height at which balances were synced.
+    ///
+    /// This is the block height from which terminal balance updates should start
+    /// to catch any changes that occurred after the checkpoint.
+    pub checkpoint_height: u64,
 }
 
 impl AddressSyncResult {
@@ -84,6 +90,7 @@ impl AddressSyncResult {
             absent: BTreeSet::new(),
             highest_found_index: None,
             metrics: AddressSyncMetrics::default(),
+            checkpoint_height: 0,
         }
     }
 
