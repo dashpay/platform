@@ -1030,7 +1030,6 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             &proof.grovedb_proof,
             start_block_height,
             limit,
-            false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
