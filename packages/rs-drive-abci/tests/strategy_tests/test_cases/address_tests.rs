@@ -2723,7 +2723,7 @@ mod tests {
 
         // Verify compacted ranges are in ascending order (sorted by start block)
         for i in 1..compacted_block_ranges.len() {
-            let (prev_start, prev_end) = compacted_block_ranges[i - 1];
+            let (_prev_start, prev_end) = compacted_block_ranges[i - 1];
             let (curr_start, _) = compacted_block_ranges[i];
 
             assert!(

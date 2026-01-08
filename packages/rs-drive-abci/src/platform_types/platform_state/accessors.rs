@@ -18,12 +18,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
-pub(super) trait PlatformStateV0PrivateMethods {
-    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>);
-}
-
 /// Platform state methods introduced in version 0 of Platform State Struct
 pub trait PlatformStateV0Methods {
     /// The last block height or 0 for genesis
@@ -209,14 +203,6 @@ pub trait PlatformStateV0Methods {
 
     /// The size of the hpmn list that are currently not banned
     fn hpmn_active_list_len(&self) -> usize;
-}
-
-impl PlatformStateV0PrivateMethods for PlatformState {
-    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
-        self.patched_platform_version = version;
-    }
 }
 
 impl PlatformStateV0Methods for PlatformState {

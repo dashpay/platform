@@ -1,6 +1,5 @@
 mod accessors;
 mod masternode_list_changes;
-mod patch_platform_version;
 mod platform_state_for_saving;
 
 use crate::error::Error;

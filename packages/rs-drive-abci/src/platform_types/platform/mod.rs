@@ -232,25 +232,15 @@ impl<C> Platform<C> {
         drive: Drive,
         core_rpc: C,
         config: PlatformConfig,
-        mut platform_state: PlatformState,
+        platform_state: PlatformState,
         checkpoint_platform_states: BTreeMap<BlockHeight, Arc<PlatformState>>,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
     {
         let height = platform_state.last_committed_block_height();
-
-        // Set patched or original platform version as current
-        let platform_version = platform_state
-            .apply_all_patches_to_platform_version_up_to_height(height)
-            .transpose()
-            .unwrap_or_else(|| {
-                let platform_version =
-                    PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
-                        .map_err(Error::from);
-
-                platform_version
-            })?;
+        let platform_version = PlatformVersion::get(platform_state.current_protocol_version_in_consensus())
+            .map_err(Error::from)?;
 
         PlatformVersion::set_current(platform_version);
 
