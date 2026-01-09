@@ -7,6 +7,7 @@ use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{extract_settings_from_options, get_user_fee_increase};
 use dash_sdk::dpp::balances::credits::TokenAmount;
+use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::tokens::builders::{
@@ -26,7 +27,6 @@ use js_sys::BigInt;
 use serde::Deserialize;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
-use dash_sdk::dpp::document::Document;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
@@ -1532,7 +1532,10 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to destroy frozen tokens: {}", e))
             })?;
 
-        Ok(TokenDestroyFrozenResultWasm::from_result(result, contract_id))
+        Ok(TokenDestroyFrozenResultWasm::from_result(
+            result,
+            contract_id,
+        ))
     }
 }
 
@@ -1757,7 +1760,10 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to perform emergency action: {}", e))
             })?;
 
-        Ok(TokenEmergencyActionResultWasm::from_result(result, contract_id))
+        Ok(TokenEmergencyActionResultWasm::from_result(
+            result,
+            contract_id,
+        ))
     }
 }
 
@@ -2431,6 +2437,9 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to purchase tokens: {}", e)))?;
 
-        Ok(TokenDirectPurchaseResultWasm::from_result(result, contract_id))
+        Ok(TokenDirectPurchaseResultWasm::from_result(
+            result,
+            contract_id,
+        ))
     }
 }

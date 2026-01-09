@@ -32,8 +32,8 @@ pub mod voting;
 
 pub use core_script::CoreScriptWasm;
 pub use identity::signer::IdentitySignerWasm;
-pub use private_key::PrivateKeyWasm;
 pub use identity::transitions::pooling::PoolingWasm;
+pub use private_key::PrivateKeyWasm;
 
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,

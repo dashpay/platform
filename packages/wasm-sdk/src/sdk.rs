@@ -162,10 +162,7 @@ impl WasmSdk {
     ///
     /// @param identityId - The identifier of the identity whose nonce cache should be cleared
     #[wasm_bindgen(js_name = "refreshIdentityNonce")]
-    pub async fn refresh_identity_nonce(
-        &self,
-        identity_id: wasm_dpp2::identifier::IdentifierWasm,
-    ) {
+    pub async fn refresh_identity_nonce(&self, identity_id: wasm_dpp2::identifier::IdentifierWasm) {
         self.0.refresh_identity_nonce(&identity_id.into()).await;
     }
 }

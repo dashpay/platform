@@ -217,13 +217,14 @@ macro_rules! impl_try_from_options {
                 options: &wasm_bindgen::JsValue,
                 field_name: &str,
             ) -> $crate::error::WasmDppResult<Self> {
-                let value_js = js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                    .map_err(|_| {
-                        $crate::error::WasmDppError::invalid_argument(format!(
-                            "Missing '{}' field",
-                            field_name
-                        ))
-                    })?;
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .map_err(|_| {
+                            $crate::error::WasmDppError::invalid_argument(format!(
+                                "Missing '{}' field",
+                                field_name
+                            ))
+                        })?;
 
                 if value_js.is_undefined() || value_js.is_null() {
                     return Err($crate::error::WasmDppError::invalid_argument(format!(
@@ -244,8 +245,9 @@ macro_rules! impl_try_from_options {
                 options: &wasm_bindgen::JsValue,
                 field_name: &str,
             ) -> $crate::error::WasmDppResult<Option<Self>> {
-                let value_js = js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                    .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
 
                 if value_js.is_undefined() || value_js.is_null() {
                     return Ok(None);
@@ -278,13 +280,14 @@ macro_rules! impl_try_from_options {
                 options: &wasm_bindgen::JsValue,
                 field_name: &str,
             ) -> $crate::error::WasmDppResult<Self> {
-                let value_js = js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                    .map_err(|_| {
-                        $crate::error::WasmDppError::invalid_argument(format!(
-                            "Missing '{}' field",
-                            field_name
-                        ))
-                    })?;
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .map_err(|_| {
+                            $crate::error::WasmDppError::invalid_argument(format!(
+                                "Missing '{}' field",
+                                field_name
+                            ))
+                        })?;
 
                 if value_js.is_undefined() || value_js.is_null() {
                     return Err($crate::error::WasmDppError::invalid_argument(format!(
