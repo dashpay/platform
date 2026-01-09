@@ -34,14 +34,14 @@ describe('Protocol versions', function describeProtocolVersions() {
     expect(res.metadata).to.be.ok();
   });
 
-  it('lists protocol upgrade vote statuses', async function listsVoteStatuses() {
+  it('lists protocol upgrade vote statuses', async () => {
     // Use evonodeProTxHash if available, otherwise start from beginning with empty string
     const startProTxHash = evonodeProTxHash || '';
     const res = await client.getProtocolVersionUpgradeVoteStatus(startProTxHash, 50);
     expect(res).to.be.instanceOf(Map);
   });
 
-  it('lists protocol upgrade vote statuses with proof', async function listsVoteStatusesWithProof() {
+  it('lists protocol upgrade vote statuses with proof', async () => {
     // Use evonodeProTxHash if available, otherwise start from beginning with empty string
     const startProTxHash = evonodeProTxHash || '';
     const res = await client.getProtocolVersionUpgradeVoteStatusWithProofInfo(startProTxHash, 50);

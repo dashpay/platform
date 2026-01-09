@@ -23,7 +23,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     if (client) { client.free(); }
   });
 
-  it('gets epochs info and finalized epochs', async function getsEpochsInfo() {
+  it('gets epochs info and finalized epochs', async () => {
     // Get current epoch info
     const current = await client.getCurrentEpoch().catch(() => null);
     const currentIndex = current ? Number(current.index) : 0;
@@ -43,7 +43,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     expect(finalized).to.be.instanceOf(Map);
   });
 
-  it('queries evonode proposed blocks by id/range', async function queriesEvonodeBlocks() {
+  it('queries evonode proposed blocks by id/range', async () => {
     // Get current epoch
     const current = await client.getCurrentEpoch().catch(() => null);
     const epochIndex = current ? Number(current.index) : 0;
@@ -57,12 +57,13 @@ describe('Epochs and evonode blocks', function describeEpochs() {
 
     // Query by specific IDs only if we have a proTxHash
     if (evonodeProTxHash) {
-      const byIds = await client.getEvonodesProposedEpochBlocksByIds(epochIndex, [evonodeProTxHash]);
+      const byIds = await client
+        .getEvonodesProposedEpochBlocksByIds(epochIndex, [evonodeProTxHash]);
       expect(byIds).to.be.instanceOf(Map);
     }
   });
 
-  it('queries evonode proposed blocks by ids with proof', async function testEvonodeBlocksWithProof() {
+  it('queries evonode proposed blocks by ids with proof', async () => {
     const current = await client.getCurrentEpoch().catch(() => null);
     const epochIndex = current ? Number(current.index) : 0;
 
@@ -89,7 +90,8 @@ describe('Epochs and evonode blocks', function describeEpochs() {
 
     // Only test by IDs if we have a valid proTxHash
     if (testProTxHash) {
-      const res = await client.getEvonodesProposedEpochBlocksByIdsWithProofInfo(epochIndex, [testProTxHash]);
+      const res = await client
+        .getEvonodesProposedEpochBlocksByIdsWithProofInfo(epochIndex, [testProTxHash]);
       expect(res).to.be.ok();
       expect(res.data).to.be.instanceOf(Map);
       expect(res.proof).to.be.ok();
@@ -97,7 +99,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     }
   });
 
-  it('queries evonode proposed blocks by range with proof', async function testEvonodeBlocksRangeWithProof() {
+  it('queries evonode proposed blocks by range with proof', async () => {
     const current = await client.getCurrentEpoch().catch(() => null);
     const epochIndex = current ? Number(current.index) : 0;
 

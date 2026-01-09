@@ -4,7 +4,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 /**
  * Document state transition tests for wasm-sdk.
  *
- * These tests verify that document state transition methods work correctly against a local platform.
+ * Tests verify document state transition methods work correctly against a local platform.
  * They require SDK_TEST_DATA=true when starting the platform to seed test identities and contracts.
  *
  * Test identities:
@@ -40,8 +40,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     if (client) { client.free(); }
   });
 
-  describe('documentCreate', function describeDocumentCreate() {
-    it('creates a new document', async function testDocumentCreate() {
+  describe('documentCreate', () => {
+    it('creates a new document', async () => {
       // Document operations require at least HIGH security level (key index 2) for signing
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -69,12 +69,12 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       createdDocumentId = document.id;
-      expect(createdDocumentId).to.exist;
+      expect(createdDocumentId).to.exist();
     });
   });
 
-  describe('Custom contract for mutable documents', function describeCustomContract() {
-    it('creates a contract with mutable document types', async function testCreateMutableContract() {
+  describe('Custom contract for mutable documents', () => {
+    it('creates a contract with mutable document types', async () => {
       // Contract operations require at least HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -140,14 +140,14 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       // Verify the contract is available
       const fetchedContract = await client.getDataContract(testContractId);
-      expect(fetchedContract).to.exist;
+      expect(fetchedContract).to.exist();
     });
   });
 
-  describe('documentReplace', function describeDocumentReplace() {
-    it('replaces an existing document', async function testDocumentReplace() {
+  describe('documentReplace', () => {
+    it('replaces an existing document', async () => {
       // Requires contract from previous test
-      expect(testContractId).to.exist;
+      expect(testContractId).to.exist();
 
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -168,7 +168,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       mutableDocumentId = document.id;
-      expect(mutableDocumentId).to.exist;
+      expect(mutableDocumentId).to.exist();
 
       // Wait for the document to be indexed on platform
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
@@ -191,14 +191,14 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       // Document was replaced successfully if no error thrown
-      expect(true).to.be.true;
+      expect(true).to.be.true();
     });
   });
 
-  describe('documentDelete', function describeDocumentDelete() {
-    it('deletes a document', async function testDocumentDelete() {
+  describe('documentDelete', () => {
+    it('deletes a document', async () => {
       // Requires contract from previous test
-      expect(testContractId).to.exist;
+      expect(testContractId).to.exist();
 
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -219,7 +219,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       const documentId = document.id;
-      expect(documentId).to.exist;
+      expect(documentId).to.exist();
 
       // Now delete the document using object format
       await client.documentDelete({
@@ -234,14 +234,14 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       // Document was deleted successfully if no error thrown
-      expect(true).to.be.true;
+      expect(true).to.be.true();
     });
   });
 
-  describe('documentTransfer', function describeDocumentTransfer() {
-    it('transfers document ownership', async function testDocumentTransfer() {
+  describe('documentTransfer', () => {
+    it('transfers document ownership', async () => {
       // Requires contract from previous test
-      expect(testContractId).to.exist;
+      expect(testContractId).to.exist();
 
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -262,7 +262,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       const documentId = document.id;
-      expect(documentId).to.exist;
+      expect(documentId).to.exist();
 
       // Wait for the document to be indexed on platform
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
@@ -286,7 +286,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
 
       // Document was transferred successfully if no error thrown
-      expect(true).to.be.true;
+      expect(true).to.be.true();
     });
   });
 });

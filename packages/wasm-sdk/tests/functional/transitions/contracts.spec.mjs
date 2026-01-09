@@ -4,7 +4,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 /**
  * Contract state transition tests for wasm-sdk.
  *
- * These tests verify that contract state transition methods work correctly against a local platform.
+ * Tests verify contract state transition methods work correctly against a local platform.
  * They require SDK_TEST_DATA=true when starting the platform to seed test identities.
  *
  * Test identities:
@@ -33,8 +33,8 @@ describe('Contract State Transitions', function describeContractStateTransitions
     if (client) { client.free(); }
   });
 
-  describe('contractPublish', function describeContractPublish() {
-    it('creates a new data contract', async function testContractPublish() {
+  describe('contractPublish', () => {
+    it('creates a new data contract', async () => {
       // Contract operations require at least HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -79,15 +79,15 @@ describe('Contract State Transitions', function describeContractStateTransitions
 
       // Verify the contract is available by fetching it
       const fetchedContract = await client.getDataContract(createdContractId);
-      expect(fetchedContract).to.exist;
+      expect(fetchedContract).to.exist();
       expect(fetchedContract.id.toString()).to.equal(createdContractId.toString());
     });
   });
 
-  describe('contractUpdate', function describeContractUpdate() {
-    it('updates an existing data contract', async function testContractUpdate() {
+  describe('contractUpdate', () => {
+    it('updates an existing data contract', async () => {
       // Requires contract from previous test
-      expect(createdContractId).to.exist;
+      expect(createdContractId).to.exist();
 
       // Contract update requires CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -101,7 +101,7 @@ describe('Contract State Transitions', function describeContractStateTransitions
 
       // Fetch the existing contract
       const existingContract = await client.getDataContract(createdContractId);
-      expect(existingContract).to.exist;
+      expect(existingContract).to.exist();
 
       // Update the contract by adding a new document type
       // We need to increment the version and add a new document type

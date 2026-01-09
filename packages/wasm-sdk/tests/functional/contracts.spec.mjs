@@ -54,9 +54,9 @@ describe('Data contract queries', function describeDataContractQueries() {
     expect(res.proof).to.be.ok();
   });
 
-  // TODO: Skipped - returns "no available addresses" instead of actual error when proof verification fails.
-  // See packages/rs-sdk/docs/IMPROVE_RETRY_ERROR_HANDLING.md for the fix plan.
-  it.skip('getDataContractHistory() returns history for contract', async function testContractHistory() {
+  // TODO: Skipped - returns "no available addresses" instead of actual error
+  // when proof verification fails. See rs-sdk/docs/IMPROVE_RETRY_ERROR_HANDLING.md
+  it.skip('getDataContractHistory() returns history for contract', async () => {
     // Use DPNS contract to test history retrieval
     // Note: This may return an empty map if the contract has no history (version = 1)
     const res = await client.getDataContractHistory({

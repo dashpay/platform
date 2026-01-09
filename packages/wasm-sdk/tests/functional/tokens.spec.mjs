@@ -28,7 +28,7 @@ describe('Token queries', function describeTokenQueries() {
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
     const total = await client.getTokenTotalSupply(tokenId);
     // Returns total supply (might be 0 for tokens without minting)
-    expect(total).to.exist;
+    expect(total).to.exist();
   });
 
   it('getTokenStatuses for multiple tokens', async () => {

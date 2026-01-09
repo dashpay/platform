@@ -4,7 +4,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 /**
  * Identity state transition tests for wasm-sdk.
  *
- * These tests verify that identity state transition methods work correctly against a local platform.
+ * Tests verify identity state transition methods work correctly against a local platform.
  * They require SDK_TEST_DATA=true when starting the platform to seed test identities with credits.
  *
  * Test identities:
@@ -34,20 +34,21 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
   after(async () => {
     // Wait a bit for any pending operations to settle before freeing
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
     if (client) {
       try {
         client.free();
       } catch (err) {
         // Ignore errors from double-free or borrow issues
         // These can happen if a test timed out with pending operations
+        // eslint-disable-next-line no-console
         console.log('Note: client.free() error (may be harmless):', err.message);
       }
     }
   });
 
-  describe('identityCreditTransfer', function describeIdentityCreditTransfer() {
-    it('transfers credits between identities', async function testCreditTransfer() {
+  describe('identityCreditTransfer', () => {
+    it('transfers credits between identities', async () => {
       // Identity 1 transfers credits to Identity 2
       // Key index 3 is the TRANSFER purpose key (ECDSA_HASH160)
       const { signer } = createTestSignerAndKey(sdk, 1, 3);
@@ -66,20 +67,20 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
         signer,
       });
 
-      expect(result).to.exist;
-      expect(result.senderBalance).to.exist;
-      expect(result.recipientBalance).to.exist;
+      expect(result).to.exist();
+      expect(result.senderBalance).to.exist();
+      expect(result.recipientBalance).to.exist();
     });
   });
 
-  describe('identityUpdate', function describeIdentityUpdate() {
-    it('adds a new public key to identity', async function testAddPublicKey() {
+  describe('identityUpdate', () => {
+    it('adds a new public key to identity', async () => {
       // Identity update requires MASTER key (key index 0) for signing the transition
       const { signer } = createTestSignerAndKey(sdk, 1, 0);
 
       // Fetch the identity
       const identity = await client.getIdentity(testData.identityId);
-      expect(identity).to.exist;
+      expect(identity).to.exist();
 
       // Get the current number of public keys
       const publicKeysBefore = identity.getPublicKeys();
@@ -123,13 +124,13 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       expect(publicKeysAfter.length).to.equal(keyCountBefore + 1);
     });
 
-    it('disables a public key on identity', async function testDisablePublicKey() {
+    it('disables a public key on identity', async () => {
       // Identity update requires MASTER key (key index 0)
       const { signer } = createTestSignerAndKey(sdk, 1, 0);
 
       // Fetch the identity
       const identity = await client.getIdentity(testData.identityId);
-      expect(identity).to.exist;
+      expect(identity).to.exist();
 
       // Find a key that can be disabled (MEDIUM or lower security level, not master)
       const publicKeys = identity.getPublicKeys();
@@ -138,7 +139,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       );
 
       // Requires a MEDIUM key from previous test
-      expect(keyToDisable).to.exist;
+      expect(keyToDisable).to.exist();
 
       const keyIdToDisable = keyToDisable.keyId;
 
@@ -150,22 +151,23 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
       // Verify the key was disabled by fetching the identity again
       const updatedIdentity = await client.getIdentity(testData.identityId);
-      const disabledKey = updatedIdentity.getPublicKeys().find((key) => key.keyId === keyIdToDisable);
+      const disabledKey = updatedIdentity.getPublicKeys()
+        .find((key) => key.keyId === keyIdToDisable);
 
       // The key should still exist but have a disabledAt timestamp
-      expect(disabledKey).to.exist;
-      expect(disabledKey.disabledAt).to.exist;
+      expect(disabledKey).to.exist();
+      expect(disabledKey.disabledAt).to.exist();
     });
   });
 
   describe('identityWithdrawal', () => {
-    it('withdraws credits from platform', async function testWithdrawal() {
+    it('withdraws credits from platform', async () => {
       // Use the TRANSFER key (index 3) for withdrawal
       const { signer } = createTestSignerAndKey(sdk, 1, 3);
 
       // Get the identity
       const identity = await client.getIdentity(testData.identityId);
-      expect(identity).to.exist;
+      expect(identity).to.exist();
 
       // Refresh nonce to ensure we have the latest
       await client.refreshIdentityNonce(sdk.Identifier.fromBase58(testData.identityId));
@@ -180,7 +182,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
         signer,
       });
 
-      expect(remainingBalance).to.exist;
+      expect(remainingBalance).to.exist();
     });
   });
 

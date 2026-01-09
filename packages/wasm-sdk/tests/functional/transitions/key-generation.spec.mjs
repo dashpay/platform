@@ -30,12 +30,12 @@ describe('Key Generation Tests', function describeKeyGeneration() {
 
       // serde_wasm_bindgen returns Maps, so use .get() to access properties
       // Check structure of first key
-      expect(keys[0].has('keyId')).to.be.true;
-      expect(keys[0].has('privateKeyHex')).to.be.true;
-      expect(keys[0].has('publicKeyData')).to.be.true;
-      expect(keys[0].has('keyType')).to.be.true;
-      expect(keys[0].has('purpose')).to.be.true;
-      expect(keys[0].has('securityLevel')).to.be.true;
+      expect(keys[0].has('keyId')).to.be.true();
+      expect(keys[0].has('privateKeyHex')).to.be.true();
+      expect(keys[0].has('publicKeyData')).to.be.true();
+      expect(keys[0].has('keyType')).to.be.true();
+      expect(keys[0].has('purpose')).to.be.true();
+      expect(keys[0].has('securityLevel')).to.be.true();
 
       // Verify key types for authentication keys (ECDSA_SECP256K1)
       expect(keys[0].get('keyType')).to.equal('ECDSA_SECP256K1');
@@ -78,9 +78,9 @@ describe('Key Generation Tests', function describeKeyGeneration() {
     it('creates a signer and identity key', () => {
       const { signer, identityKey, keyInfo } = createTestSignerAndKey(sdk, 1, 2);
 
-      expect(signer).to.exist;
-      expect(identityKey).to.exist;
-      expect(keyInfo).to.exist;
+      expect(signer).to.exist();
+      expect(identityKey).to.exist();
+      expect(keyInfo).to.exist();
 
       // Check signer has the key
       expect(signer.keyCount).to.equal(1);

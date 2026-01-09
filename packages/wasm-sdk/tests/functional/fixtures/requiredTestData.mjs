@@ -31,7 +31,6 @@ export function wasmFunctionalTestRequirements() {
 /**
  * Helper to get test identity keys for state transition tests.
  * Keys are generated deterministically from the seed (identity ID's first byte).
- *
  * @param {object} sdk - The WasmSdk instance
  * @param {number} seed - Seed for deterministic key generation (1, 2, or 3 for test identities)
  * @returns {Array} Array of key objects with keyId, privateKeyHex, publicKeyHash, etc.
@@ -42,8 +41,7 @@ export function getTestIdentityKeys(sdk, seed) {
 
 /**
  * Creates a signer and identity key for state transition tests.
- *
- * @param {object} sdkModule - The SDK module containing IdentitySigner, IdentityPublicKey, and PrivateKey classes
+ * @param {object} sdkModule - SDK module with IdentitySigner, IdentityPublicKey, PrivateKey
  * @param {number} seed - Seed for deterministic key generation
  * @param {number} keyIndex - Which key to use:
  *   - 0 = MASTER level AUTHENTICATION key (ECDSA_SECP256K1)

@@ -40,8 +40,8 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     if (client) { client.free(); }
   });
 
-  describe('tokenTransfer', function describeTokenTransfer() {
-    it('transfers tokens between identities', async function testTokenTransfer() {
+  describe('tokenTransfer', () => {
+    it('transfers tokens between identities', async () => {
       // Identity 1 transfers to Identity 3 (which exists in genesis state)
       // Identity 1 has 100 tokens on TOKEN_0
       // Token operations require CRITICAL security level (key index 1)
@@ -57,13 +57,13 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         signer,
       });
 
-      expect(result).to.exist;
-      expect(result.senderBalance).to.exist;
+      expect(result).to.exist();
+      expect(result.senderBalance).to.exist();
     });
   });
 
-  describe('tokenBurn', function describeTokenBurn() {
-    it('burns tokens via group action', async function testTokenBurn() {
+  describe('tokenBurn', () => {
+    it('burns tokens via group action', async () => {
       // Token 2 has group burning with Group 2 (Identity 1 and 3, required power = 1)
       // Identity 1 has power 1, so can burn alone as proposer
       // Token operations require CRITICAL security level (key index 1)
@@ -82,14 +82,14 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         groupInfo, // Required for group-managed burning
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
       // Should return group power since this is a group action
-      expect(result.groupPower).to.exist;
+      expect(result.groupPower).to.exist();
     });
   });
 
-  describe('tokenMint', function describeTokenMint() {
-    it('mints tokens via group action', async function testTokenMint() {
+  describe('tokenMint', () => {
+    it('mints tokens via group action', async () => {
       // Token 0 has group minting with Group 0 (Identity 1 and 2, required power = 1)
       // Identity 1 has power 1, so can mint alone as proposer
       // Token operations require CRITICAL security level (key index 1)
@@ -109,14 +109,14 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         groupInfo, // Required for group-managed minting
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
       // Should have group power since this is a group action
-      expect(result.groupPower).to.exist;
+      expect(result.groupPower).to.exist();
     });
   });
 
-  describe('tokenFreeze', function describeTokenFreeze() {
-    it('freezes an identity token balance', async function testTokenFreeze() {
+  describe('tokenFreeze', () => {
+    it('freezes an identity token balance', async () => {
       // Contract owner (Identity 1) can freeze tokens
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -130,12 +130,12 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         signer,
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
     });
   });
 
-  describe('tokenUnfreeze', function describeTokenUnfreeze() {
-    it('unfreezes an identity token balance', async function testTokenUnfreeze() {
+  describe('tokenUnfreeze', () => {
+    it('unfreezes an identity token balance', async () => {
       // Identity 2 is already frozen on TOKEN_0 in genesis state
       // Contract owner (Identity 1) can unfreeze
       // Token operations require CRITICAL security level (key index 1)
@@ -150,12 +150,12 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         signer,
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
     });
   });
 
-  describe('tokenEmergencyAction', function describeTokenEmergencyAction() {
-    it('pauses a token', async function testTokenPause() {
+  describe('tokenEmergencyAction', () => {
+    it('pauses a token', async () => {
       // Contract owner (Identity 1) can pause/resume tokens
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -169,10 +169,10 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         signer,
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
     });
 
-    it('resumes a paused token', async function testTokenResume() {
+    it('resumes a paused token', async () => {
       // Resume Token 0 that was just paused
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -186,12 +186,12 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         signer,
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
     });
   });
 
-  describe('tokenSetPrice', function describeTokenSetPrice() {
-    it('sets a direct purchase price for tokens', async function testTokenSetPrice() {
+  describe('tokenSetPrice', () => {
+    it('sets a direct purchase price for tokens', async () => {
       // Contract owner (Identity 1) can set token prices
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -205,7 +205,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
         signer,
       });
 
-      expect(result).to.exist;
+      expect(result).to.exist();
     });
   });
 });

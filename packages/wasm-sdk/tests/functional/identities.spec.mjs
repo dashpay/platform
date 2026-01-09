@@ -139,7 +139,7 @@ describe('Identity queries', function describeBlock() {
     // that create documents, the nonce will be a bigint. We accept both.
     const nonce = await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
     // Nonce is either null (never used) or a bigint (has been used)
-    expect(nonce === null || typeof nonce === 'bigint').to.be.true;
+    expect(nonce === null || typeof nonce === 'bigint').to.be.true();
 
     const keys = await client.getIdentityKeys({
       identityId: TEST_IDENTITY,
