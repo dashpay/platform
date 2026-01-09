@@ -104,6 +104,7 @@ impl IdentitySignerWasm {
     /// Get the public key hash from an identity public key.
     /// For ECDSA_HASH160: the key data is already the hash.
     /// For ECDSA_SECP256K1: compute hash160 of the compressed public key.
+    #[allow(clippy::result_large_err)]
     fn get_key_hash(identity_public_key: &IdentityPublicKey) -> Result<[u8; 20], ProtocolError> {
         let key_data = identity_public_key.data().as_slice();
 
