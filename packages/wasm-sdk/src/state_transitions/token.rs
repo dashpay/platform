@@ -1140,6 +1140,11 @@ export interface TokenUnfreezeOptions {
   publicNote?: string;
 
   /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
    * Signer containing the private key for the authority's authentication key.
    * Use IdentitySigner to add the authentication key before calling.
    */
@@ -1593,6 +1598,11 @@ export interface TokenEmergencyActionOptions {
   publicNote?: string;
 
   /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
    * Signer containing the private key for the authority's authentication key.
    * Use IdentitySigner to add the authentication key before calling.
    */
@@ -2030,6 +2040,11 @@ export interface TokenSetPriceOptions {
   publicNote?: string;
 
   /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
    * Signer containing the private key for the authority's authentication key.
    * Use IdentitySigner to add the authentication key before calling.
    */
@@ -2295,6 +2310,11 @@ export interface TokenDirectPurchaseOptions {
    * The actual cost may be less if the token price is lower.
    */
   maxTotalCost: bigint | number;
+
+  /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
 
   /**
    * Signer containing the private key for the buyer's authentication key.
