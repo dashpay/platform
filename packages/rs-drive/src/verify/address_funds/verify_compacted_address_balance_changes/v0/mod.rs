@@ -18,10 +18,10 @@ impl Drive {
     /// Verifies compacted address balance changes proof.
     ///
     /// Verification is done in two steps:
-    /// 1. First verify as SUBSET to examine what's in the proof and determine
-    ///    what actual_start_block was used when generating the proof.
-    /// 2. Then verify the main ascending query (not as subset) using the exact
-    ///    same query that was used for proving.
+    /// 1. First query in descending order to find a compacted range that might
+    ///    contain start_block_height (e.g., range 50-150 when querying from block 100).
+    /// 2. Then verify the main ascending query using the discovered start key,
+    ///    or fall back to (start_block_height, start_block_height) if no containing range.
     pub(super) fn verify_compacted_address_balance_changes_v0(
         proof: &[u8],
         start_block_height: u64,
@@ -37,14 +37,19 @@ impl Drive {
             .with_big_endian()
             .with_no_limit();
 
-        // Step 1: Use subset query with insert_all() to examine everything in the proof
-        // This allows us to find entries that might start before start_block_height
-        // but contain it (e.g., range 100-200 when querying from block 150)
-        let mut subset_query = Query::new();
-        subset_query.insert_all();
+        // Step 1: Query in descending order to find the closest entry before start_block_height.
+        // This finds compacted ranges that might contain our start_block_height
+        // (e.g., range 50-150 when querying from block 100).
+        let mut subset_query = Query::new_with_direction(false);
+
+        let mut key = Vec::with_capacity(16);
+        key.extend_from_slice(&start_block_height.to_be_bytes());
+        key.extend_from_slice(&start_block_height.to_be_bytes());
+
+        subset_query.insert_range_to(..key);
 
         let subset_path_query =
-            PathQuery::new(path.clone(), SizedQuery::new(subset_query, None, None));
+            PathQuery::new(path.clone(), SizedQuery::new(subset_query, Some(1), None));
 
         // Use verify_subset_query to look at what's in the proof
         let (root_hash, subset_results) = GroveDb::verify_subset_query(
