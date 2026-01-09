@@ -84,19 +84,36 @@ impl DocumentQuery {
 
     /// Create new document query for provided document type name and data contract ID.
     ///
-    /// Note that this method will fetch data contract first.
+    /// This method first checks the context provider's cache for the data contract.
+    /// If not found in cache, it fetches from the network.
     pub async fn new_with_data_contract_id(
         api: &Sdk,
         data_contract_id: Identifier,
         document_type_name: &str,
     ) -> Result<Self, Error> {
-        let data_contract =
-            DataContract::fetch(api, data_contract_id)
-                .await?
-                .ok_or(Error::MissingDependency(
-                    "DataContract".to_string(),
-                    format!("data contract {} not found", data_contract_id),
-                ))?;
+        // First, try to get from context provider cache
+        let cached_contract = if let Some(provider) = api.context_provider() {
+            provider
+                .get_data_contract(&data_contract_id, api.version())
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+
+        // If not in cache, fetch from network
+        let data_contract = match cached_contract {
+            Some(contract) => contract,
+            None => {
+                let contract = DataContract::fetch(api, data_contract_id)
+                    .await?
+                    .ok_or(Error::MissingDependency(
+                        "DataContract".to_string(),
+                        format!("data contract {} not found", data_contract_id),
+                    ))?;
+                Arc::new(contract)
+            }
+        };
 
         Self::new(data_contract, document_type_name)
     }
