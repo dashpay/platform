@@ -189,9 +189,6 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         identityKey,
         signer,
       });
-
-      // Document was replaced successfully if no error thrown
-      expect(true).to.be.true();
     });
   });
 
@@ -232,9 +229,6 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         identityKey,
         signer,
       });
-
-      // Document was deleted successfully if no error thrown
-      expect(true).to.be.true();
     });
   });
 
@@ -284,9 +278,6 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         identityKey,
         signer,
       });
-
-      // Document was transferred successfully if no error thrown
-      expect(true).to.be.true();
     });
   });
 });
