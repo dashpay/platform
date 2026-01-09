@@ -857,26 +857,3 @@ impl WasmSdk {
         Ok(())
     }
 }
-
-/// Check if an ECDSA-derived public key matches an identity's public key.
-/// Supports ECDSA_SECP256K1 (33-byte comparison) and ECDSA_HASH160 (20-byte comparison).
-/// Returns false for non-ECDSA key types (BLS, EdDSA, etc.) since they require different derivation.
-fn ecdsa_public_key_matches_identity_key(
-    public_key_bytes: &[u8],   // 33-byte compressed secp256k1 public key
-    public_key_hash160: &[u8], // 20-byte hash160 of the public key
-    key: &IdentityPublicKey,
-) -> bool {
-    match key.key_type() {
-        KeyType::ECDSA_SECP256K1 => {
-            // Compare full 33-byte compressed public key
-            key.data().as_slice() == public_key_bytes
-        }
-        KeyType::ECDSA_HASH160 => {
-            // Compare 20-byte hash160
-            key.data().as_slice() == public_key_hash160
-        }
-        // BLS12_381 keys require separate BLS key derivation - not supported via ECDSA private key
-        // BIP13_SCRIPT_HASH and EDDSA_25519_HASH160 are also not derivable from ECDSA private key
-        _ => false,
-    }
-}

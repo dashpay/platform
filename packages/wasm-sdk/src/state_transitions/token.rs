@@ -57,28 +57,26 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-        // Add the contract to the context provider's cache if using trusted mode
+        // Add the contract to the context provider's cache if using trusted mode.
+        // If the trusted context is not initialized, silently skip caching (non-trusted flow).
         match sdk.network {
             dash_sdk::dpp::dashcore::Network::Testnet => {
                 let guard = crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                let context = guard.as_ref().ok_or_else(|| {
-                    WasmSdkError::generic("Testnet trusted context not initialized")
-                })?;
-                context.add_known_contract(data_contract.clone());
+                if let Some(context) = guard.as_ref() {
+                    context.add_known_contract(data_contract.clone());
+                }
             }
             dash_sdk::dpp::dashcore::Network::Dash => {
                 let guard = crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                let context = guard.as_ref().ok_or_else(|| {
-                    WasmSdkError::generic("Mainnet trusted context not initialized")
-                })?;
-                context.add_known_contract(data_contract.clone());
+                if let Some(context) = guard.as_ref() {
+                    context.add_known_contract(data_contract.clone());
+                }
             }
             dash_sdk::dpp::dashcore::Network::Regtest => {
                 let guard = crate::sdk::LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                let context = guard.as_ref().ok_or_else(|| {
-                    WasmSdkError::generic("Local trusted context not initialized")
-                })?;
-                context.add_known_contract(data_contract.clone());
+                if let Some(context) = guard.as_ref() {
+                    context.add_known_contract(data_contract.clone());
+                }
             }
             network => {
                 return Err(WasmSdkError::generic(format!(
@@ -212,7 +210,7 @@ impl TokenMintResultWasm {
     /// The recipient's identity ID (for balance results).
     #[wasm_bindgen(getter = "recipientId")]
     pub fn recipient_id(&self) -> Option<IdentifierWasm> {
-        self.recipient_id.clone()
+        self.recipient_id
     }
 
     /// The new token balance after minting.
@@ -261,14 +259,14 @@ impl TokenMintResultWasm {
             MintResult::GroupActionWithDocument(power, doc) => TokenMintResultWasm {
                 recipient_id: None,
                 new_balance: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 group_action_status: None,
                 document: doc.map(|d| document_to_wasm(d, contract_id, "mint")),
             },
             MintResult::GroupActionWithBalance(power, status, balance) => TokenMintResultWasm {
                 recipient_id: None,
                 new_balance: balance,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 group_action_status: Some(format!("{:?}", status)),
                 document: None,
             },
@@ -469,7 +467,7 @@ impl TokenBurnResultWasm {
     /// The owner's identity ID (for balance results).
     #[wasm_bindgen(getter = "ownerId")]
     pub fn owner_id(&self) -> Option<IdentifierWasm> {
-        self.owner_id.clone()
+        self.owner_id
     }
 
     /// The remaining token balance after burning.
@@ -518,14 +516,14 @@ impl TokenBurnResultWasm {
             BurnResult::GroupActionWithDocument(power, doc) => TokenBurnResultWasm {
                 owner_id: None,
                 remaining_balance: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 group_action_status: None,
                 document: doc.map(|d| document_to_wasm(d, contract_id, "burn")),
             },
             BurnResult::GroupActionWithBalance(power, status, balance) => TokenBurnResultWasm {
                 owner_id: None,
                 remaining_balance: balance,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 group_action_status: Some(format!("{:?}", status)),
                 document: None,
             },
@@ -750,16 +748,19 @@ impl TokenTransferResultWasm {
 
 impl TokenTransferResultWasm {
     /// Convert from SDK TransferResult with the required contract context
-    fn from_result(result: TransferResult, contract_id: Identifier) -> Self {
+    fn from_result(
+        result: TransferResult,
+        contract_id: Identifier,
+        sender_id: Identifier,
+        recipient_id: Identifier,
+    ) -> Self {
         match result {
             TransferResult::IdentitiesBalances(balances) => {
-                // Get the first two balances (sender and recipient)
-                let mut iter = balances.into_values();
-                let first_balance = iter.next();
-                let second_balance = iter.next();
+                // Look up balances by their specific identity IDs
+                // (BTreeMap iteration order is by key, not insertion order)
                 TokenTransferResultWasm {
-                    sender_balance: first_balance,
-                    recipient_balance: second_balance,
+                    sender_balance: balances.get(&sender_id).copied(),
+                    recipient_balance: balances.get(&recipient_id).copied(),
                     group_power: None,
                     document: None,
                 }
@@ -773,7 +774,7 @@ impl TokenTransferResultWasm {
             TransferResult::GroupActionWithDocument(power, doc) => TokenTransferResultWasm {
                 sender_balance: None,
                 recipient_balance: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 document: doc.map(|d| document_to_wasm(d, contract_id, "transfer")),
             },
         }
@@ -856,7 +857,12 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to transfer tokens: {}", e)))?;
 
-        Ok(TokenTransferResultWasm::from_result(result, contract_id))
+        Ok(TokenTransferResultWasm::from_result(
+            result,
+            contract_id,
+            sender_id,
+            recipient_id,
+        ))
     }
 }
 
@@ -968,7 +974,7 @@ impl TokenFreezeResultWasm {
     /// The identity ID that was frozen.
     #[wasm_bindgen(getter = "frozenIdentityId")]
     pub fn frozen_identity_id(&self) -> Option<IdentifierWasm> {
-        self.frozen_identity_id.clone()
+        self.frozen_identity_id
     }
 
     /// The accumulated group power (for group actions).
@@ -1000,12 +1006,12 @@ impl TokenFreezeResultWasm {
             },
             FreezeResult::GroupActionWithDocument(power, doc) => TokenFreezeResultWasm {
                 frozen_identity_id: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 document: doc.map(|d| document_to_wasm(d, contract_id, "freeze")),
             },
             FreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenFreezeResultWasm {
                 frozen_identity_id: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 document: None,
             },
         }
@@ -1199,7 +1205,7 @@ impl TokenUnfreezeResultWasm {
     /// The identity ID that was unfrozen.
     #[wasm_bindgen(getter = "unfrozenIdentityId")]
     pub fn unfrozen_identity_id(&self) -> Option<IdentifierWasm> {
-        self.unfrozen_identity_id.clone()
+        self.unfrozen_identity_id
     }
 
     /// The accumulated group power (for group actions).
@@ -1231,12 +1237,12 @@ impl TokenUnfreezeResultWasm {
             },
             UnfreezeResult::GroupActionWithDocument(power, doc) => TokenUnfreezeResultWasm {
                 unfrozen_identity_id: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 document: doc.map(|d| document_to_wasm(d, contract_id, "unfreeze")),
             },
             UnfreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenUnfreezeResultWasm {
                 unfrozen_identity_id: None,
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 document: None,
             },
         }
@@ -1447,7 +1453,7 @@ impl TokenDestroyFrozenResultWasm {
             },
             DestroyFrozenFundsResult::GroupActionWithDocument(power, doc) => {
                 TokenDestroyFrozenResultWasm {
-                    group_power: Some(power as u32),
+                    group_power: Some(power),
                     document: doc.map(|d| document_to_wasm(d, contract_id, "destroyFrozenFunds")),
                 }
             }
@@ -1664,7 +1670,7 @@ impl TokenEmergencyActionResultWasm {
             },
             EmergencyActionResult::GroupActionWithDocument(power, doc) => {
                 TokenEmergencyActionResultWasm {
-                    group_power: Some(power as u32),
+                    group_power: Some(power),
                     document: doc.map(|d| document_to_wasm(d, contract_id, "emergencyAction")),
                 }
             }
@@ -1885,7 +1891,7 @@ impl TokenClaimResultWasm {
                 document: Some(document_to_wasm(doc, contract_id, "claim")),
             },
             ClaimResult::GroupActionWithDocument(power, doc) => TokenClaimResultWasm {
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 document: Some(document_to_wasm(doc, contract_id, "claim")),
             },
         }
@@ -2116,13 +2122,13 @@ impl TokenSetPriceResultWasm {
                 document: Some(document_to_wasm(doc, contract_id, "directPricing")),
             },
             SetPriceResult::GroupActionWithDocument(power, doc) => TokenSetPriceResultWasm {
-                group_power: Some(power as u32),
+                group_power: Some(power),
                 group_action_status: None,
                 document: doc.map(|d| document_to_wasm(d, contract_id, "directPricing")),
             },
             SetPriceResult::GroupActionWithPricingSchedule(power, status, _schedule) => {
                 TokenSetPriceResultWasm {
-                    group_power: Some(power as u32),
+                    group_power: Some(power),
                     group_action_status: Some(format!("{:?}", status)),
                     document: None,
                 }
@@ -2321,7 +2327,7 @@ impl TokenDirectPurchaseResultWasm {
     /// The buyer's identity ID.
     #[wasm_bindgen(getter = "buyerId")]
     pub fn buyer_id(&self) -> Option<IdentifierWasm> {
-        self.buyer_id.clone()
+        self.buyer_id
     }
 
     /// The buyer's new balance after purchase.
@@ -2365,7 +2371,7 @@ impl TokenDirectPurchaseResultWasm {
                 TokenDirectPurchaseResultWasm {
                     buyer_id: None,
                     new_balance: None,
-                    group_power: Some(power as u32),
+                    group_power: Some(power),
                     document: doc.map(|d| document_to_wasm(d, contract_id, "directPurchase")),
                 }
             }

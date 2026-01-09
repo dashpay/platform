@@ -113,11 +113,6 @@ impl WasmSdk {
 }
 
 impl WasmSdk {
-    /// Clone the inner Sdk (not exposed to WASM)
-    pub(crate) fn inner_clone(&self) -> Sdk {
-        self.0.clone()
-    }
-
     /// Add a data contract to the context provider's cache.
     /// This is needed so that subsequent operations (like document transitions)
     /// can verify proofs that reference this contract.
