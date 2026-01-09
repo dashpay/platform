@@ -5,7 +5,6 @@ describe('IdentitiesFacade', () => {
   let wasmSdk;
   let client;
   let identity;
-  let identityKey;
   let signer;
   let assetLockProof;
   let assetLockPrivateKey;
@@ -19,7 +18,6 @@ describe('IdentitiesFacade', () => {
 
     // Create mock objects
     identity = Object.create(wasmSDKPackage.Identity.prototype);
-    identityKey = Object.create(wasmSDKPackage.IdentityPublicKey.prototype);
     signer = Object.create(wasmSDKPackage.IdentitySigner.prototype);
     assetLockProof = Object.create(wasmSDKPackage.AssetLockProof.prototype);
     assetLockPrivateKey = Object.create(wasmSDKPackage.PrivateKey.prototype);
@@ -178,8 +176,10 @@ describe('IdentitiesFacade', () => {
       await client.identities.contractNonce(identityId, contractId);
       await client.identities.contractNonceWithProof(identityId, contractId);
 
-      expect(wasmSdk.getIdentityContractNonce).to.be.calledOnceWithExactly(identityId, contractId);
-      expect(wasmSdk.getIdentityContractNonceWithProofInfo).to.be.calledOnceWithExactly(identityId, contractId);
+      expect(wasmSdk.getIdentityContractNonce)
+        .to.be.calledOnceWithExactly(identityId, contractId);
+      expect(wasmSdk.getIdentityContractNonceWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, contractId);
     });
 
     it('balance() and balances() fetch identity credits', async () => {
@@ -206,8 +206,10 @@ describe('IdentitiesFacade', () => {
       await client.identities.balanceAndRevision(identityId);
       await client.identities.balanceAndRevisionWithProof(identityId);
 
-      expect(wasmSdk.getIdentityBalanceAndRevision).to.be.calledOnceWithExactly(identityId);
-      expect(wasmSdk.getIdentityBalanceAndRevisionWithProofInfo).to.be.calledOnceWithExactly(identityId);
+      expect(wasmSdk.getIdentityBalanceAndRevision)
+        .to.be.calledOnceWithExactly(identityId);
+      expect(wasmSdk.getIdentityBalanceAndRevisionWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId);
     });
 
     it('byPublicKeyHash() looks up identity by public key hash', async () => {
@@ -216,8 +218,10 @@ describe('IdentitiesFacade', () => {
       await client.identities.byPublicKeyHash(publicKeyHash);
       await client.identities.byPublicKeyHashWithProof(publicKeyHash);
 
-      expect(wasmSdk.getIdentityByPublicKeyHash).to.be.calledOnceWithExactly(publicKeyHash);
-      expect(wasmSdk.getIdentityByPublicKeyHashWithProofInfo).to.be.calledOnceWithExactly(publicKeyHash);
+      expect(wasmSdk.getIdentityByPublicKeyHash)
+        .to.be.calledOnceWithExactly(publicKeyHash);
+      expect(wasmSdk.getIdentityByPublicKeyHashWithProofInfo)
+        .to.be.calledOnceWithExactly(publicKeyHash);
     });
 
     it('byNonUniquePublicKeyHash() supports pagination cursor', async () => {
@@ -227,8 +231,10 @@ describe('IdentitiesFacade', () => {
       await client.identities.byNonUniquePublicKeyHash(publicKeyHash, startAfter);
       await client.identities.byNonUniquePublicKeyHashWithProof(publicKeyHash);
 
-      expect(wasmSdk.getIdentityByNonUniquePublicKeyHash).to.be.calledOnceWithExactly(publicKeyHash, startAfter);
-      expect(wasmSdk.getIdentityByNonUniquePublicKeyHashWithProofInfo).to.be.calledOnceWithExactly(publicKeyHash, undefined);
+      expect(wasmSdk.getIdentityByNonUniquePublicKeyHash)
+        .to.be.calledOnceWithExactly(publicKeyHash, startAfter);
+      expect(wasmSdk.getIdentityByNonUniquePublicKeyHashWithProofInfo)
+        .to.be.calledOnceWithExactly(publicKeyHash, undefined);
     });
 
     it('contractKeys() fetches contract-bound keys for identities', async () => {
@@ -250,8 +256,10 @@ describe('IdentitiesFacade', () => {
       await client.identities.tokenBalances(identityId, tokenIds);
       await client.identities.tokenBalancesWithProof(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenBalances).to.be.calledOnceWithExactly(identityId, tokenIds);
-      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo).to.be.calledOnceWithExactly(identityId, tokenIds);
+      expect(wasmSdk.getIdentityTokenBalances)
+        .to.be.calledOnceWithExactly(identityId, tokenIds);
+      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
   });
 

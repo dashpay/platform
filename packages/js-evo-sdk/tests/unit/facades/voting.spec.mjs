@@ -111,7 +111,8 @@ describe('VotingFacade', () => {
 
       await client.voting.contestedResourceIdentityVotesWithProof(query);
 
-      expect(wasmSdk.getContestedResourceIdentityVotesWithProofInfo).to.be.calledOnceWithExactly(query);
+      expect(wasmSdk.getContestedResourceIdentityVotesWithProofInfo)
+        .to.be.calledOnceWithExactly(query);
     });
 
     it('votePollsByEndDate() fetches active vote polls within a time range', async () => {

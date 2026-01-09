@@ -75,7 +75,8 @@ describe('DocumentsFacade', () => {
 
       await client.documents.get(contractId, documentTypeName, documentId);
 
-      expect(wasmSdk.getDocument).to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
+      expect(wasmSdk.getDocument)
+        .to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
     });
 
     it('getWithProof() fetches a single document with proof', async () => {
@@ -85,7 +86,8 @@ describe('DocumentsFacade', () => {
 
       await client.documents.getWithProof(contractId, documentTypeName, documentId);
 
-      expect(wasmSdk.getDocumentWithProofInfo).to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
+      expect(wasmSdk.getDocumentWithProofInfo)
+        .to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
     });
   });
 

@@ -131,7 +131,8 @@ describe('TokensFacade', () => {
 
       await client.tokens.priceByContract(contractId, tokenPosition);
 
-      expect(wasmSdk.getTokenPriceByContract).to.be.calledOnceWithExactly(contractId, tokenPosition);
+      expect(wasmSdk.getTokenPriceByContract)
+        .to.be.calledOnceWithExactly(contractId, tokenPosition);
     });
 
     it('totalSupply() fetches total supply of a token', async () => {
@@ -175,7 +176,8 @@ describe('TokensFacade', () => {
 
       await client.tokens.balancesWithProof(identityIds, tokenId);
 
-      expect(wasmSdk.getIdentitiesTokenBalancesWithProofInfo).to.be.calledOnceWithExactly(identityIds, tokenId);
+      expect(wasmSdk.getIdentitiesTokenBalancesWithProofInfo)
+        .to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
     it('identityBalances() fetches balances for multiple tokens of one identity', async () => {
@@ -191,7 +193,8 @@ describe('TokensFacade', () => {
 
       await client.tokens.identityBalancesWithProof(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo).to.be.calledOnceWithExactly(identityId, tokenIds);
+      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
     it('identityTokenInfos() fetches token info for an identity', async () => {
@@ -215,7 +218,8 @@ describe('TokensFacade', () => {
 
       await client.tokens.identityTokenInfosWithProof(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenInfosWithProofInfo).to.be.calledOnceWithExactly(identityId, tokenIds);
+      expect(wasmSdk.getIdentityTokenInfosWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
     it('identitiesTokenInfosWithProof() fetches multiple identities info with proof', async () => {
@@ -223,7 +227,8 @@ describe('TokensFacade', () => {
 
       await client.tokens.identitiesTokenInfosWithProof(identityIds, tokenId);
 
-      expect(wasmSdk.getIdentitiesTokenInfosWithProofInfo).to.be.calledOnceWithExactly(identityIds, tokenId);
+      expect(wasmSdk.getIdentitiesTokenInfosWithProofInfo)
+        .to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
     it('directPurchasePrices() fetches purchase prices for tokens', async () => {
@@ -239,7 +244,8 @@ describe('TokensFacade', () => {
 
       await client.tokens.directPurchasePricesWithProof(tokenIds);
 
-      expect(wasmSdk.getTokenDirectPurchasePricesWithProofInfo).to.be.calledOnceWithExactly(tokenIds);
+      expect(wasmSdk.getTokenDirectPurchasePricesWithProofInfo)
+        .to.be.calledOnceWithExactly(tokenIds);
     });
 
     it('contractInfo() fetches token contract information', async () => {
@@ -257,13 +263,15 @@ describe('TokensFacade', () => {
     it('perpetualDistributionLastClaim() fetches last claim time', async () => {
       await client.tokens.perpetualDistributionLastClaim(identityId, tokenId);
 
-      expect(wasmSdk.getTokenPerpetualDistributionLastClaim).to.be.calledOnceWithExactly(identityId, tokenId);
+      expect(wasmSdk.getTokenPerpetualDistributionLastClaim)
+        .to.be.calledOnceWithExactly(identityId, tokenId);
     });
 
     it('perpetualDistributionLastClaimWithProof() fetches last claim with proof', async () => {
       await client.tokens.perpetualDistributionLastClaimWithProof(identityId, tokenId);
 
-      expect(wasmSdk.getTokenPerpetualDistributionLastClaimWithProofInfo).to.be.calledOnceWithExactly(identityId, tokenId);
+      expect(wasmSdk.getTokenPerpetualDistributionLastClaimWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenId);
     });
   });
 
