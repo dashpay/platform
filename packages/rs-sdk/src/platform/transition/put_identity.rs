@@ -52,7 +52,7 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     /// to create an identity. Then use this method to put it to the platform.
     ///
     /// This is a preferred method, as you need to use the same nonces when creating the identity.
-    async fn put_with_address_funding_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
+    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -105,7 +105,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 
-    async fn put_with_address_funding_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
+    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,

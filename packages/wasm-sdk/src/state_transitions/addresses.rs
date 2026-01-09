@@ -2,6 +2,8 @@
 //!
 //! This module provides WASM bindings for address fund operations like transfers and withdrawals.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::error::WasmSdkError;
 use crate::queries::address::PlatformAddressInfoWasm;
 use crate::queries::utils::deserialize_required_query;
@@ -13,7 +15,10 @@ use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFu
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
-use dash_sdk::platform::{Fetch, Identifier, Identity};
+use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
+use dash_sdk::Sdk;
+use drive::dpp::fee::Credits;
+use drive::dpp::prelude::AddressNonce;
 use drive_proof_verifier::types::{AddressInfo, IndexMap};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
@@ -968,7 +973,8 @@ impl WasmSdk {
 
         // Convert inputs to map (address -> amount)
         let inputs_map = outputs_to_btree_map(parsed.inputs);
-
+        // Extend inputs with nonces
+        let inputs = fetch_nonces_into_address_map(self.inner_sdk(), inputs_map).await?;
         // Convert change output if provided
         let change_output = parsed.change_output.map(|output| output.into_inner());
 
@@ -987,7 +993,7 @@ impl WasmSdk {
         let (created_identity, address_infos) = identity
             .put_with_address_funding(
                 self.inner_sdk(),
-                inputs_map,
+                inputs,
                 change_output,
                 &identity_signer,
                 &address_signer,
@@ -1003,4 +1009,54 @@ impl WasmSdk {
             address_infos: address_infos_to_js_map(address_infos, "identity creation")?,
         })
     }
+}
+
+/// Fetch nonces for a set of Platform addresses and merge into inputs map.
+///
+/// Credits provided in the inputs_map are preserved.
+///
+/// Returns error when any address is not found or empty.
+async fn fetch_nonces_into_address_map(
+    sdk: &Sdk,
+    inputs_map: BTreeMap<PlatformAddress, Credits>,
+) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, WasmSdkError> {
+    // collect addresses
+    let input_addresses: BTreeSet<PlatformAddress> =
+        inputs_map.keys().cloned().collect::<BTreeSet<_>>();
+
+    // fetch nonces
+    let fetched_addresses = dash_sdk::query_types::AddressInfo::fetch_many(sdk, input_addresses)
+        .await
+        .map_err(|e| {
+            WasmSdkError::generic(format!(
+                "Failed to fetch address infos for identity creation: {}",
+                e
+            ))
+        })?
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|info| (k, info)))
+        .collect::<BTreeMap<_, _>>();
+
+    // sanity check
+    if inputs_map.len() != fetched_addresses.len() {
+        return Err(WasmSdkError::generic(
+            "Some input addresses were not found or are empty when fetching nonces",
+        ));
+    }
+    // merge nonces into inputs map
+    let inputs = inputs_map
+        .into_iter()
+        .zip(fetched_addresses)
+        .map(|((address_left, amount), (address_right, info))| {
+            if address_left != address_right {
+                Err(WasmSdkError::generic(
+                    "Address mismatch when merging nonces for identity creation; platform bug?",
+                ))?
+            }
+            let nonce = info.nonce;
+            Ok((address_left, (nonce, amount)))
+        })
+        .collect::<Result<BTreeMap<_, _>, WasmSdkError>>()?;
+
+    Ok(inputs)
 }
