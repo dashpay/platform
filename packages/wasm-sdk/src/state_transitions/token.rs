@@ -904,6 +904,11 @@ export interface TokenFreezeOptions {
   publicNote?: string;
 
   /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
    * Signer containing the private key for the authority's authentication key.
    * Use IdentitySigner to add the authentication key before calling.
    */
@@ -1364,6 +1369,11 @@ export interface TokenDestroyFrozenOptions {
    * Optional public note for the destruction operation.
    */
   publicNote?: string;
+
+  /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
 
   /**
    * Signer containing the private key for the authority's authentication key.
