@@ -21,15 +21,13 @@ use super::VerifiedCompactedAddressBalanceChanges;
 fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut entries = Vec::new();
 
-    for op_result in MerkProofDecoder::new(merk_proof) {
-        if let Ok(op) = op_result {
-            match op {
-                MerkProofOp::Push(MerkProofNode::KV(key, value))
-                | MerkProofOp::PushInverted(MerkProofNode::KV(key, value)) => {
-                    entries.push((key, value));
-                }
-                _ => {}
+    for op in MerkProofDecoder::new(merk_proof).flatten() {
+        match op {
+            MerkProofOp::Push(MerkProofNode::KV(key, value))
+            | MerkProofOp::PushInverted(MerkProofNode::KV(key, value)) => {
+                entries.push((key, value));
             }
+            _ => {}
         }
     }
 
