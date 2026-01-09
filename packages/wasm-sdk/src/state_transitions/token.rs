@@ -2082,13 +2082,15 @@ fn deserialize_token_set_price_options(
 /// Result of setting the token price.
 ///
 /// The result type depends on token configuration:
-/// - Standard tokens: returns pricing schedule
+/// - Standard tokens: returns pricing schedule and owner ID
 /// - Tokens with history: returns document
 /// - Group-managed tokens: returns group power and status
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenSetPriceResult")]
 pub struct TokenSetPriceResultWasm {
+    /// For PricingSchedule - the identity that set the price
+    owner_id: Option<IdentifierWasm>,
     /// For PricingSchedule or GroupActionWithPricingSchedule - the pricing schedule
     pricing_schedule: Option<TokenPricingScheduleWasm>,
     /// For group actions
@@ -2101,6 +2103,12 @@ pub struct TokenSetPriceResultWasm {
 
 #[wasm_bindgen(js_class = TokenSetPriceResult)]
 impl TokenSetPriceResultWasm {
+    /// The identity that set the price (for standard tokens).
+    #[wasm_bindgen(getter = "ownerId")]
+    pub fn owner_id(&self) -> Option<IdentifierWasm> {
+        self.owner_id
+    }
+
     /// The pricing schedule (for standard tokens or group actions without history).
     #[wasm_bindgen(getter = "pricingSchedule")]
     pub fn pricing_schedule(&self) -> Option<TokenPricingScheduleWasm> {
@@ -2130,19 +2138,22 @@ impl TokenSetPriceResultWasm {
     /// Convert from SDK SetPriceResult with the required contract context
     fn from_result(result: SetPriceResult, contract_id: Identifier) -> Self {
         match result {
-            SetPriceResult::PricingSchedule(_owner_id, schedule) => TokenSetPriceResultWasm {
+            SetPriceResult::PricingSchedule(owner_id, schedule) => TokenSetPriceResultWasm {
+                owner_id: Some(owner_id.into()),
                 pricing_schedule: schedule.map(|s| s.into()),
                 group_power: None,
                 group_action_status: None,
                 document: None,
             },
             SetPriceResult::HistoricalDocument(doc) => TokenSetPriceResultWasm {
+                owner_id: None,
                 pricing_schedule: None,
                 group_power: None,
                 group_action_status: None,
                 document: Some(document_to_wasm(doc, contract_id, "directPricing")),
             },
             SetPriceResult::GroupActionWithDocument(power, doc) => TokenSetPriceResultWasm {
+                owner_id: None,
                 pricing_schedule: None,
                 group_power: Some(power),
                 group_action_status: None,
@@ -2150,6 +2161,7 @@ impl TokenSetPriceResultWasm {
             },
             SetPriceResult::GroupActionWithPricingSchedule(power, status, schedule) => {
                 TokenSetPriceResultWasm {
+                    owner_id: None,
                     pricing_schedule: schedule.map(|s| s.into()),
                     group_power: Some(power),
                     group_action_status: Some(format!("{:?}", status)),
