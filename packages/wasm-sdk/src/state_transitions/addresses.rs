@@ -1037,7 +1037,7 @@ async fn fetch_nonces_into_address_map(
         .filter_map(|(k, v)| v.map(|info| (k, info)))
         .collect::<BTreeMap<_, _>>();
 
-    // sanity check - filter_map above shouuld have removed any non-existing addresses
+    // sanity check - filter_map above should have removed any non-existing addresses
     if inputs_map.len() != fetched_addresses.len() {
         return Err(WasmSdkError::invalid_argument(
             "Some input addresses were not found when fetching nonces",
