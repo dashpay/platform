@@ -115,16 +115,3 @@ export function createTestSignerAndKey(sdkModule, seed, keyIndex = 2) {
 
   return { signer, identityKey, keyInfo };
 }
-
-/**
- * Convert hex string to Uint8Array
- * @param {string} hex - Hex string
- * @returns {Uint8Array} Byte array
- */
-function hexToBytes(hex) {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-  }
-  return bytes;
-}
