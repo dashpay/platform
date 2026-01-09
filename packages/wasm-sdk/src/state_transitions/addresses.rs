@@ -1011,11 +1011,11 @@ impl WasmSdk {
     }
 }
 
-/// Fetch nonces for a set of Platform addresses and merge into inputs map.
+/// Fetch nonces for a set of Platform addresses and merge into provided map.
 ///
 /// Credits provided in the inputs_map are preserved.
 ///
-/// Returns error when any address is not found or empty.
+/// Returns error when any address is not found or has insufficient balance.
 async fn fetch_nonces_into_address_map(
     sdk: &Sdk,
     inputs_map: BTreeMap<PlatformAddress, Credits>,
@@ -1037,25 +1037,34 @@ async fn fetch_nonces_into_address_map(
         .filter_map(|(k, v)| v.map(|info| (k, info)))
         .collect::<BTreeMap<_, _>>();
 
-    // sanity check
+    // sanity check - filter_map above shouuld have removed any non-existing addresses
     if inputs_map.len() != fetched_addresses.len() {
-        return Err(WasmSdkError::generic(
-            "Some input addresses were not found or are empty when fetching nonces",
+        return Err(WasmSdkError::invalid_argument(
+            "Some input addresses were not found when fetching nonces",
         ));
     }
     // merge nonces into inputs map
     let inputs = inputs_map
         .into_iter()
         .zip(fetched_addresses)
-        .map(|((address_left, amount), (address_right, info))| {
-            if address_left != address_right {
-                Err(WasmSdkError::generic(
-                    "Address mismatch when merging nonces for identity creation; platform bug?",
-                ))?
-            }
-            let nonce = info.nonce;
-            Ok((address_left, (nonce, amount)))
-        })
+        .map(
+            |((address_requested, amount), (address_received, info_received))| {
+                if address_requested != address_received {
+                    Err(WasmSdkError::invalid_argument(
+                        format!("Address mismatch when merging nonces for identity creation ({} vs {}); platform bug?",
+                            address_requested, address_received)
+                    ))?
+                }
+                if amount > info_received.balance {
+                    Err(WasmSdkError::invalid_argument(format!(
+                        "Input address {} has insufficient balance: requested {}, available {}",
+                        address_requested, amount, info_received.balance
+                    )))?
+                }
+                let nonce = info_received.nonce;
+                Ok((address_requested, (nonce, amount)))
+            },
+        )
         .collect::<Result<BTreeMap<_, _>, WasmSdkError>>()?;
 
     Ok(inputs)

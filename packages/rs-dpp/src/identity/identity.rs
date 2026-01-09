@@ -125,8 +125,9 @@ impl Identity {
     ///
     /// ## Arguments
     ///
-    /// * `inputs` - A map of PlatformAddress to AddressNonce tuples used to derive the identity id; the nonces
-    ///   should represent state after creation of the identity (eg. be incremented by 1).
+    /// * `inputs` - A map of `PlatformAddress` to `(AddressNonce, Credits)`.
+    ///   The identity id is derived from the addresses and nonces (credits are ignored for the id derivation).
+    ///   The nonces should represent state after creation of the identity (e.g. be incremented by 1).
     /// * `public_keys` - A map of KeyID to IdentityPublicKey tuples representing the public keys for the identity.
     /// * `platform_version` - The platform version to use for identity creation.
     ///
