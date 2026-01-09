@@ -13,9 +13,9 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
  * - Identity 3: CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8 (has tokens)
  *
  * Token contract: CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8
- * - Token 0: normal, has group minting (Group 0 - Identity 1 and 2)
+ * - Token 0: has history tracking, has group minting (Group 0 - Identity 1 and 2)
  * - Token 1: paused
- * - Token 2: normal, has group burning (Group 2 - Identity 1 and 3, power=1)
+ * - Token 2: has group burning (Group 2 - Identity 1 and 3, power=1)
  *
  * Authorization (all via ContractOwner = Identity 1):
  * - freeze/unfreeze: ContractOwner
@@ -58,7 +58,9 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
       });
 
       expect(result).to.exist();
-      expect(result.senderBalance).to.exist();
+      // Token 0 has history tracking, so we get a document back instead of balances
+      expect(result.document).to.exist();
+      expect(result.document).to.be.instanceOf(sdk.Document);
     });
   });
 
