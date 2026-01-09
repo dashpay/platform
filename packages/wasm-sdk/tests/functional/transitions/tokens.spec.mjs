@@ -9,7 +9,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
  *
  * Test identities:
  * - Identity 1: 4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi (owns token contract)
- * - Identity 2: 8pkwN93v4wTWzzJAJkBCVPQJHMGwNa9TYfJUW24sAq11 (has tokens, frozen on TOKEN_0)
+ * - Identity 2: 8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR (has tokens, frozen on TOKEN_0)
  * - Identity 3: CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8 (has tokens)
  *
  * Token contract: CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8
