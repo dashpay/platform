@@ -26,11 +26,22 @@ use js_sys::BigInt;
 use serde::Deserialize;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+use dash_sdk::dpp::document::Document;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::IdentitySignerWasm;
+
+/// Helper function to convert a Document to DocumentWasm with the required metadata.
+/// Token historical documents use the contract_id and a document type name based on the operation.
+fn document_to_wasm(
+    doc: Document,
+    contract_id: Identifier,
+    document_type_name: &str,
+) -> DocumentWasm {
+    DocumentWasm::new(doc, contract_id, document_type_name.to_string(), None)
+}
 
 // Helper methods for token operations
 impl WasmSdk {
@@ -229,8 +240,9 @@ impl TokenMintResultWasm {
     }
 }
 
-impl From<MintResult> for TokenMintResultWasm {
-    fn from(result: MintResult) -> Self {
+impl TokenMintResultWasm {
+    /// Convert from SDK MintResult with the required contract context
+    fn from_result(result: MintResult, contract_id: Identifier) -> Self {
         match result {
             MintResult::TokenBalance(recipient_id, balance) => TokenMintResultWasm {
                 recipient_id: Some(recipient_id.into()),
@@ -244,14 +256,14 @@ impl From<MintResult> for TokenMintResultWasm {
                 new_balance: None,
                 group_power: None,
                 group_action_status: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "mint")),
             },
             MintResult::GroupActionWithDocument(power, doc) => TokenMintResultWasm {
                 recipient_id: None,
                 new_balance: None,
                 group_power: Some(power as u32),
                 group_action_status: None,
-                document: doc.map(|d| d.into()),
+                document: doc.map(|d| document_to_wasm(d, contract_id, "mint")),
             },
             MintResult::GroupActionWithBalance(power, status, balance) => TokenMintResultWasm {
                 recipient_id: None,
@@ -344,7 +356,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to mint tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenMintResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -485,8 +497,9 @@ impl TokenBurnResultWasm {
     }
 }
 
-impl From<BurnResult> for TokenBurnResultWasm {
-    fn from(result: BurnResult) -> Self {
+impl TokenBurnResultWasm {
+    /// Convert from SDK BurnResult with the required contract context
+    fn from_result(result: BurnResult, contract_id: Identifier) -> Self {
         match result {
             BurnResult::TokenBalance(owner_id, balance) => TokenBurnResultWasm {
                 owner_id: Some(owner_id.into()),
@@ -500,14 +513,14 @@ impl From<BurnResult> for TokenBurnResultWasm {
                 remaining_balance: None,
                 group_power: None,
                 group_action_status: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "burn")),
             },
             BurnResult::GroupActionWithDocument(power, doc) => TokenBurnResultWasm {
                 owner_id: None,
                 remaining_balance: None,
                 group_power: Some(power as u32),
                 group_action_status: None,
-                document: doc.map(|d| d.into()),
+                document: doc.map(|d| document_to_wasm(d, contract_id, "burn")),
             },
             BurnResult::GroupActionWithBalance(power, status, balance) => TokenBurnResultWasm {
                 owner_id: None,
@@ -595,7 +608,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to burn tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenBurnResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -735,8 +748,9 @@ impl TokenTransferResultWasm {
     }
 }
 
-impl From<TransferResult> for TokenTransferResultWasm {
-    fn from(result: TransferResult) -> Self {
+impl TokenTransferResultWasm {
+    /// Convert from SDK TransferResult with the required contract context
+    fn from_result(result: TransferResult, contract_id: Identifier) -> Self {
         match result {
             TransferResult::IdentitiesBalances(balances) => {
                 // Get the first two balances (sender and recipient)
@@ -754,13 +768,13 @@ impl From<TransferResult> for TokenTransferResultWasm {
                 sender_balance: None,
                 recipient_balance: None,
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "transfer")),
             },
             TransferResult::GroupActionWithDocument(power, doc) => TokenTransferResultWasm {
                 sender_balance: None,
                 recipient_balance: None,
                 group_power: Some(power as u32),
-                document: doc.map(|d| d.into()),
+                document: doc.map(|d| document_to_wasm(d, contract_id, "transfer")),
             },
         }
     }
@@ -842,7 +856,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to transfer tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenTransferResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -970,8 +984,9 @@ impl TokenFreezeResultWasm {
     }
 }
 
-impl From<FreezeResult> for TokenFreezeResultWasm {
-    fn from(result: FreezeResult) -> Self {
+impl TokenFreezeResultWasm {
+    /// Convert from SDK FreezeResult with the required contract context
+    fn from_result(result: FreezeResult, contract_id: Identifier) -> Self {
         match result {
             FreezeResult::IdentityInfo(frozen_id, _info) => TokenFreezeResultWasm {
                 frozen_identity_id: Some(frozen_id.into()),
@@ -981,12 +996,12 @@ impl From<FreezeResult> for TokenFreezeResultWasm {
             FreezeResult::HistoricalDocument(doc) => TokenFreezeResultWasm {
                 frozen_identity_id: None,
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "freeze")),
             },
             FreezeResult::GroupActionWithDocument(power, doc) => TokenFreezeResultWasm {
                 frozen_identity_id: None,
                 group_power: Some(power as u32),
-                document: doc.map(|d| d.into()),
+                document: doc.map(|d| document_to_wasm(d, contract_id, "freeze")),
             },
             FreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenFreezeResultWasm {
                 frozen_identity_id: None,
@@ -1072,7 +1087,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to freeze tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenFreezeResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -1200,8 +1215,9 @@ impl TokenUnfreezeResultWasm {
     }
 }
 
-impl From<UnfreezeResult> for TokenUnfreezeResultWasm {
-    fn from(result: UnfreezeResult) -> Self {
+impl TokenUnfreezeResultWasm {
+    /// Convert from SDK UnfreezeResult with the required contract context
+    fn from_result(result: UnfreezeResult, contract_id: Identifier) -> Self {
         match result {
             UnfreezeResult::IdentityInfo(unfrozen_id, _info) => TokenUnfreezeResultWasm {
                 unfrozen_identity_id: Some(unfrozen_id.into()),
@@ -1211,12 +1227,12 @@ impl From<UnfreezeResult> for TokenUnfreezeResultWasm {
             UnfreezeResult::HistoricalDocument(doc) => TokenUnfreezeResultWasm {
                 unfrozen_identity_id: None,
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "unfreeze")),
             },
             UnfreezeResult::GroupActionWithDocument(power, doc) => TokenUnfreezeResultWasm {
                 unfrozen_identity_id: None,
                 group_power: Some(power as u32),
-                document: doc.map(|d| d.into()),
+                document: doc.map(|d| document_to_wasm(d, contract_id, "unfreeze")),
             },
             UnfreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenUnfreezeResultWasm {
                 unfrozen_identity_id: None,
@@ -1302,7 +1318,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to unfreeze tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenUnfreezeResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -1421,17 +1437,18 @@ impl TokenDestroyFrozenResultWasm {
     }
 }
 
-impl From<DestroyFrozenFundsResult> for TokenDestroyFrozenResultWasm {
-    fn from(result: DestroyFrozenFundsResult) -> Self {
+impl TokenDestroyFrozenResultWasm {
+    /// Convert from SDK DestroyFrozenFundsResult with the required contract context
+    fn from_result(result: DestroyFrozenFundsResult, contract_id: Identifier) -> Self {
         match result {
             DestroyFrozenFundsResult::HistoricalDocument(doc) => TokenDestroyFrozenResultWasm {
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "destroyFrozenFunds")),
             },
             DestroyFrozenFundsResult::GroupActionWithDocument(power, doc) => {
                 TokenDestroyFrozenResultWasm {
                     group_power: Some(power as u32),
-                    document: doc.map(|d| d.into()),
+                    document: doc.map(|d| document_to_wasm(d, contract_id, "destroyFrozenFunds")),
                 }
             }
         }
@@ -1515,7 +1532,7 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to destroy frozen tokens: {}", e))
             })?;
 
-        Ok(result.into())
+        Ok(TokenDestroyFrozenResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -1634,17 +1651,18 @@ impl TokenEmergencyActionResultWasm {
     }
 }
 
-impl From<EmergencyActionResult> for TokenEmergencyActionResultWasm {
-    fn from(result: EmergencyActionResult) -> Self {
+impl TokenEmergencyActionResultWasm {
+    /// Convert from SDK EmergencyActionResult with the required contract context
+    fn from_result(result: EmergencyActionResult, contract_id: Identifier) -> Self {
         match result {
             EmergencyActionResult::Document(doc) => TokenEmergencyActionResultWasm {
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "emergencyAction")),
             },
             EmergencyActionResult::GroupActionWithDocument(power, doc) => {
                 TokenEmergencyActionResultWasm {
                     group_power: Some(power as u32),
-                    document: doc.map(|d| d.into()),
+                    document: doc.map(|d| document_to_wasm(d, contract_id, "emergencyAction")),
                 }
             }
         }
@@ -1739,7 +1757,7 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to perform emergency action: {}", e))
             })?;
 
-        Ok(result.into())
+        Ok(TokenEmergencyActionResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -1852,16 +1870,17 @@ impl TokenClaimResultWasm {
     }
 }
 
-impl From<ClaimResult> for TokenClaimResultWasm {
-    fn from(result: ClaimResult) -> Self {
+impl TokenClaimResultWasm {
+    /// Convert from SDK ClaimResult with the required contract context
+    fn from_result(result: ClaimResult, contract_id: Identifier) -> Self {
         match result {
             ClaimResult::Document(doc) => TokenClaimResultWasm {
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "claim")),
             },
             ClaimResult::GroupActionWithDocument(power, doc) => TokenClaimResultWasm {
                 group_power: Some(power as u32),
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "claim")),
             },
         }
     }
@@ -1946,7 +1965,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to claim tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenClaimResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -2076,8 +2095,9 @@ impl TokenSetPriceResultWasm {
     }
 }
 
-impl From<SetPriceResult> for TokenSetPriceResultWasm {
-    fn from(result: SetPriceResult) -> Self {
+impl TokenSetPriceResultWasm {
+    /// Convert from SDK SetPriceResult with the required contract context
+    fn from_result(result: SetPriceResult, contract_id: Identifier) -> Self {
         match result {
             SetPriceResult::PricingSchedule(_owner_id, _schedule) => TokenSetPriceResultWasm {
                 group_power: None,
@@ -2087,12 +2107,12 @@ impl From<SetPriceResult> for TokenSetPriceResultWasm {
             SetPriceResult::HistoricalDocument(doc) => TokenSetPriceResultWasm {
                 group_power: None,
                 group_action_status: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "directPricing")),
             },
             SetPriceResult::GroupActionWithDocument(power, doc) => TokenSetPriceResultWasm {
                 group_power: Some(power as u32),
                 group_action_status: None,
-                document: doc.map(|d| d.into()),
+                document: doc.map(|d| document_to_wasm(d, contract_id, "directPricing")),
             },
             SetPriceResult::GroupActionWithPricingSchedule(power, status, _schedule) => {
                 TokenSetPriceResultWasm {
@@ -2188,7 +2208,7 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to set token price: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenSetPriceResultWasm::from_result(result, contract_id))
     }
 }
 
@@ -2317,8 +2337,9 @@ impl TokenDirectPurchaseResultWasm {
     }
 }
 
-impl From<DirectPurchaseResult> for TokenDirectPurchaseResultWasm {
-    fn from(result: DirectPurchaseResult) -> Self {
+impl TokenDirectPurchaseResultWasm {
+    /// Convert from SDK DirectPurchaseResult with the required contract context
+    fn from_result(result: DirectPurchaseResult, contract_id: Identifier) -> Self {
         match result {
             DirectPurchaseResult::TokenBalance(buyer_id, balance) => {
                 TokenDirectPurchaseResultWasm {
@@ -2332,14 +2353,14 @@ impl From<DirectPurchaseResult> for TokenDirectPurchaseResultWasm {
                 buyer_id: None,
                 new_balance: None,
                 group_power: None,
-                document: Some(doc.into()),
+                document: Some(document_to_wasm(doc, contract_id, "directPurchase")),
             },
             DirectPurchaseResult::GroupActionWithDocument(power, doc) => {
                 TokenDirectPurchaseResultWasm {
                     buyer_id: None,
                     new_balance: None,
                     group_power: Some(power as u32),
-                    document: doc.map(|d| d.into()),
+                    document: doc.map(|d| document_to_wasm(d, contract_id, "directPurchase")),
                 }
             }
         }
@@ -2410,6 +2431,6 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to purchase tokens: {}", e)))?;
 
-        Ok(result.into())
+        Ok(TokenDirectPurchaseResultWasm::from_result(result, contract_id))
     }
 }
