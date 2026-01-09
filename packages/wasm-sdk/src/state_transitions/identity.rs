@@ -650,7 +650,10 @@ impl WasmSdk {
             && !add_public_keys_js.is_null()
         {
             let keys_array = js_sys::Array::from(&add_public_keys_js);
-            let mut next_key_id = identity.public_keys().keys().max().copied().unwrap_or(0) + 1;
+            let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
+            let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {
+                WasmSdkError::invalid_argument("Key ID overflow: identity has too many keys")
+            })?;
 
             keys_array
                 .iter()
@@ -664,7 +667,9 @@ impl WasmSdk {
 
                     // Convert to IdentityPublicKey using From impl
                     let public_key: IdentityPublicKey = key_in_creation.into();
-                    next_key_id += 1;
+                    next_key_id = next_key_id.checked_add(1).ok_or_else(|| {
+                        WasmSdkError::invalid_argument("Key ID overflow: too many keys to add")
+                    })?;
                     Ok(public_key)
                 })
                 .collect::<Result<Vec<_>, WasmSdkError>>()?
