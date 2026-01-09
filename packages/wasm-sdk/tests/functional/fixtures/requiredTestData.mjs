@@ -106,7 +106,7 @@ export function createTestSignerAndKey(sdkModule, seed, keyIndex = 2) {
     securityLevel,
     keyType,
     readOnly,
-    publicKeyData, // binary_data as hex (33 bytes for ECDSA_SECP256K1, 20 bytes for ECDSA_HASH160)
+    publicKeyData, // hex string (66 chars for ECDSA_SECP256K1, 40 chars for ECDSA_HASH160)
     undefined, // disabled_at
     undefined, // contract_bounds
   );
