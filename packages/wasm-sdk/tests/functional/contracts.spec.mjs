@@ -54,7 +54,8 @@ describe('Data contract queries', function describeDataContractQueries() {
     expect(res.proof).to.be.ok();
   });
 
-  // TODO: Fix proof verification error: dash drive: proof: corrupted error: we did not get back an element for the correct path for the historical contract
+  // TODO: Fix proof verification error: dash drive: proof: corrupted error:
+  // we did not get back an element for the correct path for the historical contract
   it.skip('getDataContractHistory() returns history for contract', async () => {
     // Use DPNS contract to test history retrieval
     // Note: This may return an empty map if the contract has no history (version = 1)
