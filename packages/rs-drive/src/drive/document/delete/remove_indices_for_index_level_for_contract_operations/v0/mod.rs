@@ -93,7 +93,12 @@ impl Drive {
             let is_array_property = document_type
                 .flattened_properties()
                 .get(name)
-                .map(|prop| matches!(prop.property_type, DocumentPropertyType::Array(_)))
+                .map(|prop| {
+                    matches!(
+                        prop.property_type,
+                        DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_)
+                    )
+                })
                 .unwrap_or(false);
 
             sub_level_index_path_info.push(index_property_key)?;
@@ -137,35 +142,34 @@ impl Drive {
                     )?;
 
                 if array_elements.is_empty() {
-                    // Empty array - track as null
-                    any_fields_null = true;
-                    all_fields_null &= true;
-                } else {
-                    all_fields_null = false;
+                    // Empty array has zero elements to remove, so nothing to do.
+                    // This differs from null scalars which have an entry with an empty key.
+                    // No recursion needed since there are no elements to pair with sub-level fields.
+                    continue;
+                }
 
-                    // For each array element, remove the index entry
-                    for element_value in array_elements {
-                        let element_key = Key(element_value);
-                        let mut element_path_info = sub_level_index_path_info.clone();
+                // For each array element, remove the index entry
+                for element_value in array_elements {
+                    let element_key = Key(element_value);
+                    let mut element_path_info = sub_level_index_path_info.clone();
 
-                        // Push element value to path and recurse
-                        element_path_info.push(element_key)?;
+                    // Push element value to path and recurse
+                    element_path_info.push(element_key)?;
 
-                        self.remove_indices_for_index_level_for_contract_operations_v0(
-                            document_and_contract_info,
-                            element_path_info,
-                            sub_level,
-                            any_fields_null,
-                            false, // Not all fields null since we have an element
-                            storage_flags,
-                            previous_batch_operations,
-                            estimated_costs_only_with_layer_info,
-                            event_id,
-                            transaction,
-                            batch_operations,
-                            platform_version,
-                        )?;
-                    }
+                    self.remove_indices_for_index_level_for_contract_operations_v0(
+                        document_and_contract_info,
+                        element_path_info,
+                        sub_level,
+                        any_fields_null,
+                        false, // Not all fields null since we have an element
+                        storage_flags,
+                        previous_batch_operations,
+                        estimated_costs_only_with_layer_info,
+                        event_id,
+                        transaction,
+                        batch_operations,
+                        platform_version,
+                    )?;
                 }
             } else {
                 // Handle scalar property - existing logic

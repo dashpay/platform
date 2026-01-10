@@ -178,7 +178,12 @@ impl Drive {
                 document_type
                     .flattened_properties()
                     .get(&prop.name)
-                    .map(|p| matches!(p.property_type, DocumentPropertyType::Array(_)))
+                    .map(|p| {
+                        matches!(
+                            p.property_type,
+                            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_)
+                        )
+                    })
                     .unwrap_or(false)
             });
 
@@ -502,7 +507,12 @@ impl Drive {
                 document_type
                     .flattened_properties()
                     .get(&prop.name)
-                    .map(|p| matches!(p.property_type, DocumentPropertyType::Array(_)))
+                    .map(|p| {
+                        matches!(
+                            p.property_type,
+                            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_)
+                        )
+                    })
                     .unwrap_or(false)
             })
         });

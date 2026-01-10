@@ -111,7 +111,12 @@ impl Drive {
             let is_array_property = document_type
                 .flattened_properties()
                 .get(name)
-                .map(|prop| matches!(prop.property_type, DocumentPropertyType::Array(_)))
+                .map(|prop| {
+                    matches!(
+                        prop.property_type,
+                        DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_)
+                    )
+                })
                 .unwrap_or(false);
 
             if is_array_property {

@@ -1,3 +1,4 @@
+use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use integer_encoding::VarInt;
@@ -274,17 +275,18 @@ impl ArrayItemType {
             ArrayItemType::Date => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 // Use the same encoding as DocumentPropertyType::encode_date_timestamp
-                Ok(value_as_i64.to_be_bytes().to_vec())
+                // which uses encode_u64 with sign-bit flip for proper lexicographic ordering
+                Ok(DocumentPropertyType::encode_date_timestamp(value_as_i64 as u64))
             }
             ArrayItemType::Integer => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
-                // Use big-endian encoding for proper ordering
-                Ok(value_as_i64.to_be_bytes().to_vec())
+                // Use encode_i64 which flips sign bit for proper lexicographic ordering
+                Ok(DocumentPropertyType::encode_i64(value_as_i64))
             }
             ArrayItemType::Number => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
-                // Use big-endian encoding
-                Ok(value_as_f64.to_be_bytes().to_vec())
+                // Use encode_float which handles sign bit and negative value ordering
+                Ok(DocumentPropertyType::encode_float(value_as_f64))
             }
             ArrayItemType::ByteArray(_, _) => {
                 let bytes = value.to_binary_bytes()?;
