@@ -19,8 +19,8 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use WhereOperator::{
-    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
-    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
+    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Contains, Equal,
+    GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 
 /// Converts SQL values to CBOR.
@@ -73,6 +73,8 @@ pub enum WhereOperator {
     In,
     /// Starts with
     StartsWith,
+    /// Contains - checks if an array field contains a specific value
+    Contains,
 }
 
 impl WhereOperator {
@@ -90,6 +92,7 @@ impl WhereOperator {
             BetweenExcludeRight => false,
             In => false,
             StartsWith => false,
+            Contains => false,
         }
     }
 
@@ -119,6 +122,9 @@ impl WhereOperator {
             StartsWith => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Startswith clause order invalid",
             ))),
+            Contains => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
+                "Contains clause order invalid",
+            ))),
         }
     }
 }
@@ -129,9 +135,8 @@ impl WhereOperator {
         match self {
             Equal => false,
             GreaterThan | GreaterThanOrEquals | LessThan | LessThanOrEquals | Between
-            | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight | In | StartsWith => {
-                true
-            }
+            | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight | In | StartsWith
+            | Contains => true,
         }
     }
 
@@ -158,6 +163,7 @@ impl WhereOperator {
             | "between_exclude_right" => Some(BetweenExcludeRight),
             "In" | "in" => Some(In),
             "StartsWith" | "startsWith" | "startswith" | "starts_with" => Some(StartsWith),
+            "Contains" | "contains" => Some(Contains),
             &_ => None,
         }
     }
@@ -232,6 +238,10 @@ impl WhereOperator {
                 (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
                 _ => false,
             },
+            Contains => match left_value {
+                Value::Array(array) => array.contains(right_value),
+                _ => false,
+            },
         }
     }
 
@@ -242,6 +252,24 @@ impl WhereOperator {
             Equal => true,
             In => matches!(value, Value::Array(_) | Value::Bytes(_)),
             StartsWith => matches!(value, Value::Text(_)),
+            Contains => {
+                // For Contains, the value should match the array's element type
+                // The property_type here is the Array type, so we check the element type
+                if let DocumentPropertyType::Array(item_type) = property_type {
+                    use dpp::data_contract::document_type::ArrayItemType;
+                    match item_type {
+                        ArrayItemType::String(_, _) => matches!(value, Value::Text(_)),
+                        ArrayItemType::Date => is_numeric_value(value),
+                        ArrayItemType::Integer => is_numeric_value(value),
+                        ArrayItemType::Number => is_numeric_value(value),
+                        ArrayItemType::ByteArray(_, _) => matches!(value, Value::Bytes(_)),
+                        ArrayItemType::Identifier => matches!(value, Value::Identifier(_)),
+                        ArrayItemType::Boolean => matches!(value, Value::Bool(_)),
+                    }
+                } else {
+                    false
+                }
+            }
             GreaterThan | GreaterThanOrEquals | LessThan | LessThanOrEquals => {
                 match property_type {
                     DocumentPropertyType::F64 => is_numeric_value(value),
@@ -307,6 +335,7 @@ impl Display for WhereOperator {
             BetweenExcludeRight => "BetweenExcludeRight",
             In => "In",
             StartsWith => "StartsWith",
+            Contains => "Contains",
         };
 
         write!(f, "{}", s)
@@ -636,6 +665,7 @@ impl<'a> WhereClause {
                 BetweenExcludeBounds => false,
                 BetweenExcludeRight => false,
                 BetweenExcludeLeft => false,
+                Contains => false,
             })
             .collect();
 
@@ -653,6 +683,7 @@ impl<'a> WhereClause {
                 BetweenExcludeBounds => true,
                 BetweenExcludeRight => true,
                 BetweenExcludeLeft => true,
+                Contains => true,
             })
             .collect();
 
@@ -1168,6 +1199,29 @@ impl<'a> WhereClause {
                     }
                 }
             }
+            Contains => {
+                // For Contains, we serialize the element value we're searching for
+                // and insert it as a key. The query path will be adjusted elsewhere
+                // to navigate to the array element subtree.
+                let key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
+                match starts_at_key_option {
+                    None => {
+                        query.insert_key(key);
+                    }
+                    Some((starts_at_key, included)) => {
+                        if (left_to_right && starts_at_key < key)
+                            || (!left_to_right && starts_at_key > key)
+                            || (included && starts_at_key == key)
+                        {
+                            query.insert_key(key);
+                        }
+                    }
+                }
+            }
         }
         Ok(query)
     }
@@ -1645,9 +1699,8 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
         DocumentPropertyType::Identifier => &[Equal, In],
         DocumentPropertyType::ByteArray(_) => &[Equal, In],
         DocumentPropertyType::Boolean => &[Equal],
-        DocumentPropertyType::Object(_)
-        | DocumentPropertyType::Array(_)
-        | DocumentPropertyType::VariableTypeArray(_) => &[],
+        DocumentPropertyType::Object(_) | DocumentPropertyType::VariableTypeArray(_) => &[],
+        DocumentPropertyType::Array(_) => &[Contains],
     }
 }
 

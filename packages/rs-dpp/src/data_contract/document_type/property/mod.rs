@@ -11,7 +11,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::property_names;
 use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
-use array::ArrayItemType;
+pub use array::ArrayItemType;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
@@ -1224,13 +1224,16 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ),
             )),
-            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::EncodingDataStructureNotSupported(
-                        "we should never try encoding an array".to_string(),
-                    ),
-                ))
+            DocumentPropertyType::Array(item_type) => {
+                // For Contains queries, we encode a single element (not the whole array)
+                // using the array's item type
+                item_type.encode_element_for_tree_keys(value)
             }
+            DocumentPropertyType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
+                DataContractError::EncodingDataStructureNotSupported(
+                    "we should never try encoding a variable type array".to_string(),
+                ),
+            ))
         }
     }
 
@@ -2323,28 +2326,78 @@ impl DocumentPropertyType {
                 max_length: value_map.get_optional_integer(property_names::MAX_LENGTH)?,
             }),
             "array" => {
-                // Only handling bytearrays for v1
-                // Return an error if it is not a byte array
-                let Some(is_byte_array) =
-                    value_map.get_optional_bool(property_names::BYTE_ARRAY)?
-                else {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "only byte arrays are supported now".to_string(),
-                    ));
-                };
+                // Check if this is an array with items (indexed array type)
+                let items_map: Option<BTreeMap<String, &Value>> =
+                    value_map.get_optional_str_value_map(property_names::ITEMS)?;
 
-                if !is_byte_array {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "byteArray should always be true if defined".to_string(),
-                    ));
-                }
+                if let Some(items_map) = items_map {
+                    // This is an array with typed items (like string[], integer[], etc.)
+                    let item_type_str = items_map.get_str(property_names::TYPE)?;
+                    let array_item_type = match item_type_str {
+                        "string" => {
+                            let min_length =
+                                items_map.get_optional_integer(property_names::MIN_LENGTH)?;
+                            let max_length =
+                                items_map.get_optional_integer(property_names::MAX_LENGTH)?;
+                            ArrayItemType::String(min_length, max_length)
+                        }
+                        "integer" => ArrayItemType::Integer,
+                        "number" => ArrayItemType::Number,
+                        "boolean" => ArrayItemType::Boolean,
+                        "array" => {
+                            // Nested byte array
+                            let is_byte_array =
+                                items_map.get_optional_bool(property_names::BYTE_ARRAY)?;
+                            if is_byte_array == Some(true) {
+                                let min_size =
+                                    items_map.get_optional_integer(property_names::MIN_ITEMS)?;
+                                let max_size =
+                                    items_map.get_optional_integer(property_names::MAX_ITEMS)?;
+                                match items_map
+                                    .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                                {
+                                    Some("application/x.dash.dpp.identifier") => {
+                                        ArrayItemType::Identifier
+                                    }
+                                    Some(_) | None => ArrayItemType::ByteArray(min_size, max_size),
+                                }
+                            } else {
+                                return Err(DataContractError::InvalidContractStructure(
+                                    "nested arrays must be byte arrays".to_string(),
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(DataContractError::InvalidContractStructure(format!(
+                                "unsupported array item type: {}",
+                                item_type_str
+                            )));
+                        }
+                    };
+                    DocumentPropertyType::Array(array_item_type)
+                } else {
+                    // Fallback to byte array handling
+                    let Some(is_byte_array) =
+                        value_map.get_optional_bool(property_names::BYTE_ARRAY)?
+                    else {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "array must have either 'items' or 'byteArray' defined".to_string(),
+                        ));
+                    };
 
-                match value_map.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
-                    Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
-                    Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
-                        min_size: value_map.get_optional_integer(property_names::MIN_ITEMS)?,
-                        max_size: value_map.get_optional_integer(property_names::MAX_ITEMS)?,
-                    }),
+                    if !is_byte_array {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "byteArray should always be true if defined".to_string(),
+                        ));
+                    }
+
+                    match value_map.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                        Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
+                        Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
+                            min_size: value_map.get_optional_integer(property_names::MIN_ITEMS)?,
+                            max_size: value_map.get_optional_integer(property_names::MAX_ITEMS)?,
+                        }),
+                    }
                 }
             }
             "object" => Self::Object(Default::default()),

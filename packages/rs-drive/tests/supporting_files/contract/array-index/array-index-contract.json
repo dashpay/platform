@@ -1,0 +1,58 @@
+{
+  "$format_version": "0",
+  "id": "8NRsVP68gRuYYwE6djM5jD3GwCGvUqUxRKTdaQRnqsPe",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "indices": [
+        {
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ]
+        },
+        {
+          "properties": [
+            {
+              "hashtags": "asc"
+            }
+          ]
+        },
+        {
+          "properties": [
+            {
+              "$ownerId": "asc"
+            },
+            {
+              "hashtags": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 0
+        },
+        "hashtags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "maxItems": 10,
+          "position": 1
+        }
+      },
+      "required": [
+        "content",
+        "hashtags"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

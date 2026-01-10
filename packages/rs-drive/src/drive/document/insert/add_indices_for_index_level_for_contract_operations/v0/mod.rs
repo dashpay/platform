@@ -3,10 +3,12 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
-use crate::util::object_size_info::DriveKeyInfo::KeyRef;
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentPropertyType;
 use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;
@@ -91,23 +93,18 @@ impl Drive {
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 
-            let document_index_field = document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_raw_for_document_type(
-                    name,
-                    document_type,
-                    document_and_contract_info.owned_document_info.owner_id,
-                    Some((sub_level, event_id)),
-                    platform_version,
-                )?
-                .unwrap_or_default();
+            // Check if this property is an array type
+            let is_array_property = document_type
+                .flattened_properties()
+                .get(name)
+                .map(|prop| matches!(prop.property_type, DocumentPropertyType::Array(_)))
+                .unwrap_or(false);
 
+            // Insert the property name tree (e.g., "hashtags")
             let path_key_info = index_property_key
                 .clone()
                 .add_path_info(sub_level_index_path_info.clone());
 
-            // here we are inserting an empty tree that will have a subtree of all other index properties
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
                 TreeType::NormalTree,
@@ -148,46 +145,115 @@ impl Drive {
                 );
             }
 
-            // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
-            // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+            if is_array_property {
+                // Handle array property - create index entries for each element
+                let array_elements = document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .get_raw_array_elements_for_document_type(
+                        name,
+                        document_type,
+                        platform_version,
+                    )?;
 
-            let path_key_info = document_index_field
-                .clone()
-                .add_path_info(sub_level_index_path_info.clone());
+                if array_elements.is_empty() {
+                    // Empty array - track as null
+                    any_fields_null = true;
+                    all_fields_null &= true;
+                } else {
+                    all_fields_null = false;
 
-            // here we are inserting an empty tree that will have a subtree of all other index properties
-            self.batch_insert_empty_tree_if_not_exists(
-                path_key_info.clone(),
-                TreeType::NormalTree,
-                *storage_flags,
-                apply_type,
-                transaction,
-                previous_batch_operations,
-                batch_operations,
-                &platform_version.drive,
-            )?;
+                    // For each array element, create an index entry
+                    for element_value in array_elements {
+                        let element_key = Key(element_value);
+                        let mut element_path_info = sub_level_index_path_info.clone();
 
-            any_fields_null |= document_index_field.is_empty();
-            all_fields_null &= document_index_field.is_empty();
+                        // Insert tree for this element value
+                        let element_path_key_info = element_key
+                            .clone()
+                            .add_path_info(element_path_info.clone());
 
-            // we push the actual value of the index path
-            sub_level_index_path_info.push(document_index_field)?;
-            // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
-            // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.add_indices_for_index_level_for_contract_operations_v0(
-                document_and_contract_info,
-                sub_level_index_path_info,
-                sub_level,
-                any_fields_null,
-                all_fields_null,
-                previous_batch_operations,
-                storage_flags,
-                estimated_costs_only_with_layer_info,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+                        self.batch_insert_empty_tree_if_not_exists(
+                            element_path_key_info,
+                            TreeType::NormalTree,
+                            *storage_flags,
+                            apply_type,
+                            transaction,
+                            previous_batch_operations,
+                            batch_operations,
+                            &platform_version.drive,
+                        )?;
+
+                        // Push element value to path and recurse
+                        element_path_info.push(element_key)?;
+
+                        self.add_indices_for_index_level_for_contract_operations_v0(
+                            document_and_contract_info,
+                            element_path_info,
+                            sub_level,
+                            any_fields_null,
+                            false, // Not all fields null since we have an element
+                            previous_batch_operations,
+                            storage_flags,
+                            estimated_costs_only_with_layer_info,
+                            event_id,
+                            transaction,
+                            batch_operations,
+                            platform_version,
+                        )?;
+                    }
+                }
+            } else {
+                // Handle scalar property - existing logic
+                let document_index_field = document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .get_raw_for_document_type(
+                        name,
+                        document_type,
+                        document_and_contract_info.owned_document_info.owner_id,
+                        Some((sub_level, event_id)),
+                        platform_version,
+                    )?
+                    .unwrap_or_default();
+
+                let path_key_info = document_index_field
+                    .clone()
+                    .add_path_info(sub_level_index_path_info.clone());
+
+                // Insert tree for this field value
+                self.batch_insert_empty_tree_if_not_exists(
+                    path_key_info.clone(),
+                    TreeType::NormalTree,
+                    *storage_flags,
+                    apply_type,
+                    transaction,
+                    previous_batch_operations,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
+
+                any_fields_null |= document_index_field.is_empty();
+                all_fields_null &= document_index_field.is_empty();
+
+                // Push the actual value of the index path
+                sub_level_index_path_info.push(document_index_field)?;
+
+                self.add_indices_for_index_level_for_contract_operations_v0(
+                    document_and_contract_info,
+                    sub_level_index_path_info,
+                    sub_level,
+                    any_fields_null,
+                    all_fields_null,
+                    previous_batch_operations,
+                    storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(())
     }

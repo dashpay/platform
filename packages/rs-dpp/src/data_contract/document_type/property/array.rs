@@ -251,6 +251,59 @@ impl ArrayItemType {
             }
         }
     }
+
+    /// Encodes an array element value for use as an index tree key.
+    /// This encoding is compatible with the scalar type encoding used for tree keys.
+    /// Unlike `encode_value_ref_with_size`, this does NOT prepend a length prefix,
+    /// making it suitable for index key comparisons and tree traversal.
+    pub fn encode_element_for_tree_keys(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
+        if value.is_null() {
+            return Ok(vec![]);
+        }
+        match self {
+            ArrayItemType::String(_, _) => {
+                let value_as_text = value.as_text().ok_or_else(get_field_type_matching_error)?;
+                let vec = value_as_text.as_bytes().to_vec();
+                if vec.is_empty() {
+                    // we don't want to collide with the definition of an empty string
+                    Ok(vec![0])
+                } else {
+                    Ok(vec)
+                }
+            }
+            ArrayItemType::Date => {
+                let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
+                // Use the same encoding as DocumentPropertyType::encode_date_timestamp
+                Ok(value_as_i64.to_be_bytes().to_vec())
+            }
+            ArrayItemType::Integer => {
+                let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
+                // Use big-endian encoding for proper ordering
+                Ok(value_as_i64.to_be_bytes().to_vec())
+            }
+            ArrayItemType::Number => {
+                let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
+                // Use big-endian encoding
+                Ok(value_as_f64.to_be_bytes().to_vec())
+            }
+            ArrayItemType::ByteArray(_, _) => {
+                let bytes = value.to_binary_bytes()?;
+                Ok(bytes)
+            }
+            ArrayItemType::Identifier => {
+                let bytes = value.to_identifier_bytes()?;
+                Ok(bytes)
+            }
+            ArrayItemType::Boolean => {
+                let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
+                if value_as_boolean {
+                    Ok(vec![1])
+                } else {
+                    Ok(vec![0])
+                }
+            }
+        }
+    }
 }
 
 fn get_field_type_matching_error() -> ProtocolError {

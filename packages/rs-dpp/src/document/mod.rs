@@ -34,8 +34,9 @@ pub const INITIAL_REVISION: u64 = 1;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::document_methods::{
-    DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
-    DocumentIsEqualIgnoringTimestampsV0, DocumentMethodsV0,
+    DocumentGetRawArrayElementsForDocumentTypeV0, DocumentGetRawForContractV0,
+    DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentIsEqualIgnoringTimestampsV0,
+    DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
 use crate::version::PlatformVersion;
@@ -135,6 +136,36 @@ impl DocumentMethodsV0 for Document {
                     ),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentMethodV0::get_raw_for_document_type".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
+    }
+
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, ProtocolError> {
+        match self {
+            Document::V0(document_v0) => {
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_method_versions
+                    .get_raw_array_elements_for_document_type
+                {
+                    0 => document_v0.get_raw_array_elements_for_document_type_v0(
+                        key_path,
+                        document_type,
+                        platform_version,
+                    ),
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DocumentMethodV0::get_raw_array_elements_for_document_type"
+                            .to_string(),
                         known_versions: vec![0],
                         received: version,
                     }),

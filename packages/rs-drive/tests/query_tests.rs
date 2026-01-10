@@ -6999,3 +6999,579 @@ mod tests {
         assert_eq!(query_result.documents().len(), 1);
     }
 }
+
+#[cfg(feature = "server")]
+mod array_index_tests {
+    use super::*;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::document::document_methods::DocumentMethodsV0;
+
+    /// Sets up a contract with indexed array fields and adds test documents
+    fn setup_array_index_tests(platform_version: &PlatformVersion) -> (Drive, DataContract) {
+        let drive_config = DriveConfig::default();
+        let drive = setup_drive(Some(drive_config));
+        let db_transaction = drive.grove.start_transaction();
+
+        // Create contracts tree
+        let mut batch = GroveDbOpBatch::new();
+        add_init_contracts_structure_operations(&mut batch);
+
+        drive
+            .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+            .expect("expected to create contracts tree successfully");
+
+        // Setup the contract with indexed array fields
+        let contract = test_helpers::setup_contract(
+            &drive,
+            "tests/supporting_files/contract/array-index/array-index-contract.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            Some(platform_version),
+        );
+
+        // Create test documents with array values
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Post 1: hashtags ["dash", "crypto", "blockchain"]
+        let post1_value = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "content": "Hello world from Dash Platform!",
+            "hashtags": ["dash", "crypto", "blockchain"]
+        });
+        let post1_cbor = cbor_serializer::serializable_value_to_cbor(&post1_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let post1 = Document::from_cbor(post1_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&post1, storage_flags.clone())),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: post_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+
+        // Post 2: hashtags ["tech", "crypto"]
+        let post2_value = json!({
+            "$id": "BZ5tKL2QDsJhDzCxvSQtn99NkafM6aMUTrr8aQXgQuS",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk6",
+            "content": "Another post about tech",
+            "hashtags": ["tech", "crypto"]
+        });
+        let post2_cbor = cbor_serializer::serializable_value_to_cbor(&post2_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let post2 = Document::from_cbor(post2_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&post2, storage_flags.clone())),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: post_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+
+        // Post 3: hashtags ["dash", "defi"]
+        let post3_value = json!({
+            "$id": "CZ6uML3REtJiEzDyvTRuoaaPm1gN7pNVUss9bRYhRvT",
+            "$ownerId": "BdZVCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk7",
+            "content": "Post about DeFi on Dash",
+            "hashtags": ["dash", "defi"]
+        });
+        let post3_cbor = cbor_serializer::serializable_value_to_cbor(&post3_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let post3 = Document::from_cbor(post3_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&post3, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: post_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("transaction should be committed");
+
+        (drive, contract)
+    }
+
+    #[test]
+    fn test_array_index_contract_types() {
+        // Test that a contract with indexed array fields has correct property types
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::tests::json_document::json_document_to_contract;
+
+        let platform_version = PlatformVersion::latest();
+
+        // Just load the contract without applying to drive
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/array-index/array-index-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to load contract");
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Check flattened_properties
+        let hashtags_flat = post_type
+            .flattened_properties()
+            .get("hashtags")
+            .expect("expected hashtags in flattened_properties");
+
+        // Check properties
+        let hashtags_nested = post_type
+            .properties()
+            .get("hashtags")
+            .expect("expected hashtags in properties");
+
+        // Both should be Array type
+        assert!(
+            matches!(
+                hashtags_flat.property_type,
+                dpp::data_contract::document_type::DocumentPropertyType::Array(_)
+            ),
+            "flattened_properties hashtags should be Array, got: {:?}",
+            hashtags_flat.property_type
+        );
+
+        assert!(
+            matches!(
+                hashtags_nested.property_type,
+                dpp::data_contract::document_type::DocumentPropertyType::Array(_)
+            ),
+            "properties hashtags should be Array, got: {:?}",
+            hashtags_nested.property_type
+        );
+    }
+
+    #[test]
+    fn test_array_document_values() {
+        // Test that document values are correctly typed after CBOR deserialization
+        use dpp::document::DocumentV0Getters;
+
+        let platform_version = PlatformVersion::latest();
+
+        // Create document from JSON -> CBOR -> Document
+        let post1_value = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "content": "Hello world from Dash Platform!",
+            "hashtags": ["dash", "crypto", "blockchain"]
+        });
+        let post1_cbor = cbor_serializer::serializable_value_to_cbor(&post1_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let post1 = Document::from_cbor(post1_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        // Check the hashtags value
+        let hashtags_value = post1.properties().get("hashtags");
+        assert!(hashtags_value.is_some(), "hashtags should exist");
+
+        if let Some(platform_value::Value::Array(elements)) = hashtags_value {
+            assert_eq!(elements.len(), 3, "should have 3 hashtags");
+            for element in elements.iter() {
+                assert!(element.is_text(), "each element should be Text");
+            }
+        } else {
+            panic!("hashtags should be an array, got: {:?}", hashtags_value);
+        }
+    }
+
+    #[test]
+    fn test_array_document_serialize() {
+        // Test serializing a document with array field
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::tests::json_document::json_document_to_contract;
+
+        let platform_version = PlatformVersion::latest();
+
+        // Load the contract
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/array-index/array-index-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to load contract");
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Create document from JSON -> CBOR -> Document
+        let post1_value = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "content": "Hello world from Dash Platform!",
+            "hashtags": ["dash", "crypto", "blockchain"]
+        });
+        let post1_cbor = cbor_serializer::serializable_value_to_cbor(&post1_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let post1 = Document::from_cbor(post1_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        // Serialize using the trait method
+        let serialized: Result<Vec<u8>, _> = DocumentPlatformConversionMethodsV0::serialize(
+            &post1,
+            post_type,
+            &contract,
+            platform_version,
+        );
+        assert!(
+            serialized.is_ok(),
+            "Serialization should succeed, got: {:?}",
+            serialized.err()
+        );
+        assert!(serialized.unwrap().len() > 0, "Serialized bytes should not be empty");
+    }
+
+    #[test]
+    fn test_array_document_serialize_with_drive_contract() {
+        // Test serializing a document using contract loaded via test_helpers::setup_contract
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+
+        let platform_version = PlatformVersion::latest();
+        let drive_config = DriveConfig::default();
+        let drive = setup_drive(Some(drive_config));
+
+        {
+            let db_transaction = drive.grove.start_transaction();
+
+            // Create contracts tree
+            let mut batch = GroveDbOpBatch::new();
+            add_init_contracts_structure_operations(&mut batch);
+            drive
+                .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+                .expect("expected to create contracts tree successfully");
+
+            // Load contract using setup_contract (same as failing test)
+            let contract = test_helpers::setup_contract(
+                &drive,
+                "tests/supporting_files/contract/array-index/array-index-contract.json",
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                Some(&db_transaction),
+                Some(platform_version),
+            );
+
+            let post_type = contract
+                .document_type_for_name("post")
+                .expect("expected to get post document type");
+
+            // Create document from JSON -> CBOR -> Document
+            let post1_value = json!({
+                "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+                "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+                "content": "Hello world from Dash Platform!",
+                "hashtags": ["dash", "crypto", "blockchain"]
+            });
+            let post1_cbor = cbor_serializer::serializable_value_to_cbor(&post1_value, Some(0))
+                .expect("expected to serialize to cbor");
+            let post1 = Document::from_cbor(post1_cbor.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
+
+            // Serialize using the contract from setup_contract
+            let serialized: Result<Vec<u8>, _> = DocumentPlatformConversionMethodsV0::serialize(
+                &post1,
+                post_type,
+                &contract,
+                platform_version,
+            );
+            assert!(
+                serialized.is_ok(),
+                "Serialization should succeed, got: {:?}",
+                serialized.err()
+            );
+        }
+
+        drop(drive);
+    }
+
+    #[test]
+    fn test_array_index_contract_creation() {
+        // Test that a contract with indexed array fields can be created
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_array_index_tests(platform_version);
+
+        // Verify contract was created successfully
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Verify the hashtags property exists and is an array in flattened_properties
+        let hashtags_prop = post_type
+            .flattened_properties()
+            .get("hashtags")
+            .expect("expected hashtags property in flattened_properties");
+
+        assert!(
+            matches!(
+                hashtags_prop.property_type,
+                dpp::data_contract::document_type::DocumentPropertyType::Array(_)
+            ),
+            "flattened_properties hashtags should be Array, got: {:?}",
+            hashtags_prop.property_type
+        );
+
+        // Also verify in properties() which is used during serialization
+        let hashtags_prop_nested = post_type
+            .properties()
+            .get("hashtags")
+            .expect("expected hashtags property in properties");
+
+        assert!(
+            matches!(
+                hashtags_prop_nested.property_type,
+                dpp::data_contract::document_type::DocumentPropertyType::Array(_)
+            ),
+            "properties hashtags should be Array, got: {:?}",
+            hashtags_prop_nested.property_type
+        );
+
+        // Verify indexes exist
+        assert!(
+            post_type.indexes().len() >= 2,
+            "expected at least 2 indexes including the array index"
+        );
+
+        drop(drive);
+    }
+
+    #[test]
+    fn test_query_documents_with_contains_operator() {
+        // Test querying documents using the contains operator
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_array_index_tests(platform_version);
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Query for posts containing "dash" hashtag
+        // This should return 2 posts (post1 and post3)
+        let query_value = json!({
+            "where": [
+                ["hashtags", "contains", "dash"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results.len(),
+            2,
+            "expected 2 posts containing 'dash' hashtag"
+        );
+
+        // Query for posts containing "crypto" hashtag
+        // This should return 2 posts (post1 and post2)
+        let query_value = json!({
+            "where": [
+                ["hashtags", "contains", "crypto"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results.len(),
+            2,
+            "expected 2 posts containing 'crypto' hashtag"
+        );
+
+        // Query for posts containing "defi" hashtag
+        // This should return 1 post (post3)
+        let query_value = json!({
+            "where": [
+                ["hashtags", "contains", "defi"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "expected 1 post containing 'defi' hashtag"
+        );
+
+        drop(drive);
+    }
+
+    #[test]
+    fn test_get_raw_array_elements_for_document_type() {
+        // Test the get_raw_array_elements_for_document_type method
+        let platform_version = PlatformVersion::latest();
+
+        // Create a simple document with array field
+        let post_value = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "content": "Test content",
+            "hashtags": ["alpha", "beta", "gamma"]
+        });
+
+        let post_cbor = cbor_serializer::serializable_value_to_cbor(&post_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(post_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/array-index/array-index-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Test getting array elements
+        let elements = document
+            .get_raw_array_elements_for_document_type("hashtags", post_type, platform_version)
+            .expect("should get array elements");
+
+        assert_eq!(elements.len(), 3, "expected 3 unique elements");
+
+        // Verify the elements are encoded correctly (as bytes)
+        assert!(elements.iter().any(|e| e == b"alpha"));
+        assert!(elements.iter().any(|e| e == b"beta"));
+        assert!(elements.iter().any(|e| e == b"gamma"));
+    }
+
+    #[test]
+    fn test_array_elements_deduplication() {
+        // Test that duplicate array elements are deduplicated
+        let platform_version = PlatformVersion::latest();
+
+        // Create a document with duplicate hashtags
+        let post_value = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "content": "Test content",
+            "hashtags": ["dash", "crypto", "dash", "crypto", "dash"]
+        });
+
+        let post_cbor = cbor_serializer::serializable_value_to_cbor(&post_value, Some(0))
+            .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(post_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let contract = json_document_to_contract(
+            "tests/supporting_files/contract/array-index/array-index-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // Test getting array elements - duplicates should be removed
+        let elements = document
+            .get_raw_array_elements_for_document_type("hashtags", post_type, platform_version)
+            .expect("should get array elements");
+
+        assert_eq!(elements.len(), 2, "expected 2 unique elements after deduplication");
+    }
+}

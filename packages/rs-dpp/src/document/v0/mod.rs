@@ -19,8 +19,8 @@ use std::fmt;
 use platform_value::Value;
 
 use crate::document::document_methods::{
-    DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
-    DocumentIsEqualIgnoringTimestampsV0,
+    DocumentGetRawArrayElementsForDocumentTypeV0, DocumentGetRawForContractV0,
+    DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentIsEqualIgnoringTimestampsV0,
 };
 
 use crate::identity::TimestampMillis;
@@ -174,6 +174,10 @@ impl DocumentIsEqualIgnoringTimestampsV0 for DocumentV0 {
 }
 
 impl DocumentGetRawForDocumentTypeV0 for DocumentV0 {
+    //automatically done
+}
+
+impl DocumentGetRawArrayElementsForDocumentTypeV0 for DocumentV0 {
     //automatically done
 }
 

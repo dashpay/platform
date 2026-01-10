@@ -11,6 +11,7 @@ use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::drive::Drive;
+use crate::util::object_size_info::DriveKeyInfo::Key;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
@@ -20,6 +21,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentPropertyType;
 
 use crate::drive::document::paths::contract_document_type_path_vec;
 use dpp::version::PlatformVersion;
@@ -88,80 +90,180 @@ impl Drive {
             let mut index_path: Vec<Vec<u8>> = contract_document_type_path.clone();
             index_path.push(Vec::from(name.as_bytes()));
 
-            // with the example of the dashpay contract's first index
-            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_raw_for_document_type(
-                    name,
-                    document_type,
-                    document_and_contract_info.owned_document_info.owner_id,
-                    Some((sub_level, event_id)),
-                    platform_version,
-                )?
-                .unwrap_or_default();
+            // Check if this property is an array type
+            let is_array_property = document_type
+                .flattened_properties()
+                .get(name)
+                .map(|prop| matches!(prop.property_type, DocumentPropertyType::Array(_)))
+                .unwrap_or(false);
 
-            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
-            {
-                let document_top_field_estimated_size = document_and_contract_info
+            if is_array_property {
+                // Handle array property - remove index entries for each element
+                let array_elements = document_and_contract_info
                     .owned_document_info
                     .document_info
-                    .get_estimated_size_for_document_type(name, document_type, platform_version)?;
+                    .get_raw_array_elements_for_document_type(
+                        name,
+                        document_type,
+                        platform_version,
+                    )?;
 
-                if document_top_field_estimated_size > u8::MAX as u16 {
-                    return Err(Error::Fee(FeeError::Overflow(
-                        "document top field is too big for being an index",
-                    )));
+                if array_elements.is_empty() {
+                    // Empty array - nothing to remove at top level
+                    continue;
                 }
 
-                // On this level we will have all the user defined values for the paths
-                estimated_costs_only_with_layer_info.insert(
-                    KeyInfoPath::from_known_owned_path(index_path.clone()),
-                    EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
-                        estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllSubtrees(
-                            document_top_field_estimated_size as u8,
-                            NoSumTrees,
-                            storage_flags.map(|s| s.serialized_size()),
-                        ),
-                    },
-                );
-            }
+                // For each array element, remove the index entry
+                for element_value in array_elements {
+                    let element_key = Key(element_value);
+                    if let Some(estimated_costs_only_with_layer_info) =
+                        estimated_costs_only_with_layer_info
+                    {
+                        let document_top_field_estimated_size = document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )?;
 
-            let any_fields_null = document_top_field.is_empty();
-            let all_fields_null = document_top_field.is_empty();
+                        if document_top_field_estimated_size > u8::MAX as u16 {
+                            return Err(Error::Fee(FeeError::Overflow(
+                                "document top field is too big for being an index",
+                            )));
+                        }
 
-            let mut index_path_info = if document_and_contract_info
-                .owned_document_info
-                .document_info
-                .is_document_size()
-            {
-                // This is a stateless operation
-                PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
+                        estimated_costs_only_with_layer_info.insert(
+                            KeyInfoPath::from_known_owned_path(index_path.clone()),
+                            EstimatedLayerInformation {
+                                tree_type: TreeType::NormalTree,
+                                estimated_layer_count: PotentiallyAtMaxElements,
+                                estimated_layer_sizes: AllSubtrees(
+                                    document_top_field_estimated_size as u8,
+                                    NoSumTrees,
+                                    storage_flags.map(|s| s.serialized_size()),
+                                ),
+                            },
+                        );
+                    }
+
+                    let any_fields_null = false; // Not null since we have an element
+                    let all_fields_null = false;
+
+                    let mut index_path_info = if document_and_contract_info
+                        .owned_document_info
+                        .document_info
+                        .is_document_size()
+                    {
+                        // This is a stateless operation
+                        PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(
+                            index_path.clone(),
+                        ))
+                    } else {
+                        PathInfo::PathAsVec::<0>(index_path.clone())
+                    };
+
+                    // Push the element value to the path
+                    index_path_info.push(element_key)?;
+
+                    self.remove_indices_for_index_level_for_contract_operations(
+                        document_and_contract_info,
+                        index_path_info,
+                        sub_level,
+                        any_fields_null,
+                        all_fields_null,
+                        &storage_flags,
+                        previous_batch_operations,
+                        estimated_costs_only_with_layer_info,
+                        event_id,
+                        transaction,
+                        batch_operations,
+                        platform_version,
+                    )?;
+                }
             } else {
-                PathInfo::PathAsVec::<0>(index_path)
-            };
+                // Handle scalar property - existing logic
+                // with the example of the dashpay contract's first index
+                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
+                let document_top_field = document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .get_raw_for_document_type(
+                        name,
+                        document_type,
+                        document_and_contract_info.owned_document_info.owner_id,
+                        Some((sub_level, event_id)),
+                        platform_version,
+                    )?
+                    .unwrap_or_default();
 
-            // we push the actual value of the index path
-            index_path_info.push(document_top_field)?;
-            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    let document_top_field_estimated_size = document_and_contract_info
+                        .owned_document_info
+                        .document_info
+                        .get_estimated_size_for_document_type(
+                            name,
+                            document_type,
+                            platform_version,
+                        )?;
 
-            self.remove_indices_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info,
-                sub_level,
-                any_fields_null,
-                all_fields_null,
-                &storage_flags,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+                    if document_top_field_estimated_size > u8::MAX as u16 {
+                        return Err(Error::Fee(FeeError::Overflow(
+                            "document top field is too big for being an index",
+                        )));
+                    }
+
+                    // On this level we will have all the user defined values for the paths
+                    estimated_costs_only_with_layer_info.insert(
+                        KeyInfoPath::from_known_owned_path(index_path.clone()),
+                        EstimatedLayerInformation {
+                            tree_type: TreeType::NormalTree,
+                            estimated_layer_count: PotentiallyAtMaxElements,
+                            estimated_layer_sizes: AllSubtrees(
+                                document_top_field_estimated_size as u8,
+                                NoSumTrees,
+                                storage_flags.map(|s| s.serialized_size()),
+                            ),
+                        },
+                    );
+                }
+
+                let any_fields_null = document_top_field.is_empty();
+                let all_fields_null = document_top_field.is_empty();
+
+                let mut index_path_info = if document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .is_document_size()
+                {
+                    // This is a stateless operation
+                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
+                } else {
+                    PathInfo::PathAsVec::<0>(index_path)
+                };
+
+                // we push the actual value of the index path
+                index_path_info.push(document_top_field)?;
+                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+                self.remove_indices_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    index_path_info,
+                    sub_level,
+                    any_fields_null,
+                    all_fields_null,
+                    &storage_flags,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(())
     }

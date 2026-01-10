@@ -29,7 +29,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
-    pub(super) fn remove_indices_for_top_index_level_for_contract_operations(
+    pub(crate) fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,

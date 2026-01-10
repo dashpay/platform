@@ -12,6 +12,8 @@ use crate::data_contract::document_type::property::DocumentProperty;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::ArrayItemType;
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
@@ -427,7 +429,10 @@ impl DocumentTypeV1 {
                             }
 
                             // Validate indexed properties
-                            index.properties.iter().try_for_each(|index_property| {
+                            // Track array properties for validation
+                            let mut array_property_position: Option<usize> = None;
+
+                            index.properties.iter().enumerate().try_for_each(|(position, index_property)| {
                                 // Do not allow to index already indexed system properties
                                 if NOT_ALLOWED_SYSTEM_PROPERTIES
                                     .contains(&index_property.name.as_str())
@@ -466,9 +471,92 @@ impl DocumentTypeV1 {
 
                                     // Validate indexed property type
                                     match &property_definition.property_type {
-                                        // Array and objects aren't supported for indexing yet
-                                        DocumentPropertyType::Array(_)
-                                        | DocumentPropertyType::Object(_)
+                                        // Arrays with indexable scalar element types are supported
+                                        DocumentPropertyType::Array(array_item_type) => {
+                                            // Validate that array item type is indexable
+                                            match array_item_type {
+                                                // String arrays must have bounded element length
+                                                ArrayItemType::String(_, max_len) => {
+                                                    if max_len.is_none()
+                                                        || max_len.unwrap() as u16
+                                                            > MAX_INDEXED_STRING_PROPERTY_LENGTH
+                                                    {
+                                                        return Err(ProtocolError::ConsensusError(Box::new(
+                                                            InvalidIndexedPropertyConstraintError::new(
+                                                                name.to_owned(),
+                                                                index.name.to_owned(),
+                                                                index_property.name.to_owned(),
+                                                                "maxLength".to_string(),
+                                                                format!(
+                                                                    "array string items should have maxLength less or equal {}",
+                                                                    MAX_INDEXED_STRING_PROPERTY_LENGTH
+                                                                ),
+                                                            )
+                                                            .into(),
+                                                        )));
+                                                    }
+                                                }
+                                                // ByteArray elements must have bounded size
+                                                ArrayItemType::ByteArray(_, max_size) => {
+                                                    if max_size.is_none()
+                                                        || max_size.unwrap() as u16
+                                                            > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                                    {
+                                                        return Err(ProtocolError::ConsensusError(Box::new(
+                                                            InvalidIndexedPropertyConstraintError::new(
+                                                                name.to_owned(),
+                                                                index.name.to_owned(),
+                                                                index_property.name.to_owned(),
+                                                                "maxItems".to_string(),
+                                                                format!(
+                                                                    "array byteArray items should have maxItems less or equal {}",
+                                                                    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                                                ),
+                                                            )
+                                                            .into(),
+                                                        )));
+                                                    }
+                                                }
+                                                // These scalar types are allowed
+                                                ArrayItemType::Integer
+                                                | ArrayItemType::Number
+                                                | ArrayItemType::Identifier
+                                                | ArrayItemType::Date => {}
+                                                // Boolean arrays don't make sense for indexing
+                                                ArrayItemType::Boolean => {
+                                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                                        InvalidIndexPropertyTypeError::new(
+                                                            name.to_owned(),
+                                                            index.name.to_owned(),
+                                                            index_property.name.to_owned(),
+                                                            "array of boolean".to_string(),
+                                                        )
+                                                        .into(),
+                                                    )));
+                                                }
+                                            }
+
+                                            // Check if we already have an array property in this index
+                                            if array_property_position.is_some() {
+                                                return Err(ProtocolError::ConsensusError(Box::new(
+                                                    InvalidIndexedPropertyConstraintError::new(
+                                                        name.to_owned(),
+                                                        index.name.to_owned(),
+                                                        index_property.name.to_owned(),
+                                                        "array".to_string(),
+                                                        "only one array property is allowed per index".to_string(),
+                                                    )
+                                                    .into(),
+                                                )));
+                                            }
+
+                                            // Record the position of the array property
+                                            array_property_position = Some(position);
+
+                                            Ok(())
+                                        }
+                                        // Objects and variable type arrays aren't supported for indexing
+                                        DocumentPropertyType::Object(_)
                                         | DocumentPropertyType::VariableTypeArray(_) => {
                                             Err(ProtocolError::ConsensusError(Box::new(
                                                 InvalidIndexPropertyTypeError::new(
@@ -526,6 +614,23 @@ impl DocumentTypeV1 {
                                     Ok(())
                                 }
                             })?;
+
+                            // If there's an array property, it must be at the last position
+                            if let Some(pos) = array_property_position {
+                                if pos != index.properties.len() - 1 {
+                                    let array_prop_name = &index.properties[pos].name;
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        InvalidIndexedPropertyConstraintError::new(
+                                            name.to_owned(),
+                                            index.name.to_owned(),
+                                            array_prop_name.to_owned(),
+                                            "position".to_string(),
+                                            "array property must be the last property in a compound index".to_string(),
+                                        )
+                                        .into(),
+                                    )));
+                                }
+                            }
                         }
 
                         Ok((index.name.clone(), index))

@@ -19,6 +19,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentPropertyType;
 
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -172,6 +173,22 @@ impl Drive {
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
+            // Check if this index contains an array property
+            let index_has_array = index.properties.iter().any(|prop| {
+                document_type
+                    .flattened_properties()
+                    .get(&prop.name)
+                    .map(|p| matches!(p.property_type, DocumentPropertyType::Array(_)))
+                    .unwrap_or(false)
+            });
+
+            // For indexes with array properties, skip the inline scalar update logic.
+            // Array-containing indexes will be handled after this loop using the
+            // top-level remove+add functions which correctly iterate over array elements.
+            if index_has_array {
+                continue;
+            }
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -477,6 +494,51 @@ impl Drive {
                 }
             }
         }
+
+        // Handle indexes with array properties separately using remove+add approach
+        // This correctly handles array element iteration via the recursive index functions
+        let any_index_has_array = document_type.indexes().values().any(|index| {
+            index.properties.iter().any(|prop| {
+                document_type
+                    .flattened_properties()
+                    .get(&prop.name)
+                    .map(|p| matches!(p.property_type, DocumentPropertyType::Array(_)))
+                    .unwrap_or(false)
+            })
+        });
+
+        if any_index_has_array {
+            // Create old document info for removal
+            let old_document_and_contract_info = DocumentAndContractInfo {
+                owned_document_info: crate::util::object_size_info::OwnedDocumentInfo {
+                    document_info: old_document_info,
+                    owner_id: None, // Use original owner id from old document
+                },
+                contract,
+                document_type,
+            };
+
+            // Remove old index entries for array-containing indexes
+            self.remove_indices_for_top_index_level_for_contract_operations(
+                &old_document_and_contract_info,
+                &None, // No previous batch operations for the removal phase
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+
+            // Add new index entries for array-containing indexes
+            self.add_indices_for_top_index_level_for_contract_operations(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
+
         Ok(batch_operations)
     }
 }

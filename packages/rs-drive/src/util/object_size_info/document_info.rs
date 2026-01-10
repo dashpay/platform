@@ -59,6 +59,15 @@ pub trait DocumentInfoV0Methods {
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<DriveKeyInfo<'_>>, Error>;
+    /// Gets array element values for an indexed array property.
+    /// Each element is encoded for use as an index tree key.
+    /// Returns an empty Vec if the field is not an array, is missing, or is empty.
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error>;
     /// Gets the borrowed document
     fn get_borrowed_document_and_storage_flags(&self)
         -> Option<(&Document, Option<&StorageFlags>)>;
@@ -244,6 +253,42 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                         })))
                     }
                 }
+            }
+        }
+    }
+
+    /// Gets array element values for an indexed array property.
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        match self {
+            DocumentInfo::DocumentRefAndSerialization((document, _, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => {
+                document
+                    .get_raw_array_elements_for_document_type(
+                        key_path,
+                        document_type,
+                        platform_version,
+                    )
+                    .map_err(|e| Error::Protocol(Box::new(e)))
+            }
+            DocumentInfo::DocumentOwnedInfo((document, _))
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
+                document
+                    .get_raw_array_elements_for_document_type(
+                        key_path,
+                        document_type,
+                        platform_version,
+                    )
+                    .map_err(|e| Error::Protocol(Box::new(e)))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(_) => {
+                // For estimated sizes, we can't know the actual array elements
+                // Return empty - caller should handle this case
+                Ok(vec![])
             }
         }
     }

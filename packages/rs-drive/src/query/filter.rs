@@ -535,6 +535,7 @@ impl DriveDocumentQueryFilter<'_> {
                             _ => false,
                         },
                         WhereOperator::StartsWith => false,
+                        WhereOperator::Contains => false,
                     };
                     if ok {
                         QuerySyntaxSimpleValidationResult::new()

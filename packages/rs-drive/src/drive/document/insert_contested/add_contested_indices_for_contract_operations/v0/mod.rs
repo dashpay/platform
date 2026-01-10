@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::DocumentPropertyType;
 
 use crate::drive::votes::paths::{
     vote_contested_resource_contract_documents_indexes_path_vec,
@@ -105,6 +106,19 @@ impl Drive {
             // We on purpose do not want to put index names
             // This is different from document secondary indexes
             // The reason is that there is only one index so we already know the structure
+
+            // Check if this property is an array type - arrays are not supported in contested indexes
+            let is_array_property = document_type
+                .flattened_properties()
+                .get(name)
+                .map(|prop| matches!(prop.property_type, DocumentPropertyType::Array(_)))
+                .unwrap_or(false);
+
+            if is_array_property {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "Array properties are not supported in contested indexes",
+                )));
+            }
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
