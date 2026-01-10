@@ -266,25 +266,13 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
     ) -> Result<Vec<Vec<u8>>, Error> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefInfo((document, _)) => {
-                document
-                    .get_raw_array_elements_for_document_type(
-                        key_path,
-                        document_type,
-                        platform_version,
-                    )
-                    .map_err(|e| Error::Protocol(Box::new(e)))
-            }
+            | DocumentInfo::DocumentRefInfo((document, _)) => document
+                .get_raw_array_elements_for_document_type(key_path, document_type, platform_version)
+                .map_err(|e| Error::Protocol(Box::new(e))),
             DocumentInfo::DocumentOwnedInfo((document, _))
-            | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
-                document
-                    .get_raw_array_elements_for_document_type(
-                        key_path,
-                        document_type,
-                        platform_version,
-                    )
-                    .map_err(|e| Error::Protocol(Box::new(e)))
-            }
+            | DocumentInfo::DocumentAndSerialization((document, _, _)) => document
+                .get_raw_array_elements_for_document_type(key_path, document_type, platform_version)
+                .map_err(|e| Error::Protocol(Box::new(e))),
             DocumentInfo::DocumentEstimatedAverageSize(_) => {
                 // For estimated sizes, we can't know the actual array elements
                 // Return empty - caller should handle this case

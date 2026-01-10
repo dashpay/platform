@@ -129,8 +129,7 @@ impl Drive {
                 // For each array element, create an index entry
                 for element_value in array_elements {
                     let element_key = Key(element_value);
-                    let path_key_info =
-                        element_key.clone().add_path::<0>(index_path.clone());
+                    let path_key_info = element_key.clone().add_path::<0>(index_path.clone());
 
                     // Insert tree for this element value
                     self.batch_insert_empty_tree_if_not_exists(

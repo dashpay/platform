@@ -8,11 +8,11 @@ use crate::consensus::basic::data_contract::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::ArrayItemType;
 use crate::data_contract::document_type::property::DocumentProperty;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::property::ArrayItemType;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]

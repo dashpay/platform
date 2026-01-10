@@ -7268,7 +7268,10 @@ mod array_index_tests {
             "Serialization should succeed, got: {:?}",
             serialized.err()
         );
-        assert!(serialized.unwrap().len() > 0, "Serialized bytes should not be empty");
+        assert!(
+            serialized.unwrap().len() > 0,
+            "Serialized bytes should not be empty"
+        );
     }
 
     #[test]
@@ -7572,6 +7575,10 @@ mod array_index_tests {
             .get_raw_array_elements_for_document_type("hashtags", post_type, platform_version)
             .expect("should get array elements");
 
-        assert_eq!(elements.len(), 2, "expected 2 unique elements after deduplication");
+        assert_eq!(
+            elements.len(),
+            2,
+            "expected 2 unique elements after deduplication"
+        );
     }
 }

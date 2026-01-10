@@ -169,9 +169,8 @@ impl Drive {
                         let mut element_path_info = sub_level_index_path_info.clone();
 
                         // Insert tree for this element value
-                        let element_path_key_info = element_key
-                            .clone()
-                            .add_path_info(element_path_info.clone());
+                        let element_path_key_info =
+                            element_key.clone().add_path_info(element_path_info.clone());
 
                         self.batch_insert_empty_tree_if_not_exists(
                             element_path_key_info,

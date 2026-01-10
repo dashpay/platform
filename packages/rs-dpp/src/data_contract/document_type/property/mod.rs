@@ -1233,7 +1233,7 @@ impl DocumentPropertyType {
                 DataContractError::EncodingDataStructureNotSupported(
                     "we should never try encoding a variable type array".to_string(),
                 ),
-            ))
+            )),
         }
     }
 
@@ -2392,7 +2392,9 @@ impl DocumentPropertyType {
                     }
 
                     match value_map.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
-                        Some("application/x.dash.dpp.identifier") => DocumentPropertyType::Identifier,
+                        Some("application/x.dash.dpp.identifier") => {
+                            DocumentPropertyType::Identifier
+                        }
                         Some(_) | None => DocumentPropertyType::ByteArray(ByteArrayPropertySizes {
                             min_size: value_map.get_optional_integer(property_names::MIN_ITEMS)?,
                             max_size: value_map.get_optional_integer(property_names::MAX_ITEMS)?,
