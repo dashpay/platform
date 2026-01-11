@@ -6,8 +6,32 @@ use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMe
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::dpp::identity::{KeyType, Purpose};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+
+/// Check if an ECDSA-derived public key matches an identity's public key.
+/// Supports ECDSA_SECP256K1 (33-byte comparison) and ECDSA_HASH160 (20-byte comparison).
+/// Returns false for non-ECDSA key types (BLS, EdDSA, etc.) since they require different derivation.
+fn ecdsa_public_key_matches_identity_key(
+    public_key_bytes: &[u8],   // 33-byte compressed secp256k1 public key
+    public_key_hash160: &[u8], // 20-byte hash160 of the public key
+    key: &IdentityPublicKey,
+) -> bool {
+    match key.key_type() {
+        KeyType::ECDSA_SECP256K1 => {
+            // Compare full 33-byte compressed public key
+            key.data().as_slice() == public_key_bytes
+        }
+        KeyType::ECDSA_HASH160 => {
+            // Compare 20-byte hash160
+            key.data().as_slice() == public_key_hash160
+        }
+        // BLS12_381 keys require separate BLS key derivation - not supported via ECDSA private key
+        // BIP13_SCRIPT_HASH and EDDSA_25519_HASH160 are also not derivable from ECDSA private key
+        _ => false,
+    }
+}
 use dash_sdk::dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -83,6 +107,7 @@ impl WasmSdk {
         };
 
         // Find matching key - prioritize key_id if provided, otherwise find any authentication key
+        // Supports ECDSA_SECP256K1 and ECDSA_HASH160 key types
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
             owner_identity
@@ -90,8 +115,11 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     key.purpose() == Purpose::AUTHENTICATION
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .ok_or_else(|| {
                     WasmSdkError::not_found(format!(
@@ -107,8 +135,11 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::AUTHENTICATION
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .map(|(_, key)| key.clone())
                 .ok_or_else(|| {
@@ -270,6 +301,7 @@ impl WasmSdk {
         };
 
         // Find matching key - prioritize key_id if provided, otherwise find any authentication key
+        // Supports ECDSA_SECP256K1 and ECDSA_HASH160 key types
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
             owner_identity
@@ -277,8 +309,11 @@ impl WasmSdk {
                 .get(&requested_key_id)
                 .filter(|key| {
                     key.purpose() == Purpose::AUTHENTICATION
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .ok_or_else(|| {
                     WasmSdkError::not_found(format!(
@@ -294,8 +329,11 @@ impl WasmSdk {
                 .iter()
                 .find(|(_, key)| {
                     key.purpose() == Purpose::AUTHENTICATION
-                        && key.key_type() == KeyType::ECDSA_HASH160
-                        && key.data().as_slice() == public_key_hash160.as_slice()
+                        && ecdsa_public_key_matches_identity_key(
+                            &public_key_bytes,
+                            &public_key_hash160,
+                            key,
+                        )
                 })
                 .map(|(_, key)| key.clone())
                 .ok_or_else(|| {
