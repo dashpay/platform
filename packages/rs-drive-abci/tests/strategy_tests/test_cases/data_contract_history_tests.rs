@@ -15,7 +15,9 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::strategy::NetworkStrategy;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::config::v0::{DataContractConfigGettersV0, DataContractConfigSettersV0};
+    use dpp::data_contract::config::v0::{
+        DataContractConfigGettersV0, DataContractConfigSettersV0,
+    };
     use dpp::tests::json_document::json_document_to_created_contract;
     use drive_abci::config::{
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
@@ -109,9 +111,17 @@ mod tests {
 
         // Verify all state transitions succeeded (including contract creation)
         for (block_height, tx_results) in outcome.state_transition_results_per_block.iter() {
-            println!("Block {}: {} state transitions", block_height, tx_results.len());
+            println!(
+                "Block {}: {} state transitions",
+                block_height,
+                tx_results.len()
+            );
             for (state_transition, result) in tx_results {
-                println!("  ST type: {:?}, code: {}", state_transition.state_transition_type(), result.code);
+                println!(
+                    "  ST type: {:?}, code: {}",
+                    state_transition.state_transition_type(),
+                    result.code
+                );
                 assert_eq!(
                     result.code, 0,
                     "state transition got code {} : {:?}",
@@ -138,13 +148,7 @@ mod tests {
             .abci_app
             .platform
             .drive
-            .fetch_contract(
-                contract_id.to_buffer(),
-                None,
-                None,
-                None,
-                platform_version,
-            )
+            .fetch_contract(contract_id.to_buffer(), None, None, None, platform_version)
             .value
             .expect("expected to execute the fetch of a contract")
             .expect("expected to get a contract fetch info");
