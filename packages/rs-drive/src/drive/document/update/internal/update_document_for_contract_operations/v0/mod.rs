@@ -181,7 +181,8 @@ impl Drive {
                     .map(|p| {
                         matches!(
                             p.property_type,
-                            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_)
+                            DocumentPropertyType::Array(_)
+                                | DocumentPropertyType::VariableTypeArray(_)
                         )
                     })
                     .unwrap_or(false)
@@ -510,7 +511,8 @@ impl Drive {
                     .map(|p| {
                         matches!(
                             p.property_type,
-                            DocumentPropertyType::Array(_) | DocumentPropertyType::VariableTypeArray(_)
+                            DocumentPropertyType::Array(_)
+                                | DocumentPropertyType::VariableTypeArray(_)
                         )
                     })
                     .unwrap_or(false)

@@ -276,7 +276,9 @@ impl ArrayItemType {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
                 // Use the same encoding as DocumentPropertyType::encode_date_timestamp
                 // which uses encode_u64 with sign-bit flip for proper lexicographic ordering
-                Ok(DocumentPropertyType::encode_date_timestamp(value_as_i64 as u64))
+                Ok(DocumentPropertyType::encode_date_timestamp(
+                    value_as_i64 as u64,
+                ))
             }
             ArrayItemType::Integer => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
