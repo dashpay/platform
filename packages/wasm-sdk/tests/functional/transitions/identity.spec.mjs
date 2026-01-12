@@ -172,6 +172,9 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       // Refresh nonce to ensure we have the latest
       await client.refreshIdentityNonce(sdk.Identifier.fromBase58(testData.identityId));
 
+      // Small delay to avoid nonce race conditions in rapid test runs
+      await new Promise((resolve) => { setTimeout(resolve, 500); });
+
       // Withdraw credits - not specifying toAddress means withdrawal
       // will be to the identity's registered withdrawal address
       // Minimum is 190000 credits, maximum is 50000000000000
