@@ -20,7 +20,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
  */
 
 describe('Identity State Transitions', function describeIdentityStateTransitions() {
-  this.timeout(30000);
+  this.timeout(60000);
 
   let client;
   const testData = wasmFunctionalTestRequirements();

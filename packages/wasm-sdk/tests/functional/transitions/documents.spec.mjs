@@ -138,6 +138,9 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       });
       testContractId = publishedContract.id;
 
+      // Wait for the contract to be indexed on platform
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
       // Verify the contract is available
       const fetchedContract = await client.getDataContract(testContractId);
       expect(fetchedContract).to.exist();
