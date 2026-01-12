@@ -66,7 +66,7 @@ fn parse_security_level(s: Option<&str>) -> SecurityLevel {
 /// Check if an ECDSA-derived public key matches an identity's public key.
 /// Supports ECDSA_SECP256K1 (33-byte comparison) and ECDSA_HASH160 (20-byte comparison).
 /// Returns false for non-ECDSA key types (BLS, EdDSA, etc.) since they require different derivation.
-fn ecdsa_public_key_matches_identity_key(
+pub(crate) fn ecdsa_public_key_matches_identity_key(
     public_key_bytes: &[u8],   // 33-byte compressed secp256k1 public key
     public_key_hash160: &[u8], // 20-byte hash160 of the public key
     key: &IdentityPublicKey,
