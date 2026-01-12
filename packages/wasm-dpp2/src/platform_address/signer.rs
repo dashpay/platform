@@ -56,6 +56,13 @@ impl PlatformAddressSignerWasm {
         Ok(platform_address)
     }
 
+    /// Returns the type name for WASM object identification (instance getter).
+    #[wasm_bindgen(getter = __type)]
+    pub fn type_name(&self) -> String {
+        "PlatformAddressSigner".to_string()
+    }
+
+    /// Returns the struct name (static getter).
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
         "PlatformAddressSigner".to_string()
