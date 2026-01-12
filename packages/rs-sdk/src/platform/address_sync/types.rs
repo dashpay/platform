@@ -1,6 +1,7 @@
 //! Types for address synchronization.
 
 use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use rs_dapi_client::RequestSettings;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -62,10 +63,10 @@ impl Default for AddressSyncConfig {
 /// Result of address synchronization.
 #[derive(Debug)]
 pub struct AddressSyncResult {
-    /// Addresses found with their balances.
+    /// Addresses found with their balances and nonces.
     ///
-    /// Map of `(index, key)` to credits balance.
-    pub found: BTreeMap<(AddressIndex, AddressKey), Credits>,
+    /// Map of `(index, key)` to address funds.
+    pub found: BTreeMap<(AddressIndex, AddressKey), AddressFunds>,
 
     /// Addresses proven absent from the tree.
     ///
@@ -101,12 +102,15 @@ impl AddressSyncResult {
 
     /// Get total credits across all found addresses.
     pub fn total_balance(&self) -> u64 {
-        self.found.values().sum()
+        self.found.values().map(|funds| funds.balance).sum()
     }
 
     /// Get count of addresses found with non-zero balance.
     pub fn non_zero_count(&self) -> usize {
-        self.found.values().filter(|&&b| b > 0).count()
+        self.found
+            .values()
+            .filter(|funds| funds.balance > 0)
+            .count()
     }
 }
 
@@ -136,6 +140,15 @@ pub struct AddressSyncMetrics {
 
     /// Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds).
     pub iterations: usize,
+}
+
+/// Funds stored for a platform address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddressFunds {
+    /// Address nonce used for anti-replay.
+    pub nonce: AddressNonce,
+    /// Credits balance held by the address.
+    pub balance: Credits,
 }
 
 impl AddressSyncMetrics {

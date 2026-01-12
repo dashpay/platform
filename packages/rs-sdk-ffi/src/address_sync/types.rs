@@ -76,6 +76,9 @@ pub struct DashSDKFoundAddress {
     /// Length of the key in bytes
     pub key_len: usize,
 
+    /// Nonce associated with this address
+    pub nonce: u32,
+
     /// Balance in credits at this address
     pub balance: u64,
 }

@@ -42,8 +42,8 @@ mod types;
 
 pub use provider::AddressProvider;
 pub use types::{
-    AddressIndex, AddressKey, AddressSyncConfig, AddressSyncMetrics, AddressSyncResult,
-    LeafBoundaryKey,
+    AddressFunds, AddressIndex, AddressKey, AddressSyncConfig, AddressSyncMetrics,
+    AddressSyncResult, LeafBoundaryKey,
 };
 
 use crate::error::Error;
@@ -54,6 +54,7 @@ use dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
     GetAddressesBranchStateRequest,
 };
+use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::{
@@ -81,7 +82,7 @@ use tracker::KeyLeafTracker;
 /// - `config`: Optional configuration; uses defaults if `None`.
 ///
 /// # Returns
-/// - `Ok(AddressSyncResult)`: Contains found addresses with balances and absent addresses.
+/// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses.
 /// - `Err(Error)`: If the sync fails after exhausting retries.
 ///
 /// # Example
@@ -130,7 +131,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
 
     // Step 2: Process trunk result
     let mut tracker = KeyLeafTracker::new();
-    process_trunk_result(&trunk_result, provider, &mut result, &mut tracker);
+    process_trunk_result(&trunk_result, provider, &mut result, &mut tracker)?;
 
     // Step 3: Iterative branch queries
     let min_query_depth = platform_version
@@ -190,7 +191,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
                 &key_to_index,
                 &mut result,
                 &mut tracker,
-            );
+            )?;
         }
 
         // Check if provider has extended pending addresses (gap limit behavior)
@@ -245,16 +246,16 @@ fn process_trunk_result<P: AddressProvider>(
     provider: &mut P,
     result: &mut AddressSyncResult,
     tracker: &mut KeyLeafTracker,
-) {
+) -> Result<(), Error> {
     // Get pending addresses
     let pending: Vec<(AddressIndex, AddressKey)> = provider.pending_addresses();
 
     for (index, key) in pending {
         // Check if found in elements
         if let Some(element) = trunk_result.elements.get(&key) {
-            let balance = extract_balance_from_element(element);
-            result.found.insert((index, key.clone()), balance);
-            provider.on_address_found(index, &key, balance);
+            let funds = AddressFunds::try_from(element)?;
+            result.found.insert((index, key.clone()), funds);
+            provider.on_address_found(index, &key, funds);
         } else {
             // Trace to leaf
             if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
@@ -266,6 +267,8 @@ fn process_trunk_result<P: AddressProvider>(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Get privacy-adjusted leaves to query.
@@ -471,7 +474,7 @@ fn process_branch_result<P: AddressProvider>(
     key_to_index: &HashMap<AddressKey, AddressIndex>,
     result: &mut AddressSyncResult,
     tracker: &mut KeyLeafTracker,
-) {
+) -> Result<(), Error> {
     // Get all target keys that were in this leaf's subtree
     let target_keys = tracker.keys_for_leaf(queried_leaf_key);
 
@@ -480,9 +483,9 @@ fn process_branch_result<P: AddressProvider>(
 
         // Check if found in elements
         if let Some(element) = branch_result.elements.get(&target_key) {
-            let balance = extract_balance_from_element(element);
-            result.found.insert((index, target_key.clone()), balance);
-            provider.on_address_found(index, &target_key, balance);
+            let funds = AddressFunds::try_from(element)?;
+            result.found.insert((index, target_key.clone()), funds);
+            provider.on_address_found(index, &target_key, funds);
             tracker.key_found(&target_key);
         } else {
             // Try to trace to a deeper leaf
@@ -498,15 +501,32 @@ fn process_branch_result<P: AddressProvider>(
     }
 
     result.metrics.total_elements_seen += branch_result.elements.len();
+    Ok(())
 }
 
-/// Extract balance from a GroveDB Element.
-///
-/// The address funds tree stores balances as items with sum items.
-fn extract_balance_from_element(element: &Element) -> u64 {
-    match element {
-        Element::ItemWithSumItem(_, value, _) => *value as u64,
-        _ => 0,
+impl TryFrom<&Element> for AddressFunds {
+    type Error = Error;
+
+    /// Convert a GroveDB element into address funds (nonce and balance).
+    ///
+    /// The address funds tree stores the nonce as the item value and the balance as the sum item.
+    fn try_from(element: &Element) -> Result<Self, Self::Error> {
+        if let Element::ItemWithSumItem(nonce_bytes, balance, _) = element {
+            let nonce_bytes: [u8; 4] = nonce_bytes.as_slice().try_into().map_err(|_| {
+                Error::InvalidProvedResponse(
+                    "address funds nonce must be exactly 4 bytes".to_string(),
+                )
+            })?;
+            let nonce = AddressNonce::from_be_bytes(nonce_bytes);
+            let balance: u64 = (*balance).try_into().map_err(|_| {
+                Error::InvalidProvedResponse("address funds balance must fit into u64".to_string())
+            })?;
+            return Ok(AddressFunds { nonce, balance });
+        }
+
+        Err(Error::InvalidProvedResponse(
+            "unexpected element type for address funds".to_string(),
+        ))
     }
 }
 
@@ -564,11 +584,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_balance() {
-        let item_with_sum_item = Element::ItemWithSumItem(vec![], 1000, None);
-        assert_eq!(extract_balance_from_element(&item_with_sum_item), 1000);
+    fn test_extract_funds_from_element() {
+        let item_with_sum_item = Element::ItemWithSumItem(vec![0, 0, 0, 5], 1000, None);
+        let funds = AddressFunds::try_from(&item_with_sum_item).expect("valid funds element");
+        assert_eq!(funds.balance, 1000);
+        assert_eq!(funds.nonce, 5);
 
         let item = Element::Item(vec![1, 2, 3], None);
-        assert_eq!(extract_balance_from_element(&item), 0);
+        let err = AddressFunds::try_from(&item).unwrap_err();
+        assert!(matches!(err, Error::InvalidProvedResponse(_)));
     }
 }
