@@ -126,15 +126,21 @@ impl WasmSdk {
         match self.network() {
             dash_sdk::dpp::dashcore::Network::Testnet => {
                 let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard.as_ref().and_then(|ctx| ctx.get_known_contract(contract_id))
+                guard
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_known_contract(contract_id))
             }
             dash_sdk::dpp::dashcore::Network::Dash => {
                 let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard.as_ref().and_then(|ctx| ctx.get_known_contract(contract_id))
+                guard
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_known_contract(contract_id))
             }
             dash_sdk::dpp::dashcore::Network::Regtest => {
                 let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                guard.as_ref().and_then(|ctx| ctx.get_known_contract(contract_id))
+                guard
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_known_contract(contract_id))
             }
             _ => None,
         }
@@ -188,19 +194,31 @@ impl WasmSdk {
 
     /// Remove a contract from the cache
     /// This allows forcing a fresh fetch on next access
-    pub(crate) fn remove_cached_contract(&self, contract_id: &dash_sdk::platform::Identifier) -> bool {
+    pub(crate) fn remove_cached_contract(
+        &self,
+        contract_id: &dash_sdk::platform::Identifier,
+    ) -> bool {
         match self.network() {
             dash_sdk::dpp::dashcore::Network::Testnet => {
                 let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard.as_ref().map(|ctx| ctx.remove_known_contract(contract_id)).unwrap_or(false)
+                guard
+                    .as_ref()
+                    .map(|ctx| ctx.remove_known_contract(contract_id))
+                    .unwrap_or(false)
             }
             dash_sdk::dpp::dashcore::Network::Dash => {
                 let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard.as_ref().map(|ctx| ctx.remove_known_contract(contract_id)).unwrap_or(false)
+                guard
+                    .as_ref()
+                    .map(|ctx| ctx.remove_known_contract(contract_id))
+                    .unwrap_or(false)
             }
             dash_sdk::dpp::dashcore::Network::Regtest => {
                 let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                guard.as_ref().map(|ctx| ctx.remove_known_contract(contract_id)).unwrap_or(false)
+                guard
+                    .as_ref()
+                    .map(|ctx| ctx.remove_known_contract(contract_id))
+                    .unwrap_or(false)
             }
             _ => false,
         }
@@ -215,10 +233,9 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "removeCachedContract")]
     pub fn remove_cached_contract_js(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        contract_id: &wasm_dpp2::identifier::IdentifierWasm,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: &wasm_dpp2::identifier::IdentifierWasm,
     ) -> bool {
-        let id: dash_sdk::platform::Identifier = contract_id.clone().into();
+        let id: dash_sdk::platform::Identifier = (*contract_id).into();
         self.remove_cached_contract(&id)
     }
 }

@@ -422,8 +422,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
 
         // Create document query using the already-fetched contract
-        let query = DocumentQuery::new(data_contract, document_type)?
-            .with_document_id(&doc_id);
+        let query = DocumentQuery::new(data_contract, document_type)?.with_document_id(&doc_id);
 
         // Execute query
         let document = Document::fetch(self.as_ref(), query)
@@ -467,8 +466,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
 
         // Create document query using the already-fetched contract
-        let query = DocumentQuery::new(data_contract, document_type)?
-            .with_document_id(&doc_id);
+        let query = DocumentQuery::new(data_contract, document_type)?.with_document_id(&doc_id);
 
         // Execute query with proof
         let (document_result, metadata, proof) =
