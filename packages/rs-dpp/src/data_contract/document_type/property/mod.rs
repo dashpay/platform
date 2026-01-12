@@ -769,11 +769,7 @@ impl DocumentPropertyType {
                     elements.push(element);
                 }
 
-                if elements.is_empty() {
-                    Ok((Some(Value::Array(elements)), false))
-                } else {
-                    Ok((Some(Value::Array(elements)), false))
-                }
+                Ok((Some(Value::Array(elements)), false))
             }
             DocumentPropertyType::VariableTypeArray(_) => Err(DataContractError::Unsupported(
                 "deserialization of variable type arrays not yet supported".to_string(),
@@ -2362,6 +2358,7 @@ impl DocumentPropertyType {
                         "integer" => ArrayItemType::Integer,
                         "number" => ArrayItemType::Number,
                         "boolean" => ArrayItemType::Boolean,
+                        "date" => ArrayItemType::Date,
                         "array" => {
                             // Nested byte array
                             let is_byte_array =
