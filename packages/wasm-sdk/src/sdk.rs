@@ -465,14 +465,16 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name = "localTrusted")]
     pub fn new_local_trusted() -> Result<Self, WasmSdkError> {
         let trusted_context = {
-            let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-            guard.clone()
-        }
-        .map(Ok)
-        .unwrap_or_else(|| {
-            WasmTrustedContext::new_local()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-        })?;
+            let mut guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+            if let Some(ctx) = guard.as_ref() {
+                ctx.clone()
+            } else {
+                let new_ctx = WasmTrustedContext::new_local()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+                *guard = Some(new_ctx.clone());
+                new_ctx
+            }
+        };
 
         let local_addresses = LOCAL_DISCOVERED_ADDRESSES
             .lock()
@@ -490,16 +492,18 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "mainnetTrusted")]
     pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
-        // Use the cached context if available, otherwise create a new one
+        // Use the cached context if available, otherwise create a new one and store it
         let trusted_context = {
-            let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-            guard.clone()
-        }
-        .map(Ok)
-        .unwrap_or_else(|| {
-            WasmTrustedContext::new_mainnet()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-        })?;
+            let mut guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+            if let Some(ctx) = guard.as_ref() {
+                ctx.clone()
+            } else {
+                let new_ctx = WasmTrustedContext::new_mainnet()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+                *guard = Some(new_ctx.clone());
+                new_ctx
+            }
+        };
 
         let mainnet_addresses = MAINNET_DISCOVERED_ADDRESSES
             .lock()
@@ -533,16 +537,18 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "testnetTrusted")]
     pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
-        // Use the cached context if available, otherwise create a new one
+        // Use the cached context if available, otherwise create a new one and store it
         let trusted_context = {
-            let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-            guard.clone()
-        }
-        .map(Ok)
-        .unwrap_or_else(|| {
-            WasmTrustedContext::new_testnet()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-        })?;
+            let mut guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+            if let Some(ctx) = guard.as_ref() {
+                ctx.clone()
+            } else {
+                let new_ctx = WasmTrustedContext::new_testnet()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+                *guard = Some(new_ctx.clone());
+                new_ctx
+            }
+        };
 
         let testnet_addresses = TESTNET_DISCOVERED_ADDRESSES
             .lock()
