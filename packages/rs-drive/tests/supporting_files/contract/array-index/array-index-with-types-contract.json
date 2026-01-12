@@ -1,0 +1,82 @@
+{
+  "$format_version": "0",
+  "id": "9NRsVP68gRuYYwE6djM5jD3GwCGvUqUxRKTdaQRnqsPf",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "version": 1,
+  "documentSchemas": {
+    "item": {
+      "type": "object",
+      "indices": [
+        {
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ]
+        },
+        {
+          "properties": [
+            {
+              "tags": "asc"
+            }
+          ]
+        },
+        {
+          "properties": [
+            {
+              "scores": "asc"
+            }
+          ]
+        },
+        {
+          "properties": [
+            {
+              "identifiers": "asc"
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "position": 0
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "maxItems": 10,
+          "position": 1
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "maxItems": 10,
+          "position": 2
+        },
+        "identifiers": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32
+          },
+          "maxItems": 10,
+          "position": 3
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

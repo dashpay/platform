@@ -7581,4 +7581,686 @@ mod array_index_tests {
             "expected 2 unique elements after deduplication"
         );
     }
+
+    #[test]
+    #[ignore] // Requires array serialization support - delete needs to deserialize document from storage
+    fn test_delete_document_with_array_field() {
+        // Test that deleting a document with array fields removes all index entries
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_array_index_tests(platform_version);
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // First verify we can find posts with "dash" hashtag (should be 2: post1 and post3)
+        let query_value = json!({
+            "where": [
+                ["hashtags", "contains", "dash"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(results.len(), 2, "expected 2 posts with 'dash' before delete");
+
+        // Delete post1 (which has hashtags ["dash", "crypto", "blockchain"])
+        let db_transaction = drive.grove.start_transaction();
+
+        // Post1 ID from setup_array_index_tests
+        let post1_id: [u8; 32] = bs58::decode("AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ")
+            .into_vec()
+            .expect("expected to decode")
+            .try_into()
+            .expect("expected 32 bytes");
+
+        drive
+            .delete_document_for_contract(
+                post1_id.into(),
+                &contract,
+                "post",
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to delete document");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // Now query again - should only find 1 post with "dash" (post3)
+        let (results_after_delete, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results_after_delete.len(),
+            1,
+            "expected 1 post with 'dash' after deleting post1"
+        );
+
+        // Also verify "crypto" query - should now only return post2
+        let query_crypto = json!({
+            "where": [
+                ["hashtags", "contains", "crypto"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor_crypto = cbor_serializer::serializable_value_to_cbor(&query_crypto, None)
+            .expect("expected to serialize to cbor");
+
+        let query_crypto = DriveDocumentQuery::from_cbor(
+            where_cbor_crypto.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_crypto, _, _) = query_crypto
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results_crypto.len(),
+            1,
+            "expected 1 post with 'crypto' after deleting post1"
+        );
+
+        // And "blockchain" should return 0 (only post1 had it)
+        let query_blockchain = json!({
+            "where": [
+                ["hashtags", "contains", "blockchain"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor_blockchain =
+            cbor_serializer::serializable_value_to_cbor(&query_blockchain, None)
+                .expect("expected to serialize to cbor");
+
+        let query_blockchain = DriveDocumentQuery::from_cbor(
+            where_cbor_blockchain.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_blockchain, _, _) = query_blockchain
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results_blockchain.len(),
+            0,
+            "expected 0 posts with 'blockchain' after deleting post1"
+        );
+
+        drop(drive);
+    }
+
+    #[test]
+    #[ignore] // Requires array serialization support - update needs to deserialize document from storage
+    fn test_update_document_array_field() {
+        // Test that updating array fields correctly updates index entries
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_array_index_tests(platform_version);
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // First verify initial state - "defi" should return 1 post (post3)
+        let query_defi = json!({
+            "where": [
+                ["hashtags", "contains", "defi"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor_defi = cbor_serializer::serializable_value_to_cbor(&query_defi, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor_defi.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_before, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(results_before.len(), 1, "expected 1 post with 'defi' before update");
+
+        // Update post3 to change hashtags from ["dash", "defi"] to ["dash", "nft"]
+        let db_transaction = drive.grove.start_transaction();
+
+        let updated_post3_value = json!({
+            "$id": "CZ6uML3REtJiEzDyvTRuoaaPm1gN7pNVUss9bRYhRvT",
+            "$ownerId": "BdZVCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk7",
+            "content": "Post about NFTs on Dash",
+            "hashtags": ["dash", "nft"]
+        });
+        let updated_post3_cbor =
+            cbor_serializer::serializable_value_to_cbor(&updated_post3_value, Some(0))
+                .expect("expected to serialize to cbor");
+        let updated_post3 =
+            Document::from_cbor(updated_post3_cbor.as_slice(), None, None, platform_version)
+                .expect("document should be properly deserialized");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .update_document_for_contract(
+                &updated_post3,
+                &contract,
+                post_type,
+                None,
+                BlockInfo::genesis(),
+                true,
+                storage_flags,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to update document");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // "defi" should now return 0 posts
+        let (results_defi_after, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results_defi_after.len(),
+            0,
+            "expected 0 posts with 'defi' after update"
+        );
+
+        // "nft" should now return 1 post
+        let query_nft = json!({
+            "where": [
+                ["hashtags", "contains", "nft"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor_nft = cbor_serializer::serializable_value_to_cbor(&query_nft, None)
+            .expect("expected to serialize to cbor");
+
+        let query_nft = DriveDocumentQuery::from_cbor(
+            where_cbor_nft.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_nft, _, _) = query_nft
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(results_nft.len(), 1, "expected 1 post with 'nft' after update");
+
+        // "dash" should still return 2 posts (post1 and updated post3)
+        let query_dash = json!({
+            "where": [
+                ["hashtags", "contains", "dash"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor_dash = cbor_serializer::serializable_value_to_cbor(&query_dash, None)
+            .expect("expected to serialize to cbor");
+
+        let query_dash = DriveDocumentQuery::from_cbor(
+            where_cbor_dash.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_dash, _, _) = query_dash
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results_dash.len(),
+            2,
+            "expected 2 posts with 'dash' after update (unchanged)"
+        );
+
+        drop(drive);
+    }
+
+    #[test]
+    fn test_empty_array_field() {
+        // Test that documents with empty arrays don't create index entries
+        let platform_version = PlatformVersion::latest();
+        let drive_config = DriveConfig::default();
+        let drive = setup_drive(Some(drive_config));
+        let db_transaction = drive.grove.start_transaction();
+
+        // Create contracts tree
+        let mut batch = GroveDbOpBatch::new();
+        add_init_contracts_structure_operations(&mut batch);
+
+        drive
+            .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+            .expect("expected to create contracts tree successfully");
+
+        // Load the contract with optional hashtags (not required)
+        let contract = test_helpers::setup_contract(
+            &drive,
+            "tests/supporting_files/contract/array-index/array-index-with-types-contract.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            Some(platform_version),
+        );
+
+        let item_type = contract
+            .document_type_for_name("item")
+            .expect("expected to get item document type");
+
+        // Create document with empty tags array
+        let item_with_empty_array = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "name": "Item with empty array",
+            "tags": []
+        });
+        let item_cbor = cbor_serializer::serializable_value_to_cbor(&item_with_empty_array, Some(0))
+            .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(item_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags.clone())),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: item_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document with empty array should be inserted");
+
+        // Create a document with non-empty tags for comparison
+        let item_with_tags = json!({
+            "$id": "BZ5tKL2QDsJhDzCxvSQtn99NkafM6aMUTrr8aQXgQuS",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk6",
+            "name": "Item with tags",
+            "tags": ["test", "example"]
+        });
+        let item2_cbor = cbor_serializer::serializable_value_to_cbor(&item_with_tags, Some(0))
+            .expect("expected to serialize to cbor");
+        let document2 = Document::from_cbor(item2_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document2, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: item_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document with tags should be inserted");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("transaction should be committed");
+
+        // Query for "test" should return 1 document (item_with_tags only)
+        let query_test = json!({
+            "where": [
+                ["tags", "contains", "test"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["tags", "asc"]
+            ]
+        });
+
+        let where_cbor_test = cbor_serializer::serializable_value_to_cbor(&query_test, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor_test.as_slice(),
+            &contract,
+            item_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "expected 1 item with 'test' tag (empty array item not included)"
+        );
+
+        drop(drive);
+    }
+
+    #[test]
+    fn test_array_with_integer_elements() {
+        // Test array indexing with integer element type
+        let platform_version = PlatformVersion::latest();
+        let drive_config = DriveConfig::default();
+        let drive = setup_drive(Some(drive_config));
+        let db_transaction = drive.grove.start_transaction();
+
+        // Create contracts tree
+        let mut batch = GroveDbOpBatch::new();
+        add_init_contracts_structure_operations(&mut batch);
+
+        drive
+            .grove_apply_batch(batch, false, Some(&db_transaction), &platform_version.drive)
+            .expect("expected to create contracts tree successfully");
+
+        let contract = test_helpers::setup_contract(
+            &drive,
+            "tests/supporting_files/contract/array-index/array-index-with-types-contract.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            Some(platform_version),
+        );
+
+        let item_type = contract
+            .document_type_for_name("item")
+            .expect("expected to get item document type");
+
+        // Create document with integer scores array including negative values
+        let item1 = json!({
+            "$id": "AZ4sJK1PCrHgCyBwvSPsm98Nj9eL5LmTLSqp7ZPWfPtQ",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+            "name": "Item 1",
+            "scores": [100, -50, 200]
+        });
+        let item1_cbor = cbor_serializer::serializable_value_to_cbor(&item1, Some(0))
+            .expect("expected to serialize to cbor");
+        let document1 = Document::from_cbor(item1_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document1, storage_flags.clone())),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: item_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+
+        // Create another document with overlapping scores
+        let item2 = json!({
+            "$id": "BZ5tKL2QDsJhDzCxvSQtn99NkafM6aMUTrr8aQXgQuS",
+            "$ownerId": "AcYUCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk6",
+            "name": "Item 2",
+            "scores": [-50, 300]
+        });
+        let item2_cbor = cbor_serializer::serializable_value_to_cbor(&item2, Some(0))
+            .expect("expected to serialize to cbor");
+        let document2 = Document::from_cbor(item2_cbor.as_slice(), None, None, platform_version)
+            .expect("document should be properly deserialized");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document2, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type: item_type,
+                },
+                true,
+                BlockInfo::genesis(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("document should be inserted");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("transaction should be committed");
+
+        // Query for items with score -50 (should return 2)
+        let query_negative = json!({
+            "where": [
+                ["scores", "contains", -50]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["scores", "asc"]
+            ]
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_negative, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            item_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(results.len(), 2, "expected 2 items with score -50");
+
+        // Query for items with score 100 (should return 1)
+        let query_positive = json!({
+            "where": [
+                ["scores", "contains", 100]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["scores", "asc"]
+            ]
+        });
+
+        let where_cbor_positive = cbor_serializer::serializable_value_to_cbor(&query_positive, None)
+            .expect("expected to serialize to cbor");
+
+        let query_positive = DriveDocumentQuery::from_cbor(
+            where_cbor_positive.as_slice(),
+            &contract,
+            item_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_positive, _, _) = query_positive
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(results_positive.len(), 1, "expected 1 item with score 100");
+
+        drop(drive);
+    }
+
+    #[test]
+    fn test_compound_index_with_array() {
+        // Test compound index queries with array field (using existing contract)
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_array_index_tests(platform_version);
+
+        let post_type = contract
+            .document_type_for_name("post")
+            .expect("expected to get post document type");
+
+        // The contract has a compound index on [$ownerId, hashtags]
+        // Post1 owner: AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6, hashtags: ["dash", "crypto", "blockchain"]
+        // Post2 owner: AcYUCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk6, hashtags: ["tech", "crypto"]
+        // Post3 owner: BdZVCSvAmUwryNsQqkqqD1a3BnFuzepGtR3Mhh2swLk7, hashtags: ["dash", "defi"]
+
+        // Query using compound index: owner + contains
+        // Owner1 ID as string (base58 format used in queries)
+        let owner1_id = "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6";
+
+        let query_compound = json!({
+            "where": [
+                ["$ownerId", "==", owner1_id],
+                ["hashtags", "contains", "dash"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["$ownerId", "asc"],
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_compound, None)
+            .expect("expected to serialize to cbor");
+
+        let query = DriveDocumentQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        // Only post1 belongs to owner1 and has "dash" hashtag
+        assert_eq!(
+            results.len(),
+            1,
+            "expected 1 post from owner1 with 'dash' hashtag"
+        );
+
+        // Query for owner1 with "crypto" - should also return 1 (post1)
+        let query_owner1_crypto = json!({
+            "where": [
+                ["$ownerId", "==", owner1_id],
+                ["hashtags", "contains", "crypto"]
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["$ownerId", "asc"],
+                ["hashtags", "asc"]
+            ]
+        });
+
+        let where_cbor_crypto = cbor_serializer::serializable_value_to_cbor(&query_owner1_crypto, None)
+            .expect("expected to serialize to cbor");
+
+        let query_crypto = DriveDocumentQuery::from_cbor(
+            where_cbor_crypto.as_slice(),
+            &contract,
+            post_type,
+            &drive.config,
+        )
+        .expect("query should be built");
+
+        let (results_crypto, _, _) = query_crypto
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("query should execute");
+
+        assert_eq!(
+            results_crypto.len(),
+            1,
+            "expected 1 post from owner1 with 'crypto' hashtag"
+        );
+
+        drop(drive);
+    }
 }
