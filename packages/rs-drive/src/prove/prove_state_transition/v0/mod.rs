@@ -7,6 +7,7 @@ use crate::query::{
 };
 use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
@@ -20,6 +21,8 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
@@ -45,6 +48,14 @@ fn contract_ids_to_non_historical_path_query(contract_ids: &[Identifier]) -> Pat
     path_query
 }
 
+fn contract_ids_to_historical_path_query(contract_ids: &[Identifier]) -> PathQuery {
+    let contract_ids: Vec<_> = contract_ids.iter().map(|id| id.to_buffer()).collect();
+
+    let mut path_query = Drive::fetch_historical_contracts_query(&contract_ids);
+    path_query.query.limit = None;
+    path_query
+}
+
 impl Drive {
     pub(super) fn prove_state_transition_v0(
         &self,
@@ -54,10 +65,18 @@ impl Drive {
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
             StateTransition::DataContractCreate(st) => {
-                contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+                if st.data_contract().config().keeps_history() {
+                    contract_ids_to_historical_path_query(&st.modified_data_ids())
+                } else {
+                    contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+                }
             }
             StateTransition::DataContractUpdate(st) => {
-                contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+                if st.data_contract().config().keeps_history() {
+                    contract_ids_to_historical_path_query(&st.modified_data_ids())
+                } else {
+                    contract_ids_to_non_historical_path_query(&st.modified_data_ids())
+                }
             }
             StateTransition::Batch(st) => {
                 if st.transitions_len() > 1 {
