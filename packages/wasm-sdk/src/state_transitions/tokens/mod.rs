@@ -58,36 +58,6 @@ impl WasmSdk {
         Ok((contract_id, identity_identifier, token_amount, recipient))
     }
 
-    /// Fetch and cache data contract in trusted context
-    async fn fetch_and_cache_token_contract(
-        &self,
-        contract_id: Identifier,
-    ) -> Result<dash_sdk::platform::DataContract, WasmSdkError> {
-        let sdk = self.inner_clone();
-
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(&sdk, contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
-        // Add the contract to the context provider's cache if using trusted mode
-        match sdk.network {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                if let Some(ref context) = *crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                if let Some(ref context) = *crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            _ => {} // Other networks don't use trusted context
-        }
-
-        Ok(data_contract)
-    }
-
     /// Convert state transition proof result to JsValue
     fn format_token_result(
         &self,
@@ -191,7 +161,7 @@ impl WasmSdk {
             .await?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let _data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, issuer_id)
@@ -277,7 +247,7 @@ impl WasmSdk {
             .await?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let _data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, burner_id)
@@ -370,7 +340,7 @@ impl WasmSdk {
         let recipient_identifier = identifier_from_js(&recipient_id, "recipient ID")?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let _data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, sender_identifier)
@@ -469,7 +439,7 @@ impl WasmSdk {
         let frozen_identity_id = identifier_from_js(&identity_to_freeze_id, "identity to freeze")?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let _data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, freezer_identifier)
@@ -565,7 +535,7 @@ impl WasmSdk {
             identifier_from_js(&identity_to_unfreeze_id, "identity to unfreeze")?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let _data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, unfreezer_identifier)
@@ -663,7 +633,7 @@ impl WasmSdk {
             identifier_from_js(&identity_id, "identity to destroy frozen funds")?;
 
         // Fetch and cache the data contract
-        let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let _data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, destroyer_identifier)
@@ -763,7 +733,7 @@ impl WasmSdk {
             .await?;
 
         // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
+        self.get_or_fetch_contract(contract_id).await?;
 
         // Parse pricing schedule
         let pricing_schedule = if price_data.is_empty() || price_data == "null" {
@@ -1011,7 +981,7 @@ impl WasmSdk {
         };
 
         // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
+        self.get_or_fetch_contract(contract_id).await?;
 
         // Get identity to find matching authentication key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, purchaser_id)
@@ -1106,7 +1076,7 @@ impl WasmSdk {
             .await?;
 
         // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
+        self.get_or_fetch_contract(contract_id).await?;
 
         // Parse distribution type
         let dist_type = match distribution_type.to_lowercase().as_str() {
@@ -1217,7 +1187,7 @@ impl WasmSdk {
             .await?;
 
         // Fetch and cache the contract
-        self.fetch_and_cache_token_contract(contract_id).await?;
+        self.get_or_fetch_contract(contract_id).await?;
 
         // Parse configuration change item based on type
         let config_change_item = match config_item_type.as_str() {

@@ -911,7 +911,6 @@ impl WasmSdk {
         use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
-        use dash_sdk::platform::DataContract;
 
         // Step 1: Fetch TokenContractInfo to get contract_id and position
         let token_contract_info = TokenContractInfo::fetch(self.as_ref(), token_id)
@@ -926,15 +925,8 @@ impl WasmSdk {
         let contract_id = token_contract_info.contract_id();
         let token_position = token_contract_info.token_contract_position();
 
-        // Step 2: Fetch the DataContract
-        let data_contract = DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Data contract not found for contract ID: {}",
-                    contract_id
-                ))
-            })?;
+        // Step 2: Fetch the DataContract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Step 3: Extract the TokenConfiguration from the contract
         let token_configuration = data_contract

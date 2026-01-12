@@ -402,8 +402,6 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
     ) -> Result<Option<DocumentWasm>, WasmSdkError> {
-        use dash_sdk::platform::documents::document_query::DocumentQuery;
-
         // Parse IDs
         let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
             .map_err(|err| {
@@ -415,20 +413,17 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?
             .into();
 
-        // Create document query
-        let query =
-            DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, document_type)
-                .await?
-                .with_document_id(&doc_id);
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
-        // Fetch the data contract to get the document type
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
+        // Validate document type exists
         data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
+
+        // Create document query using the already-fetched contract
+        let query = DocumentQuery::new(data_contract, document_type)?
+            .with_document_id(&doc_id);
 
         // Execute query
         let document = Document::fetch(self.as_ref(), query)
@@ -452,8 +447,6 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        use dash_sdk::platform::documents::document_query::DocumentQuery;
-
         // Parse IDs
         let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
             .map_err(|err| {
@@ -465,20 +458,17 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?
             .into();
 
-        // Create document query
-        let query =
-            DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, document_type)
-                .await?
-                .with_document_id(&doc_id);
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
-        // Fetch the data contract to get the document type
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
+        // Validate document type exists
         data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
+
+        // Create document query using the already-fetched contract
+        let query = DocumentQuery::new(data_contract, document_type)?
+            .with_document_id(&doc_id);
 
         // Execute query with proof
         let (document_result, metadata, proof) =

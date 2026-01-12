@@ -181,6 +181,18 @@ impl WasmTrustedContext {
         self.inner.add_known_contract(contract);
     }
 
+    /// Get a data contract from the known contracts cache
+    /// Returns None if the contract is not in the cache
+    pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        self.inner.get_known_contract(id)
+    }
+
+    /// Remove a data contract from the known contracts cache
+    /// Returns true if the contract was present and removed, false otherwise
+    pub fn remove_known_contract(&self, id: &Identifier) -> bool {
+        self.inner.remove_known_contract(id)
+    }
+
     /// Add a token configuration to the known token configurations cache
     pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
         self.inner.add_known_token_configuration(token_id, config);

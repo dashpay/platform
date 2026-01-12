@@ -4,7 +4,7 @@
 
 use crate::error::WasmSdkError;
 use crate::queries::utils::identifier_from_js;
-use crate::sdk::{WasmSdk, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
+use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -53,31 +53,6 @@ impl WasmSdk {
         };
 
         Ok((contract_id, owner_id, doc_id))
-    }
-
-    /// Fetch and cache data contract
-    async fn fetch_and_cache_contract(
-        &self,
-        contract_id: Identifier,
-    ) -> Result<dash_sdk::platform::DataContract, WasmSdkError> {
-        // Fetch from network
-        let sdk = self.inner_clone();
-        let contract = dash_sdk::platform::DataContract::fetch(&sdk, contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
-        // Cache the contract in the trusted context
-        if self.network() == dash_sdk::dpp::dashcore::Network::Testnet {
-            if let Some(ref context) = *TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                context.add_known_contract(contract.clone());
-            }
-        } else if self.network() == dash_sdk::dpp::dashcore::Network::Dash {
-            if let Some(ref context) = *MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                context.add_known_contract(contract.clone());
-            }
-        }
-
-        Ok(contract)
     }
 
     /// Find authentication key matching the provided private key
@@ -261,7 +236,7 @@ impl WasmSdk {
             })?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
@@ -593,7 +568,7 @@ impl WasmSdk {
             })?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
@@ -905,7 +880,7 @@ impl WasmSdk {
         let document_id_base58 = doc_id.to_string(Encoding::Base58);
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
@@ -1039,7 +1014,7 @@ impl WasmSdk {
         let recipient_base58 = recipient_identifier.to_string(Encoding::Base58);
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
@@ -1169,7 +1144,7 @@ impl WasmSdk {
         let buyer_base58 = buyer_identifier.to_string(Encoding::Base58);
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type from contract
         let document_type_ref = data_contract
@@ -1343,7 +1318,7 @@ impl WasmSdk {
         let document_id_base58 = doc_id.to_string(Encoding::Base58);
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type from contract
         let document_type_ref = data_contract
