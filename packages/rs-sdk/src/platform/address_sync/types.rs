@@ -17,6 +17,14 @@ pub type AddressIndex = u32;
 /// Target keys that fall within this subtree's range need a branch query to resolve.
 pub type LeafBoundaryKey = Vec<u8>;
 
+/// Funds stored for a platform address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddressFunds {
+    /// Address nonce used for anti-replay.
+    pub nonce: AddressNonce,
+    /// Credits balance held by the address.
+    pub balance: Credits,
+}
 /// Configuration for address synchronization.
 #[derive(Debug, Clone)]
 pub struct AddressSyncConfig {
@@ -140,15 +148,6 @@ pub struct AddressSyncMetrics {
 
     /// Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds).
     pub iterations: usize,
-}
-
-/// Funds stored for a platform address.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AddressFunds {
-    /// Address nonce used for anti-replay.
-    pub nonce: AddressNonce,
-    /// Credits balance held by the address.
-    pub balance: Credits,
 }
 
 impl AddressSyncMetrics {

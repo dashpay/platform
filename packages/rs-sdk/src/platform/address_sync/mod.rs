@@ -545,7 +545,7 @@ impl Sdk {
     /// - `config`: Optional configuration; uses defaults if `None`.
     ///
     /// # Returns
-    /// - `Ok(AddressSyncResult)`: Contains found addresses with balances and absent addresses.
+    /// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses.
     /// - `Err(Error)`: If the sync fails after exhausting retries.
     ///
     /// # Example
