@@ -18,6 +18,9 @@ pub struct TransactionEvent {
     pub height: u64,
     pub result: TransactionResult,
     pub tx: Option<Vec<u8>>,
+    /// Fee data from successful state transition (if available)
+    /// Contains encoded fee result: processing_fee (8 bytes LE) | storage_fee (8 bytes LE) | removed_bytes (4 bytes LE)
+    pub fee_data: Option<Vec<u8>>,
 }
 
 /// Block event placeholder (TODO)
@@ -275,23 +278,36 @@ impl TenderdashWebSocketClient {
                 None
             };
 
-            // Determine transaction result
-            let result = if let Some(tx_result) = &tx_event.result {
+            // Determine transaction result and extract fee data for successful transactions
+            let (result, fee_data) = if let Some(tx_result) = &tx_event.result {
                 if tx_result.code == 0 {
-                    TransactionResult::Success
+                    // For successful transactions, decode fee data from tx_result.data
+                    let fee_bytes = if !tx_result.data.is_empty() {
+                        base64::prelude::Engine::decode(
+                            &base64::prelude::BASE64_STANDARD,
+                            &tx_result.data,
+                        )
+                        .ok()
+                    } else {
+                        None
+                    };
+                    (TransactionResult::Success, fee_bytes)
                 } else {
-                    TransactionResult::Error {
-                        code: tx_result.code,
-                        info: tx_result.info.clone(),
-                        data: if tx_result.data.is_empty() {
-                            None
-                        } else {
-                            Some(tx_result.data.clone())
+                    (
+                        TransactionResult::Error {
+                            code: tx_result.code,
+                            info: tx_result.info.clone(),
+                            data: if tx_result.data.is_empty() {
+                                None
+                            } else {
+                                Some(tx_result.data.clone())
+                            },
                         },
-                    }
+                        None,
+                    )
                 }
             } else {
-                TransactionResult::Success
+                (TransactionResult::Success, None)
             };
 
             let transaction_event = TransactionEvent {
@@ -299,6 +315,7 @@ impl TenderdashWebSocketClient {
                 height,
                 result: result.clone(),
                 tx: tx.clone(),
+                fee_data,
             };
 
             debug!(hash = %hash, "Broadcasting transaction event for hash");

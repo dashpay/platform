@@ -145,6 +145,14 @@ message StateTransitionBroadcastError {
   bytes data = 3;
 }
 
+// FeeResult contains the actual fees paid for a state transition
+message FeeResult {
+  uint64 processing_fee = 1 [ jstype = JS_STRING ]; // Processing fee in credits
+  uint64 storage_fee = 2 [ jstype = JS_STRING ];    // Storage fee in credits
+  uint64 removed_from_system = 4 [ jstype = JS_STRING ]; // Removed bytes from the system not refunded
+  // Note: Refunds are already applied to identity balances and don't need to be returned here
+}
+
 enum KeyPurpose {
   AUTHENTICATION = 0;
   ENCRYPTION = 1;
@@ -659,6 +667,7 @@ message WaitForStateTransitionResultResponse {
           2; // Cryptographic proof for the state transition, if requested
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
+    FeeResult fee_result = 4;      // Actual fees paid for the state transition
   }
   oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }

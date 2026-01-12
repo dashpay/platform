@@ -22,4 +22,5 @@ pub(crate) mod validation;
 pub mod vote;
 pub mod waitable;
 pub mod withdraw_from_identity;
+pub use broadcast::{BroadcastStateTransition, FeeResult, StateTransitionBroadcastResult};
 pub use txid::TxId;

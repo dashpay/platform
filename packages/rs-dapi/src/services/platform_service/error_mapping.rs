@@ -1,6 +1,6 @@
 use base64::{engine, prelude::Engine as _};
 use dapi_grpc::platform::v0::{
-    StateTransitionBroadcastError, WaitForStateTransitionResultResponse,
+    FeeResult, StateTransitionBroadcastError, WaitForStateTransitionResultResponse,
 };
 use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 use std::{fmt::Debug, str::FromStr};
@@ -16,6 +16,9 @@ pub struct TenderdashStatus {
     pub message: Option<String>,
     /// CBOR-encoded dpp ConsensusError
     pub consensus_error: Option<Vec<u8>>,
+    /// Fee result for paid consensus errors (serde skip as it's not used in CBOR serialization)
+    #[serde(skip)]
+    pub fee_result: Option<FeeResult>,
 }
 
 impl TenderdashStatus {
@@ -34,6 +37,31 @@ impl TenderdashStatus {
             code,
             message,
             consensus_error,
+            fee_result: None,
+        }
+    }
+
+    /// Construct a Tenderdash status wrapper with fee information.
+    pub fn new_with_fees(
+        code: i64,
+        message: Option<String>,
+        consensus_error: Option<Vec<u8>>,
+        fee_result: Option<FeeResult>,
+    ) -> Self {
+        // sanity check: consensus_error must deserialize to ConsensusError if present
+        if let Some(ref bytes) = consensus_error
+            && ConsensusError::deserialize_from_bytes(bytes).is_err()
+        {
+            tracing::debug!(
+                data = hex::encode(bytes),
+                "TenderdashStatus consensus_error failed to deserialize to ConsensusError"
+            );
+        }
+        Self {
+            code,
+            message,
+            consensus_error,
+            fee_result,
         }
     }
 
@@ -130,6 +158,7 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
     fn from(err: TenderdashStatus) -> Self {
         use dapi_grpc::platform::v0::wait_for_state_transition_result_response::*;
         let st_error = StateTransitionBroadcastError::from(err.clone());
+        let fee_result = err.fee_result.clone();
 
         let message = WaitForStateTransitionResultResponse {
             version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
@@ -137,6 +166,7 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
                 result: Some(wait_for_state_transition_result_response_v0::Result::Error(
                     st_error,
                 )),
+                fee_result,
             })),
         };
 
@@ -311,6 +341,7 @@ impl From<serde_json::Value> for TenderdashStatus {
                 code,
                 message,
                 consensus_error,
+                fee_result: None,
             }
         } else {
             tracing::debug!("Tenderdash error is not an object: {:?}", value);
@@ -318,6 +349,7 @@ impl From<serde_json::Value> for TenderdashStatus {
                 code: u32::MAX as i64,
                 message: Some("Invalid error object from Tenderdash".to_string()),
                 consensus_error: None,
+                fee_result: None,
             }
         }
     }

@@ -5,7 +5,7 @@ use crate::services::streaming_service::FilterType;
 use base64::Engine;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
-    Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
+    FeeResult, Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
     WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
     wait_for_state_transition_result_response,
 };
@@ -13,6 +13,24 @@ use dapi_grpc::tonic::{Request, Response};
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
+
+/// Decodes fee result from the encoded byte format.
+/// Format: processing_fee (8 bytes LE) | storage_fee (8 bytes LE) | removed_bytes_from_system (4 bytes LE)
+fn decode_fee_result(data: &[u8]) -> Option<FeeResult> {
+    if data.len() < 20 {
+        return None;
+    }
+
+    let processing_fee = u64::from_le_bytes(data[0..8].try_into().ok()?);
+    let storage_fee = u64::from_le_bytes(data[8..16].try_into().ok()?);
+    let removed_from_system = u32::from_le_bytes(data[16..20].try_into().ok()?);
+
+    Some(FeeResult {
+        processing_fee,
+        storage_fee,
+        removed_from_system: removed_from_system as u64,
+    })
+}
 
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
@@ -135,20 +153,29 @@ impl PlatformServiceImpl {
             wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
                 result: None,
                 metadata: None,
+                fee_result: None,
             };
 
         // Check if transaction had an error
         let tx_result = &tx_response.tx_result;
 
         if tx_result.code != 0 {
-            // Transaction had an error
+            // Transaction had an error - still try to extract fee for paid consensus errors
+            let fee_result = if !tx_result.data.is_empty() {
+                base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_result.data)
+                    .ok()
+                    .and_then(|data| decode_fee_result(&data))
+            } else {
+                None
+            };
+
             let consensus_error_serialized = if tx_result.info.is_empty() {
                 None
             } else {
                 decode_consensus_error(tx_result.info.clone())
             };
 
-            let error = TenderdashStatus::new(
+            let error = TenderdashStatus::new_with_fees(
                 i64::from(tx_result.code),
                 if tx_result.data.is_empty() {
                     None
@@ -156,8 +183,18 @@ impl PlatformServiceImpl {
                     Some(tx_result.data.clone())
                 },
                 consensus_error_serialized,
+                fee_result,
             );
             return Ok(error.into());
+        }
+
+        // Extract fee result for successful transactions
+        if !tx_result.data.is_empty() {
+            if let Ok(fee_data) =
+                base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_result.data)
+            {
+                response_v0.fee_result = decode_fee_result(&fee_data);
+            }
         }
 
         // No error; generate proof if requested
@@ -198,10 +235,17 @@ impl PlatformServiceImpl {
         // Check transaction result
         match transaction_event.result {
             crate::clients::TransactionResult::Success => {
+                // Extract fee result from transaction event
+                let fee_result = transaction_event
+                    .fee_data
+                    .as_ref()
+                    .and_then(|data| decode_fee_result(data));
+
                 let mut response_v0 =
                     wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
                         result: None,
                         metadata: None,
+                        fee_result,
                 };
                 // Success case - generate proof if requested
                 if prove && let Some(tx_bytes) = transaction_event.tx {
@@ -309,4 +353,72 @@ pub(super) fn build_wait_for_state_transition_error_response(
         "Mapping DapiError to WaitForStateTransitionResultResponse"
     );
     tenderdash_status.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_fee_result_valid() {
+        let processing_fee: u64 = 1234567890123456789;
+        let storage_fee: u64 = 9876543210987654321;
+        let removed_bytes: u32 = 42;
+
+        // Encode the fee data (matching Drive's encoding)
+        let mut data = Vec::with_capacity(20);
+        data.extend_from_slice(&processing_fee.to_le_bytes());
+        data.extend_from_slice(&storage_fee.to_le_bytes());
+        data.extend_from_slice(&removed_bytes.to_le_bytes());
+
+        let result = decode_fee_result(&data).unwrap();
+
+        assert_eq!(result.processing_fee, processing_fee);
+        assert_eq!(result.storage_fee, storage_fee);
+        assert_eq!(result.removed_from_system, removed_bytes as u64);
+    }
+
+    #[test]
+    fn test_decode_fee_result_zero_values() {
+        let data = vec![0u8; 20];
+        let result = decode_fee_result(&data).unwrap();
+
+        assert_eq!(result.processing_fee, 0);
+        assert_eq!(result.storage_fee, 0);
+        assert_eq!(result.removed_from_system, 0);
+    }
+
+    #[test]
+    fn test_decode_fee_result_too_short() {
+        let data = vec![0u8; 19]; // One byte too short
+        let result = decode_fee_result(&data);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_decode_fee_result_empty() {
+        let data: Vec<u8> = vec![];
+        let result = decode_fee_result(&data);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_decode_fee_result_extra_bytes() {
+        // Extra bytes should be ignored
+        let processing_fee: u64 = 100;
+        let storage_fee: u64 = 200;
+        let removed_bytes: u32 = 10;
+
+        let mut data = Vec::with_capacity(25);
+        data.extend_from_slice(&processing_fee.to_le_bytes());
+        data.extend_from_slice(&storage_fee.to_le_bytes());
+        data.extend_from_slice(&removed_bytes.to_le_bytes());
+        data.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF]); // Extra bytes
+
+        let result = decode_fee_result(&data).unwrap();
+
+        assert_eq!(result.processing_fee, processing_fee);
+        assert_eq!(result.storage_fee, storage_fee);
+        assert_eq!(result.removed_from_system, removed_bytes as u64);
+    }
 }
