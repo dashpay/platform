@@ -171,10 +171,10 @@ impl<C> Platform<C> {
         let non_unique_key =
             IdentityPublicKey::random_voting_key_with_rng(11, &mut rng, platform_version)?;
 
-        // Credits amount per identity (1000 DASH worth)
+        // Credits amount per identity (10000 DASH worth)
         // Tests need significant credits for contract publish (~12-14 DASH each),
         // token operations, and other state transitions
-        const CREDITS_PER_IDENTITY: u64 = 1_000_000_000_000;
+        pub const CREDITS_PER_IDENTITY: u64 = 10_000_000_000_000;
 
         // Add total credits to system first (credits must be backed by system credits)
         let total_credits = CREDITS_PER_IDENTITY * 3; // 3 identities
