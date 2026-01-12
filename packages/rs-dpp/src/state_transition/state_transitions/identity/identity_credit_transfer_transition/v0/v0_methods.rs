@@ -1,8 +1,9 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
-        accessors::IdentityGettersV0, signer::Signer, Identity, IdentityPublicKey, KeyType,
-        Purpose, SecurityLevel,
+        accessors::IdentityGettersV0,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
+        IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
@@ -47,6 +48,10 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
                 if signer.can_sign_with(key) {
                     key
                 } else {
+                    tracing::error!(
+                        key_id = key.id(),
+                        "specified transfer key cannot be used for signing"
+                    );
                     return Err(
                         ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
                             "specified transfer public key cannot be used for signing".to_string(),
@@ -63,6 +68,14 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
                 );
 
                 key_result.ok_or_else(|| {
+                    tracing::error!(
+                        identity_id = %identity.id(),
+                        total_keys = identity.public_keys().len(),
+                        "no transfer public key found in identity"
+                    );
+                    for (key_id, key) in identity.public_keys() {
+                        tracing::debug!(key_id, purpose = ?key.purpose(), "available key");
+                    }
                     ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
                         "no transfer public key".to_string(),
                     )
