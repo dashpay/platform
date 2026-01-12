@@ -75,6 +75,9 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
   describe('identityUpdate', () => {
     it('adds a new public key to identity', async () => {
+      // Wait for previous operations to be fully processed
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
       // Identity update requires MASTER key (key index 0) for signing the transition
       const { signer } = createTestSignerAndKey(sdk, 1, 0);
 
@@ -148,6 +151,9 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
         disablePublicKeys: [keyIdToDisable],
         signer,
       });
+
+      // Wait for the platform to process the update
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
 
       // Verify the key was disabled by fetching the identity again
       const updatedIdentity = await client.getIdentity(testData.identityId);

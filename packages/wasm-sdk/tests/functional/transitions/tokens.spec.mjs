@@ -138,6 +138,9 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
 
   describe('tokenUnfreeze', () => {
     it('unfreezes an identity token balance', async () => {
+      // Wait for previous freeze to be processed
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
       // Identity 2 is already frozen on TOKEN_0 in genesis state
       // Contract owner (Identity 1) can unfreeze
       // Token operations require CRITICAL security level (key index 1)
@@ -175,6 +178,9 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
 
     it('resumes a paused token', async () => {
+      // Wait for previous pause to be processed
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
       // Resume Token 0 that was just paused
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);

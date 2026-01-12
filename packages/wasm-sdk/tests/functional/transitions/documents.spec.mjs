@@ -221,6 +221,9 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       const documentId = document.id;
       expect(documentId).to.exist();
 
+      // Wait for the document to be indexed on platform
+      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+
       // Now delete the document using object format
       await client.documentDelete({
         document: {
