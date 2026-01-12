@@ -47,6 +47,11 @@ const IDENTITY_ID_3: Identifier = Identifier::new([3; 32]);
 
 const DATA_CONTRACT_ID: Identifier = Identifier::new([3; 32]);
 
+/// Credits amount per identity (10000 DASH worth).
+/// Tests need significant credits for contract publish (~12-14 DASH each),
+/// token operations, and other state transitions.
+pub const CREDITS_PER_IDENTITY: u64 = 10_000_000_000_000;
+
 static TOKEN_ID_0: LazyLock<Identifier> =
     LazyLock::new(|| calculate_token_id(&DATA_CONTRACT_ID.to_buffer(), 0).into());
 
@@ -170,11 +175,6 @@ impl<C> Platform<C> {
         let mut rng = StdRng::seed_from_u64(0u64);
         let non_unique_key =
             IdentityPublicKey::random_voting_key_with_rng(11, &mut rng, platform_version)?;
-
-        // Credits amount per identity (10000 DASH worth)
-        // Tests need significant credits for contract publish (~12-14 DASH each),
-        // token operations, and other state transitions
-        pub const CREDITS_PER_IDENTITY: u64 = 10_000_000_000_000;
 
         // Add total credits to system first (credits must be backed by system credits)
         let total_credits = CREDITS_PER_IDENTITY * 3; // 3 identities
