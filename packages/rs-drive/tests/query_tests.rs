@@ -7618,7 +7618,11 @@ mod array_index_tests {
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("query should execute");
 
-        assert_eq!(results.len(), 2, "expected 2 posts with 'dash' before delete");
+        assert_eq!(
+            results.len(),
+            2,
+            "expected 2 posts with 'dash' before delete"
+        );
 
         // Delete post1 (which has hashtags ["dash", "crypto", "blockchain"])
         let db_transaction = drive.grove.start_transaction();
@@ -7764,7 +7768,11 @@ mod array_index_tests {
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("query should execute");
 
-        assert_eq!(results_before.len(), 1, "expected 1 post with 'defi' before update");
+        assert_eq!(
+            results_before.len(),
+            1,
+            "expected 1 post with 'defi' before update"
+        );
 
         // Update post3 to change hashtags from ["dash", "defi"] to ["dash", "nft"]
         let db_transaction = drive.grove.start_transaction();
@@ -7842,7 +7850,11 @@ mod array_index_tests {
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
             .expect("query should execute");
 
-        assert_eq!(results_nft.len(), 1, "expected 1 post with 'nft' after update");
+        assert_eq!(
+            results_nft.len(),
+            1,
+            "expected 1 post with 'nft' after update"
+        );
 
         // "dash" should still return 2 posts (post1 and updated post3)
         let query_dash = json!({
@@ -7917,8 +7929,9 @@ mod array_index_tests {
             "name": "Item with empty array",
             "tags": []
         });
-        let item_cbor = cbor_serializer::serializable_value_to_cbor(&item_with_empty_array, Some(0))
-            .expect("expected to serialize to cbor");
+        let item_cbor =
+            cbor_serializer::serializable_value_to_cbor(&item_with_empty_array, Some(0))
+                .expect("expected to serialize to cbor");
         let document = Document::from_cbor(item_cbor.as_slice(), None, None, platform_version)
             .expect("document should be properly deserialized");
 
@@ -8152,8 +8165,9 @@ mod array_index_tests {
             ]
         });
 
-        let where_cbor_positive = cbor_serializer::serializable_value_to_cbor(&query_positive, None)
-            .expect("expected to serialize to cbor");
+        let where_cbor_positive =
+            cbor_serializer::serializable_value_to_cbor(&query_positive, None)
+                .expect("expected to serialize to cbor");
 
         let query_positive = DriveDocumentQuery::from_cbor(
             where_cbor_positive.as_slice(),
@@ -8238,8 +8252,9 @@ mod array_index_tests {
             ]
         });
 
-        let where_cbor_crypto = cbor_serializer::serializable_value_to_cbor(&query_owner1_crypto, None)
-            .expect("expected to serialize to cbor");
+        let where_cbor_crypto =
+            cbor_serializer::serializable_value_to_cbor(&query_owner1_crypto, None)
+                .expect("expected to serialize to cbor");
 
         let query_crypto = DriveDocumentQuery::from_cbor(
             where_cbor_crypto.as_slice(),

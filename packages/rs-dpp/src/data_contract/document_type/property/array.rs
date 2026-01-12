@@ -319,10 +319,7 @@ impl ArrayItemType {
 
     /// Reads a single array element value from a buffer.
     /// This is the inverse of `encode_value_ref_with_size`.
-    pub fn read_from<R: Read + BufRead>(
-        &self,
-        buf: &mut R,
-    ) -> Result<Value, DataContractError> {
+    pub fn read_from<R: Read + BufRead>(&self, buf: &mut R) -> Result<Value, DataContractError> {
         match self {
             ArrayItemType::String(_, _) => {
                 let string_len: usize = buf.read_varint().map_err(|_| {
