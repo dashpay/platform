@@ -274,6 +274,13 @@ impl ArrayItemType {
             }
             ArrayItemType::Date => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
+                if value_as_i64 < 0 {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::ValueWrongType(
+                            "date timestamp cannot be negative".to_string(),
+                        ),
+                    ));
+                }
                 // Use the same encoding as DocumentPropertyType::encode_date_timestamp
                 // which uses encode_u64 with sign-bit flip for proper lexicographic ordering
                 Ok(DocumentPropertyType::encode_date_timestamp(
