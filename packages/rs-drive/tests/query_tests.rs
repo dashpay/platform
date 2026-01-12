@@ -7583,7 +7583,6 @@ mod array_index_tests {
     }
 
     #[test]
-    #[ignore] // Requires array serialization support - delete needs to deserialize document from storage
     fn test_delete_document_with_array_field() {
         // Test that deleting a document with array fields removes all index entries
         let platform_version = PlatformVersion::latest();
@@ -7730,7 +7729,6 @@ mod array_index_tests {
     }
 
     #[test]
-    #[ignore] // Requires array serialization support - update needs to deserialize document from storage
     fn test_update_document_array_field() {
         // Test that updating array fields correctly updates index entries
         let platform_version = PlatformVersion::latest();

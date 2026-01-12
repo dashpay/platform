@@ -754,11 +754,29 @@ impl DocumentPropertyType {
                     Ok((Some(Value::Map(values)), false))
                 }
             }
-            DocumentPropertyType::Array(_array_field_type) => Err(DataContractError::Unsupported(
-                "serialization of arrays not yet supported".to_string(),
-            )),
+            DocumentPropertyType::Array(array_item_type) => {
+                // Read the array length
+                let array_len: usize = buf.read_varint().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint for array length".to_string(),
+                    )
+                })?;
+
+                // Read each element
+                let mut elements = Vec::with_capacity(array_len);
+                for _ in 0..array_len {
+                    let element = array_item_type.read_from(buf)?;
+                    elements.push(element);
+                }
+
+                if elements.is_empty() {
+                    Ok((Some(Value::Array(elements)), false))
+                } else {
+                    Ok((Some(Value::Array(elements)), false))
+                }
+            }
             DocumentPropertyType::VariableTypeArray(_) => Err(DataContractError::Unsupported(
-                "serialization of variable type arrays not yet supported".to_string(),
+                "deserialization of variable type arrays not yet supported".to_string(),
             )),
         }
     }

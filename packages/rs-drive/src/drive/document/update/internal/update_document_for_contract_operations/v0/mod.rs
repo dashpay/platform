@@ -202,14 +202,28 @@ impl Drive {
                 document_type,
             };
 
-            // Remove old index entries
+            // We need to apply remove operations first in a separate batch,
+            // then apply add operations. This avoids GroveDB conflicts when
+            // the same path is both removed and added (for unchanged array elements).
+            let mut remove_operations: Vec<LowLevelDriveOperation> = vec![];
+
+            // Remove old index entries into a separate operations vec
             self.remove_indices_for_top_index_level_for_contract_operations(
                 &old_document_and_contract_info,
-                &None, // No previous batch operations for the removal phase
+                &None,
                 estimated_costs_only_with_layer_info,
                 transaction,
-                &mut batch_operations,
+                &mut remove_operations,
                 platform_version,
+            )?;
+
+            // Apply remove operations first
+            self.apply_batch_low_level_drive_operations(
+                None,
+                transaction,
+                remove_operations,
+                &mut batch_operations,
+                &platform_version.drive,
             )?;
 
             // Add new index entries

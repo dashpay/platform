@@ -1,9 +1,10 @@
 use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
-use integer_encoding::VarInt;
+use integer_encoding::{VarInt, VarIntReader};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, Read};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ArrayItemType {
@@ -312,6 +313,108 @@ impl ArrayItemType {
                 } else {
                     Ok(vec![0])
                 }
+            }
+        }
+    }
+
+    /// Reads a single array element value from a buffer.
+    /// This is the inverse of `encode_value_ref_with_size`.
+    pub fn read_from<R: Read + BufRead>(
+        &self,
+        buf: &mut R,
+    ) -> Result<Value, DataContractError> {
+        match self {
+            ArrayItemType::String(_, _) => {
+                let string_len: usize = buf.read_varint().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint for string length in array".to_string(),
+                    )
+                })?;
+                let mut string_bytes = vec![0u8; string_len];
+                buf.read_exact(&mut string_bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading string bytes in array".to_string(),
+                    )
+                })?;
+                let string_value = String::from_utf8(string_bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "invalid UTF-8 in array string".to_string(),
+                    )
+                })?;
+                Ok(Value::Text(string_value))
+            }
+            ArrayItemType::Date => {
+                let mut date_bytes = [0u8; 8];
+                buf.read_exact(&mut date_bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading date bytes in array".to_string(),
+                    )
+                })?;
+                let date_value = f64::from_be_bytes(date_bytes);
+                Ok(Value::Float(date_value))
+            }
+            ArrayItemType::Integer => {
+                let mut int_bytes = [0u8; 8];
+                buf.read_exact(&mut int_bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading integer bytes in array".to_string(),
+                    )
+                })?;
+                let int_value = i64::from_be_bytes(int_bytes);
+                Ok(Value::I64(int_value))
+            }
+            ArrayItemType::Number => {
+                let mut num_bytes = [0u8; 8];
+                buf.read_exact(&mut num_bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading number bytes in array".to_string(),
+                    )
+                })?;
+                let num_value = f64::from_be_bytes(num_bytes);
+                Ok(Value::Float(num_value))
+            }
+            ArrayItemType::ByteArray(_, _) => {
+                let bytes_len: usize = buf.read_varint().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint for byte array length in array".to_string(),
+                    )
+                })?;
+                let mut bytes = vec![0u8; bytes_len];
+                buf.read_exact(&mut bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading byte array bytes in array".to_string(),
+                    )
+                })?;
+                Ok(Value::Bytes(bytes))
+            }
+            ArrayItemType::Identifier => {
+                let id_len: usize = buf.read_varint().map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading varint for identifier length in array".to_string(),
+                    )
+                })?;
+                if id_len != 32 {
+                    return Err(DataContractError::CorruptedSerialization(format!(
+                        "expected 32 bytes for identifier in array, got {}",
+                        id_len
+                    )));
+                }
+                let mut id_bytes = [0u8; 32];
+                buf.read_exact(&mut id_bytes).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading identifier bytes in array".to_string(),
+                    )
+                })?;
+                Ok(Value::Identifier(id_bytes))
+            }
+            ArrayItemType::Boolean => {
+                let mut bool_byte = [0u8; 1];
+                buf.read_exact(&mut bool_byte).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading boolean byte in array".to_string(),
+                    )
+                })?;
+                Ok(Value::Bool(bool_byte[0] != 0))
             }
         }
     }
