@@ -160,6 +160,127 @@ impl WasmSdk {
     pub async fn refresh_identity_nonce(&self, identity_id: wasm_dpp2::identifier::IdentifierWasm) {
         self.0.refresh_identity_nonce(&identity_id.into()).await;
     }
+
+    /// Get a cached contract from the trusted context if available
+    pub(crate) fn get_cached_contract(
+        &self,
+        contract_id: &dash_sdk::platform::Identifier,
+    ) -> Option<std::sync::Arc<dash_sdk::platform::DataContract>> {
+        match self.network() {
+            dash_sdk::dpp::dashcore::Network::Testnet => {
+                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                guard
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_known_contract(contract_id))
+            }
+            dash_sdk::dpp::dashcore::Network::Dash => {
+                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                guard
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_known_contract(contract_id))
+            }
+            dash_sdk::dpp::dashcore::Network::Regtest => {
+                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+                guard
+                    .as_ref()
+                    .and_then(|ctx| ctx.get_known_contract(contract_id))
+            }
+            _ => None,
+        }
+    }
+
+    /// Cache a contract in the trusted context
+    pub(crate) fn cache_contract(&self, contract: dash_sdk::platform::DataContract) {
+        match self.network() {
+            dash_sdk::dpp::dashcore::Network::Testnet => {
+                if let Some(ref context) = *TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
+                    context.add_known_contract(contract);
+                }
+            }
+            dash_sdk::dpp::dashcore::Network::Dash => {
+                if let Some(ref context) = *MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
+                    context.add_known_contract(contract);
+                }
+            }
+            dash_sdk::dpp::dashcore::Network::Regtest => {
+                if let Some(ref context) = *LOCAL_TRUSTED_CONTEXT.lock().unwrap() {
+                    context.add_known_contract(contract);
+                }
+            }
+            _ => {} // Other networks don't use trusted context
+        }
+    }
+
+    /// Fetch a contract, checking cache first
+    /// Returns the contract from cache if available, otherwise fetches from network and caches it
+    pub(crate) async fn get_or_fetch_contract(
+        &self,
+        contract_id: dash_sdk::platform::Identifier,
+    ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
+        use dash_sdk::platform::Fetch;
+
+        // Check cache first
+        if let Some(cached) = self.get_cached_contract(&contract_id) {
+            return Ok((*cached).clone());
+        }
+
+        // Fetch from network
+        let contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| crate::error::WasmSdkError::not_found("Data contract not found"))?;
+
+        // Cache for future use
+        self.cache_contract(contract.clone());
+
+        Ok(contract)
+    }
+
+    /// Remove a contract from the cache
+    /// This allows forcing a fresh fetch on next access
+    pub(crate) fn remove_cached_contract(
+        &self,
+        contract_id: &dash_sdk::platform::Identifier,
+    ) -> bool {
+        match self.network() {
+            dash_sdk::dpp::dashcore::Network::Testnet => {
+                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                guard
+                    .as_ref()
+                    .map(|ctx| ctx.remove_known_contract(contract_id))
+                    .unwrap_or(false)
+            }
+            dash_sdk::dpp::dashcore::Network::Dash => {
+                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                guard
+                    .as_ref()
+                    .map(|ctx| ctx.remove_known_contract(contract_id))
+                    .unwrap_or(false)
+            }
+            dash_sdk::dpp::dashcore::Network::Regtest => {
+                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+                guard
+                    .as_ref()
+                    .map(|ctx| ctx.remove_known_contract(contract_id))
+                    .unwrap_or(false)
+            }
+            _ => false,
+        }
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Remove a data contract from the cache.
+    /// This forces a fresh fetch from the network on the next access.
+    /// Returns true if the contract was in the cache and was removed.
+    #[wasm_bindgen(js_name = "removeCachedContract")]
+    pub fn remove_cached_contract_js(
+        &self,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: &wasm_dpp2::identifier::IdentifierWasm,
+    ) -> bool {
+        let id: dash_sdk::platform::Identifier = (*contract_id).into();
+        self.remove_cached_contract(&id)
+    }
 }
 
 #[wasm_bindgen]
@@ -387,14 +508,16 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name = "localTrusted")]
     pub fn new_local_trusted() -> Result<Self, WasmSdkError> {
         let trusted_context = {
-            let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-            guard.clone()
-        }
-        .map(Ok)
-        .unwrap_or_else(|| {
-            WasmTrustedContext::new_local()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-        })?;
+            let mut guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+            if let Some(ctx) = guard.as_ref() {
+                ctx.clone()
+            } else {
+                let new_ctx = WasmTrustedContext::new_local()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+                *guard = Some(new_ctx.clone());
+                new_ctx
+            }
+        };
 
         let local_addresses = LOCAL_DISCOVERED_ADDRESSES
             .lock()
@@ -412,16 +535,18 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "mainnetTrusted")]
     pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
-        // Use the cached context if available, otherwise create a new one
+        // Use the cached context if available, otherwise create a new one and store it
         let trusted_context = {
-            let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-            guard.clone()
-        }
-        .map(Ok)
-        .unwrap_or_else(|| {
-            WasmTrustedContext::new_mainnet()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-        })?;
+            let mut guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+            if let Some(ctx) = guard.as_ref() {
+                ctx.clone()
+            } else {
+                let new_ctx = WasmTrustedContext::new_mainnet()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+                *guard = Some(new_ctx.clone());
+                new_ctx
+            }
+        };
 
         let mainnet_addresses = MAINNET_DISCOVERED_ADDRESSES
             .lock()
@@ -455,16 +580,18 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "testnetTrusted")]
     pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
-        // Use the cached context if available, otherwise create a new one
+        // Use the cached context if available, otherwise create a new one and store it
         let trusted_context = {
-            let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-            guard.clone()
-        }
-        .map(Ok)
-        .unwrap_or_else(|| {
-            WasmTrustedContext::new_testnet()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-        })?;
+            let mut guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+            if let Some(ctx) = guard.as_ref() {
+                ctx.clone()
+            } else {
+                let new_ctx = WasmTrustedContext::new_testnet()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+                *guard = Some(new_ctx.clone());
+                new_ctx
+            }
+        };
 
         let testnet_addresses = TESTNET_DISCOVERED_ADDRESSES
             .lock()

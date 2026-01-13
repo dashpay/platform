@@ -7,6 +7,7 @@ compile_error!("network-testing or offline-testing must be enabled for tests");
 
 #[cfg(feature = "mocks")]
 mod address_funds;
+mod address_sync;
 mod broadcast;
 mod common;
 mod config;

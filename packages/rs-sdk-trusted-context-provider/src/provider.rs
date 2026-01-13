@@ -205,6 +205,20 @@ impl TrustedHttpContextProvider {
         known.insert(id, Arc::new(contract));
     }
 
+    /// Get a data contract from the known contracts cache
+    /// Returns None if the contract is not in the cache
+    pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        let known = self.known_contracts.lock().unwrap();
+        known.get(id).cloned()
+    }
+
+    /// Remove a data contract from the known contracts cache
+    /// Returns true if the contract was present and removed, false otherwise
+    pub fn remove_known_contract(&self, id: &Identifier) -> bool {
+        let mut known = self.known_contracts.lock().unwrap();
+        known.remove(id).is_some()
+    }
+
     /// Add multiple data contracts to the known contracts cache
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
         let mut known = self.known_contracts.lock().unwrap();

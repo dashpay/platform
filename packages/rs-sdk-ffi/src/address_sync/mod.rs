@@ -164,7 +164,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
 fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
     // Convert found addresses
     let mut found_entries: Vec<DashSDKFoundAddress> = Vec::with_capacity(result.found.len());
-    for ((index, key), balance) in result.found.iter() {
+    for ((index, key), funds) in result.found.iter() {
         let key_data = key.clone().into_boxed_slice();
         let key_len = key_data.len();
         let key_ptr = Box::into_raw(key_data) as *mut u8;
@@ -173,7 +173,8 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
             index: *index,
             key: key_ptr,
             key_len,
-            balance: *balance,
+            nonce: funds.nonce,
+            balance: funds.balance,
         });
     }
 
