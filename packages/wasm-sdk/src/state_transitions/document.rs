@@ -51,7 +51,8 @@ export interface DocumentCreateOptions {
   /**
    * The document to create.
    * Use `new Document(...)` or `Document.fromJSON(...)` to construct it.
-   * Must include dataContractId, documentTypeName, ownerId, and entropy.
+   * Must include dataContractId, documentTypeName, and ownerId.
+   * Entropy is optional - if not set, it will be auto-generated.
    */
   document: Document;
 
@@ -108,19 +109,23 @@ impl WasmSdk {
         let contract_id: Identifier = document_wasm.get_data_contract_id().into();
         let document_type_name = document_wasm.get_document_type_name();
 
-        // Get entropy from document
-        let entropy = document_wasm.get_entropy().ok_or_else(|| {
-            WasmSdkError::invalid_argument("Document must have entropy set for creation")
-        })?;
-
-        if entropy.len() != 32 {
-            return Err(WasmSdkError::invalid_argument(
-                "Document entropy must be exactly 32 bytes",
-            ));
-        }
-
-        let mut entropy_array = [0u8; 32];
-        entropy_array.copy_from_slice(&entropy);
+        // Get entropy from document, or generate if not set
+        let entropy_array = match document_wasm.get_entropy() {
+            Some(entropy) if entropy.len() == 32 => {
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&entropy);
+                arr
+            }
+            _ => {
+                // Auto-generate entropy if not provided
+                use dash_sdk::dpp::util::entropy_generator::{
+                    DefaultEntropyGenerator, EntropyGenerator,
+                };
+                DefaultEntropyGenerator.generate().map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to generate entropy: {}", e))
+                })?
+            }
+        };
 
         // Extract identity key from options
         let identity_key_wasm =
