@@ -16,7 +16,6 @@ use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
-use dash_sdk::platform::Fetch;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
@@ -131,10 +130,8 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.inner_sdk(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
@@ -238,10 +235,8 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.inner_sdk(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
@@ -382,10 +377,8 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.inner_sdk(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -506,10 +499,8 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.inner_sdk(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
@@ -633,10 +624,8 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.inner_sdk(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;
@@ -752,10 +741,8 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.inner_sdk(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Get document type (owned)
         let document_type = get_document_type(&data_contract, &document_type_name)?;

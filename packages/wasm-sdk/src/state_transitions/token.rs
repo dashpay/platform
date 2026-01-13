@@ -22,7 +22,6 @@ use dash_sdk::platform::tokens::transitions::{
     BurnResult, ClaimResult, DestroyFrozenFundsResult, DirectPurchaseResult, EmergencyActionResult,
     FreezeResult, MintResult, SetPriceResult, TransferResult, UnfreezeResult,
 };
-use dash_sdk::platform::Fetch;
 use js_sys::BigInt;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -42,53 +41,6 @@ fn document_to_wasm(
     document_type_name: &str,
 ) -> DocumentWasm {
     DocumentWasm::new(doc, contract_id, document_type_name.to_string(), None)
-}
-
-// Helper methods for token operations
-impl WasmSdk {
-    /// Fetch and cache data contract in trusted context
-    async fn fetch_and_cache_token_contract(
-        &self,
-        contract_id: Identifier,
-    ) -> Result<dash_sdk::platform::DataContract, WasmSdkError> {
-        let sdk = self.inner_sdk();
-
-        // Fetch the data contract
-        let data_contract = dash_sdk::platform::DataContract::fetch(sdk, contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
-        // Add the contract to the context provider's cache if using trusted mode.
-        // If the trusted context is not initialized, silently skip caching (non-trusted flow).
-        match sdk.network {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                let guard = crate::sdk::TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                if let Some(context) = guard.as_ref() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                let guard = crate::sdk::MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                if let Some(context) = guard.as_ref() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Regtest => {
-                let guard = crate::sdk::LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                if let Some(context) = guard.as_ref() {
-                    context.add_known_contract(data_contract.clone());
-                }
-            }
-            network => {
-                return Err(WasmSdkError::generic(format!(
-                    "Unsupported network for trusted context: {:?}",
-                    network
-                )));
-            }
-        }
-
-        Ok(data_contract)
-    }
 }
 
 // ============================================================================
@@ -305,7 +257,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -562,7 +514,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -820,7 +772,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -1054,7 +1006,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -1290,7 +1242,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -1507,7 +1459,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -1728,7 +1680,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -1961,7 +1913,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -2221,7 +2173,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
@@ -2465,7 +2417,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Fetch and cache the data contract
-        let data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
