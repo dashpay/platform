@@ -35,7 +35,7 @@ describe('DPNSFacade', () => {
     await client.dpns.isNameAvailable('label');
     await client.dpns.resolveName('name');
 
-    // New API uses identity, identityKey, and signer instead of identityId/publicKeyId/privateKeyWif
+    // New API uses identity, identityKey, signer instead of identityId/publicKeyId/privateKeyWif
     const mockIdentity = {};
     const mockIdentityKey = {};
     const mockSigner = {};
@@ -62,5 +62,4 @@ describe('DPNSFacade', () => {
     expect(wasmSdk.getDpnsUsernameByName).to.be.calledOnceWithExactly('u.dash');
     expect(wasmSdk.getDpnsUsernameByNameWithProofInfo).to.be.calledOnceWithExactly('u.dash');
   });
-
 });
