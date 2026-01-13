@@ -1,11 +1,11 @@
-use crate::drive::saved_block_transactions::compact_address_balances::ONE_DAY_IN_MS;
+use crate::drive::saved_block_transactions::compact_address_balances::ONE_WEEK_IN_MS;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::CreditOperation;
+use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
@@ -21,7 +21,7 @@ impl Drive {
     /// and stores the result in the compacted address balances tree
     /// with a (start_block, end_block) key.
     ///
-    /// Also stores the expiration time (current block time + 1 day) in the
+    /// Also stores the expiration time (current block time + 1 week) in the
     /// compacted addresses expiration time tree with the same (start_block, end_block) key.
     ///
     /// Returns the range of blocks that were compacted (start_block, end_block).
@@ -59,8 +59,10 @@ impl Drive {
         let mut start_block: u64 = current_block_height;
         let mut end_block: u64 = current_block_height;
 
-        // Start with empty map - we'll merge in chronological order
-        let mut merged_balances: BTreeMap<PlatformAddress, CreditOperation> = BTreeMap::new();
+        // Start with empty map - we'll merge in chronological order using BlockAwareCreditOperation
+        // This preserves block heights for AddToCredits operations while collapsing SetCredits
+        let mut merged_balances: BTreeMap<PlatformAddress, BlockAwareCreditOperation> =
+            BTreeMap::new();
         let mut keys_to_delete: Vec<Vec<u8>> = Vec::new();
 
         // First, process stored blocks in chronological order (ascending by block height)
@@ -100,16 +102,17 @@ impl Drive {
                     ))))
                 })?;
 
-            // Merge into the combined map - stored blocks come first chronologically
-            // existing.merge(operation) means: apply existing first, then operation (later)
+            // Merge into the combined map using BlockAwareCreditOperation
+            // This preserves block heights for AddToCredits, collapses when SetCredits is seen
             for (address, operation) in address_balances {
                 merged_balances
                     .entry(address)
                     .and_modify(|existing| {
-                        // existing is from earlier blocks, operation is from this (later) block
-                        *existing = existing.merge(&operation);
+                        existing.merge(block_height, &operation);
                     })
-                    .or_insert(operation);
+                    .or_insert_with(|| {
+                        BlockAwareCreditOperation::from_operation(block_height, &operation)
+                    });
             }
 
             keys_to_delete.push(key);
@@ -120,10 +123,11 @@ impl Drive {
             merged_balances
                 .entry(*address)
                 .and_modify(|existing| {
-                    // existing is from stored blocks (earlier), operation is from current (latest)
-                    *existing = existing.merge(operation);
+                    existing.merge(current_block_height, operation);
                 })
-                .or_insert(*operation);
+                .or_insert_with(|| {
+                    BlockAwareCreditOperation::from_operation(current_block_height, operation)
+                });
         }
 
         // Serialize the merged balances
@@ -154,8 +158,8 @@ impl Drive {
             Element::new_item(serialized),
         );
 
-        // Calculate expiration time (current block time + 1 day)
-        let expiration_time_ms = current_block_time_ms.saturating_add(ONE_DAY_IN_MS);
+        // Calculate expiration time (current block time + 1 week)
+        let expiration_time_ms = current_block_time_ms.saturating_add(ONE_WEEK_IN_MS);
         let expiration_key = expiration_time_ms.to_be_bytes().to_vec();
 
         // Check if an entry with this expiration time already exists

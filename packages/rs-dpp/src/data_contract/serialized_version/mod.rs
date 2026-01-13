@@ -1,5 +1,6 @@
 use super::EMPTY_KEYWORDS;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::group::Group;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
@@ -138,6 +139,14 @@ impl DataContractInSerializationFormat {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.version,
             DataContractInSerializationFormat::V1(v1) => v1.version,
+        }
+    }
+
+    /// Returns the config for the data contract.
+    pub fn config(&self) -> &DataContractConfig {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => &v0.config,
+            DataContractInSerializationFormat::V1(v1) => &v1.config,
         }
     }
 

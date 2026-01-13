@@ -110,11 +110,17 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
             (*put_settings).user_fee_increase
         };
 
+        // Clone the document and bump its revision
+        let mut document_to_transfer = document.clone();
+        document_to_transfer.increment_revision().map_err(|e| {
+            FFIError::InternalError(format!("Failed to increment document revision: {}", e))
+        })?;
+
         // Use the new DocumentReplaceTransitionBuilder
         let mut builder = DocumentReplaceTransitionBuilder::new(
             data_contract.clone(),
             document_type_name_str.to_string(),
-            document.clone(),
+            document_to_transfer,
         );
 
         if let Some(token_info) = token_payment_info_converted {

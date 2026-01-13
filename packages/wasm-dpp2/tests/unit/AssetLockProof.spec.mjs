@@ -150,7 +150,10 @@ describe('AssetLockProof', () => {
       // Should have type field (1 = Chain)
       expect(objectRepresentation.type).to.equal(1);
       expect(objectRepresentation.coreChainLockedHeight).to.equal(1);
-      expect(objectRepresentation.outPoint).to.be.instanceOf(Uint8Array);
+      // outPoint is {txid, vout} object
+      expect(objectRepresentation.outPoint).to.be.an('object');
+      expect(objectRepresentation.outPoint.txid).to.exist;
+      expect(objectRepresentation.outPoint.vout).to.equal(1);
     });
   });
 

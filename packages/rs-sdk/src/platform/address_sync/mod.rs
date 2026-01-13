@@ -47,11 +47,12 @@ pub use types::{
 };
 
 use crate::error::Error;
+use crate::platform::Fetch;
+use crate::sync::retry;
 use crate::Sdk;
 use dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
-    get_addresses_trunk_state_request, GetAddressesBranchStateRequest,
-    GetAddressesTrunkStateRequest,
+    GetAddressesBranchStateRequest,
 };
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -59,8 +60,11 @@ use drive::grovedb::{
     calculate_max_tree_depth_from_count, Element, GroveBranchQueryResult, GroveTrunkQueryResult,
     LeafInfo,
 };
+use drive_proof_verifier::types::PlatformAddressTrunkState;
 use futures::stream::{FuturesUnordered, StreamExt};
-use rs_dapi_client::{DapiRequest, IntoInner, RequestSettings};
+use rs_dapi_client::{
+    DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
+};
 use std::collections::{BTreeSet, HashMap};
 use tracing::{debug, trace, warn};
 use tracker::KeyLeafTracker;
@@ -114,7 +118,9 @@ pub async fn sync_address_balances<P: AddressProvider>(
     }
 
     // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height) = execute_trunk_query(sdk, &mut result.metrics).await?;
+    let (trunk_result, checkpoint_height) =
+        execute_trunk_query(sdk, config.request_settings, &mut result.metrics).await?;
+    result.checkpoint_height = checkpoint_height;
 
     trace!(
         "Trunk query returned {} elements, {} leaf_keys",
@@ -127,14 +133,30 @@ pub async fn sync_address_balances<P: AddressProvider>(
     process_trunk_result(&trunk_result, provider, &mut result, &mut tracker);
 
     // Step 3: Iterative branch queries
+    let min_query_depth = platform_version
+        .drive
+        .methods
+        .address_funds
+        .address_funds_query_min_depth;
+    let max_query_depth = platform_version
+        .drive
+        .methods
+        .address_funds
+        .address_funds_query_max_depth;
+
     let mut iterations = 0;
     while !tracker.is_empty() && iterations < config.max_iterations {
         iterations += 1;
         result.metrics.iterations = iterations;
 
         // Get leaves that need querying (apply privacy adjustment)
-        let leaves_to_query =
-            get_privacy_adjusted_leaves(&tracker, &trunk_result, config.min_privacy_count);
+        let leaves_to_query = get_privacy_adjusted_leaves(
+            &tracker,
+            &trunk_result,
+            config.min_privacy_count,
+            min_query_depth,
+            max_query_depth,
+        );
 
         if leaves_to_query.is_empty() {
             break;
@@ -154,6 +176,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
             checkpoint_height,
             &mut result.metrics,
             config.max_concurrent_requests,
+            config.request_settings,
             platform_version,
         )
         .await?;
@@ -200,37 +223,20 @@ pub async fn sync_address_balances<P: AddressProvider>(
 /// Execute the trunk query and return the verified result.
 async fn execute_trunk_query(
     sdk: &Sdk,
+    settings: RequestSettings,
     metrics: &mut AddressSyncMetrics,
 ) -> Result<(GroveTrunkQueryResult, u64), Error> {
-    let request = GetAddressesTrunkStateRequest {
-        version: Some(get_addresses_trunk_state_request::Version::V0(
-            get_addresses_trunk_state_request::GetAddressesTrunkStateRequestV0 {},
-        )),
-    };
-
-    let response: dapi_grpc::platform::v0::GetAddressesTrunkStateResponse = request
-        .execute(sdk, RequestSettings::default())
-        .await?
-        .into_inner();
+    let (trunk_state, metadata) =
+        PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
 
     metrics.trunk_queries += 1;
 
-    // Parse and verify the proof using the standard SDK pattern
-    let (trunk_state, metadata) = sdk
-        .parse_proof_with_metadata::<GetAddressesTrunkStateRequest, GroveTrunkQueryResult>(
-            request, response,
-        )
-        .await?;
-
-    let trunk_state = trunk_state.ok_or_else(|| {
-        Error::Protocol(dpp::ProtocolError::CorruptedCodeExecution(
-            "Trunk query returned no state".to_string(),
-        ))
-    })?;
+    let trunk_state = trunk_state
+        .ok_or_else(|| Error::InvalidProvedResponse("Trunk query returned no state".to_string()))?;
 
     metrics.total_elements_seen += trunk_state.elements.len();
 
-    Ok((trunk_state, metadata.height))
+    Ok((trunk_state.into_inner(), metadata.height))
 }
 
 /// Process the trunk query result.
@@ -265,10 +271,14 @@ fn process_trunk_result<P: AddressProvider>(
 /// Get privacy-adjusted leaves to query.
 ///
 /// For leaves with count below min_privacy_count, find an ancestor with sufficient count.
+/// Returns a `Vec` of `(LeafBoundaryKey, LeafInfo, u8)` tuples where the `u8` is the query depth
+/// clamped to [`min_query_depth`, `max_query_depth`] to stay within platform limits.
 fn get_privacy_adjusted_leaves(
     tracker: &KeyLeafTracker,
     trunk_result: &GroveTrunkQueryResult,
     min_privacy_count: u64,
+    min_query_depth: u8,
+    max_query_depth: u8,
 ) -> Vec<(LeafBoundaryKey, LeafInfo, u8)> {
     let active_leaves = tracker.active_leaves();
     let mut result = Vec::new();
@@ -277,11 +287,13 @@ fn get_privacy_adjusted_leaves(
     for (leaf_key, info) in active_leaves {
         let count = info.count.unwrap_or(0);
         let tree_depth = calculate_max_tree_depth_from_count(count);
+        // Clamp to allowed depth range
+        let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
 
         if count >= min_privacy_count {
             // Leaf has sufficient privacy, use it directly
             if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, tree_depth));
+                result.push((leaf_key, info, clamped_depth));
             }
         } else {
             // Need to find an ancestor with more elements
@@ -293,14 +305,16 @@ fn get_privacy_adjusted_leaves(
                         hash: ancestor_hash,
                         count: Some(_count),
                     };
-                    // Reduce depth based on how many levels up we went
-                    let depth = tree_depth.saturating_sub(levels_up);
-                    result.push((ancestor_key, ancestor_info, depth.max(1)));
+                    // Reduce depth based on how many levels up we went, then clamp
+                    let depth = tree_depth
+                        .saturating_sub(levels_up)
+                        .clamp(min_query_depth, max_query_depth);
+                    result.push((ancestor_key, ancestor_info, depth));
                 }
             } else {
                 // No suitable ancestor found, use the leaf anyway
                 if seen_ancestors.insert(leaf_key.clone()) {
-                    result.push((leaf_key, info, tree_depth));
+                    result.push((leaf_key, info, clamped_depth));
                 }
             }
         }
@@ -316,6 +330,7 @@ async fn execute_branch_queries(
     checkpoint_height: u64,
     metrics: &mut AddressSyncMetrics,
     max_concurrent: usize,
+    settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<Vec<(LeafBoundaryKey, GroveBranchQueryResult)>, Error> {
     let mut futures = FuturesUnordered::new();
@@ -333,6 +348,7 @@ async fn execute_branch_queries(
                 depth_u32,
                 expected_hash,
                 checkpoint_height,
+                settings,
                 platform_version,
             )
             .await
@@ -372,13 +388,17 @@ async fn execute_branch_queries(
     Ok(results)
 }
 
-/// Execute a single branch query.
+/// Execute a single branch query with retry logic.
+///
+/// If proof verification fails, the request will be retried with a different node
+/// according to the retry settings.
 async fn execute_single_branch_query(
     sdk: &Sdk,
     key: LeafBoundaryKey,
     depth: u32,
     expected_hash: [u8; 32],
     checkpoint_height: u64,
+    settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<GroveBranchQueryResult, Error> {
     let request = GetAddressesBranchStateRequest {
@@ -391,31 +411,56 @@ async fn execute_single_branch_query(
         )),
     };
 
-    let response: dapi_grpc::platform::v0::GetAddressesBranchStateResponse = request
-        .execute(sdk, RequestSettings::default())
-        .await?
-        .into_inner();
+    let fut = |settings: RequestSettings| {
+        let request = request.clone();
+        let key = key.clone();
+        async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .execute(sdk, settings)
+                .await
+                .map_err(|execution_error| execution_error.inner_into())?;
 
-    // Extract merk proof
-    let proof_bytes = match response.version {
-        Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
-        None => {
-            return Err(Error::Protocol(dpp::ProtocolError::CorruptedCodeExecution(
-                "Missing version in branch response".to_string(),
-            )));
+            // Extract merk proof
+            let proof_bytes = match response.version {
+                Some(get_addresses_branch_state_response::Version::V0(v0)) => v0.merk_proof,
+                None => {
+                    return Err(ExecutionError {
+                        inner: Error::Proof(drive_proof_verifier::Error::EmptyVersion),
+                        address: Some(address),
+                        retries,
+                    });
+                }
+            };
+
+            // Verify the proof
+            let branch_result = Drive::verify_address_funds_branch_query(
+                &proof_bytes,
+                key,
+                depth as u8,
+                expected_hash,
+                platform_version,
+            )
+            .map_err(|e| ExecutionError {
+                inner: e.into(),
+                address: Some(address.clone()),
+                retries,
+            })?;
+
+            Ok(ExecutionResponse {
+                inner: branch_result,
+                address,
+                retries,
+            })
         }
     };
 
-    // Verify the proof
-    let branch_result = Drive::verify_address_funds_branch_query(
-        &proof_bytes,
-        key,
-        depth as u8,
-        expected_hash,
-        platform_version,
-    )?;
+    let settings = sdk.dapi_client_settings.override_by(settings);
 
-    Ok(branch_result)
+    retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
 /// Process a branch query result.
@@ -457,10 +502,10 @@ fn process_branch_result<P: AddressProvider>(
 
 /// Extract balance from a GroveDB Element.
 ///
-/// The address funds tree stores balances as sum items.
+/// The address funds tree stores balances as items with sum items.
 fn extract_balance_from_element(element: &Element) -> u64 {
     match element {
-        Element::SumItem(value, _) => *value as u64,
+        Element::ItemWithSumItem(_, value, _) => *value as u64,
         _ => 0,
     }
 }
@@ -520,8 +565,8 @@ mod tests {
 
     #[test]
     fn test_extract_balance() {
-        let sum_item = Element::SumItem(1000, None);
-        assert_eq!(extract_balance_from_element(&sum_item), 1000);
+        let item_with_sum_item = Element::ItemWithSumItem(vec![], 1000, None);
+        assert_eq!(extract_balance_from_element(&item_with_sum_item), 1000);
 
         let item = Element::Item(vec![1, 2, 3], None);
         assert_eq!(extract_balance_from_element(&item), 0);

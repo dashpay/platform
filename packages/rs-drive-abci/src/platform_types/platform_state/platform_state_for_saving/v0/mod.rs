@@ -65,7 +65,6 @@ impl From<PlatformStateForSavingV0> for PlatformState {
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
                 .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
-            patched_platform_version: None,
             validator_sets: value
                 .validator_sets
                 .into_iter()

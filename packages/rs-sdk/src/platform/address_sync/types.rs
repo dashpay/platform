@@ -1,6 +1,7 @@
 //! Types for address synchronization.
 
 use dpp::fee::Credits;
+use rs_dapi_client::RequestSettings;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A 32-byte address key that we're searching for in the address funds tree.
@@ -42,6 +43,9 @@ pub struct AddressSyncConfig {
     ///
     /// Default: 50
     pub max_iterations: usize,
+
+    /// Request settings for undergoing address sync queries.
+    pub request_settings: RequestSettings,
 }
 
 impl Default for AddressSyncConfig {
@@ -50,6 +54,7 @@ impl Default for AddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
+            request_settings: RequestSettings::default(),
         }
     }
 }
@@ -74,6 +79,12 @@ pub struct AddressSyncResult {
 
     /// Metrics about the sync process.
     pub metrics: AddressSyncMetrics,
+
+    /// The checkpoint height at which balances were synced.
+    ///
+    /// This is the block height from which terminal balance updates should start
+    /// to catch any changes that occurred after the checkpoint.
+    pub checkpoint_height: u64,
 }
 
 impl AddressSyncResult {
@@ -84,6 +95,7 @@ impl AddressSyncResult {
             absent: BTreeSet::new(),
             highest_found_index: None,
             metrics: AddressSyncMetrics::default(),
+            checkpoint_height: 0,
         }
     }
 

@@ -706,7 +706,7 @@ pub struct CompactedBlockAddressBalanceChanges {
     /// The end block height of the compacted range
     pub end_block_height: u64,
     /// The merged address balance changes for this range
-    pub changes: BTreeMap<PlatformAddress, dpp::balances::credits::CreditOperation>,
+    pub changes: BTreeMap<PlatformAddress, dpp::balances::credits::BlockAwareCreditOperation>,
 }
 
 /// Compacted address balance changes across multiple ranges.
@@ -722,5 +722,40 @@ impl RecentCompactedAddressBalanceChanges {
     /// Get the inner vector
     pub fn into_inner(self) -> Vec<CompactedBlockAddressBalanceChanges> {
         self.0
+    }
+}
+
+/// Platform address trunk state for address balance synchronization.
+///
+/// This is a newtype wrapper around [`GroveTrunkQueryResult`](drive::grovedb::GroveTrunkQueryResult)
+/// that represents the result of querying the trunk (top levels) of the address funds tree.
+///
+/// The trunk query returns:
+/// - Elements (addresses with balances) found at the queried depth
+/// - Leaf boundary keys that indicate subtrees requiring further branch queries
+///
+/// This type implements [`FromProof`](crate::FromProof) by delegating to the underlying
+/// `GroveTrunkQueryResult` implementation.
+#[derive(Debug)]
+pub struct PlatformAddressTrunkState(pub drive::grovedb::GroveTrunkQueryResult);
+
+impl PlatformAddressTrunkState {
+    /// Get the inner `GroveTrunkQueryResult`.
+    pub fn into_inner(self) -> drive::grovedb::GroveTrunkQueryResult {
+        self.0
+    }
+}
+
+impl std::ops::Deref for PlatformAddressTrunkState {
+    type Target = drive::grovedb::GroveTrunkQueryResult;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for PlatformAddressTrunkState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
