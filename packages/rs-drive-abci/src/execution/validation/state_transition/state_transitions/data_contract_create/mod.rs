@@ -5,13 +5,16 @@ mod state;
 
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
@@ -22,16 +25,14 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
-
-use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionAdvancedStructureValidationV0, StateTransitionBasicStructureValidationV0,
-    StateTransitionStateValidationV0,
-};
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::rpc::core::CoreRPCLike;
 
 impl ValidationMode {
     /// Returns if we should validate the contract when we transform it from its serialized form
@@ -45,11 +46,14 @@ impl ValidationMode {
     }
 }
 
-impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
+impl StateTransitionActionTransformer for DataContractCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -138,7 +142,7 @@ impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransiti
     }
 }
 
-impl StateTransitionStateValidationV0 for DataContractCreateTransition {
+impl StateTransitionStateValidation for DataContractCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         _action: Option<StateTransitionAction>,
@@ -268,7 +272,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -332,7 +336,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -395,7 +399,7 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -458,10 +462,12 @@ mod tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::BasicError(BasicError::ContestedUniqueIndexWithUniqueIndexError(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::ContestedUniqueIndexWithUniqueIndexError(_)
+                ),
+                ..
+            }]
         );
 
         platform
@@ -555,7 +561,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -683,7 +689,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -776,7 +782,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -892,7 +898,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -999,7 +1005,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1093,7 +1099,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1229,7 +1235,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1331,7 +1337,7 @@ mod tests {
                     .expect("expected to process state transition");
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -1469,7 +1475,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -2058,12 +2064,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
                             StateError::IdentityInTokenConfigurationNotFoundError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2157,12 +2163,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
                             StateError::IdentityInTokenConfigurationNotFoundError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2292,12 +2298,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
                             StateError::IdentityInTokenConfigurationNotFoundError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2431,12 +2437,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::BasicError(
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
                             BasicError::TokenPaymentByBurningOnlyAllowedOnInternalTokenError(_)
                         ),
-                        _
-                    )]
+                        ..
+                    }]
                 );
 
                 platform
@@ -2546,10 +2552,10 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::DataContractNotFoundError(_)),
-                        _
-                    )]
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(StateError::DataContractNotFoundError(_)),
+                        ..
+                    }]
                 );
 
                 platform
@@ -2674,10 +2680,12 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::PaidConsensusError(
-                        ConsensusError::StateError(StateError::InvalidTokenPositionStateError(_)),
-                        _
-                    )]
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::InvalidTokenPositionStateError(_)
+                        ),
+                        ..
+                    }]
                 );
 
                 platform
@@ -4204,7 +4212,7 @@ mod tests {
             // This time we expect success
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction since it's valid
@@ -4488,7 +4496,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit so we can query the state afterward
@@ -4673,7 +4681,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -4738,10 +4746,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_)),
-                    _
-                )]
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_)),
+                    ..
+                }]
             );
 
             platform

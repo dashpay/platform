@@ -13,4 +13,3 @@ export async function ensureInitialized(): Promise<void> {
 // Re-export all wasm SDK symbols for convenience
 export * from '@dashevo/wasm-sdk/compressed';
 export { default } from '@dashevo/wasm-sdk/compressed';
-export type { DataContract } from '@dashevo/wasm-sdk/compressed';

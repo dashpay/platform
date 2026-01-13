@@ -22,6 +22,19 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.__wbg_ptr).to.not.equal(0);
       expect(key.__wbg_ptr).to.not.equal(0);
     });
+
+    it('Should convert IdentityUpdateTransition to base64 and back', () => {
+      const transition = new wasm.IdentityUpdateTransition('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3', BigInt(1), BigInt(1), 1, [], []);
+
+      const base64 = transition.toBase64();
+      const bytes = transition.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+
+      const restored = wasm.IdentityUpdateTransition.fromBase64(base64);
+
+      expect(Buffer.from(restored.toBytes())).to.deep.equal(Buffer.from(bytes));
+    });
   });
 
   describe('getters', () => {
@@ -40,7 +53,7 @@ describe('IdentityUpdateTransition', () => {
     it('Should return identityIdentifier', () => {
       const transition = new wasm.IdentityUpdateTransition('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3', BigInt(1), BigInt(1), 1, [], []);
 
-      expect(transition.identityIdentifier.base58()).to.deep.equal('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
+      expect(transition.identityIdentifier.toBase58()).to.deep.equal('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
     });
 
     it('Should return publicKeyIdsToDisable', () => {
@@ -82,7 +95,7 @@ describe('IdentityUpdateTransition', () => {
 
       transition.identityIdentifier = '11Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3';
 
-      expect(transition.identityIdentifier.base58()).to.deep.equal('11Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
+      expect(transition.identityIdentifier.toBase58()).to.deep.equal('11Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
     });
 
     it('Should allow to set revision', () => {

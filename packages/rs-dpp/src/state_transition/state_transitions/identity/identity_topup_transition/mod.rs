@@ -4,6 +4,7 @@ pub mod fields;
 mod json_conversion;
 pub mod methods;
 pub mod proved;
+mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]

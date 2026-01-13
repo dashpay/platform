@@ -18,12 +18,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
-pub(super) trait PlatformStateV0PrivateMethods {
-    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>);
-}
-
 /// Platform state methods introduced in version 0 of Platform State Struct
 pub trait PlatformStateV0Methods {
     /// The last block height or 0 for genesis
@@ -56,14 +50,9 @@ pub trait PlatformStateV0Methods {
     fn last_committed_block_info(&self) -> &Option<ExtendedBlockInfo>;
     /// Returns the current protocol version that is in consensus.
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion;
-    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn patched_platform_version(&self) -> Option<&'static PlatformVersion>;
-    /// Get the current platform version or patched if present
+    /// Get the current platform version
     fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
-        self.patched_platform_version().map(Ok).unwrap_or_else(|| {
-            PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::from)
-        })
+        PlatformVersion::get(self.current_protocol_version_in_consensus()).map_err(Error::from)
     }
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
@@ -211,14 +200,6 @@ pub trait PlatformStateV0Methods {
     fn hpmn_active_list_len(&self) -> usize;
 }
 
-impl PlatformStateV0PrivateMethods for PlatformState {
-    /// Set patched platform version. It's using to fix urgent bugs as not a part of normal upgrade process
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn set_patched_platform_version(&mut self, version: Option<&'static PlatformVersion>) {
-        self.patched_platform_version = version;
-    }
-}
-
 impl PlatformStateV0Methods for PlatformState {
     /// The last block height or 0 for genesis
     fn last_committed_block_height(&self) -> u64 {
@@ -347,12 +328,6 @@ impl PlatformStateV0Methods for PlatformState {
     /// Get the current protocol version in consensus
     fn current_protocol_version_in_consensus(&self) -> ProtocolVersion {
         self.current_protocol_version_in_consensus
-    }
-
-    /// Patched platform version. Used to fix urgent bugs as not part of normal upgrade process.
-    /// The patched version returns from the public current_platform_version getter in case if present.
-    fn patched_platform_version(&self) -> Option<&'static PlatformVersion> {
-        self.patched_platform_version
     }
 
     /// Returns the upcoming protocol version for the next epoch.

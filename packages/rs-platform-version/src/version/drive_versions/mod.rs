@@ -1,3 +1,4 @@
+use crate::version::drive_versions::drive_group_method_versions::DriveAddressFundsMethodVersions;
 use crate::version::FeatureVersion;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
@@ -12,6 +13,7 @@ use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
 
+pub mod drive_address_funds_method_versions;
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
 pub mod drive_document_method_versions;
@@ -28,6 +30,7 @@ pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod v5;
+pub mod v6;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
@@ -61,12 +64,26 @@ pub struct DriveMethodVersions {
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
+    pub address_funds: DriveAddressFundsMethodVersions,
+    pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveSavedBlockTransactionsMethodVersions {
+    pub store_address_balances: FeatureVersion,
+    pub fetch_address_balances: FeatureVersion,
+    pub compact_address_balances: FeatureVersion,
+    pub cleanup_expired_address_balances: FeatureVersion,
+    /// Maximum number of blocks to store before compaction is triggered
+    pub max_blocks_before_compaction: u16,
+    /// Maximum number of address balance entries before compaction is triggered
+    pub max_addresses_before_compaction: u32,
 }
 
 #[derive(Clone, Debug, Default)]

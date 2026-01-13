@@ -666,7 +666,7 @@ impl WasmSdk {
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
             for contract_id in contracts {
-                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
+                let contract_id_str = IdentifierWasm::from(contract_id).to_base58();
                 // Fetch all groups for this contract
                 let query = GroupInfosQuery {
                     contract_id,
@@ -972,7 +972,7 @@ impl WasmSdk {
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
             for contract_id in contracts {
-                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
+                let contract_id_str = IdentifierWasm::from(contract_id).to_base58();
                 // Fetch all groups for this contract with proof
                 let query = GroupInfosQuery {
                     contract_id,

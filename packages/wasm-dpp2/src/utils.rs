@@ -1,27 +1,16 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use anyhow::{Context, anyhow, bail};
+use anyhow::{anyhow, bail};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
-use js_sys::{Error as JsError, Function};
+use js_sys::Error as JsError;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use wasm_bindgen::convert::RefFromWasmAbi;
 use wasm_bindgen::{JsCast, JsValue};
 
-pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
-    let replacer_func = Function::new_with_args(
-        "key, value",
-        "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
-    );
-
-    let data_string = js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
-        .map_err(|_| WasmDppError::serialization("Failed to stringify value"))?;
-
-    Ok(data_string.into())
-}
-
+/// Extension trait for extracting error messages from JsValue
 pub trait JsValueExt {
     fn error_message(&self) -> String;
 }
@@ -47,42 +36,22 @@ impl JsValueExt for JsValue {
     }
 }
 
-pub fn with_serde_to_json_value_wasm(data: JsValue) -> WasmDppResult<JsonValue> {
-    let data = stringify_wasm(&data)?;
-    serde_json::from_str(&data).map_err(|e| {
-        WasmDppError::serialization(format!(
-            "unable to convert value to serde_json::Value: {e:#}"
-        ))
-    })
-}
-
-pub fn with_serde_to_platform_value_wasm(data: &JsValue) -> WasmDppResult<Value> {
-    Ok(with_serde_to_json_value_wasm(data.clone())?.into())
-}
-
+/// Extension trait for converting JsValue to serde/platform values
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> WasmDppResult<JsonValue>;
     fn with_serde_to_platform_value(&self) -> WasmDppResult<Value>;
-    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> WasmDppResult<BTreeMap<String, Value>>;
 }
 
 impl ToSerdeJSONExt for JsValue {
-    /// Converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_json_value(&self) -> WasmDppResult<JsonValue> {
-        with_serde_to_json_value(self.clone())
+        crate::serialization::js_value_to_json(self)
     }
 
-    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value(&self) -> WasmDppResult<Value> {
-        with_serde_to_platform_value(self)
+        Ok(self.with_serde_to_json_value()?.into())
     }
 
-    /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
-    /// as `JsValue` must be stringified first
     fn with_serde_to_platform_value_map(&self) -> WasmDppResult<BTreeMap<String, Value>> {
         self.with_serde_to_platform_value()?
             .into_btree_string_map()
@@ -90,66 +59,7 @@ impl ToSerdeJSONExt for JsValue {
     }
 }
 
-pub fn to_vec_js<T>(iter: impl IntoIterator<Item = T>) -> Vec<JsValue>
-where
-    T: Into<JsValue>,
-{
-    iter.into_iter().map(|v| v.into()).collect()
-}
-
-#[allow(dead_code)]
-#[deprecated(note = "This function is marked as unused.")]
-#[allow(deprecated)]
-pub fn to_vec_of_serde_values(
-    values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> WasmDppResult<Vec<JsonValue>> {
-    values
-        .into_iter()
-        .map(|v| v.as_ref().with_serde_to_json_value())
-        .collect()
-}
-
-pub fn to_vec_of_platform_values(
-    values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> WasmDppResult<Vec<Value>> {
-    values
-        .into_iter()
-        .map(|v| v.as_ref().with_serde_to_platform_value())
-        .collect()
-}
-
-pub fn with_serde_to_json_value(data: JsValue) -> WasmDppResult<JsonValue> {
-    let data = stringify(&data)?;
-    let value: JsonValue = serde_json::from_str(&data)
-        .with_context(|| format!("cant convert {data:#?} to serde json value"))
-        .map_err(|e| WasmDppError::serialization(format!("{e:#}")))?;
-    Ok(value)
-}
-
-pub fn with_serde_to_platform_value(data: &JsValue) -> WasmDppResult<Value> {
-    Ok(with_serde_to_json_value(data.clone())?.into())
-}
-
-pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
-    let replacer_func = Function::new_with_args(
-        "key, value",
-        "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
-    );
-
-    let data_string: String =
-        js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
-            .map_err(|err| {
-                let message = err.error_message();
-                WasmDppError::serialization(format!(
-                    "unable to stringify value to JSON: {}",
-                    message
-                ))
-            })?
-            .into();
-
-    Ok(data_string)
-}
-
+/// Trait for converting JsValue to a WASM type by reading its internal pointer
 pub trait IntoWasm {
     fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str) -> WasmDppResult<T::Anchor>;
 }
@@ -160,6 +70,7 @@ impl IntoWasm for JsValue {
     }
 }
 
+/// Convert a JsValue to a WASM type by reading its internal pointer
 pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     js_value: &JsValue,
     class_name: &str,
@@ -197,6 +108,7 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     }
 }
 
+/// Get the `__type` property from a JsValue (used for WASM class identification)
 pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     let class_type = js_sys::Reflect::get(value, &JsValue::from_str("__type")).map_err(|err| {
         let message = err.error_message();
@@ -209,6 +121,7 @@ pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     Ok(class_type.as_string().unwrap_or_default())
 }
 
+/// Convert a JS Number or BigInt to u64
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     if value.is_bigint() {
         js_sys::BigInt::new(&value)
@@ -223,19 +136,20 @@ pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     }
 }
 
-pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
+/// Convert a JS Number to u64 with validation
+fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
     if let Some(float_number) = js_number.as_f64() {
         if float_number.is_nan() || float_number.is_infinite() {
-            bail!("received an invalid timestamp: the number is either NaN or Inf")
+            bail!("received an invalid number: the number is either NaN or Inf")
         }
         if float_number < 0. {
-            bail!("received an invalid timestamp: the number is negative");
+            bail!("received an invalid number: the number is negative");
         }
         if float_number.fract() != 0. {
-            bail!("received an invalid timestamp: the number is fractional")
+            bail!("received an invalid number: the number is fractional")
         }
         if float_number > u64::MAX as f64 {
-            bail!("received an invalid timestamp: the number is > u64::max")
+            bail!("received an invalid number: the number is > u64::max")
         }
 
         return Ok(float_number as u64);
@@ -243,6 +157,7 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
     bail!("the value is not a number")
 }
 
+/// Generate a document ID using the v0 algorithm
 pub fn generate_document_id_v0(
     contract_id: &Identifier,
     owner_id: &Identifier,
@@ -258,4 +173,132 @@ pub fn generate_document_id_v0(
 
     Identifier::from_bytes(&hash_double_to_vec(&buf))
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
+}
+
+/// Macro to implement `try_from_options` helper method for extracting a WASM type from an options object.
+///
+/// This generates a method that reads a named field from a JsValue options object and converts it
+/// to the WASM wrapper type using `to_wasm`.
+///
+/// # Usage
+///
+/// ```ignore
+/// // Basic form: requires field_name parameter
+/// impl_try_from_options!(MyTypeWasm, "MyType");
+///
+/// // With default field name: generates both try_from_options() and try_from_options_with_field()
+/// impl_try_from_options!(MySignerWasm, "MySigner", "signer");
+/// ```
+///
+/// The basic form generates:
+/// ```ignore
+/// impl MyTypeWasm {
+///     pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+/// }
+/// ```
+///
+/// The form with default field name generates:
+/// ```ignore
+/// impl MySignerWasm {
+///     pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> { ... }
+///     pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_try_from_options {
+    // Basic form: requires field_name parameter
+    ($wrapper:ty, $type_name:expr) => {
+        impl $wrapper {
+            /// Try to extract this type from an options object field.
+            ///
+            /// This helper reads the specified field from an options object and converts it
+            /// to the WASM wrapper type.
+            pub fn try_from_options(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Self> {
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .map_err(|_| {
+                            $crate::error::WasmDppError::invalid_argument(format!(
+                                "Missing '{}' field",
+                                field_name
+                            ))
+                        })?;
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Err($crate::error::WasmDppError::invalid_argument(format!(
+                        "'{}' is required",
+                        field_name
+                    )));
+                }
+
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                    .map(|boxed| (*boxed).clone())
+            }
+
+            /// Try to extract this type from an options object field, returning None if not present.
+            ///
+            /// This helper reads the specified field from an options object and converts it
+            /// to the WASM wrapper type. Returns Ok(None) if the field is undefined or null.
+            pub fn try_from_optional_options(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Option<Self>> {
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Ok(None);
+                }
+
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                    .map(|boxed| Some((*boxed).clone()))
+            }
+        }
+    };
+
+    // Form with default field name: generates try_from_options() with default and try_from_options_with_field()
+    ($wrapper:ty, $type_name:expr, $default_field:expr) => {
+        impl $wrapper {
+            /// Try to extract this type from an options object using the default field name.
+            ///
+            /// This helper reads the default field from an options object and converts it
+            /// to the WASM wrapper type.
+            pub fn try_from_options(
+                options: &wasm_bindgen::JsValue,
+            ) -> $crate::error::WasmDppResult<Self> {
+                Self::try_from_options_with_field(options, $default_field)
+            }
+
+            /// Try to extract this type from an options object with a custom field name.
+            ///
+            /// This helper reads the specified field from an options object and converts it
+            /// to the WASM wrapper type.
+            pub fn try_from_options_with_field(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Self> {
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .map_err(|_| {
+                            $crate::error::WasmDppError::invalid_argument(format!(
+                                "Missing '{}' field",
+                                field_name
+                            ))
+                        })?;
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Err($crate::error::WasmDppError::invalid_argument(format!(
+                        "'{}' is required",
+                        field_name
+                    )));
+                }
+
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                    .map(|boxed| (*boxed).clone())
+            }
+        }
+    };
 }

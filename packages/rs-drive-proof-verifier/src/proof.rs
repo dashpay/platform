@@ -18,6 +18,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 };
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
+    get_address_info_request, get_addresses_infos_request,
     get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_finalized_epoch_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
 };
@@ -25,6 +26,7 @@ use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
@@ -32,10 +34,11 @@ use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::identity::Purpose;
 use dpp::platform_value::{self};
-use dpp::prelude::{DataContract, Identifier, Identity};
+use dpp::prelude::{AddressNonce, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
@@ -48,6 +51,7 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::grovedb::Error as GroveError;
+use drive::grovedb::GroveTrunkQueryResult;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
@@ -829,6 +833,278 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((maybe_identity, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetAddressInfoRequest> for AddressInfo {
+    type Request = platform::GetAddressInfoRequest;
+    type Response = platform::GetAddressInfoResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        AddressInfo: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let address = match request.version.ok_or(Error::EmptyVersion)? {
+            get_address_info_request::Version::V0(v0) => PlatformAddress::from_bytes(&v0.address)
+                .map_err(|e| Error::RequestError {
+                error: format!("invalid address: {}", e),
+            })?,
+        };
+
+        let (root_hash, maybe_info) =
+            Drive::verify_address_info(&proof.grovedb_proof, &address, false, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let info = maybe_info.map(|(nonce, balance)| AddressInfo {
+            address,
+            nonce,
+            balance,
+        });
+
+        Ok((info, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetAddressesInfosRequest> for AddressInfos {
+    type Request = platform::GetAddressesInfosRequest;
+    type Response = platform::GetAddressesInfosResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        AddressInfos: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let addresses_bytes = match request.version.ok_or(Error::EmptyVersion)? {
+            get_addresses_infos_request::Version::V0(v0) => v0.addresses,
+        };
+
+        let addresses: Vec<PlatformAddress> = addresses_bytes
+            .into_iter()
+            .map(|bytes| {
+                PlatformAddress::from_bytes(&bytes).map_err(|e| Error::RequestError {
+                    error: format!("invalid address: {}", e),
+                })
+            })
+            .collect::<Result<_, _>>()?;
+
+        let (root_hash, entries) = Drive::verify_addresses_infos::<
+            _,
+            Vec<(PlatformAddress, Option<(AddressNonce, Credits)>)>,
+        >(
+            &proof.grovedb_proof,
+            addresses.iter(),
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let infos = entries
+            .into_iter()
+            .map(|(address, maybe_info)| {
+                let info = maybe_info.map(|(nonce, balance)| AddressInfo {
+                    address,
+                    nonce,
+                    balance,
+                });
+                (address, info)
+            })
+            .collect::<AddressInfos>();
+
+        Ok((Some(infos), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanceChanges {
+    type Request = platform::GetRecentAddressBalanceChangesRequest;
+    type Response = platform::GetRecentAddressBalanceChangesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        RecentAddressBalanceChanges: 'a,
+    {
+        use dapi_grpc::platform::v0::get_recent_address_balance_changes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let start_height = match request.version.ok_or(Error::EmptyVersion)? {
+            get_recent_address_balance_changes_request::Version::V0(v0) => v0.start_height,
+        };
+
+        let limit = Some(100u16); // Same limit as in query handler
+
+        let (root_hash, verified_changes) = Drive::verify_recent_address_balance_changes(
+            &proof.grovedb_proof,
+            start_height,
+            limit,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = RecentAddressBalanceChanges(
+            verified_changes
+                .into_iter()
+                .map(|(block_height, changes)| BlockAddressBalanceChanges {
+                    block_height,
+                    changes,
+                })
+                .collect(),
+        );
+
+        Ok((Some(result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
+    for RecentCompactedAddressBalanceChanges
+{
+    type Request = platform::GetRecentCompactedAddressBalanceChangesRequest;
+    type Response = platform::GetRecentCompactedAddressBalanceChangesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        RecentCompactedAddressBalanceChanges: 'a,
+    {
+        use dapi_grpc::platform::v0::get_recent_compacted_address_balance_changes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let start_block_height = match request.version.ok_or(Error::EmptyVersion)? {
+            get_recent_compacted_address_balance_changes_request::Version::V0(v0) => {
+                v0.start_block_height
+            }
+        };
+
+        let limit = Some(100u16); // Same limit as in query handler
+
+        let (root_hash, verified_changes) = Drive::verify_compacted_address_balance_changes(
+            &proof.grovedb_proof,
+            start_block_height,
+            limit,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = RecentCompactedAddressBalanceChanges(
+            verified_changes
+                .into_iter()
+                .map(|(start_block_height, end_block_height, changes)| {
+                    CompactedBlockAddressBalanceChanges {
+                        start_block_height,
+                        end_block_height,
+                        changes,
+                    }
+                })
+                .collect(),
+        );
+
+        Ok((Some(result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetAddressesTrunkStateRequest> for GroveTrunkQueryResult {
+    type Request = platform::GetAddressesTrunkStateRequest;
+    type Response = platform::GetAddressesTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        GroveTrunkQueryResult: 'a,
+    {
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, trunk_result) =
+            Drive::verify_address_funds_trunk_query(&proof.grovedb_proof, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(trunk_result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetAddressesTrunkStateRequest> for PlatformAddressTrunkState {
+    type Request = platform::GetAddressesTrunkStateRequest;
+    type Response = platform::GetAddressesTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        PlatformAddressTrunkState: 'a,
+    {
+        let (result, metadata, proof) = GroveTrunkQueryResult::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+
+        Ok((result.map(PlatformAddressTrunkState), metadata, proof))
     }
 }
 

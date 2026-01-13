@@ -18,7 +18,7 @@ pub mod errors;
 pub mod signer;
 
 pub mod accessors;
-pub(crate) mod conversion;
+pub mod conversion;
 pub mod fields;
 pub mod identities_contract_keys;
 #[cfg(feature = "client")]

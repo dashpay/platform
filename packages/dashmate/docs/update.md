@@ -48,13 +48,13 @@ $  dashmate update --format=json --config local_1 | jq
     "name": "dashmate_helper",
     "title": "Dashmate Helper",
     "updated": "error",
-    "image": "dashpay/dashmate-helper:2.2.0-dev.1"
+    "image": "dashpay/dashmate-helper:3.0.0-dev.1"
   },
   {
     "name": "core",
     "title": "Core",
     "updated": "up to date",
-    "image": "dashpay/dashd:22"
+    "image": "dashpay/dashd:23"
   },
   {
     "name": "drive_abci",

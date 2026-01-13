@@ -8,6 +8,8 @@ use dpp::version::PlatformVersion;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0;
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::{VersionEntry, Versions};
 use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::{get_protocol_version_upgrade_state_response_v0, GetProtocolVersionUpgradeStateResponseV0};
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
@@ -22,13 +24,12 @@ impl<C> Platform<C> {
                 .drive
                 .fetch_proved_versions_with_counter(None, &platform_version.drive));
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetProtocolVersionUpgradeStateResponseV0 {
-                result: Some(
-                    get_protocol_version_upgrade_state_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
-                    ),
-                ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_protocol_version_upgrade_state_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let protocol_versions_counter = self.drive.cache.protocol_versions_counter.read();
@@ -50,7 +51,7 @@ impl<C> Platform<C> {
                         versions,
                     }),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

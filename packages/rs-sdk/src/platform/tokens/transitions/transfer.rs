@@ -53,7 +53,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_transfer<S: Signer>(
+    pub async fn token_transfer<S: Signer<IdentityPublicKey>>(
         &self,
         transfer_tokens_transition_builder: TokenTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,

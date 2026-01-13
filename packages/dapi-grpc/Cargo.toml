@@ -46,7 +46,7 @@ futures-core = "0.3.30"
 serde = { version = "1.0.219", optional = true, features = ["derive"] }
 serde_bytes = { version = "0.11.12", optional = true }
 serde_json = { version = "1.0", optional = true }
-dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
+dash-platform-macros = { path = "../rs-dash-platform-macros" }
 platform-version = { path = "../rs-platform-version" }
 tonic-prost = { version = "0.14.2" }
 
@@ -81,7 +81,8 @@ path = "clients/platform/v0/rust/platform_example.rs"
 [package.metadata.cargo-machete]
 ignored = [
   "platform-version",
-  "serde_bytes",
   "futures-core",
-  "dapi-grpc-macros",
+  "tonic-prost-build",
+  "getrandom", # Ignore getrandom as we need it to enable `js` feature
+  "dash-platform-macros", # used in build.rs
 ]

@@ -1,6 +1,7 @@
 use crate::data_contract::document::DocumentWasm;
 use crate::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
@@ -20,7 +21,7 @@ use dpp::state_transition::batch_transition::{
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 pub fn generate_create_transition(
-    document: DocumentWasm,
+    document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     prefunded_voting_balance: Option<PrefundedVotingBalanceWasm>,
@@ -28,56 +29,56 @@ pub fn generate_create_transition(
 ) -> DocumentCreateTransition {
     DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: document.rs_get_id(),
+            id: document.document.id(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: document.rs_get_data_contract_id(),
+            data_contract_id: document.data_contract_id.into(),
             token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
         }),
-        entropy: document.rs_get_entropy().unwrap(),
-        data: document.rs_get_properties(),
+        entropy: document.entropy.unwrap(),
+        data: document.document.properties().clone(),
         prefunded_voting_balance: prefunded_voting_balance.map(|pb| pb.into()),
     })
 }
 
 pub fn generate_delete_transition(
-    document: DocumentWasm,
+    document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentDeleteTransition {
     DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: document.rs_get_id(),
+            id: document.document.id(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: document.rs_get_data_contract_id(),
+            data_contract_id: document.data_contract_id.into(),
             token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
         }),
     })
 }
 
 pub fn generate_replace_transition(
-    document: DocumentWasm,
+    document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentReplaceTransition {
     DocumentReplaceTransition::V0(DocumentReplaceTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: document.rs_get_id(),
+            id: document.document.id(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: document.rs_get_data_contract_id(),
+            data_contract_id: document.data_contract_id.into(),
             token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
         }),
-        revision: document.get_revision().unwrap() + 1,
-        data: document.rs_get_properties(),
+        revision: document.document.revision().unwrap() + 1,
+        data: document.document.properties().clone(),
     })
 }
 
 pub fn generate_transfer_transition(
-    document: DocumentWasm,
+    document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     recipient_owner_id: Identifier,
@@ -85,19 +86,19 @@ pub fn generate_transfer_transition(
 ) -> DocumentTransferTransition {
     DocumentTransferTransition::V0(DocumentTransferTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: document.rs_get_id(),
+            id: document.document.id(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: document.rs_get_data_contract_id(),
+            data_contract_id: document.data_contract_id.into(),
             token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
         }),
-        revision: document.get_revision().unwrap() + 1,
+        revision: document.document.revision().unwrap() + 1,
         recipient_owner_id,
     })
 }
 
 pub fn generate_update_price_transition(
-    document: DocumentWasm,
+    document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     price: Credits,
@@ -105,19 +106,19 @@ pub fn generate_update_price_transition(
 ) -> DocumentUpdatePriceTransition {
     DocumentUpdatePriceTransition::V0(DocumentUpdatePriceTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: document.rs_get_id(),
+            id: document.document.id(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: document.rs_get_data_contract_id(),
+            data_contract_id: document.data_contract_id.into(),
             token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
         }),
-        revision: document.get_revision().unwrap() + 1,
+        revision: document.document.revision().unwrap() + 1,
         price,
     })
 }
 
 pub fn generate_purchase_transition(
-    document: DocumentWasm,
+    document: &DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     price: Credits,
@@ -125,13 +126,13 @@ pub fn generate_purchase_transition(
 ) -> DocumentPurchaseTransition {
     DocumentPurchaseTransition::V0(DocumentPurchaseTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: document.rs_get_id(),
+            id: document.document.id(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: document.rs_get_data_contract_id(),
+            data_contract_id: document.data_contract_id.into(),
             token_payment_info: token_payment_info.map(TokenPaymentInfo::from),
         }),
-        revision: document.get_revision().unwrap() + 1,
+        revision: document.document.revision().unwrap() + 1,
         price,
     })
 }

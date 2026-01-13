@@ -98,7 +98,7 @@ impl AddressStatus {
 }
 
 /// [AddressList] errors
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddressListError {
     /// A valid uri is required to create an Address

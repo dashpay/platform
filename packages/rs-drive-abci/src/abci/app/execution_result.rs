@@ -15,20 +15,21 @@ impl TryIntoPlatformVersioned<Option<ExecTxResult>> for StateTransitionExecution
         platform_version: &PlatformVersion,
     ) -> Result<Option<ExecTxResult>, Self::Error> {
         let response = match self {
-            StateTransitionExecutionResult::SuccessfulExecution(_, actual_fees) => {
-                Some(ExecTxResult {
-                    code: 0,
-                    gas_used: actual_fees.total_base_fee() as SignedCredits,
-                    ..Default::default()
-                })
-            }
+            StateTransitionExecutionResult::SuccessfulExecution {
+                fee_result: actual_fees,
+                ..
+            } => Some(ExecTxResult {
+                code: 0,
+                gas_used: actual_fees.total_base_fee() as SignedCredits,
+                ..Default::default()
+            }),
             StateTransitionExecutionResult::UnpaidConsensusError(error) => Some(ExecTxResult {
                 code: HandlerError::from(&error).code(),
                 info: error.response_info_for_version(platform_version)?,
                 gas_used: 0,
                 ..Default::default()
             }),
-            StateTransitionExecutionResult::PaidConsensusError(error, actual_fees) => {
+            StateTransitionExecutionResult::PaidConsensusError { error, actual_fees } => {
                 Some(ExecTxResult {
                     code: HandlerError::from(&error).code(),
                     info: error.response_info_for_version(platform_version)?,

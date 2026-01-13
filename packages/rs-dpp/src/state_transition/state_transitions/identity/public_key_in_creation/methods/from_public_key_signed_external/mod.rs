@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl IdentityPublicKeyInCreation {
-    pub fn from_public_key_signed_external<S: Signer>(
+    pub fn from_public_key_signed_external<S: Signer<IdentityPublicKey>>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,

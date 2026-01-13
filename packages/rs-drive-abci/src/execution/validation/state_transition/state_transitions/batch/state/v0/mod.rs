@@ -3,7 +3,7 @@ use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::StateTransitionLike;
+use dpp::state_transition::StateTransitionOwned;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;

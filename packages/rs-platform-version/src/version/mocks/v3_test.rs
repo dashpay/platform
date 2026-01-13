@@ -14,6 +14,7 @@ use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
+use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
     DriveAbciBlockStartMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions,
@@ -139,6 +140,8 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 process_raw_state_transitions: 0,
                 decode_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
+                store_address_balances_to_recent_block_storage: None,
+                cleanup_recent_block_storage_address_balances: None,
             },
             epoch: DriveAbciEpochMethodVersions {
                 gather_epoch_info: 0,
@@ -151,6 +154,8 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 update_state_cache: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
+                should_checkpoint: None,
+                update_checkpoints: None,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
                 fetch_platform_state: 0,
@@ -160,6 +165,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V3,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
+        checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,

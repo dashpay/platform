@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -9,7 +10,10 @@ use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable}
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::state_transition::{
+    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
+    StateTransitionSingleSigned,
+};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -66,7 +70,7 @@ impl IdentityCreditTransferWasm {
         Ok(encode(bytes.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
         Ok(encode(bytes.as_slice(), Base64))
@@ -208,3 +212,5 @@ impl IdentityCreditTransferWasm {
         self.0.set_signature(data)
     }
 }
+
+impl_wasm_conversions!(IdentityCreditTransferWasm, IdentityCreditTransferTransition);

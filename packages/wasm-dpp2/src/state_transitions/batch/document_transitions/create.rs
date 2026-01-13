@@ -4,9 +4,9 @@ use crate::state_transitions::batch::generators::generate_create_transition;
 use crate::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::data_contract::document::DocumentWasm;
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
+use crate::serialization;
 use crate::utils::{IntoWasm, ToSerdeJSONExt};
-use dpp::dashcore::hashes::serde::Serialize;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -72,7 +72,7 @@ impl DocumentCreateTransitionWasm {
             };
 
         let rs_create_transition = generate_create_transition(
-            document.clone(),
+            document,
             identity_contract_nonce,
             document.get_document_type_name().to_string(),
             prefunded_voting_balance,
@@ -84,12 +84,7 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(getter = "data")]
     pub fn get_data(&self) -> WasmDppResult<JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-        self.0
-            .data()
-            .serialize(&serializer)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))
+        serialization::to_object(self.0.data())
     }
 
     #[wasm_bindgen(getter = "base")]
