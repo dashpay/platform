@@ -256,10 +256,10 @@ impl RequestSequenceValidator {
     fn bump_height(&mut self, height: u64, origin: &str) -> Result<(), Box<dyn Error>> {
         match self.last_height {
             Some(last) if height < last => Err(format!(
-                "log {} has out-of-order height {} before {} ({})",
+                "log {} has out-of-order height: encountered {} after {} ({})",
                 self.path.display(),
-                last,
                 height,
+                last,
                 origin
             )
             .into()),

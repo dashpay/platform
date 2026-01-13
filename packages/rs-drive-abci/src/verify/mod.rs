@@ -50,7 +50,8 @@ pub fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
         );
     }
 
-    let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
+    let grovedb = drive::grovedb::GroveDb::open(db_path)
+        .map_err(|e| format!("failed to open grovedb: {}", e))?;
     // TODO: fetch platform version instead of taking latest
     let result = grovedb
         .visualize_verify_grovedb(
@@ -72,7 +73,7 @@ pub fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
                 if let Err(e) = remove_file(&fsck) {
                     tracing::warn!(
                         error = ?e,
-                        path  =fsck.display().to_string(),
+                        path = fsck.display().to_string(),
                         "grovedb verification: cannot remove .fsck file: please remove it manually to avoid running verification again",
                     );
                 }
