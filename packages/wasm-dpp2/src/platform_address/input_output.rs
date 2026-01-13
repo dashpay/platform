@@ -82,6 +82,7 @@ impl PlatformAddressInputWasm {
 /// An output specifies a Platform address that will receive credits,
 /// along with an optional amount to receive. When amount is None,
 /// the system distributes funds automatically (used for asset lock funding).
+// TODO: Add nonce; see [WasmSdk::identity_create_from_addresses] notes.
 #[wasm_bindgen(js_name = "PlatformAddressOutput")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

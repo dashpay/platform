@@ -913,6 +913,14 @@ impl WasmSdk {
     ///
     /// @param options - Creation options including identity, inputs, and signers
     /// @returns Promise resolving to result with created identity and updated address infos
+    ///
+    /// ## Unstable
+    ///
+    /// This function is planned to be changed to require address nonces in the options to avoid potential privacy leaks.
+    // TODO: This function should require address nonces in the `IdentityCreateFromAddressesOptionsJs`
+    // to aviod potential leak of address owner IP address. Currently, it fetches nonces internally which may expose address usage.
+    // We need to implement address sync mechanism ([`sync_address_balances`](crate::platform::Platform::sync_address_balances))
+    // to allow users to update nonces in a privacy-preserving way before calling this function.
     #[wasm_bindgen(js_name = "identityCreateFromAddresses")]
     pub async fn identity_create_from_addresses(
         &self,
