@@ -5,6 +5,7 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::enums::lock_types::AssetLockProofTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_options;
 use crate::utils::{IntoWasm, JsValueExt, get_class_type};
 use dpp::prelude::AssetLockProof;
 use js_sys::{Object, Reflect};
@@ -269,3 +270,5 @@ impl AssetLockProofWasm {
         Ok(AssetLockProofWasm(proof))
     }
 }
+
+impl_try_from_options!(AssetLockProofWasm, "AssetLockProof");

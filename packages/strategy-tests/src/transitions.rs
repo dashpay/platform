@@ -464,18 +464,22 @@ pub fn create_identity_update_transition_add_keys(
 
     let add_public_keys: Vec<IdentityPublicKey> = keys.iter().map(|(key, _)| key.clone()).collect();
     signer.private_keys_in_creation.extend(keys);
-    let (key_id, _) = identity
+    let master_key_id = *identity
         .public_keys()
         .iter()
         .find(|(_, key)| key.security_level() == MASTER)
-        .expect("expected to have a master key");
+        .expect("expected to have a master key")
+        .0;
 
     let identity_nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *identity_nonce += 1;
 
+    // Bump revision before creating state transition - the transition uses identity.revision() directly
+    identity.bump_revision();
+
     let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
         identity,
-        key_id,
+        &master_key_id,
         add_public_keys.clone(),
         vec![],
         *identity_nonce,
@@ -485,8 +489,6 @@ pub fn create_identity_update_transition_add_keys(
         None,
     )
     .expect("expected to create an AddKeys transition");
-
-    identity.bump_revision();
 
     (state_transition, (identity.id(), add_public_keys))
 }
@@ -573,18 +575,22 @@ pub fn create_identity_update_transition_disable_keys(
             }
         });
 
-    let (key_id, _) = identity
+    let master_key_id = *identity
         .public_keys()
         .iter()
         .find(|(_, key)| key.security_level() == MASTER)
-        .expect("expected to have a master key");
+        .expect("expected to have a master key")
+        .0;
 
     let identity_nonce = identity_nonce_counter.entry(identity.id()).or_default();
     *identity_nonce += 1;
 
+    // Bump revision before creating state transition - the transition uses identity.revision() directly
+    identity.bump_revision();
+
     let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
         identity,
-        key_id,
+        &master_key_id,
         vec![],
         key_ids_to_disable,
         *identity_nonce,
@@ -594,8 +600,6 @@ pub fn create_identity_update_transition_disable_keys(
         None,
     )
     .expect("expected to create a DisableKeys transition");
-
-    identity.bump_revision();
 
     Some(state_transition)
 }
