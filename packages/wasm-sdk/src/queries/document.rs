@@ -135,9 +135,10 @@ async fn build_documents_query(
 
     let contract_id: Identifier = data_contract_id.into();
 
-    let mut query =
-        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, &document_type_name)
-            .await?;
+    // Fetch contract using cache
+    let data_contract = sdk.get_or_fetch_contract(contract_id).await?;
+
+    let mut query = DocumentQuery::new(data_contract, &document_type_name)?;
 
     query.limit = limit.unwrap_or(100);
 

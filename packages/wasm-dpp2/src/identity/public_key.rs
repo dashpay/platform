@@ -4,6 +4,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
 use crate::serialization;
 use crate::utils::IntoWasm;
 use dpp::dashcore::Network;
@@ -347,3 +348,5 @@ impl IdentityPublicKeyWasm {
         Ok(IdentityPublicKeyWasm(key))
     }
 }
+
+impl_try_from_options!(IdentityPublicKeyWasm, "IdentityPublicKey");

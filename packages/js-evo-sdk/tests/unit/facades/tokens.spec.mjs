@@ -4,6 +4,14 @@ import { EvoSDK } from '../../../dist/sdk.js';
 describe('TokensFacade', () => {
   let wasmSdk;
   let client;
+  let identityKey;
+  let signer;
+
+  // Realistic identifiers
+  const contractId = 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv';
+  const tokenId = 'BpJvvpPiR2obh7ueZixjtYXsmWQdgJhiZtQJWjD7Ruus';
+  const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
+  const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
 
   beforeEach(async function setup() {
     await init();
@@ -11,195 +19,423 @@ describe('TokensFacade', () => {
     wasmSdk = builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
-    // query methods
-    this.sinon.stub(wasmSdk, 'getTokenPriceByContract').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenTotalSupply').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenTotalSupplyWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenStatuses').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenStatusesWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalances').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalancesWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentityTokenInfos').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfos').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentityTokenInfosWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfosWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePrices').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePricesWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenContractInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenContractInfoWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaim').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaimWithProofInfo').resolves('ok');
+    // Create mock objects
+    identityKey = Object.create(wasmSDKPackage.IdentityPublicKey.prototype);
+    signer = Object.create(wasmSDKPackage.IdentitySigner.prototype);
 
-    // tx methods
-    this.sinon.stub(wasmSdk, 'tokenMint').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenBurn').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenTransfer').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenFreeze').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenUnfreeze').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenDestroyFrozen').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenSetPriceForDirectPurchase').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenDirectPurchase').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenClaim').resolves('ok');
-    this.sinon.stub(wasmSdk, 'tokenConfigUpdate').resolves('ok');
+    // Stub query methods
+    this.sinon.stub(wasmSdk, 'getTokenPriceByContract').resolves({
+      price: BigInt(1000000),
+      currencyId: tokenId,
+    });
+    this.sinon.stub(wasmSdk, 'getTokenTotalSupply').resolves({
+      totalSupply: BigInt(1000000000),
+      tokenId,
+    });
+    this.sinon.stub(wasmSdk, 'getTokenTotalSupplyWithProofInfo').resolves({
+      data: { totalSupply: BigInt(1000000000), tokenId },
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getTokenStatuses').resolves(new Map());
+    this.sinon.stub(wasmSdk, 'getTokenStatusesWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalances').resolves(new Map());
+    this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalancesWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves(new Map());
+    this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getIdentityTokenInfos').resolves(new Map());
+    this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfos').resolves(new Map());
+    this.sinon.stub(wasmSdk, 'getIdentityTokenInfosWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfosWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePrices').resolves(new Map());
+    this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePricesWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getTokenContractInfo').resolves({
+      contractId,
+      tokenPosition: 0,
+    });
+    this.sinon.stub(wasmSdk, 'getTokenContractInfoWithProofInfo').resolves({
+      data: { contractId, tokenPosition: 0 },
+      proof: {},
+      metadata: {},
+    });
+    this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaim').resolves(undefined);
+    this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaimWithProofInfo').resolves({
+      data: undefined,
+      proof: {},
+      metadata: {},
+    });
+
+    // Stub transition methods - all return result objects
+    this.sinon.stub(wasmSdk, 'tokenMint').resolves({
+      tokenId,
+      balance: BigInt(100000000),
+    });
+    this.sinon.stub(wasmSdk, 'tokenBurn').resolves({
+      tokenId,
+      balance: BigInt(50000000),
+    });
+    this.sinon.stub(wasmSdk, 'tokenTransfer').resolves({
+      tokenId,
+      senderBalance: BigInt(40000000),
+      recipientBalance: BigInt(60000000),
+    });
+    this.sinon.stub(wasmSdk, 'tokenFreeze').resolves({ tokenId });
+    this.sinon.stub(wasmSdk, 'tokenUnfreeze').resolves({ tokenId });
+    this.sinon.stub(wasmSdk, 'tokenDestroyFrozen').resolves({ tokenId });
+    this.sinon.stub(wasmSdk, 'tokenEmergencyAction').resolves({ tokenId });
+    this.sinon.stub(wasmSdk, 'tokenSetPrice').resolves({ tokenId });
+    this.sinon.stub(wasmSdk, 'tokenDirectPurchase').resolves({
+      tokenId,
+      balance: BigInt(10000000),
+    });
+    this.sinon.stub(wasmSdk, 'tokenClaim').resolves({
+      tokenId,
+      claimedAmount: BigInt(5000000),
+    });
   });
 
-  it('calculateId() uses wasm static helper', async () => {
-    const out = await client.tokens.calculateId('Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv', 0);
-    expect(out).to.equal('BpJvvpPiR2obh7ueZixjtYXsmWQdgJhiZtQJWjD7Ruus');
+  describe('Static Methods', () => {
+    it('calculateId() computes token ID from contract ID and position', async () => {
+      const result = await client.tokens.calculateId(contractId, 0);
+      expect(result).to.equal(tokenId);
+    });
   });
 
-  it('query functions forward to instance methods', async () => {
-    await client.tokens.priceByContract('c', 1);
-    await client.tokens.totalSupply('t');
-    await client.tokens.totalSupplyWithProof('t');
-    await client.tokens.statuses(['a', 'b']);
-    await client.tokens.statusesWithProof(['a']);
-    await client.tokens.balances(['i1', 'i2'], 't');
-    await client.tokens.balancesWithProof(['i'], 't');
-    await client.tokens.identityBalances('id', ['t']);
-    await client.tokens.identityBalancesWithProof('id', ['t']);
-    await client.tokens.identityTokenInfos('id', ['t1', 't2']);
-    await client.tokens.identitiesTokenInfos(['i1'], 't');
-    await client.tokens.identityTokenInfosWithProof('id', ['t']);
-    await client.tokens.identitiesTokenInfosWithProof(['i'], 't');
-    await client.tokens.directPurchasePrices(['t']);
-    await client.tokens.directPurchasePricesWithProof(['t']);
-    await client.tokens.contractInfo('c');
-    await client.tokens.contractInfoWithProof('c');
-    await client.tokens.perpetualDistributionLastClaim('i', 't');
-    await client.tokens.perpetualDistributionLastClaimWithProof('i', 't');
-    expect(wasmSdk.getTokenPriceByContract).to.be.calledOnceWithExactly('c', 1);
-    expect(wasmSdk.getTokenTotalSupply).to.be.calledOnceWithExactly('t');
-    expect(wasmSdk.getTokenTotalSupplyWithProofInfo).to.be.calledOnceWithExactly('t');
-    expect(wasmSdk.getTokenStatuses).to.be.calledOnceWithExactly(['a', 'b']);
-    expect(wasmSdk.getTokenStatusesWithProofInfo).to.be.calledOnceWithExactly(['a']);
-    expect(wasmSdk.getIdentitiesTokenBalances).to.be.calledOnceWithExactly(['i1', 'i2'], 't');
-    expect(wasmSdk.getIdentitiesTokenBalancesWithProofInfo).to.be.calledOnceWithExactly(['i'], 't');
-    expect(wasmSdk.getIdentityTokenBalances).to.be.calledOnceWithExactly('id', ['t']);
-    expect(wasmSdk.getIdentityTokenBalancesWithProofInfo).to.be.calledOnceWithExactly('id', ['t']);
-    expect(wasmSdk.getIdentityTokenInfos).to.be.calledOnceWithExactly('id', ['t1', 't2']);
-    expect(wasmSdk.getIdentitiesTokenInfos).to.be.calledOnceWithExactly(['i1'], 't');
-    expect(wasmSdk.getIdentityTokenInfosWithProofInfo).to.be.calledOnceWithExactly('id', ['t']);
-    expect(wasmSdk.getIdentitiesTokenInfosWithProofInfo).to.be.calledOnceWithExactly(['i'], 't');
-    expect(wasmSdk.getTokenDirectPurchasePrices).to.be.calledOnceWithExactly(['t']);
-    expect(wasmSdk.getTokenDirectPurchasePricesWithProofInfo).to.be.calledOnceWithExactly(['t']);
-    expect(wasmSdk.getTokenContractInfo).to.be.calledOnceWithExactly('c');
-    expect(wasmSdk.getTokenContractInfoWithProofInfo).to.be.calledOnceWithExactly('c');
-    expect(wasmSdk.getTokenPerpetualDistributionLastClaim).to.be.calledOnceWithExactly('i', 't');
-    expect(wasmSdk.getTokenPerpetualDistributionLastClaimWithProofInfo).to.be.calledOnceWithExactly('i', 't');
+  describe('Query Methods', () => {
+    it('priceByContract() fetches token price by contract ID', async () => {
+      const tokenPosition = 0;
+
+      await client.tokens.priceByContract(contractId, tokenPosition);
+
+      expect(wasmSdk.getTokenPriceByContract)
+        .to.be.calledOnceWithExactly(contractId, tokenPosition);
+    });
+
+    it('totalSupply() fetches total supply of a token', async () => {
+      await client.tokens.totalSupply(tokenId);
+
+      expect(wasmSdk.getTokenTotalSupply).to.be.calledOnceWithExactly(tokenId);
+    });
+
+    it('totalSupplyWithProof() fetches total supply with proof', async () => {
+      await client.tokens.totalSupplyWithProof(tokenId);
+
+      expect(wasmSdk.getTokenTotalSupplyWithProofInfo).to.be.calledOnceWithExactly(tokenId);
+    });
+
+    it('statuses() fetches statuses for multiple tokens', async () => {
+      const tokenIds = [tokenId, 'AnotherTokenId123456789abcdefghijklmnop'];
+
+      await client.tokens.statuses(tokenIds);
+
+      expect(wasmSdk.getTokenStatuses).to.be.calledOnceWithExactly(tokenIds);
+    });
+
+    it('statusesWithProof() fetches token statuses with proof', async () => {
+      const tokenIds = [tokenId];
+
+      await client.tokens.statusesWithProof(tokenIds);
+
+      expect(wasmSdk.getTokenStatusesWithProofInfo).to.be.calledOnceWithExactly(tokenIds);
+    });
+
+    it('balances() fetches token balances for multiple identities', async () => {
+      const identityIds = [identityId, recipientId];
+
+      await client.tokens.balances(identityIds, tokenId);
+
+      expect(wasmSdk.getIdentitiesTokenBalances).to.be.calledOnceWithExactly(identityIds, tokenId);
+    });
+
+    it('balancesWithProof() fetches identity balances with proof', async () => {
+      const identityIds = [identityId];
+
+      await client.tokens.balancesWithProof(identityIds, tokenId);
+
+      expect(wasmSdk.getIdentitiesTokenBalancesWithProofInfo)
+        .to.be.calledOnceWithExactly(identityIds, tokenId);
+    });
+
+    it('identityBalances() fetches balances for multiple tokens of one identity', async () => {
+      const tokenIds = [tokenId];
+
+      await client.tokens.identityBalances(identityId, tokenIds);
+
+      expect(wasmSdk.getIdentityTokenBalances).to.be.calledOnceWithExactly(identityId, tokenIds);
+    });
+
+    it('identityBalancesWithProof() fetches identity token balances with proof', async () => {
+      const tokenIds = [tokenId];
+
+      await client.tokens.identityBalancesWithProof(identityId, tokenIds);
+
+      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenIds);
+    });
+
+    it('identityTokenInfos() fetches token info for an identity', async () => {
+      const tokenIds = [tokenId, 'AnotherTokenId123456789abcdefghijklmnop'];
+
+      await client.tokens.identityTokenInfos(identityId, tokenIds);
+
+      expect(wasmSdk.getIdentityTokenInfos).to.be.calledOnceWithExactly(identityId, tokenIds);
+    });
+
+    it('identitiesTokenInfos() fetches token info for multiple identities', async () => {
+      const identityIds = [identityId];
+
+      await client.tokens.identitiesTokenInfos(identityIds, tokenId);
+
+      expect(wasmSdk.getIdentitiesTokenInfos).to.be.calledOnceWithExactly(identityIds, tokenId);
+    });
+
+    it('identityTokenInfosWithProof() fetches token info with proof', async () => {
+      const tokenIds = [tokenId];
+
+      await client.tokens.identityTokenInfosWithProof(identityId, tokenIds);
+
+      expect(wasmSdk.getIdentityTokenInfosWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenIds);
+    });
+
+    it('identitiesTokenInfosWithProof() fetches multiple identities info with proof', async () => {
+      const identityIds = [identityId];
+
+      await client.tokens.identitiesTokenInfosWithProof(identityIds, tokenId);
+
+      expect(wasmSdk.getIdentitiesTokenInfosWithProofInfo)
+        .to.be.calledOnceWithExactly(identityIds, tokenId);
+    });
+
+    it('directPurchasePrices() fetches purchase prices for tokens', async () => {
+      const tokenIds = [tokenId];
+
+      await client.tokens.directPurchasePrices(tokenIds);
+
+      expect(wasmSdk.getTokenDirectPurchasePrices).to.be.calledOnceWithExactly(tokenIds);
+    });
+
+    it('directPurchasePricesWithProof() fetches purchase prices with proof', async () => {
+      const tokenIds = [tokenId];
+
+      await client.tokens.directPurchasePricesWithProof(tokenIds);
+
+      expect(wasmSdk.getTokenDirectPurchasePricesWithProofInfo)
+        .to.be.calledOnceWithExactly(tokenIds);
+    });
+
+    it('contractInfo() fetches token contract information', async () => {
+      await client.tokens.contractInfo(contractId);
+
+      expect(wasmSdk.getTokenContractInfo).to.be.calledOnceWithExactly(contractId);
+    });
+
+    it('contractInfoWithProof() fetches contract info with proof', async () => {
+      await client.tokens.contractInfoWithProof(contractId);
+
+      expect(wasmSdk.getTokenContractInfoWithProofInfo).to.be.calledOnceWithExactly(contractId);
+    });
+
+    it('perpetualDistributionLastClaim() fetches last claim time', async () => {
+      await client.tokens.perpetualDistributionLastClaim(identityId, tokenId);
+
+      expect(wasmSdk.getTokenPerpetualDistributionLastClaim)
+        .to.be.calledOnceWithExactly(identityId, tokenId);
+    });
+
+    it('perpetualDistributionLastClaimWithProof() fetches last claim with proof', async () => {
+      await client.tokens.perpetualDistributionLastClaimWithProof(identityId, tokenId);
+
+      expect(wasmSdk.getTokenPerpetualDistributionLastClaimWithProofInfo)
+        .to.be.calledOnceWithExactly(identityId, tokenId);
+    });
   });
 
-  it('mint() stringifies amount and passes nullables', async () => {
-    await client.tokens.mint({
-      contractId: 'c',
-      tokenPosition: 1,
-      amount: BigInt(3),
-      identityId: 'i',
-      privateKeyWif: 'w',
-      recipientId: 'r',
-      publicNote: 'n',
-    });
-    expect(wasmSdk.tokenMint).to.be.calledOnceWithExactly('c', 1, '3', 'i', 'w', 'r', 'n');
-  });
+  describe('Transition Methods', () => {
+    it('mint() mints new tokens to an identity', async () => {
+      const options = {
+        tokenId,
+        amount: BigInt(50000000), // 50M tokens
+        recipientId,
+        identityKey,
+        signer,
+        publicNote: 'Initial token distribution',
+      };
 
-  it('burn() stringifies amount', async () => {
-    await client.tokens.burn({
-      contractId: 'c',
-      tokenPosition: 1,
-      amount: 5,
-      identityId: 'i',
-      privateKeyWif: 'w',
-    });
-    expect(wasmSdk.tokenBurn).to.be.calledOnceWithExactly('c', 1, '5', 'i', 'w', null);
-  });
+      const result = await client.tokens.mint(options);
 
-  it('transfer() stringifies amount and forwards', async () => {
-    await client.tokens.transfer({
-      contractId: 'c',
-      tokenPosition: 2,
-      amount: '7',
-      senderId: 's',
-      recipientId: 'r',
-      privateKeyWif: 'w',
-      publicNote: 'n',
+      expect(wasmSdk.tokenMint).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+      expect(result.balance).to.equal(BigInt(100000000));
     });
-    expect(wasmSdk.tokenTransfer).to.be.calledOnceWithExactly('c', 2, '7', 's', 'r', 'w', 'n');
-  });
 
-  it('freeze()/unfreeze()/destroyFrozen() pass through args', async () => {
-    await client.tokens.freeze({
-      contractId: 'c',
-      tokenPosition: 1,
-      identityToFreeze: 'i',
-      freezerId: 'f',
-      privateKeyWif: 'w',
-      publicNote: 'n',
-    });
-    await client.tokens.unfreeze({
-      contractId: 'c',
-      tokenPosition: 1,
-      identityToUnfreeze: 'i',
-      unfreezerId: 'u',
-      privateKeyWif: 'w',
-      publicNote: 'n2',
-    });
-    await client.tokens.destroyFrozen({
-      contractId: 'c',
-      tokenPosition: 1,
-      identityId: 'i',
-      destroyerId: 'd',
-      privateKeyWif: 'w',
-    });
-    expect(wasmSdk.tokenFreeze).to.be.calledOnceWithExactly('c', 1, 'i', 'f', 'w', 'n');
-    expect(wasmSdk.tokenUnfreeze).to.be.calledOnceWithExactly('c', 1, 'i', 'u', 'w', 'n2');
-    expect(wasmSdk.tokenDestroyFrozen).to.be.calledOnceWithExactly('c', 1, 'i', 'd', 'w', null);
-  });
+    it('burn() burns tokens from an identity', async () => {
+      const options = {
+        tokenId,
+        amount: BigInt(10000000), // 10M tokens
+        identityKey,
+        signer,
+        publicNote: 'Token buyback and burn',
+      };
 
-  it('setPriceForDirectPurchase() JSON stringifies priceData', async () => {
-    await client.tokens.setPriceForDirectPurchase({
-      contractId: 'c',
-      tokenPosition: 1,
-      identityId: 'i',
-      priceType: 't',
-      priceData: { p: 1 },
-      privateKeyWif: 'w',
-      publicNote: 'n',
-    });
-    expect(wasmSdk.tokenSetPriceForDirectPurchase).to.be.calledOnceWithExactly('c', 1, 'i', 't', JSON.stringify({ p: 1 }), 'w', 'n');
-  });
+      const result = await client.tokens.burn(options);
 
-  it('directPurchase() stringifies amount and totalAgreedPrice', async () => {
-    await client.tokens.directPurchase({
-      contractId: 'c',
-      tokenPosition: 1,
-      amount: 2,
-      identityId: 'i',
-      totalAgreedPrice: 10,
-      privateKeyWif: 'w',
+      expect(wasmSdk.tokenBurn).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+      expect(result.balance).to.equal(BigInt(50000000));
     });
-    expect(wasmSdk.tokenDirectPurchase).to.be.calledOnceWithExactly('c', 1, '2', 'i', '10', 'w');
-  });
 
-  it('claim() and configUpdate() forward with JSON where needed', async () => {
-    await client.tokens.claim({
-      contractId: 'c',
-      tokenPosition: 1,
-      distributionType: 'd',
-      identityId: 'i',
-      privateKeyWif: 'w',
-      publicNote: 'n',
+    it('transfer() transfers tokens between identities', async () => {
+      const options = {
+        tokenId,
+        amount: BigInt(25000000), // 25M tokens
+        recipientId,
+        identityKey,
+        signer,
+        publicNote: 'Payment for services',
+      };
+
+      const result = await client.tokens.transfer(options);
+
+      expect(wasmSdk.tokenTransfer).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+      expect(result.senderBalance).to.equal(BigInt(40000000));
+      expect(result.recipientBalance).to.equal(BigInt(60000000));
     });
-    await client.tokens.configUpdate({
-      contractId: 'c',
-      tokenPosition: 1,
-      configItemType: 't',
-      configValue: { v: true },
-      identityId: 'i',
-      privateKeyWif: 'w',
+
+    it('freeze() freezes tokens for an identity', async () => {
+      const frozenIdentityId = recipientId;
+      const options = {
+        tokenId,
+        frozenIdentityId,
+        identityKey,
+        signer,
+        publicNote: 'Account frozen for compliance review',
+      };
+
+      const result = await client.tokens.freeze(options);
+
+      expect(wasmSdk.tokenFreeze).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
     });
-    expect(wasmSdk.tokenClaim).to.be.calledOnceWithExactly('c', 1, 'd', 'i', 'w', 'n');
-    expect(wasmSdk.tokenConfigUpdate).to.be.calledOnceWithExactly('c', 1, 't', JSON.stringify({ v: true }), 'i', 'w', null);
+
+    it('unfreeze() unfreezes previously frozen tokens', async () => {
+      const frozenIdentityId = recipientId;
+      const options = {
+        tokenId,
+        frozenIdentityId,
+        identityKey,
+        signer,
+        publicNote: 'Compliance review completed',
+      };
+
+      const result = await client.tokens.unfreeze(options);
+
+      expect(wasmSdk.tokenUnfreeze).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+    });
+
+    it('destroyFrozen() destroys frozen tokens', async () => {
+      const frozenIdentityId = recipientId;
+      const options = {
+        tokenId,
+        frozenIdentityId,
+        identityKey,
+        signer,
+        publicNote: 'Fraudulent tokens destroyed',
+      };
+
+      const result = await client.tokens.destroyFrozen(options);
+
+      expect(wasmSdk.tokenDestroyFrozen).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+    });
+
+    it('emergencyAction() executes emergency token action', async () => {
+      const options = {
+        tokenId,
+        action: 'pause',
+        identityKey,
+        signer,
+        publicNote: 'Emergency pause due to security concern',
+      };
+
+      const result = await client.tokens.emergencyAction(options);
+
+      expect(wasmSdk.tokenEmergencyAction).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+    });
+
+    it('setPrice() sets direct purchase price for tokens', async () => {
+      const options = {
+        tokenId,
+        price: {
+          type: 'fixed',
+          value: BigInt(1000000), // 1M credits per token
+        },
+        identityKey,
+        signer,
+      };
+
+      const result = await client.tokens.setPrice(options);
+
+      expect(wasmSdk.tokenSetPrice).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+    });
+
+    it('directPurchase() purchases tokens directly', async () => {
+      const options = {
+        tokenId,
+        amount: BigInt(5000000), // 5M tokens
+        totalAgreedPrice: BigInt(5000000000), // 5B credits
+        identityKey,
+        signer,
+      };
+
+      const result = await client.tokens.directPurchase(options);
+
+      expect(wasmSdk.tokenDirectPurchase).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+      expect(result.balance).to.equal(BigInt(10000000));
+    });
+
+    it('claim() claims token distribution rewards', async () => {
+      const options = {
+        tokenId,
+        identityKey,
+        signer,
+        publicNote: 'Claiming weekly distribution',
+      };
+
+      const result = await client.tokens.claim(options);
+
+      expect(wasmSdk.tokenClaim).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
+      expect(result.claimedAmount).to.equal(BigInt(5000000));
+    });
   });
 });
