@@ -243,8 +243,7 @@ jobs:
             fi
           done
 
-          for extra in target/debug/deps/${BIN_PREFIX}-*.dSYM target/debug/${BIN_PREFIX}.dSYM \
-                      target/debug/deps/${BIN_PREFIX}-*.dwp target/debug/${BIN_PREFIX}.dwp; do
+          for extra in target/debug/deps/${BIN_PREFIX}-*.dwp target/debug/${BIN_PREFIX}.dwp; do
             if [[ -e "$extra" ]]; then
               cp -a "$extra" "${ARTIFACT_DIR}/binaries/"
             fi
