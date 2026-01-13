@@ -1,5 +1,6 @@
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
@@ -107,3 +108,5 @@ impl CoreScriptWasm {
         self.0.to_asm_string()
     }
 }
+
+impl_try_from_options!(CoreScriptWasm, "CoreScript");
