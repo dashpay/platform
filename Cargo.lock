@@ -1451,7 +1451,6 @@ dependencies = [
  "platform-wallet",
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
- "rustls-pki-types",
  "sanitize-filename",
  "serde",
  "serde_json",

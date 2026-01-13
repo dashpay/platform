@@ -935,6 +935,10 @@ impl SdkBuilder {
     /// Used mainly for testing purposes and local networks.
     ///
     /// If not set, uses standard system CA certificates.
+    ///
+    /// ## Parameters
+    ///
+    /// - `pem_certificate`: PEM-encoded CA certificate. User must ensure that the certificate is valid.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
         self.ca_certificate = Some(pem_certificate);
@@ -950,28 +954,8 @@ impl SdkBuilder {
         self,
         certificate_file_path: impl AsRef<Path>,
     ) -> std::io::Result<Self> {
-        use rustls_pki_types::pem::SectionKind;
-        use std::io::ErrorKind;
-
         let pem = std::fs::read(certificate_file_path)?;
-
-        // parse the certificate and check if it's valid
-        let mut pem_buf = std::io::BufReader::new(pem.as_slice());
-
-        let (kind, pem_cert) = rustls_pki_types::pem::from_buf(&mut pem_buf)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?
-            .ok_or(std::io::Error::new(
-                ErrorKind::InvalidData,
-                "no PEM data found in certificate file",
-            ))?;
-        if kind != SectionKind::Certificate {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidData,
-                format!("expected PEM section of kind Certificate, found {:?}", kind),
-            ));
-        };
-
-        let cert = Certificate::from_pem(pem_cert);
+        let cert = Certificate::from_pem(pem);
 
         Ok(self.with_ca_certificate(cert))
     }
@@ -1391,7 +1375,7 @@ mod test {
 
     #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
     #[test]
-    fn test_load_ca_certificate() {
+    fn test_load_correct_ca_certificate() {
         let cert_dir = std::path::PathBuf::from("/etc/ssl/certs");
         let pem_path = std::fs::read_dir(cert_dir)
             .expect("should read ssl certificates directory")
@@ -1408,6 +1392,14 @@ mod test {
 
         SdkBuilder::new_mock()
             .with_ca_certificate_file(pem_path)
+            .expect("should load CA certificate file");
+    }
+
+    #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+    #[test]
+    fn test_load_incorrect_ca_certificate() {
+        SdkBuilder::new_mock()
+            .with_ca_certificate_file("/etc/group")
             .expect("should load CA certificate file");
     }
 }
