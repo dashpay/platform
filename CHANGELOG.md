@@ -1,3 +1,30 @@
+## [3.0.0-dev.11](https://github.com/dashpay/platform/compare/v3.0.0-dev.10...v3.0.0-dev.11) (2026-01-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** failed address sync on invalid proof  (#2967)
+* **platform:** add block-aware credit operations to manage address balance changes (#2968)
+* **platform:** enhanced fetching of compacted address balance changes (#2966)
+
+### Features
+
+* **platform:** add block-aware credit operations to manage address balance changes ([#2968](https://github.com/dashpay/platform/issues/2968))
+* **platform:** add tests for proof verification of recent address balance changes ([#2969](https://github.com/dashpay/platform/issues/2969))
+* **platform:** enhanced fetching of compacted address balance changes ([#2966](https://github.com/dashpay/platform/issues/2966))
+* **platform:** remove platform version patching and state migration logic ([#2961](https://github.com/dashpay/platform/issues/2961))
+* **platform:** update address expiration time from 1 day to 1 week ([#2964](https://github.com/dashpay/platform/issues/2964))
+* **sdk:** return checkpoint height with `AddressSyncResult` ([#2965](https://github.com/dashpay/platform/issues/2965))
+
+
+### Bug Fixes
+
+* **rs-sdk-ffi:** auto-increment document revision in replace function ([#2960](https://github.com/dashpay/platform/issues/2960))
+* **sdk:** adjust metadata freshness criteria for get_addresses_trunk_state and get_addresses_branch_state ([#2954](https://github.com/dashpay/platform/issues/2954))
+* **sdk:** clamp address sync branch query depth to platform limits ([#2955](https://github.com/dashpay/platform/issues/2955))
+* **sdk:** failed address sync on invalid proof  ([#2967](https://github.com/dashpay/platform/issues/2967))
+* **sdk:** match `ItemWithSumItem` in `extract_balance_from_element` ([#2956](https://github.com/dashpay/platform/issues/2956))
+
 ## [3.0.0-dev.10](///compare/v3.0.0-dev.9...v3.0.0-dev.10) (2026-01-06)
 
 

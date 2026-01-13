@@ -1030,7 +1030,6 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             &proof.grovedb_proof,
             start_block_height,
             limit,
-            false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -1080,6 +1079,32 @@ impl FromProof<platform::GetAddressesTrunkStateRequest> for GroveTrunkQueryResul
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((Some(trunk_result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetAddressesTrunkStateRequest> for PlatformAddressTrunkState {
+    type Request = platform::GetAddressesTrunkStateRequest;
+    type Response = platform::GetAddressesTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        PlatformAddressTrunkState: 'a,
+    {
+        let (result, metadata, proof) = GroveTrunkQueryResult::maybe_from_proof_with_metadata(
+            request,
+            response,
+            network,
+            platform_version,
+            provider,
+        )?;
+
+        Ok((result.map(PlatformAddressTrunkState), metadata, proof))
     }
 }
 

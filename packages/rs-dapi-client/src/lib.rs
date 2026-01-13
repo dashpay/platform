@@ -85,6 +85,14 @@ pub trait CanRetry {
     /// Returns true if the operation can be retried safely.
     fn can_retry(&self) -> bool;
 
+    /// Returns true if this error represents a "no available addresses" condition.
+    ///
+    /// When all addresses have been banned due to errors, the client returns this error.
+    /// Retry logic uses this to return the last meaningful error instead of this one.
+    fn is_no_available_addresses(&self) -> bool {
+        false
+    }
+
     /// Get boolean flag that indicates if the error is retryable.
     ///
     /// Depreacted in favor of [CanRetry::can_retry].

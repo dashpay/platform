@@ -1,5 +1,4 @@
 import * as wasm from '../wasm.js';
-import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
 export class ContractsFacade {
@@ -39,15 +38,13 @@ export class ContractsFacade {
     return w.getDataContractsWithProofInfo(contractIds);
   }
 
-  async create(args: { ownerId: wasm.IdentifierLike; definition: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
-    const { ownerId, definition, privateKeyWif, keyId } = args;
+  async publish(options: wasm.ContractPublishOptions): Promise<wasm.DataContract> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.contractCreate(ownerId, asJsonString(definition)!, privateKeyWif, keyId ?? null);
+    return w.contractPublish(options);
   }
 
-  async update(args: { contractId: wasm.IdentifierLike; ownerId: wasm.IdentifierLike; updates: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
-    const { contractId, ownerId, updates, privateKeyWif, keyId } = args;
+  async update(options: wasm.ContractUpdateOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.contractUpdate(contractId, ownerId, asJsonString(updates)!, privateKeyWif, keyId ?? null);
+    return w.contractUpdate(options);
   }
 }

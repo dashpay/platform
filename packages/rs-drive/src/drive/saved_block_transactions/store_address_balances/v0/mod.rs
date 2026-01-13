@@ -160,6 +160,7 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::balances::credits::BlockAwareCreditOperation;
     use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
     use dpp::version::PlatformVersion;
 
@@ -261,17 +262,24 @@ mod tests {
         assert_eq!(*start_block, 100, "start block should be 100");
         assert_eq!(*end_block, 102, "end block should be 102");
         assert_eq!(merged.len(), 3, "should have 3 addresses in merged data");
+        // Each address has AddToCredits from its respective block
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::AddToCredits(1000))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(100, 1000)].into_iter().collect()
+            ))
         );
         assert_eq!(
             merged.get(&ADDR_2),
-            Some(&CreditOperation::AddToCredits(2000))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(101, 2000)].into_iter().collect()
+            ))
         );
         assert_eq!(
             merged.get(&ADDR_3),
-            Some(&CreditOperation::AddToCredits(3000))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(102, 3000)].into_iter().collect()
+            ))
         );
     }
 
@@ -380,11 +388,14 @@ mod tests {
 
         let (_, _, merged) = &compacted[0];
         assert_eq!(merged.len(), 1, "should have 1 address");
-        // 1000 + 500 = 1500
+        // Block 100: AddToCredits(1000), Block 101: AddToCredits(500)
+        // Each block's add is preserved separately
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::AddToCredits(1500)),
-            "should merge add operations"
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(100, 1000), (101, 500)].into_iter().collect()
+            )),
+            "should preserve add operations by block"
         );
     }
 
@@ -432,7 +443,7 @@ mod tests {
         assert_eq!(merged.len(), 1, "should have 1 address");
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::SetCredits(1500)),
+            Some(&BlockAwareCreditOperation::SetCredits(1500)),
             "should merge set + add to set"
         );
     }
@@ -481,7 +492,7 @@ mod tests {
         assert_eq!(merged.len(), 1, "should have 1 address");
         assert_eq!(
             merged.get(&ADDR_1),
-            Some(&CreditOperation::SetCredits(500)),
+            Some(&BlockAwareCreditOperation::SetCredits(500)),
             "later SetCredits should override"
         );
     }
@@ -572,22 +583,26 @@ mod tests {
             .expect("should fetch compacted changes");
         assert_eq!(compacted.len(), 2, "should have 2 compacted entries");
 
-        // First compaction: blocks 100-101 with ADDR_1 having 200 credits
+        // First compaction: blocks 100-101 with ADDR_1 having adds from both blocks
         let (start1, end1, merged1) = &compacted[0];
         assert_eq!(*start1, 100);
         assert_eq!(*end1, 101);
         assert_eq!(
             merged1.get(&ADDR_1),
-            Some(&CreditOperation::AddToCredits(200))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(100, 100), (101, 100)].into_iter().collect()
+            ))
         );
 
-        // Second compaction: blocks 200-201 with ADDR_2 having 400 credits
+        // Second compaction: blocks 200-201 with ADDR_2 having adds from both blocks
         let (start2, end2, merged2) = &compacted[1];
         assert_eq!(*start2, 200);
         assert_eq!(*end2, 201);
         assert_eq!(
             merged2.get(&ADDR_2),
-            Some(&CreditOperation::AddToCredits(400))
+            Some(&BlockAwareCreditOperation::AddToCreditsOperations(
+                [(200, 200), (201, 200)].into_iter().collect()
+            ))
         );
     }
 
@@ -1089,5 +1104,133 @@ mod tests {
         } else {
             panic!("expected Item element for block ranges");
         }
+    }
+
+    #[test]
+    fn should_fetch_compacted_range_when_start_height_falls_within_range() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Set compaction threshold to 4 blocks so we can trigger compaction easily
+        let platform_version = create_test_platform_version_for_compaction(4, 1000);
+
+        // Store 4 blocks (100-103) to trigger compaction into range (100, 103)
+        for block_height in 100u64..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(1000));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances,
+                    block_height,
+                    1700000000000,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store block");
+        }
+
+        // Verify compaction happened - fetch from block 0 should return the compacted range
+        let all_results = drive
+            .fetch_compacted_address_balance_changes(0, None, None, &platform_version)
+            .expect("should fetch compacted changes");
+
+        assert_eq!(all_results.len(), 1, "should have 1 compacted entry");
+        let (start, end, _) = &all_results[0];
+        assert_eq!(*start, 100, "compacted range should start at 100");
+        assert_eq!(*end, 103, "compacted range should end at 103");
+
+        // Now query with start_height=101, which falls WITHIN the compacted range (100-103)
+        // We should still get this range since block 101 is within it
+        let results_from_101 = drive
+            .fetch_compacted_address_balance_changes(101, None, None, &platform_version)
+            .expect("should fetch compacted changes from 101");
+
+        assert_eq!(
+            results_from_101.len(),
+            1,
+            "should include compacted range (100, 103) when querying from block 101 \
+             since 101 falls within that range"
+        );
+    }
+
+    #[test]
+    fn should_prove_and_verify_compacted_address_balances() {
+        use crate::drive::Drive;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Set compaction threshold to 4 blocks
+        let platform_version = create_test_platform_version_for_compaction(4, 1000);
+
+        // Store 4 blocks (100-103) to trigger compaction into range (100, 103)
+        for block_height in 100u64..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(1000));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances,
+                    block_height,
+                    1700000000000,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store block");
+        }
+
+        // Generate proof with limit (required for verify_query_with_absence_proof)
+        let limit = Some(100u16);
+        let proof = drive
+            .prove_compacted_address_balance_changes(0, limit, None, &platform_version)
+            .expect("should generate proof");
+
+        // Verify proof
+        let (root_hash, verified_changes) =
+            Drive::verify_compacted_address_balance_changes(&proof, 0, limit, &platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(verified_changes.len(), 1, "should have 1 compacted entry");
+        assert_eq!(verified_changes[0].0, 100, "start block should be 100");
+        assert_eq!(verified_changes[0].1, 103, "end block should be 103");
+    }
+
+    #[test]
+    fn should_prove_and_verify_with_containing_range() {
+        use crate::drive::Drive;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Set compaction threshold to 4 blocks
+        let platform_version = create_test_platform_version_for_compaction(4, 1000);
+
+        // Store 4 blocks (100-103) to trigger compaction
+        for block_height in 100u64..=103 {
+            let mut balances = BTreeMap::new();
+            balances.insert(ADDR_1, CreditOperation::AddToCredits(1000));
+
+            drive
+                .store_address_balances_for_block_v0(
+                    &balances,
+                    block_height,
+                    1700000000000,
+                    None,
+                    &platform_version,
+                )
+                .expect("should store block");
+        }
+
+        // Generate proof starting from block 101 (which falls within range 100-103)
+        let limit = Some(100u16);
+        let proof = drive
+            .prove_compacted_address_balance_changes(101, limit, None, &platform_version)
+            .expect("should generate proof");
+
+        // Verify proof - should include range (100, 103) since 101 is within it
+        let (root_hash, verified_changes) =
+            Drive::verify_compacted_address_balance_changes(&proof, 101, limit, &platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(verified_changes.len(), 1, "should have 1 compacted entry");
+        assert_eq!(verified_changes[0].0, 100, "start block should be 100");
+        assert_eq!(verified_changes[0].1, 103, "end block should be 103");
     }
 }

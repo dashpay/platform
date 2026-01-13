@@ -17,10 +17,10 @@ use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_address_info_request, get_addresses_infos_request,
-    get_current_quorums_info_request, get_identity_keys_request,
+    get_addresses_trunk_state_request, get_current_quorums_info_request, get_identity_keys_request,
     get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request,
     get_total_credits_in_platform_request, AllKeys, GetAddressInfoRequest,
-    GetAddressesInfosRequest, GetContestedResourceVoteStateRequest,
+    GetAddressesInfosRequest, GetAddressesTrunkStateRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     GetCurrentQuorumsInfoRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest,
@@ -295,6 +295,20 @@ impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
         Ok(GetAddressesInfosRequest {
             version: Some(get_addresses_infos_request::Version::V0(
                 get_addresses_infos_request::GetAddressesInfosRequestV0 { addresses, prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetAddressesTrunkStateRequest> for () {
+    fn query(self, prove: bool) -> Result<GetAddressesTrunkStateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetAddressesTrunkStateRequest {
+            version: Some(get_addresses_trunk_state_request::Version::V0(
+                get_addresses_trunk_state_request::GetAddressesTrunkStateRequestV0 {},
             )),
         })
     }
