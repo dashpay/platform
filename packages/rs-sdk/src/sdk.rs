@@ -950,18 +950,10 @@ impl SdkBuilder {
         self,
         certificate_file_path: impl AsRef<Path>,
     ) -> std::io::Result<Self> {
-        let pem = std::fs::read(certificate_file_path)?;
+        use rustls_pki_types::pem::PemObject;
 
-        // parse the certificate and check if it's valid
-        let mut verified_pem = std::io::BufReader::new(pem.as_slice());
-        rustls_pemfile::certs(&mut verified_pem)
-            .next()
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "No valid certificates found in the file",
-                )
-            })??;
+        let pem = rustls_pki_types::CertificateDer::from_pem_file(certificate_file_path)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
 
         let cert = Certificate::from_pem(pem);
         Ok(self.with_ca_certificate(cert))
@@ -1378,5 +1370,27 @@ mod test {
         let result = super::verify_metadata_time(&metadata, now_time, tolerance);
 
         assert_eq!(result.is_err(), expect_err);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_load_ca_certificate() {
+        let cert_dir = std::path::PathBuf::from("/etc/ssl/certs");
+        let pem_path = std::fs::read_dir(cert_dir)
+            .expect("should read ssl certificates directory")
+            .find_map(|entry| {
+                entry.ok().and_then(|entry| {
+                    let path = entry.path();
+                    match path.extension().and_then(|ext| ext.to_str()) {
+                        Some("pem") => Some(path),
+                        _ => None,
+                    }
+                })
+            })
+            .expect("should find at least one certificate");
+
+        SdkBuilder::new_mock()
+            .with_ca_certificate_file(pem_path)
+            .expect("should load CA certificate file");
     }
 }
