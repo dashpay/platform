@@ -34,15 +34,23 @@ describe('DPNSFacade', () => {
   it('name resolution and registration forward correctly', async () => {
     await client.dpns.isNameAvailable('label');
     await client.dpns.resolveName('name');
+
+    // New API uses identity, identityKey, and signer instead of identityId/publicKeyId/privateKeyWif
+    const mockIdentity = {};
+    const mockIdentityKey = {};
+    const mockSigner = {};
     await client.dpns.registerName({
-      label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w',
+      label: 'l',
+      identity: mockIdentity,
+      identityKey: mockIdentityKey,
+      signer: mockSigner,
     });
     await client.dpns.usernames({ identityId: 'i', limit: 2 });
     await client.dpns.username('i');
     await client.dpns.usernamesWithProof({ identityId: 'i', limit: 3 });
     await client.dpns.usernameWithProof('i');
-    await client.dpns.getUsernameByName('u');
-    await client.dpns.getUsernameByNameWithProof('u');
+    await client.dpns.getUsernameByName('u.dash');
+    await client.dpns.getUsernameByNameWithProof('u.dash');
 
     expect(wasmSdk.dpnsIsNameAvailable).to.be.calledOnceWithExactly('label');
     expect(wasmSdk.dpnsResolveName).to.be.calledOnceWithExactly('name');
@@ -51,93 +59,8 @@ describe('DPNSFacade', () => {
     expect(wasmSdk.getDpnsUsername).to.be.calledOnceWithExactly('i');
     expect(wasmSdk.getDpnsUsernamesWithProofInfo).to.be.calledOnceWithExactly({ identityId: 'i', limit: 3 });
     expect(wasmSdk.getDpnsUsernameWithProofInfo).to.be.calledOnceWithExactly('i');
-    expect(wasmSdk.getDpnsUsernameByName).to.be.calledOnceWithExactly('u');
-    expect(wasmSdk.getDpnsUsernameByNameWithProofInfo).to.be.calledOnceWithExactly('u');
+    expect(wasmSdk.getDpnsUsernameByName).to.be.calledOnceWithExactly('u.dash');
+    expect(wasmSdk.getDpnsUsernameByNameWithProofInfo).to.be.calledOnceWithExactly('u.dash');
   });
 
-  describe('registerName validation', () => {
-    it('should throw error when publicKeyId is not provided', async () => {
-      try {
-        await client.dpns.registerName({
-          label: 'test',
-          identityId: 'someId',
-          privateKeyWif: 'someKey',
-          // publicKeyId intentionally omitted
-        });
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.include('publicKeyId is required');
-        expect(error.message).to.include('CRITICAL or HIGH security level');
-      }
-    });
-
-    it('should throw error when publicKeyId is undefined', async () => {
-      try {
-        await client.dpns.registerName({
-          label: 'test',
-          identityId: 'someId',
-          publicKeyId: undefined,
-          privateKeyWif: 'someKey',
-        });
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.include('publicKeyId is required');
-        expect(error.message).to.include('CRITICAL or HIGH security level');
-      }
-    });
-
-    it('should throw error when publicKeyId is null', async () => {
-      try {
-        await client.dpns.registerName({
-          label: 'test',
-          identityId: 'someId',
-          publicKeyId: null,
-          privateKeyWif: 'someKey',
-        });
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.include('publicKeyId is required');
-        expect(error.message).to.include('CRITICAL or HIGH security level');
-      }
-    });
-
-    it('should throw error when publicKeyId is negative', async () => {
-      try {
-        await client.dpns.registerName({
-          label: 'test',
-          identityId: 'someId',
-          publicKeyId: -1,
-          privateKeyWif: 'someKey',
-        });
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.include('must be a non-negative number');
-        expect(error.message).to.include('got: -1');
-      }
-    });
-
-    it('should throw error when publicKeyId is not a number', async () => {
-      try {
-        await client.dpns.registerName({
-          label: 'test',
-          identityId: 'someId',
-          publicKeyId: '1',
-          privateKeyWif: 'someKey',
-        });
-        expect.fail('Should have thrown an error');
-      } catch (error) {
-        expect(error.message).to.include('must be a non-negative number');
-      }
-    });
-
-    it('should accept valid publicKeyId', async () => {
-      await client.dpns.registerName({
-        label: 'test',
-        identityId: 'someId',
-        publicKeyId: 1,
-        privateKeyWif: 'someKey',
-      });
-      expect(wasmSdk.dpnsRegisterName).to.be.calledOnce();
-    });
-  });
 });
