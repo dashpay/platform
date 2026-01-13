@@ -17,10 +17,10 @@ use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::get_total_credits_in_platform_request::GetTotalCreditsInPlatformRequestV0;
 use dapi_grpc::platform::v0::{
     self as proto, get_address_info_request, get_addresses_infos_request,
-    get_current_quorums_info_request, get_identity_keys_request,
+    get_addresses_trunk_state_request, get_current_quorums_info_request, get_identity_keys_request,
     get_identity_keys_request::GetIdentityKeysRequestV0, get_path_elements_request,
     get_total_credits_in_platform_request, AllKeys, GetAddressInfoRequest,
-    GetAddressesInfosRequest, GetContestedResourceVoteStateRequest,
+    GetAddressesInfosRequest, GetAddressesTrunkStateRequest, GetContestedResourceVoteStateRequest,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
     GetCurrentQuorumsInfoRequest, GetEpochsInfoRequest, GetEvonodesProposedEpochBlocksByIdsRequest,
     GetEvonodesProposedEpochBlocksByRangeRequest, GetIdentityKeysRequest, GetPathElementsRequest,
@@ -295,6 +295,20 @@ impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
         Ok(GetAddressesInfosRequest {
             version: Some(get_addresses_infos_request::Version::V0(
                 get_addresses_infos_request::GetAddressesInfosRequestV0 { addresses, prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetAddressesTrunkStateRequest> for () {
+    fn query(self, prove: bool) -> Result<GetAddressesTrunkStateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetAddressesTrunkStateRequest {
+            version: Some(get_addresses_trunk_state_request::Version::V0(
+                get_addresses_trunk_state_request::GetAddressesTrunkStateRequestV0 {},
             )),
         })
     }
@@ -895,5 +909,76 @@ impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for (EpochIndex, Vec<ProT
             pro_tx_hashes,
         }
         .query(prove)
+    }
+}
+
+/// Query for fetching recent address balance changes starting from a block height
+#[derive(Debug, Clone)]
+pub struct RecentAddressBalanceChangesQuery {
+    /// The block height to start fetching from
+    pub start_height: u64,
+}
+
+impl RecentAddressBalanceChangesQuery {
+    /// Create a new query starting from a specific block height
+    pub fn new(start_height: u64) -> Self {
+        Self { start_height }
+    }
+}
+
+impl Query<proto::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanceChangesQuery {
+    fn query(self, prove: bool) -> Result<proto::GetRecentAddressBalanceChangesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetRecentAddressBalanceChangesRequest {
+            version: Some(
+                proto::get_recent_address_balance_changes_request::Version::V0(
+                    proto::get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
+                        start_height: self.start_height,
+                        prove,
+                    },
+                ),
+            ),
+        })
+    }
+}
+
+/// Query for fetching recent compacted address balance changes starting from a block height
+#[derive(Debug, Clone)]
+pub struct RecentCompactedAddressBalanceChangesQuery {
+    /// The block height to start fetching from
+    pub start_block_height: u64,
+}
+
+impl RecentCompactedAddressBalanceChangesQuery {
+    /// Create a new query starting from a specific block height
+    pub fn new(start_block_height: u64) -> Self {
+        Self { start_block_height }
+    }
+}
+
+impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
+    for RecentCompactedAddressBalanceChangesQuery
+{
+    fn query(
+        self,
+        prove: bool,
+    ) -> Result<proto::GetRecentCompactedAddressBalanceChangesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(
+                proto::get_recent_compacted_address_balance_changes_request::Version::V0(
+                    proto::get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
+                        start_block_height: self.start_block_height,
+                        prove,
+                    },
+                ),
+            ),
+        })
     }
 }

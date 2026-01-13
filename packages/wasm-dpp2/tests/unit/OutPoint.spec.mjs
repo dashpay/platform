@@ -49,5 +49,15 @@ describe('OutPoint', () => {
 
       expect(outpoint.toBytes()).to.deep.equal(Uint8Array.from(bytes));
     });
+
+    it('should allow to get base64 representation', () => {
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+
+      const base64 = outpoint.toBase64();
+      const bytes = outpoint.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+      expect(Buffer.from(wasm.OutPoint.fromBase64(base64).toBytes())).to.deep.equal(Buffer.from(bytes));
+    });
   });
 });

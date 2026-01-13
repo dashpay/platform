@@ -17,12 +17,13 @@ export default class Config {
   /**
    * @param {string} name
    * @param {Object} options
+   * @param {boolean} [skipValidation=false] - Skip schema validation (use with --force)
    */
-  constructor(name, options = {}) {
+  constructor(name, options = {}, skipValidation = false) {
     this.name = name;
     this.changed = false;
 
-    this.setOptions(options);
+    this.setOptions(options, skipValidation);
   }
 
   /**
@@ -122,22 +123,25 @@ export default class Config {
    * Set options
    *
    * @param {Object} options
+   * @param {boolean} [skipValidation=false] - Skip schema validation (use with --force)
    *
    * @return {Config}
    */
-  setOptions(options) {
+  setOptions(options, skipValidation = false) {
     const clonedOptions = lodashCloneDeep(options);
 
-    const isValid = Config.ajv.validate(configJsonSchema, clonedOptions);
+    if (!skipValidation) {
+      const isValid = Config.ajv.validate(configJsonSchema, clonedOptions);
 
-    if (!isValid) {
-      const message = Config.ajv.errorsText(undefined, { dataVar: 'config' });
+      if (!isValid) {
+        const message = Config.ajv.errorsText(undefined, { dataVar: 'config' });
 
-      throw new InvalidOptionsError(
-        clonedOptions,
-        Config.ajv.errors,
-        message,
-      );
+        throw new InvalidOptionsError(
+          clonedOptions,
+          Config.ajv.errors,
+          message,
+        );
+      }
     }
 
     this.options = clonedOptions;

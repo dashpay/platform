@@ -35,7 +35,7 @@ impl StateTransitionIdentityEstimatedFeeValidation for IdentityCreditWithdrawalT
                 IdentityInsufficientBalanceError::new(
                     self.identity_id(),
                     identity_known_balance,
-                    self.amount(),
+                    required_total,
                 )
                 .into(),
             ));

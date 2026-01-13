@@ -5,6 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::fee_result::FeeResult;
+use std::collections::BTreeMap;
 
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_container::v0::{
@@ -148,9 +149,11 @@ where
                         let elapsed_time = start_time.elapsed() + decoding_elapsed_time;
 
                         let code = match &execution_result {
-                            StateTransitionExecutionResult::SuccessfulExecution(_, _) => 0,
-                            StateTransitionExecutionResult::PaidConsensusError(error, _)
-                            | StateTransitionExecutionResult::UnpaidConsensusError(error) => {
+                            StateTransitionExecutionResult::SuccessfulExecution { .. } => 0,
+                            StateTransitionExecutionResult::PaidConsensusError {
+                                error, ..
+                            } => error.code(),
+                            StateTransitionExecutionResult::UnpaidConsensusError(error) => {
                                 error.code()
                             }
                             StateTransitionExecutionResult::InternalError(_) => 1,
@@ -278,6 +281,7 @@ where
                     errors,
                     block_info,
                     transaction,
+                    None, // No address balance tracking for invalid state transitions
                     platform_version,
                     previous_fee_versions,
                 )
@@ -306,10 +310,10 @@ where
                         );
                     }
 
-                    StateTransitionExecutionResult::PaidConsensusError(
-                        first_consensus_error,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: first_consensus_error,
                         actual_fees,
-                    )
+                    }
                 }
                 EventExecutionResult::SuccessfulFreeExecution => {
                     if tracing::enabled!(tracing::Level::DEBUG) {
@@ -364,12 +368,14 @@ where
                 }
             })?;
 
+        let mut address_balances = BTreeMap::new();
         let event_execution_result = self
             .execute_event(
                 execution_event,
                 errors,
                 block_info,
                 transaction,
+                Some(&mut address_balances),
                 platform_version,
                 previous_fee_versions,
             )
@@ -394,7 +400,11 @@ where
                     );
                 }
 
-                StateTransitionExecutionResult::SuccessfulExecution(estimated_fees, actual_fees)
+                StateTransitionExecutionResult::SuccessfulExecution {
+                    estimated_fees,
+                    fee_result: actual_fees,
+                    address_balance_changes: address_balances,
+                }
             }
             EventExecutionResult::UnsuccessfulPaidExecution(
                 estimated_fees,
@@ -419,10 +429,10 @@ where
                     );
                 }
 
-                StateTransitionExecutionResult::PaidConsensusError(
-                    payment_consensus_error,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: payment_consensus_error,
                     actual_fees,
-                )
+                }
             }
             EventExecutionResult::SuccessfulFreeExecution => {
                 if tracing::enabled!(tracing::Level::DEBUG) {
@@ -436,7 +446,11 @@ where
                     );
                 }
 
-                StateTransitionExecutionResult::SuccessfulExecution(None, FeeResult::default())
+                StateTransitionExecutionResult::SuccessfulExecution {
+                    estimated_fees: None,
+                    fee_result: FeeResult::default(),
+                    address_balance_changes: BTreeMap::new(),
+                }
             }
             EventExecutionResult::UnpaidConsensusExecutionError(mut errors) => {
                 // TODO: In case of balance is not enough, we need to reduce balance only for processing fees

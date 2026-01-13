@@ -1,11 +1,10 @@
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::platform_events::block_end::should_checkpoint::CheckpointNeededInfo;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
-use drive::drive::Checkpoint;
+use drive::drive::{Checkpoint, CheckpointInfo};
 use drive::error::Error::IOErrorWithInfoString;
 use drive::grovedb::GroveDb;
 use std::collections::BTreeMap;
@@ -16,50 +15,25 @@ where
     C: CoreRPCLike,
 {
     /// Updates checkpoints
+    ///
+    /// Returns `true` if a new checkpoint was created, `false` otherwise.
     #[inline(always)]
     pub(super) fn update_checkpoints_v0(
         &self,
         block_execution_context: &BlockExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        // Check if checkpoints are disabled in testing config
-        #[cfg(feature = "testing-config")]
-        if self.config.testing_configs.disable_checkpoints {
-            return Ok(());
-        }
-
-        // How often we want a checkpoint
-        let checkpoint_interval_milliseconds =
-            platform_version.drive_abci.checkpoints.frequency_seconds as u64 * 1000;
-        let keep_n = platform_version.drive_abci.checkpoints.num_checkpoints as usize;
-
-        // If disabled or misconfigured, do nothing.
-        if checkpoint_interval_milliseconds == 0 || keep_n == 0 {
-            return Ok(());
-        }
-
-        let block_info = block_execution_context.block_state_info();
-        let block_time = block_info.block_time_ms();
-        let block_height = block_info.height();
-
-        let most_recent_checkpoint_interval_time =
-            block_time - block_time % checkpoint_interval_milliseconds;
-
-        // Load current checkpoints
-        let current_checkpoints = self.drive.checkpoints.load();
-
-        // Determine whether we should checkpoint based on the last checkpoint timestamp
-        let should_checkpoint = match current_checkpoints.last_key_value() {
-            None => true,
-            Some((_height, (last_ts_ms, _db))) => {
-                *last_ts_ms < most_recent_checkpoint_interval_time
-                    && block_time >= most_recent_checkpoint_interval_time
-            }
+    ) -> Result<bool, Error> {
+        // Check if we should create a checkpoint for this block
+        let Some(CheckpointNeededInfo {
+            block_height,
+            block_time,
+            current_checkpoints,
+        }) = self.should_checkpoint(block_execution_context, platform_version)?
+        else {
+            return Ok(false);
         };
 
-        if !should_checkpoint {
-            return Ok(());
-        }
+        let keep_n = platform_version.drive_abci.checkpoints.num_checkpoints as usize;
 
         // Build the checkpoint path: db_path/checkpoints/<block_height>
         let checkpoint_path = self
@@ -90,15 +64,18 @@ where
 
         // Mark old checkpoints that we're not keeping for deletion
         // They will be cleaned up when their Arc reference count drops to zero
-        for (_, (_, checkpoint)) in current_checkpoints.iter().take(to_skip) {
-            checkpoint.mark_for_deletion();
+        for (_, checkpoint_info) in current_checkpoints.iter().take(to_skip) {
+            checkpoint_info.checkpoint.mark_for_deletion();
         }
 
         // Build new map with only the checkpoints we want to keep
         let mut new_checkpoints = BTreeMap::new();
 
         // Add the new checkpoint
-        new_checkpoints.insert(block_height, (block_time, Arc::new(checkpoint)));
+        new_checkpoints.insert(
+            block_height,
+            CheckpointInfo::new(block_time, Arc::new(checkpoint)),
+        );
 
         // Copy only the most recent old checkpoints (skip the oldest ones)
         // BTreeMap iterates in ascending order, so skip the first `to_skip` entries
@@ -109,6 +86,6 @@ where
         // Atomically swap in the new checkpoints map
         self.drive.checkpoints.store(Arc::new(new_checkpoints));
 
-        Ok(())
+        Ok(true)
     }
 }

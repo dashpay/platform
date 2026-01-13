@@ -179,11 +179,14 @@ mod tests {
 
     /// Creates a platform with a Core RPC mock configured to return the given transaction
     fn create_platform_with_chain_asset_lock_mock(
-        platform_config: PlatformConfig,
+        mut platform_config: PlatformConfig,
         transaction: Transaction,
         transaction_height: i64,
     ) -> crate::test::helpers::setup::TempPlatform<MockCoreRPCLike> {
         let tempdir = TempDir::new().expect("should create temp dir");
+
+        // Set db_path to the tempdir path to avoid trying to write to /var/lib/dash-platform/data
+        platform_config.db_path = tempdir.path().to_path_buf();
 
         let mut core_rpc_mock = MockCoreRPCLike::new();
 
@@ -1034,7 +1037,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1095,7 +1098,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1161,7 +1164,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -1311,7 +1314,7 @@ mod tests {
             // Should succeed
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify the explicit output address received funds (minus fees)
@@ -1397,7 +1400,7 @@ mod tests {
             // Should succeed
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify the explicit output received its amount (minus fees from ReduceOutput(0))
@@ -1867,7 +1870,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1938,7 +1941,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2265,7 +2268,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2329,7 +2332,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2402,7 +2405,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -2479,7 +2482,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2543,7 +2546,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -2610,7 +2613,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -2793,7 +2796,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -2879,7 +2882,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -3208,7 +3211,7 @@ mod tests {
             // Should succeed if fee is covered by remaining 0.01 DASH
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -3275,7 +3278,7 @@ mod tests {
             // The recipient receives (1 DASH - fee) instead of 1 DASH
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -3343,7 +3346,7 @@ mod tests {
 
             let fee_result_no_increase = assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, fee_result)] => fee_result.clone()
+                [StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. }] => fee_result.clone()
             );
 
             let balance_no_increase =
@@ -3392,7 +3395,7 @@ mod tests {
 
             let fee_result_max_increase = assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, fee_result)] => fee_result.clone()
+                [StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. }] => fee_result.clone()
             );
 
             let balance_max_increase =
@@ -3513,7 +3516,7 @@ mod tests {
             // Should succeed with small fee increase
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -3596,7 +3599,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [
-                    StateTransitionExecutionResult::SuccessfulExecution(_, _),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
                     StateTransitionExecutionResult::UnpaidConsensusError(
                         ConsensusError::BasicError(
                             BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
@@ -3664,7 +3667,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -3785,7 +3788,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -4026,7 +4029,7 @@ mod tests {
             // Should succeed with high nonce
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -4392,7 +4395,7 @@ mod tests {
             // Should succeed
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify balance was added (not replaced)
@@ -4483,7 +4486,7 @@ mod tests {
             // The transition itself should succeed (with only one input)
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -4620,7 +4623,7 @@ mod tests {
             // Should succeed if output after fee >= minimum
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -4963,7 +4966,7 @@ mod tests {
             // Should succeed with multiple P2SH inputs
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -5031,7 +5034,7 @@ mod tests {
             // Should succeed
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -5176,7 +5179,7 @@ mod tests {
             // Should succeed with large amounts
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -5262,7 +5265,7 @@ mod tests {
             // Should succeed with chain asset lock proof
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -5886,7 +5889,7 @@ mod tests {
             // Should succeed with 1-of-1 P2SH
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -5954,7 +5957,7 @@ mod tests {
             // Should succeed with 3-of-3 P2SH
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -6029,7 +6032,7 @@ mod tests {
             // Should succeed - extra signatures are valid
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -6099,7 +6102,7 @@ mod tests {
             // Should succeed with 15-of-15
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -6174,7 +6177,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify nonce was incremented
@@ -6238,7 +6241,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify asset lock is marked as spent
@@ -6312,7 +6315,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify balance changes
@@ -6836,7 +6839,7 @@ mod tests {
             // Should succeed (no height restrictions on this transition type)
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -7007,7 +7010,7 @@ mod tests {
             // Should succeed
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -7075,7 +7078,7 @@ mod tests {
             // Should succeed - all-zero address is technically valid
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -7139,7 +7142,7 @@ mod tests {
             // Should succeed - all-FF address is technically valid
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -7213,7 +7216,7 @@ mod tests {
             // Should succeed with combined strategy
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -7282,7 +7285,7 @@ mod tests {
             // Should succeed - fee covered by asset lock remainder
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify input balance is now 0
@@ -7350,7 +7353,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit
@@ -7483,7 +7486,7 @@ mod tests {
 
             assert_matches!(
                 &results[0],
-                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Second fails because nonce 1 was already used by first transition
@@ -7588,11 +7591,11 @@ mod tests {
 
             assert_matches!(
                 &results[0],
-                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
             assert_matches!(
                 &results[1],
-                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Verify final balance: started with 10, spent 2+3=5
@@ -7693,7 +7696,7 @@ mod tests {
 
             assert_matches!(
                 &results[0],
-                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Second fails because balance was depleted by first
@@ -8002,7 +8005,7 @@ mod tests {
             // and ReduceOutput will just take more from the output
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -8228,7 +8231,7 @@ mod tests {
             // Address funding should succeed with the remaining asset lock balance
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -8437,7 +8440,7 @@ mod tests {
             // Should succeed - output fits within remaining balance
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }

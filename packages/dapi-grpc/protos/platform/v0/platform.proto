@@ -112,6 +112,10 @@ service Platform {
           returns (GetAddressesTrunkStateResponse);
   rpc getAddressesBranchState(GetAddressesBranchStateRequest)
           returns (GetAddressesBranchStateResponse);
+  rpc getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest)
+          returns (GetRecentAddressBalanceChangesResponse);
+  rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest)
+          returns (GetRecentCompactedAddressBalanceChangesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1972,6 +1976,23 @@ message AddressInfoEntries {
   repeated AddressInfoEntry address_info_entries = 1;
 }
 
+message AddressBalanceChange {
+  bytes address = 1;
+  oneof operation {
+    uint64 set_balance = 2 [ jstype = JS_STRING ];
+    uint64 add_to_balance = 3 [ jstype = JS_STRING ];
+  }
+}
+
+message BlockAddressBalanceChanges {
+  uint64 block_height = 1 [ jstype = JS_STRING ];
+  repeated AddressBalanceChange changes = 2;
+}
+
+message AddressBalanceUpdateEntries {
+  repeated BlockAddressBalanceChanges block_changes = 1;
+}
+
 message GetAddressInfoResponse {
   message GetAddressInfoResponseV0 {
     oneof result {
@@ -2020,6 +2041,7 @@ message GetAddressesBranchStateRequest {
   message GetAddressesBranchStateRequestV0 {
     bytes key = 1;
     uint32 depth = 2;
+    uint64 checkpoint_height = 3; // Block height from trunk response metadata for consistency
   }
   oneof version { GetAddressesBranchStateRequestV0 v0 = 1; }
 }
@@ -2031,4 +2053,75 @@ message GetAddressesBranchStateResponse {
   oneof version { GetAddressesBranchStateResponseV0 v0 = 1; }
 }
 
+message GetRecentAddressBalanceChangesRequest {
+  message GetRecentAddressBalanceChangesRequestV0 {
+    uint64 start_height = 1 [ jstype = JS_STRING ];
+    bool prove = 2;
+  }
+  oneof version { GetRecentAddressBalanceChangesRequestV0 v0 = 1; }
+}
 
+message GetRecentAddressBalanceChangesResponse {
+  message GetRecentAddressBalanceChangesResponseV0 {
+    oneof result {
+      AddressBalanceUpdateEntries address_balance_update_entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetRecentAddressBalanceChangesResponseV0 v0 = 1; }
+}
+
+// Entry for block height to credits mapping in AddToCreditsOperations
+message BlockHeightCreditEntry {
+  uint64 block_height = 1 [ jstype = JS_STRING ];
+  uint64 credits = 2 [ jstype = JS_STRING ];
+}
+
+// Compacted address balance change supporting block-aware credit operations
+// For SetCredits: the final balance value
+// For AddToCreditsOperations: preserves individual adds with their block heights
+message CompactedAddressBalanceChange {
+  bytes address = 1;
+  oneof operation {
+    // The address balance was set to this value (overwrites previous)
+    uint64 set_credits = 2 [ jstype = JS_STRING ];
+    // Individual add-to-credits operations by block height (preserved for partial sync)
+    AddToCreditsOperations add_to_credits_operations = 3;
+  }
+}
+
+// A collection of add-to-credits operations, each tagged with block height
+// This allows clients to determine which adds to apply based on their sync height
+message AddToCreditsOperations {
+  repeated BlockHeightCreditEntry entries = 1;
+}
+
+message CompactedBlockAddressBalanceChanges {
+  uint64 start_block_height = 1 [ jstype = JS_STRING ];
+  uint64 end_block_height = 2 [ jstype = JS_STRING ];
+  repeated CompactedAddressBalanceChange changes = 3;
+}
+
+message CompactedAddressBalanceUpdateEntries {
+  repeated CompactedBlockAddressBalanceChanges compacted_block_changes = 1;
+}
+
+message GetRecentCompactedAddressBalanceChangesRequest {
+  message GetRecentCompactedAddressBalanceChangesRequestV0 {
+    uint64 start_block_height = 1 [ jstype = JS_STRING ];
+    bool prove = 2;
+  }
+  oneof version { GetRecentCompactedAddressBalanceChangesRequestV0 v0 = 1; }
+}
+
+message GetRecentCompactedAddressBalanceChangesResponse {
+  message GetRecentCompactedAddressBalanceChangesResponseV0 {
+    oneof result {
+      CompactedAddressBalanceUpdateEntries compacted_address_balance_update_entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetRecentCompactedAddressBalanceChangesResponseV0 v0 = 1; }
+}

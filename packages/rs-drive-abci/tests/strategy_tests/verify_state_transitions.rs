@@ -1,6 +1,7 @@
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
@@ -397,9 +398,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     // let fetched_contract = abci_app
                     //     .platform.drive.fetch_contract(data_contract_create.data_contract_ref().id().into_buffer(), None, None, None, platform_version).unwrap().unwrap();
                     // we expect to get an identity that matches the state transition
+                    let keeps_history = data_contract_create
+                        .data_contract_ref()
+                        .config()
+                        .keeps_history();
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
-                        None,
+                        Some(keeps_history),
                         false,
                         true,
                         data_contract_create.data_contract_ref().id().into_buffer(),
@@ -426,15 +431,19 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 }
                 StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
                     // we expect to get an identity that matches the state transition
+                    let keeps_history = data_contract_update
+                        .data_contract_ref()
+                        .config()
+                        .keeps_history();
                     let (root_hash, contract) = Drive::verify_contract(
                         &response_proof.grovedb_proof,
-                        None,
+                        Some(keeps_history),
                         false,
                         true,
                         data_contract_update.data_contract_ref().id().into_buffer(),
                         platform_version,
                     )
-                    .expect("expected to verify full identity");
+                    .expect("expected to verify contract");
                     assert_eq!(
                         &root_hash,
                         expected_root_hash,

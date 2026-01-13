@@ -23,6 +23,10 @@ use drive::drive::identity::withdrawals::paths::{
     WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
+use drive::drive::saved_block_transactions::{
+    ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
+    COMPACTED_ADDRESS_BALANCES_KEY_U8,
+};
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
     token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
@@ -552,6 +556,46 @@ impl<C> Platform<C> {
             None,
             &platform_version.drive,
         )?;
+
+        // SavedBlockTransactions for address-based transaction sync
+        self.drive.grove_insert_if_not_exists(
+            SubtreePath::empty(),
+            &[RootTree::SavedBlockTransactions as u8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Address balances subtree under SavedBlockTransactions
+        let saved_block_path = Drive::saved_block_transactions_path();
+        self.drive.grove_insert_if_not_exists(
+            saved_block_path.as_slice().into(),
+            &[ADDRESS_BALANCES_KEY_U8],
+            Element::empty_count_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            saved_block_path.as_slice().into(),
+            &[COMPACTED_ADDRESS_BALANCES_KEY_U8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        self.drive.grove_insert_if_not_exists(
+            saved_block_path.as_slice().into(),
+            &[COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
         Ok(())
     }
 }

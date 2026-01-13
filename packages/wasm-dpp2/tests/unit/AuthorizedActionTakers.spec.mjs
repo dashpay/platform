@@ -61,7 +61,7 @@ describe('AuthorizedActionTakers', () => {
     it('should allows to get value with Identity', () => {
       const actionTaker = wasm.AuthorizedActionTakers.Identity(identifier);
 
-      expect(actionTaker.getValue().base58()).to.deep.equal(identifier);
+      expect(actionTaker.getValue().toBase58()).to.deep.equal(identifier);
     });
 
     it('should allows to get value with MainGroup', () => {

@@ -2,6 +2,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_dpp2::error::WasmDppError;
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -176,6 +177,12 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            NoAvailableAddressesToRetry(inner) => Self::new(
+                WasmSdkErrorKind::DapiClientError,
+                format!("no available addresses to retry, last error: {}", inner),
+                None,
+                retriable,
+            ),
         }
     }
 }
@@ -191,6 +198,18 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
             WasmSdkErrorKind::StateTransitionBroadcastError,
             err.to_string(),
             Some(err.code as i32),
+            false,
+        )
+    }
+}
+
+impl From<WasmDppError> for WasmSdkError {
+    fn from(err: WasmDppError) -> Self {
+        // Map WasmDppError to appropriate WasmSdkError kind
+        Self::new(
+            WasmSdkErrorKind::SerializationError,
+            err.to_string(),
+            None,
             false,
         )
     }

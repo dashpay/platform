@@ -1,4 +1,7 @@
+use dpp::address_funds::PlatformAddress;
+use dpp::balances::credits::CreditOperation;
 use dpp::consensus::ConsensusError;
+use std::collections::BTreeMap;
 
 use crate::error::Error;
 use crate::platform_types::event_execution_result::EstimatedFeeResult;
@@ -17,7 +20,12 @@ pub enum NotExecutedReason {
 pub enum StateTransitionExecutionResult {
     /// State Transition is invalid, but we have a proved identity associated with it,
     /// and we can deduct processing fees calculated until this validation error happened
-    PaidConsensusError(ConsensusError, FeeResult),
+    PaidConsensusError {
+        /// The consensus error that occurred
+        error: ConsensusError,
+        /// Actual fees charged
+        actual_fees: FeeResult,
+    },
     /// State Transition is invalid, and is not paid for because we either :
     ///     * don't have a proved identity associated with it so we can't deduct balance.
     ///     * the state transition revision causes this transaction to not be valid
@@ -27,7 +35,14 @@ pub enum StateTransitionExecutionResult {
     /// State Transition execution failed due to the internal drive-abci error
     InternalError(String),
     /// State Transition was successfully executed
-    SuccessfulExecution(Option<EstimatedFeeResult>, FeeResult),
+    SuccessfulExecution {
+        /// Estimated fees (if available)
+        estimated_fees: Option<EstimatedFeeResult>,
+        /// Actual fees charged
+        fee_result: FeeResult,
+        /// Address balance changes from this state transition
+        address_balance_changes: BTreeMap<PlatformAddress, CreditOperation>,
+    },
     /// State Transition was not executed at all.
     /// The only current reason for this is that the proposer reached the maximum time limit
     NotExecuted(NotExecutedReason),
@@ -39,6 +54,7 @@ pub enum StateTransitionExecutionResult {
 #[derive(Debug, Default, Clone)]
 pub struct StateTransitionsProcessingResult {
     execution_results: Vec<StateTransitionExecutionResult>,
+    pub(crate) address_balances_updated: BTreeMap<PlatformAddress, CreditOperation>,
     invalid_paid_count: usize,
     invalid_unpaid_count: usize,
     valid_count: usize,
@@ -47,23 +63,68 @@ pub struct StateTransitionsProcessingResult {
 }
 
 impl StateTransitionsProcessingResult {
+    /// Add address balances, combining operations according to these rules:
+    /// - Set + Set = second Set wins
+    /// - Set + Add = Set to combined value
+    /// - Add + Add = saturating add
+    /// - Add + Set = Set (discard the Add)
+    pub fn add_address_balances_in_update(
+        &mut self,
+        address_balances: BTreeMap<PlatformAddress, CreditOperation>,
+    ) {
+        for (address, new_op) in address_balances {
+            self.address_balances_updated
+                .entry(address)
+                .and_modify(|existing| {
+                    *existing = match (&existing, &new_op) {
+                        // Set + Set = second Set wins
+                        (CreditOperation::SetCredits(_), CreditOperation::SetCredits(new_val)) => {
+                            CreditOperation::SetCredits(*new_val)
+                        }
+                        // Set + Add = Set to combined value
+                        (
+                            CreditOperation::SetCredits(set_val),
+                            CreditOperation::AddToCredits(add_val),
+                        ) => CreditOperation::SetCredits(set_val.saturating_add(*add_val)),
+                        // Add + Add = saturating add
+                        (
+                            CreditOperation::AddToCredits(add1),
+                            CreditOperation::AddToCredits(add2),
+                        ) => CreditOperation::AddToCredits(add1.saturating_add(*add2)),
+                        // Add + Set = Set (discard the Add)
+                        (
+                            CreditOperation::AddToCredits(_),
+                            CreditOperation::SetCredits(set_val),
+                        ) => CreditOperation::SetCredits(*set_val),
+                    };
+                })
+                .or_insert(new_op);
+        }
+    }
     /// Add a new execution result
     pub fn add(&mut self, execution_result: StateTransitionExecutionResult) -> Result<(), Error> {
         match &execution_result {
             StateTransitionExecutionResult::InternalError(_) => {
                 self.failed_count += 1;
             }
-            StateTransitionExecutionResult::PaidConsensusError(_, actual_fees) => {
+            StateTransitionExecutionResult::PaidConsensusError { actual_fees, .. } => {
                 self.invalid_paid_count += 1;
                 self.fees.checked_add_assign(actual_fees.clone())?;
             }
             StateTransitionExecutionResult::UnpaidConsensusError(_) => {
                 self.invalid_unpaid_count += 1;
             }
-            StateTransitionExecutionResult::SuccessfulExecution(_, actual_fees) => {
+            StateTransitionExecutionResult::SuccessfulExecution {
+                fee_result: actual_fees,
+                address_balance_changes,
+                ..
+            } => {
                 self.valid_count += 1;
 
                 self.fees.checked_add_assign(actual_fees.clone())?;
+
+                // Merge address balance changes
+                self.add_address_balances_in_update(address_balance_changes.clone());
             }
             StateTransitionExecutionResult::NotExecuted(_) => {
                 self.failed_count += 1;

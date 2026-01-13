@@ -641,3 +641,39 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     get_addresses_infos
 );
+
+// rpc getAddressesTrunkState(GetAddressesTrunkStateRequest) returns (GetAddressesTrunkStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesTrunkStateRequest,
+    platform_proto::GetAddressesTrunkStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_trunk_state
+);
+
+// rpc getAddressesBranchState(GetAddressesBranchStateRequest) returns (GetAddressesBranchStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesBranchStateRequest,
+    platform_proto::GetAddressesBranchStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_branch_state
+);
+
+// rpc getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest) returns (GetRecentAddressBalanceChangesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetRecentAddressBalanceChangesRequest,
+    platform_proto::GetRecentAddressBalanceChangesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_address_balance_changes
+);
+
+// rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetRecentCompactedAddressBalanceChangesRequest,
+    platform_proto::GetRecentCompactedAddressBalanceChangesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_compacted_address_balance_changes
+);

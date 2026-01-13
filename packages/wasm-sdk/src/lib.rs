@@ -6,6 +6,8 @@ pub mod error;
 pub mod logging;
 pub mod queries;
 pub mod sdk;
+pub mod serialization;
+pub mod settings;
 pub mod state_transitions;
 pub mod utils;
 pub mod wallet;

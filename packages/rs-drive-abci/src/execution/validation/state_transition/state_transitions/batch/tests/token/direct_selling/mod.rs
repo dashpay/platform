@@ -71,7 +71,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let token_id_buffer = token_id.to_buffer();
@@ -134,7 +134,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let token_balance = platform
@@ -231,10 +231,10 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                ..
+            }]
         );
     }
 
@@ -304,7 +304,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         // Buyer purchases tokens
@@ -333,10 +333,12 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::TokenDirectPurchaseUserPriceTooLow(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenDirectPurchaseUserPriceTooLow(
+                    _
+                )),
+                ..
+            }]
         );
 
         let token_balance = platform
@@ -423,7 +425,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
@@ -627,7 +629,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         // Check initial token balance (should have some tokens as the owner)
@@ -693,7 +695,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         // Check token balance after purchase
@@ -817,7 +819,7 @@ mod token_selling_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
         (contract, token_id)
     }

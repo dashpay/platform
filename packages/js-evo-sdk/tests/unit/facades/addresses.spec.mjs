@@ -15,6 +15,14 @@ describe('AddressesFacade', () => {
     this.sinon.stub(wasmSdk, 'getAddressInfoWithProofInfo').resolves('ok');
     this.sinon.stub(wasmSdk, 'getAddressesInfos').resolves('ok');
     this.sinon.stub(wasmSdk, 'getAddressesInfosWithProofInfo').resolves('ok');
+    // Create a mock PlatformAddress for test results
+    const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+    );
+    this.sinon.stub(wasmSdk, 'addressFundsTransfer').resolves({
+      type: 'VerifiedAddressInfos',
+      addressInfos: [{ address: mockAddress, nonce: 1, balance: '90000' }],
+    });
   });
 
   it('get() forwards address to getAddressInfo', async () => {
@@ -59,54 +67,198 @@ describe('AddressesFacade', () => {
     await client.addresses.getMany(mixedAddresses);
     expect(wasmSdk.getAddressesInfos).to.be.calledOnceWithExactly(mixedAddresses);
   });
-});
 
-describe('PlatformAddress', () => {
-  let PlatformAddress;
+  it('transfer() forwards options to addressFundsTransfer with PlatformAddressSigner', async () => {
+    // Create proper PlatformAddress objects
+    const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
+    );
 
-  before(async () => {
-    await init();
-    PlatformAddress = wasmSDKPackage.PlatformAddress;
+    // Create a PrivateKey object from bytes (32 bytes for testnet)
+    const privateKeyBytes = new Uint8Array(32).fill(1); // Test key bytes
+    const privateKey = wasmSDKPackage.PrivateKey.fromBytes(privateKeyBytes, 'testnet');
+
+    // Create signer and derive the sender address from the private key
+    const signer = new wasmSDKPackage.PlatformAddressSigner();
+    const derivedSenderAddr = signer.addKey(privateKey);
+
+    // Create typed input and output objects (address, nonce, amount)
+    const input = new wasmSDKPackage.PlatformAddressInput(derivedSenderAddr, 0, 100000n);
+    const output = new wasmSDKPackage.PlatformAddressOutput(recipientAddr, 90000n);
+
+    const options = {
+      inputs: [input],
+      outputs: [output],
+      signer,
+    };
+    const result = await client.addresses.transfer(options);
+    expect(wasmSdk.addressFundsTransfer).to.be.calledOnce();
+    expect(result.type).to.equal('VerifiedAddressInfos');
+    expect(result.addressInfos).to.have.lengthOf(1);
+    expect(result.addressInfos[0].address.addressType).to.equal('P2PKH');
   });
 
-  it('can be created from bytes', () => {
-    // Create P2PKH address from bytes (type 0x00)
-    // eslint-disable-next-line max-len
-    const p2pkhBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-    const p2pkhAddr = PlatformAddress.fromBytes(Array.from(p2pkhBytes));
-    expect(p2pkhAddr).to.exist();
-    expect(p2pkhAddr.addressType).to.equal('P2PKH');
-    expect(p2pkhAddr.isP2pkh).to.be.true();
-    expect(p2pkhAddr.isP2sh).to.be.false();
+  it('transfer() handles success result type', async () => {
+    wasmSdk.addressFundsTransfer.resolves({
+      type: 'Success',
+      message: 'Address funds transfer completed successfully',
+    });
 
-    // Create P2SH address from bytes (type 0x01)
-    // eslint-disable-next-line max-len
-    const p2shBytes = new Uint8Array([0x01, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-    const p2shAddr = PlatformAddress.fromBytes(Array.from(p2shBytes));
-    expect(p2shAddr).to.exist();
-    expect(p2shAddr.addressType).to.equal('P2SH');
-    expect(p2shAddr.isP2pkh).to.be.false();
-    expect(p2shAddr.isP2sh).to.be.true();
+    // Create proper PlatformAddress objects
+    const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
+    );
+
+    // Create a PrivateKey object from bytes
+    const privateKeyBytes = new Uint8Array(32).fill(1); // Test key bytes
+    const privateKey = wasmSDKPackage.PrivateKey.fromBytes(privateKeyBytes, 'testnet');
+
+    // Create signer and derive the sender address from the private key
+    const signer = new wasmSDKPackage.PlatformAddressSigner();
+    const derivedSenderAddr = signer.addKey(privateKey);
+
+    // Create typed input and output objects (address, nonce, amount)
+    const input = new wasmSDKPackage.PlatformAddressInput(derivedSenderAddr, 0, 100000n);
+    const output = new wasmSDKPackage.PlatformAddressOutput(recipientAddr, 90000n);
+
+    const options = {
+      inputs: [input],
+      outputs: [output],
+      signer,
+    };
+    const result = await client.addresses.transfer(options);
+    expect(result.type).to.equal('Success');
+    expect(result.message).to.include('successfully');
   });
 
-  it('converts to bech32m and back', () => {
-    // Create address from bytes
-    // eslint-disable-next-line max-len
-    const originalBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-    const addr = PlatformAddress.fromBytes(Array.from(originalBytes));
+  it('topUpIdentity() forwards options to identityTopUpFromAddresses', async function topUpTest() {
+    // Create mock address and result
+    const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+    );
 
-    // Convert to bech32m for testnet
-    const bech32m = addr.toBech32m('testnet');
-    expect(bech32m).to.be.a('string');
-    expect(bech32m.startsWith('tdashevo1')).to.be.true();
+    this.sinon.stub(wasmSdk, 'identityTopUpFromAddresses').resolves({
+      addressInfos: new Map([[mockAddress, { address: mockAddress, nonce: 1n, balance: 50000n }]]),
+      newBalance: 150000n,
+    });
 
-    // Convert back from bech32m
-    const recoveredAddr = PlatformAddress.fromBech32m(bech32m);
-    expect(recoveredAddr).to.exist();
-    expect(recoveredAddr.addressType).to.equal(addr.addressType);
+    // Create a mock identity ID (32 bytes)
+    const identityId = wasmSDKPackage.Identifier.fromBytes(new Uint8Array(32).fill(42));
 
-    // Verify bytes match
-    const recoveredBytes = recoveredAddr.toBytes();
-    expect(Array.from(recoveredBytes)).to.deep.equal(Array.from(originalBytes));
+    // Mock options - the actual implementation will process these
+    const options = {
+      identityId,
+      inputs: [],
+      signer: {},
+    };
+
+    const result = await client.addresses.topUpIdentity(options);
+    expect(wasmSdk.identityTopUpFromAddresses).to.be.calledOnce();
+    expect(result.newBalance).to.equal(150000n);
+  });
+
+  it('withdraw() forwards options to addressFundsWithdraw', async function withdrawTest() {
+    // Create mock address and result map
+    const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+    );
+
+    const resultMap = new Map();
+    resultMap.set(mockAddress, { address: mockAddress, nonce: 1n, balance: 0n });
+
+    this.sinon.stub(wasmSdk, 'addressFundsWithdraw').resolves(resultMap);
+
+    // Create Core output script (P2PKH)
+    const coreScript = wasmSDKPackage.CoreScript.newP2PKH(new Uint8Array(20).fill(5));
+
+    // Mock options - the actual implementation will process these
+    const options = {
+      inputs: [],
+      coreFeePerByte: 1,
+      pooling: wasmSDKPackage.PoolingWasm.Standard,
+      outputScript: coreScript,
+      signer: {},
+    };
+
+    const result = await client.addresses.withdraw(options);
+    expect(wasmSdk.addressFundsWithdraw).to.be.calledOnce();
+    expect(result).to.be.instanceOf(Map);
+  });
+
+  it('transferFromIdentity() forwards options to identityTransferToAddresses', async function transferFromIdentityTest() {
+    // Create mock address
+    const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+    );
+
+    this.sinon.stub(wasmSdk, 'identityTransferToAddresses').resolves({
+      addressInfos: new Map([[mockAddress, { address: mockAddress, nonce: 0n, balance: 100000n }]]),
+      newBalance: 400000n,
+    });
+
+    // Create a mock identity ID
+    const identityId = wasmSDKPackage.Identifier.fromBytes(new Uint8Array(32).fill(42));
+
+    // Mock options - the actual implementation will process these
+    const options = {
+      identityId,
+      outputs: [],
+      signer: {},
+    };
+
+    const result = await client.addresses.transferFromIdentity(options);
+    expect(wasmSdk.identityTransferToAddresses).to.be.calledOnce();
+    expect(result.newBalance).to.equal(400000n);
+  });
+
+  it('fundFromAssetLock() forwards options to addressFundingFromAssetLock', async function fundFromAssetLockTest() {
+    // Create mock address and result map
+    const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+    );
+
+    const resultMap = new Map();
+    resultMap.set(mockAddress, { address: mockAddress, nonce: 0n, balance: 100000n });
+
+    this.sinon.stub(wasmSdk, 'addressFundingFromAssetLock').resolves(resultMap);
+
+    // Mock options - the actual implementation will process these
+    const options = {
+      assetLockProof: {},
+      assetLockPrivateKey: {},
+      outputs: [],
+      signer: {},
+    };
+
+    const result = await client.addresses.fundFromAssetLock(options);
+    expect(wasmSdk.addressFundingFromAssetLock).to.be.calledOnce();
+    expect(result).to.be.instanceOf(Map);
+  });
+
+  it('createIdentity() forwards options to identityCreateFromAddresses', async function createIdentityTest() {
+    // Create mock address
+    const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
+      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+    );
+
+    // Create mock identity ID
+    const mockIdentityId = wasmSDKPackage.Identifier.fromBytes(new Uint8Array(32).fill(99));
+
+    this.sinon.stub(wasmSdk, 'identityCreateFromAddresses').resolves({
+      identity: { id: () => mockIdentityId },
+      addressInfos: new Map([[mockAddress, { address: mockAddress, nonce: 1n, balance: 0n }]]),
+    });
+
+    // Mock options - the actual implementation will process these
+    const options = {
+      identity: {},
+      inputs: [],
+      identitySigner: {},
+      addressSigner: {},
+    };
+
+    const result = await client.addresses.createIdentity(options);
+    expect(wasmSdk.identityCreateFromAddresses).to.be.calledOnce();
+    expect(result.identity).to.exist();
   });
 });

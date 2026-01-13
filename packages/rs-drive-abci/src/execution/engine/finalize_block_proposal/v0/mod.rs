@@ -227,7 +227,9 @@ where
 
         self.update_drive_cache(&block_execution_context, platform_version)?;
 
-        self.update_checkpoints(&block_execution_context, platform_version)?;
+        // Check if we should create a checkpoint (must be done before consuming block_execution_context)
+        let checkpoint_needed =
+            self.should_checkpoint(&block_execution_context, platform_version)?;
 
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
@@ -243,6 +245,9 @@ where
         crate::metrics::abci_last_platform_height(height);
         crate::metrics::abci_last_finalized_round(round);
 
-        Ok(validation_result.into())
+        Ok(block_execution_outcome::v0::BlockFinalizationOutcome {
+            validation_result,
+            checkpoint_needed: checkpoint_needed.is_some(),
+        })
     }
 }

@@ -205,7 +205,7 @@ impl Display for Key {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 /// Mock errors
 pub enum MockError {
