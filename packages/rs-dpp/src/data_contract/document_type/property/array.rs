@@ -6,6 +6,14 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Read};
 
+/// Maximum string length allowed during deserialization of array elements.
+/// This prevents DoS attacks via huge length values in corrupted/malicious data.
+pub const MAX_STRING_LENGTH_FOR_DESERIALIZATION: usize = 65536; // 64 KB
+
+/// Maximum byte array length allowed during deserialization of array elements.
+/// This prevents DoS attacks via huge length values in corrupted/malicious data.
+pub const MAX_BYTE_ARRAY_LENGTH_FOR_DESERIALIZATION: usize = 65536; // 64 KB
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum ArrayItemType {
     Integer,
@@ -300,7 +308,12 @@ impl ArrayItemType {
             }
             ArrayItemType::ByteArray(_, _) => {
                 let bytes = value.to_binary_bytes()?;
-                Ok(bytes)
+                if bytes.is_empty() {
+                    // we don't want to collide with the definition of null
+                    Ok(vec![0])
+                } else {
+                    Ok(bytes)
+                }
             }
             ArrayItemType::Identifier => {
                 let bytes = value.to_identifier_bytes()?;
@@ -327,6 +340,13 @@ impl ArrayItemType {
                         "error reading varint for string length in array".to_string(),
                     )
                 })?;
+                // Validate string length to prevent DoS via huge allocations
+                if string_len > MAX_STRING_LENGTH_FOR_DESERIALIZATION {
+                    return Err(DataContractError::CorruptedSerialization(format!(
+                        "string length {} exceeds maximum allowed {}",
+                        string_len, MAX_STRING_LENGTH_FOR_DESERIALIZATION
+                    )));
+                }
                 let mut string_bytes = vec![0u8; string_len];
                 buf.read_exact(&mut string_bytes).map_err(|_| {
                     DataContractError::CorruptedSerialization(
@@ -376,6 +396,13 @@ impl ArrayItemType {
                         "error reading varint for byte array length in array".to_string(),
                     )
                 })?;
+                // Validate byte array length to prevent DoS via huge allocations
+                if bytes_len > MAX_BYTE_ARRAY_LENGTH_FOR_DESERIALIZATION {
+                    return Err(DataContractError::CorruptedSerialization(format!(
+                        "byte array length {} exceeds maximum allowed {}",
+                        bytes_len, MAX_BYTE_ARRAY_LENGTH_FOR_DESERIALIZATION
+                    )));
+                }
                 let mut bytes = vec![0u8; bytes_len];
                 buf.read_exact(&mut bytes).map_err(|_| {
                     DataContractError::CorruptedSerialization(

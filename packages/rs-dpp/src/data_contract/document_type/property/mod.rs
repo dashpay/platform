@@ -26,6 +26,11 @@ use serde::Serialize;
 
 pub mod array;
 
+/// Maximum number of array items allowed during deserialization.
+/// This prevents DoS attacks via huge array lengths in corrupted/malicious data.
+/// Indexed arrays in contracts must have maxItems ≤ 255, so 256 provides a safe upper bound.
+pub const MAX_ARRAY_ITEMS_FOR_DESERIALIZATION: usize = 256;
+
 // This struct will be changed in future to support more validation logic and serialization
 // It will become versioned and it will be introduced by a new document type version
 // @append_only
@@ -761,6 +766,14 @@ impl DocumentPropertyType {
                         "error reading varint for array length".to_string(),
                     )
                 })?;
+
+                // Validate array length to prevent DoS via huge allocations
+                if array_len > MAX_ARRAY_ITEMS_FOR_DESERIALIZATION {
+                    return Err(DataContractError::CorruptedSerialization(format!(
+                        "array length {} exceeds maximum allowed {}",
+                        array_len, MAX_ARRAY_ITEMS_FOR_DESERIALIZATION
+                    )));
+                }
 
                 // Read each element
                 let mut elements = Vec::with_capacity(array_len);

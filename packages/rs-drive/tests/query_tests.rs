@@ -7140,9 +7140,8 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_array_index_contract_types() {
+    fn should_have_array_index_contract_types() {
         // Test that a contract with indexed array fields has correct property types
-        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::tests::json_document::json_document_to_contract;
 
         let platform_version = PlatformVersion::latest();
@@ -7192,7 +7191,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_array_document_values() {
+    fn should_preserve_array_document_values_after_cbor_deserialize() {
         // Test that document values are correctly typed after CBOR deserialization
         use dpp::document::DocumentV0Getters;
 
@@ -7225,7 +7224,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_array_document_serialize() {
+    fn should_serialize_document_with_array_field() {
         // Test serializing a document with array field
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
         use dpp::tests::json_document::json_document_to_contract;
@@ -7266,16 +7265,16 @@ mod array_index_tests {
         assert!(
             serialized.is_ok(),
             "Serialization should succeed, got: {:?}",
-            serialized.err()
+            serialized.as_ref().err()
         );
         assert!(
-            serialized.unwrap().len() > 0,
+            !serialized.unwrap().is_empty(),
             "Serialized bytes should not be empty"
         );
     }
 
     #[test]
-    fn test_array_document_serialize_with_drive_contract() {
+    fn should_serialize_with_drive_contract() {
         // Test serializing a document using contract loaded via test_helpers::setup_contract
         use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 
@@ -7338,7 +7337,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_array_index_contract_creation() {
+    fn should_create_contract_with_array_index() {
         // Test that a contract with indexed array fields can be created
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_array_index_tests(platform_version);
@@ -7388,7 +7387,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_query_documents_with_contains_operator() {
+    fn should_query_documents_with_contains_operator() {
         // Test querying documents using the contains operator
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_array_index_tests(platform_version);
@@ -7500,7 +7499,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_get_raw_array_elements_for_document_type() {
+    fn should_get_raw_array_elements_for_document_type() {
         // Test the get_raw_array_elements_for_document_type method
         let platform_version = PlatformVersion::latest();
 
@@ -7542,7 +7541,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_array_elements_deduplication() {
+    fn should_deduplicate_array_elements() {
         // Test that duplicate array elements are deduplicated
         let platform_version = PlatformVersion::latest();
 
@@ -7580,10 +7579,20 @@ mod array_index_tests {
             2,
             "expected 2 unique elements after deduplication"
         );
+
+        // Verify the actual deduplicated element byte values
+        assert!(
+            elements.iter().any(|e| e == b"dash"),
+            "elements should contain 'dash'"
+        );
+        assert!(
+            elements.iter().any(|e| e == b"crypto"),
+            "elements should contain 'crypto'"
+        );
     }
 
     #[test]
-    fn test_delete_document_with_array_field() {
+    fn should_remove_array_index_entries_on_delete() {
         // Test that deleting a document with array fields removes all index entries
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_array_index_tests(platform_version);
@@ -7733,7 +7742,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_update_document_array_field() {
+    fn should_update_array_index_entries_on_update() {
         // Test that updating array fields correctly updates index entries
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_array_index_tests(platform_version);
@@ -7892,7 +7901,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_empty_array_field() {
+    fn should_not_index_empty_arrays() {
         // Test that documents with empty arrays don't create index entries
         let platform_version = PlatformVersion::latest();
         let drive_config = DriveConfig::default();
@@ -8028,7 +8037,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_array_with_integer_elements() {
+    fn should_index_integer_array_elements() {
         // Test array indexing with integer element type
         let platform_version = PlatformVersion::latest();
         let drive_config = DriveConfig::default();
@@ -8187,7 +8196,7 @@ mod array_index_tests {
     }
 
     #[test]
-    fn test_compound_index_with_array() {
+    fn should_query_compound_index_with_array() {
         // Test compound index queries with array field (using existing contract)
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_array_index_tests(platform_version);
