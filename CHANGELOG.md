@@ -1,3 +1,49 @@
+## [3.0.0-rc.1](https://github.com/dashpay/platform/compare/v3.0.0-dev.11...v3.0.0-rc.1) (2026-01-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** typed params for state transition methods (#2932)
+* **sdk:** return last meaningful error on no available addresses (#2958)
+
+### Features
+
+* **dpp:** add Identity new_with_input_addresses_and_keys() ([#2971](https://github.com/dashpay/platform/issues/2971))
+* **drive:** add WalletUtils system data contract during initialization on devnets/local networks ([#2696](https://github.com/dashpay/platform/issues/2696))
+* **drive:** update verification logic for compacted address balance changes ([#2972](https://github.com/dashpay/platform/issues/2972))
+* **sdk:** add validation/tests for registerName publicKeyId parameter ([#2832](https://github.com/dashpay/platform/issues/2832))
+* **sdk:** return last meaningful error on no available addresses ([#2958](https://github.com/dashpay/platform/issues/2958))
+
+
+### Bug Fixes
+
+* **drive:** not setting `keeps_history` in proof verification for DataContractCreate and DataContractUpdate ([#2980](https://github.com/dashpay/platform/issues/2980))
+* **drive:** use historical path query for contracts with keeps_history=true ([#2976](https://github.com/dashpay/platform/issues/2976))
+* **wasm-sdk:** support ECDSA_SECP256K1 keys in contract create/update ([#2975](https://github.com/dashpay/platform/issues/2975))
+
+
+### Performance Improvements
+
+* **sdk:** cache contracts in JS SDK ([#2978](https://github.com/dashpay/platform/issues/2978))
+
+
+### Tests
+
+* **sdk:** test sync_address_balances ([#2957](https://github.com/dashpay/platform/issues/2957))
+* **wasm-sdk:** enable contract token and group check ([#2952](https://github.com/dashpay/platform/issues/2952))
+
+
+### Build System
+
+* **drive:** update rkyv  to 0.7.46 ([#2982](https://github.com/dashpay/platform/issues/2982))
+
+
+### Code Refactoring
+
+* **sdk:** dpns JS SDK methods
+* **sdk:** re-use sdk methods ([#2981](https://github.com/dashpay/platform/issues/2981))
+* **sdk:** typed params for state transition methods ([#2932](https://github.com/dashpay/platform/issues/2932))
+
 ## [3.0.0-dev.11](https://github.com/dashpay/platform/compare/v3.0.0-dev.10...v3.0.0-dev.11) (2026-01-08)
 
 
