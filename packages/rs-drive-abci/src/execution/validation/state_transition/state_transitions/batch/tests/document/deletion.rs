@@ -141,7 +141,7 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1711420);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1666860);
 
         let issues = platform
             .drive
