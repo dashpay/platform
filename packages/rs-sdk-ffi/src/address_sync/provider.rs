@@ -1,7 +1,7 @@
 //! FFI-compatible address provider implementation using callbacks
 
 use super::types::DashSDKPendingAddressList;
-use dash_sdk::platform::address_sync::{AddressIndex, AddressKey, AddressProvider};
+use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
 use std::os::raw::c_void;
 
 /// Function pointer type for getting pending addresses
@@ -25,12 +25,13 @@ pub type GetHighestFoundIndexFn = unsafe extern "C" fn(context: *mut c_void) -> 
 
 /// Function pointer type for handling a found address
 ///
-/// Called when an address is found in the tree with a balance.
+/// Called when an address is found in the tree with a balance and nonce.
 pub type OnAddressFoundFn = unsafe extern "C" fn(
     context: *mut c_void,
     index: u32,
     key: *const u8,
     key_len: usize,
+    nonce: u32,
     balance: u64,
 );
 
@@ -126,10 +127,17 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
         }
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], balance: u64) {
+    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
         unsafe {
             let vtable = &*self.ffi.vtable;
-            (vtable.on_address_found)(self.ffi.context, index, key.as_ptr(), key.len(), balance);
+            (vtable.on_address_found)(
+                self.ffi.context,
+                index,
+                key.as_ptr(),
+                key.len(),
+                funds.nonce,
+                funds.balance,
+            );
         }
     }
 
@@ -214,6 +222,7 @@ mod tests {
         _index: u32,
         _key: *const u8,
         _key_len: usize,
+        _nonce: u32,
         _balance: u64,
     ) {
     }

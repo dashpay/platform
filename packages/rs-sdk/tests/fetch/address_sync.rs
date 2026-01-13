@@ -1,5 +1,5 @@
 use dash_sdk::platform::address_sync::{
-    sync_address_balances, AddressIndex, AddressKey, AddressProvider,
+    sync_address_balances, AddressFunds, AddressIndex, AddressKey, AddressProvider,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -15,7 +15,7 @@ use super::{
 struct TestAddressProvider {
     gap_limit: AddressIndex,
     pending: BTreeMap<AddressIndex, AddressKey>,
-    found: BTreeMap<(AddressIndex, AddressKey), u64>,
+    found: BTreeMap<(AddressIndex, AddressKey), AddressFunds>,
     absent: BTreeSet<(AddressIndex, AddressKey)>,
     highest_found_index: Option<AddressIndex>,
 }
@@ -44,8 +44,8 @@ impl AddressProvider for TestAddressProvider {
             .collect()
     }
 
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], balance: u64) {
-        self.found.insert((index, key.to_vec()), balance);
+    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds) {
+        self.found.insert((index, key.to_vec()), funds);
         self.pending.remove(&index);
         self.highest_found_index = Some(self.highest_found_index.map_or(index, |v| v.max(index)));
     }
@@ -86,12 +86,20 @@ async fn test_sync_address_balances() {
     assert_eq!(result.absent.len(), 1);
 
     assert_eq!(
-        result.found.get(&(0, key_1.clone())),
-        Some(&PLATFORM_ADDRESS_1_BALANCE)
+        result
+            .found
+            .get(&(0, key_1.clone()))
+            .expect("found address 0")
+            .balance,
+        PLATFORM_ADDRESS_1_BALANCE
     );
     assert_eq!(
-        result.found.get(&(1, key_2.clone())),
-        Some(&PLATFORM_ADDRESS_2_BALANCE)
+        result
+            .found
+            .get(&(1, key_2.clone()))
+            .expect("found address 1")
+            .balance,
+        PLATFORM_ADDRESS_2_BALANCE
     );
     assert!(result.absent.contains(&(2, key_unknown.clone())));
 

@@ -1,6 +1,6 @@
 //! Address provider trait for address synchronization.
 
-use super::types::{AddressIndex, AddressKey};
+use super::types::{AddressFunds, AddressIndex, AddressKey};
 
 /// Trait for providing addresses to be synchronized.
 ///
@@ -36,9 +36,9 @@ use super::types::{AddressIndex, AddressKey};
 ///         self.pending.clone()
 ///     }
 ///
-///     fn on_address_found(&mut self, index: AddressIndex, _key: &[u8], balance: u64) {
+///     fn on_address_found(&mut self, index: AddressIndex, _key: &[u8], funds: AddressFunds) {
 ///         // Update highest used and extend pending if needed
-///         if balance > 0 {
+///         if funds.balance > 0 {
 ///             let new_end = index + self.gap_limit + 1;
 ///             // Add new indices to pending...
 ///         }
@@ -75,8 +75,8 @@ pub trait AddressProvider: Send {
     /// # Arguments
     /// - `index`: The address index that was found
     /// - `key`: The address key bytes
-    /// - `balance`: The credits balance at this address
-    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], balance: u64);
+    /// - `funds`: The nonce and credits balance at this address
+    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds);
 
     /// Called when an address is proven absent from the tree.
     ///
