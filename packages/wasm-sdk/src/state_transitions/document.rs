@@ -109,23 +109,16 @@ impl WasmSdk {
         let contract_id: Identifier = document_wasm.get_data_contract_id().into();
         let document_type_name = document_wasm.get_document_type_name();
 
-        // Get entropy from document, or generate if not set
-        let entropy_array = match document_wasm.get_entropy() {
-            Some(entropy) if entropy.len() == 32 => {
+        // Get entropy from document if set, otherwise let rs-sdk generate it
+        let entropy = document_wasm.get_entropy().and_then(|e| {
+            if e.len() == 32 {
                 let mut arr = [0u8; 32];
-                arr.copy_from_slice(&entropy);
-                arr
+                arr.copy_from_slice(&e);
+                Some(arr)
+            } else {
+                None
             }
-            _ => {
-                // Auto-generate entropy if not provided
-                use dash_sdk::dpp::util::entropy_generator::{
-                    DefaultEntropyGenerator, EntropyGenerator,
-                };
-                DefaultEntropyGenerator.generate().map_err(|e| {
-                    WasmSdkError::generic(format!("Failed to generate entropy: {}", e))
-                })?
-            }
-        };
+        });
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -149,7 +142,7 @@ impl WasmSdk {
             .put_to_platform_and_wait_for_response(
                 self.inner_sdk(),
                 document_type,
-                Some(entropy_array),
+                entropy,
                 identity_key,
                 None, // token_payment_info
                 &signer,
