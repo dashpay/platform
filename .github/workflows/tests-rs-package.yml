@@ -12,7 +12,7 @@ on:
       direct-packages:
         description: JSON array of packages that changed directly (not via deps)
         type: string
-        default: '[]'
+        default: "[]"
 
 jobs:
   lint:
@@ -205,8 +205,10 @@ jobs:
           # Core filenames will be of the form executable.pid.timestamp:
           sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
 
-      - name: Run tests        
-        run: RUST_MIN_STACK=4194304 cargo test --package=${{ inputs.package }} --all-features --locked
+      - name: Run tests
+        run: |
+          ulimit -c unlimited      
+          RUST_MIN_STACK=4194304 cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
