@@ -257,10 +257,11 @@ impl WasmSdk {
         identity_id: Identifier,
         limit: Option<u32>,
     ) -> Result<Array, WasmSdkError> {
-        // Use rs-sdk method
+        // Use rs-sdk method with resolved limit for consistency with proof path
+        let resolved_limit = resolve_dpns_usernames_limit(limit);
         let usernames = self
             .as_ref()
-            .get_dpns_usernames_by_identity(identity_id, limit)
+            .get_dpns_usernames_by_identity(identity_id, Some(resolved_limit))
             .await?;
 
         let array = Array::new();
