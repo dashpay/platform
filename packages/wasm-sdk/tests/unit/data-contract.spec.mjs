@@ -76,8 +76,7 @@ describe('DataContract', () => {
       contract.free();
     });
 
-    // TODO: enable test once an SDK fix to support this is merged
-    it.skip('should create a V1 contract from JSON and expose all properties including tokens and groups', async () => {
+    it('should create a V1 contract from JSON and expose all properties including tokens and groups', async () => {
       const contract = sdk.DataContract.fromJSON(
         contractFixtureV1,
         true,
