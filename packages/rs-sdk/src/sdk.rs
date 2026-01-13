@@ -941,7 +941,7 @@ impl SdkBuilder {
         self
     }
 
-    /// Load CA certificate from file.
+    /// Load CA certificate from a PEM-encoded file.
     ///
     /// This is a convenience method that reads the certificate from a file and sets it using
     /// [SdkBuilder::with_ca_certificate()].
@@ -950,12 +950,29 @@ impl SdkBuilder {
         self,
         certificate_file_path: impl AsRef<Path>,
     ) -> std::io::Result<Self> {
-        use rustls_pki_types::pem::PemObject;
+        use rustls_pki_types::pem::SectionKind;
+        use std::io::ErrorKind;
 
-        let pem = rustls_pki_types::CertificateDer::from_pem_file(certificate_file_path)
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        let pem = std::fs::read(certificate_file_path)?;
 
-        let cert = Certificate::from_pem(pem);
+        // parse the certificate and check if it's valid
+        let mut pem_buf = std::io::BufReader::new(pem.as_slice());
+
+        let (kind, pem_cert) = rustls_pki_types::pem::from_buf(&mut pem_buf)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?
+            .ok_or(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "no PEM data found in certificate file",
+            ))?;
+        if kind != SectionKind::Certificate {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("expected PEM section of kind Certificate, found {:?}", kind),
+            ));
+        };
+
+        let cert = Certificate::from_pem(pem_cert);
+
         Ok(self.with_ca_certificate(cert))
     }
 
@@ -1372,7 +1389,7 @@ mod test {
         assert_eq!(result.is_err(), expect_err);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
     #[test]
     fn test_load_ca_certificate() {
         let cert_dir = std::path::PathBuf::from("/etc/ssl/certs");
