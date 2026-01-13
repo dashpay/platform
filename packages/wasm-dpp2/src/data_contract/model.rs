@@ -1,10 +1,11 @@
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_options;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
-use crate::utils::{IntoWasm, JsValueExt, ToSerdeJSONExt};
+use crate::utils::{IntoWasm, JsValueExt};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -443,7 +444,12 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let schema = js_schema.with_serde_to_platform_value_map()?;
+        // Use platform_value_from_object to match getSchemas' to_object serialization
+        // This preserves integer types properly (avoids JSON round-trip which converts to strings)
+        let schema_value = serialization::platform_value_from_object(js_schema)?;
+        let schema = schema_value
+            .into_btree_string_map()
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         let definitions: Option<BTreeMap<String, Value>> = js_definitions
             .map(|definitions| serde_wasm_bindgen::from_value(definitions.into()))
@@ -538,3 +544,5 @@ impl DataContractWasm {
         self.0.document_type_for_name(name.as_str()).clone()
     }
 }
+
+impl_try_from_options!(DataContractWasm, "DataContract");

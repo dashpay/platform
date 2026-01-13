@@ -4,6 +4,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -72,9 +73,13 @@ impl Drive {
         match state_transition {
             StateTransition::DataContractCreate(data_contract_create) => {
                 // we expect to get a contract that matches the state transition
+                let keeps_history = data_contract_create
+                    .data_contract()
+                    .config()
+                    .keeps_history();
                 let (root_hash, contract) = Drive::verify_contract(
                     proof,
-                    None,
+                    Some(keeps_history),
                     false,
                     true,
                     data_contract_create.data_contract().id().into_buffer(),
@@ -95,9 +100,13 @@ impl Drive {
             }
             StateTransition::DataContractUpdate(data_contract_update) => {
                 // we expect to get a contract that matches the state transition
+                let keeps_history = data_contract_update
+                    .data_contract()
+                    .config()
+                    .keeps_history();
                 let (root_hash, contract) = Drive::verify_contract(
                     proof,
-                    None,
+                    Some(keeps_history),
                     false,
                     true,
                     data_contract_update.data_contract().id().into_buffer(),

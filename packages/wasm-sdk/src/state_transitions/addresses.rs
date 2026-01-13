@@ -17,18 +17,16 @@ use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFu
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
-use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
+use dash_sdk::platform::{FetchMany, Identity};
 use dash_sdk::Sdk;
 use drive_proof_verifier::types::{AddressInfo, IndexMap};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
-use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::utils::IntoWasm;
 use wasm_dpp2::{
     fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
-    CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, PlatformAddressOutputWasm,
-    PlatformAddressSignerWasm, PlatformAddressWasm, PoolingWasm,
+    CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, IdentityWasm,
+    PlatformAddressOutputWasm, PlatformAddressSignerWasm, PlatformAddressWasm, PoolingWasm,
 };
 
 /// Converts address infos from SDK response to a JavaScript Map.
@@ -205,7 +203,6 @@ impl WasmSdk {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityTopUpFromAddressesOptionsInput {
-    identity_id: IdentifierWasm,
     inputs: Vec<PlatformAddressOutputWasm>,
 }
 
@@ -257,9 +254,9 @@ const IDENTITY_TOP_UP_OPTIONS_TS: &'static str = r#"
  */
 export interface IdentityTopUpFromAddressesOptions {
   /**
-   * The identity ID to top up.
+   * The identity to top up.
    */
-  identityId: Identifier;
+  identity: Identity;
 
   /**
    * Array of input addresses with amounts to use for top up.
@@ -292,12 +289,11 @@ impl WasmSdk {
     /// Top up an identity from Platform addresses.
     ///
     /// This method handles the complete top up flow:
-    /// 1. Fetches the identity from Platform
-    /// 2. Fetches current nonces for all input addresses
-    /// 3. Builds and signs the identity top up transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 1. Fetches current nonces for all input addresses
+    /// 2. Builds and signs the identity top up transition
+    /// 3. Broadcasts and waits for confirmation
     ///
-    /// @param options - Top up options including identity ID, inputs, and signer
+    /// @param options - Top up options including identity, inputs, and signer
     /// @returns Promise resolving to result with updated address infos and new identity balance
     #[wasm_bindgen(js_name = "identityTopUpFromAddresses")]
     pub async fn identity_top_up_from_addresses(
@@ -309,15 +305,8 @@ impl WasmSdk {
         // Deserialize and validate options
         let parsed = deserialize_identity_top_up_options(options_value.clone())?;
 
-        // Convert identity ID
-        let identity_id: Identifier = parsed.identity_id.into();
-
-        // Fetch the identity
-        let identity = Identity::fetch_by_identifier(self.as_ref(), identity_id)
-            .await?
-            .ok_or_else(|| {
-                WasmSdkError::not_found(format!("Identity {} not found", identity_id))
-            })?;
+        // Extract identity from options
+        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Convert inputs to map
         let inputs_map = outputs_to_btree_map(parsed.inputs);
@@ -471,14 +460,8 @@ impl WasmSdk {
         let change_output = parsed.change_output.map(|output| output.into_inner());
 
         // Extract output script from options
-        let output_script_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("outputScript"))
-                .map_err(|_| WasmSdkError::invalid_argument("outputScript is required"))?;
-
-        let output_script: CoreScript = output_script_js
-            .to_wasm::<CoreScriptWasm>("CoreScript")?
-            .clone()
-            .into();
+        let output_script: CoreScript =
+            CoreScriptWasm::try_from_options(&options_value, "outputScript")?.into();
 
         // Extract signer from options
         let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
@@ -514,12 +497,11 @@ impl WasmSdk {
     /// Transfer credits from an identity to Platform addresses.
     ///
     /// This method handles the complete transfer flow:
-    /// 1. Fetches the identity from Platform
-    /// 2. Finds the appropriate transfer key to use for signing (if signingTransferKeyId specified)
-    /// 3. Builds and signs the identity credit transfer to addresses transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 1. Finds the appropriate transfer key to use for signing (if signingTransferKeyId specified)
+    /// 2. Builds and signs the identity credit transfer to addresses transition
+    /// 3. Broadcasts and waits for confirmation
     ///
-    /// @param options - Transfer options including identity ID, outputs, and signer
+    /// @param options - Transfer options including identity, outputs, and signer
     /// @returns Promise resolving to result with updated address infos and new identity balance
     #[wasm_bindgen(js_name = "identityTransferToAddresses")]
     pub async fn identity_transfer_to_addresses(
@@ -531,15 +513,8 @@ impl WasmSdk {
         // Deserialize and validate options
         let parsed = deserialize_identity_transfer_options(options_value.clone())?;
 
-        // Convert identity ID
-        let identity_id: Identifier = parsed.identity_id.into();
-
-        // Fetch the identity
-        let identity = Identity::fetch_by_identifier(self.as_ref(), identity_id)
-            .await?
-            .ok_or_else(|| {
-                WasmSdkError::not_found(format!("Identity {} not found", identity_id))
-            })?;
+        // Extract identity from options
+        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Convert outputs to map (recipient addresses with amounts)
         let outputs_map = outputs_to_btree_map(parsed.outputs);
@@ -586,7 +561,6 @@ impl WasmSdk {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityTransferToAddressesOptionsInput {
-    identity_id: IdentifierWasm,
     outputs: Vec<PlatformAddressOutputWasm>,
     #[serde(default)]
     signing_transfer_key_id: Option<u32>,
@@ -640,9 +614,9 @@ const IDENTITY_TRANSFER_OPTIONS_TS: &'static str = r#"
  */
 export interface IdentityTransferToAddressesOptions {
   /**
-   * The identity ID to transfer credits from.
+   * The identity to transfer credits from.
    */
-  identityId: Identifier;
+  identity: Identity;
 
   /**
    * Array of output addresses with amounts to receive.
@@ -781,7 +755,6 @@ impl WasmSdk {
         use dash_sdk::platform::transition::top_up_address::TopUpAddress;
         use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
         use wasm_dpp2::private_key::PrivateKeyWasm;
-        use wasm_dpp2::utils::IntoWasm;
 
         let options_value: JsValue = options.into();
 
@@ -789,22 +762,12 @@ impl WasmSdk {
         let parsed = deserialize_address_funding_options(options_value.clone())?;
 
         // Extract asset lock proof from options
-        let asset_lock_proof_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockProof"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockProof is required"))?;
-        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof = asset_lock_proof_js
-            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
-            .clone()
-            .into();
+        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
+            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
-        let asset_lock_private_key_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockPrivateKey"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockPrivateKey is required"))?;
-        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey = asset_lock_private_key_js
-            .to_wasm::<PrivateKeyWasm>("PrivateKey")?
-            .clone()
-            .into();
+        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
+            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Convert outputs to map (address -> optional amount)
         let outputs_map = outputs_to_optional_btree_map(parsed.outputs);

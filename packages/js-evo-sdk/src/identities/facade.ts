@@ -1,5 +1,4 @@
 import * as wasm from '../wasm.js';
-import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
 export class IdentitiesFacade {
@@ -124,38 +123,28 @@ export class IdentitiesFacade {
     return w.getIdentityTokenBalancesWithProofInfo(identityId, tokenIds);
   }
 
-  async create(args: { assetLockProof: unknown; assetLockPrivateKeyWif: string; publicKeys: unknown[] }): Promise<any> {
-    const { assetLockProof, assetLockPrivateKeyWif, publicKeys } = args;
+  async create(options: wasm.IdentityCreateOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.identityCreate(asJsonString(assetLockProof)!, assetLockPrivateKeyWif, asJsonString(publicKeys)!);
+    return w.identityCreate(options);
   }
 
-  async topUp(args: { identityId: wasm.IdentifierLike; assetLockProof: unknown; assetLockPrivateKeyWif: string }): Promise<any> {
-    const { identityId, assetLockProof, assetLockPrivateKeyWif } = args;
+  async topUp(options: wasm.IdentityTopUpOptions): Promise<bigint> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.identityTopUp(identityId, asJsonString(assetLockProof)!, assetLockPrivateKeyWif);
+    return w.identityTopUp(options);
   }
 
-  async creditTransfer(args: { senderId: wasm.IdentifierLike; recipientId: wasm.IdentifierLike; amount: number | bigint | string; privateKeyWif: string; keyId?: number }): Promise<any> {
-    const { senderId, recipientId, amount, privateKeyWif, keyId } = args;
+  async creditTransfer(options: wasm.IdentityCreditTransferOptions): Promise<wasm.IdentityCreditTransferResult> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.identityCreditTransfer(senderId, recipientId, BigInt(amount), privateKeyWif, keyId ?? null);
+    return w.identityCreditTransfer(options);
   }
 
-  async creditWithdrawal(args: { identityId: wasm.IdentifierLike; toAddress: string; amount: number | bigint | string; coreFeePerByte?: number; privateKeyWif: string; keyId?: number }): Promise<any> {
-    const { identityId, toAddress, amount, coreFeePerByte = 1, privateKeyWif, keyId } = args;
+  async creditWithdrawal(options: wasm.IdentityCreditWithdrawalOptions): Promise<bigint> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.identityCreditWithdrawal(identityId, toAddress, BigInt(amount), coreFeePerByte ?? null, privateKeyWif, keyId ?? null);
+    return w.identityCreditWithdrawal(options);
   }
 
-  async update(args: { identityId: wasm.IdentifierLike; addPublicKeys?: unknown[]; disablePublicKeyIds?: number[]; privateKeyWif: string }): Promise<any> {
-    const { identityId, addPublicKeys, disablePublicKeyIds, privateKeyWif } = args;
+  async update(options: wasm.IdentityUpdateOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.identityUpdate(
-      identityId,
-      addPublicKeys ? asJsonString(addPublicKeys)! : null,
-      disablePublicKeyIds ? Uint32Array.from(disablePublicKeyIds) : null,
-      privateKeyWif,
-    );
+    return w.identityUpdate(options);
   }
 }

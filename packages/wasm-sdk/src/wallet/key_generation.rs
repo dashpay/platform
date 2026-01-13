@@ -243,4 +243,70 @@ impl WasmSdk {
 
         Ok(hex::encode(signature.serialize_compact()))
     }
+
+    /// Generate deterministic test identity keys for SDK functional tests.
+    ///
+    /// This generates the same keys that are created in the genesis state when
+    /// SDK_TEST_DATA=true is set. The seed should match the first byte of the
+    /// identity ID (1, 2, or 3 for the test identities).
+    ///
+    /// Returns an array of objects containing:
+    /// - keyId: The identity key ID
+    /// - privateKeyHex: The 32-byte private key in hex format
+    /// - publicKeyData: The public key data in hex (33 bytes for ECDSA_SECP256K1, 20 bytes for ECDSA_HASH160)
+    /// - keyType: The key type (e.g., "ECDSA_SECP256K1", "ECDSA_HASH160")
+    /// - purpose: The key purpose (e.g., "AUTHENTICATION", "TRANSFER")
+    /// - securityLevel: The security level (e.g., "MASTER", "CRITICAL", "HIGH")
+    ///
+    /// Key indices:
+    /// - 0: MASTER level AUTHENTICATION key (ECDSA_SECP256K1)
+    /// - 1: CRITICAL level AUTHENTICATION key (ECDSA_SECP256K1)
+    /// - 2: HIGH level AUTHENTICATION key (ECDSA_SECP256K1)
+    /// - 3: CRITICAL level TRANSFER key (ECDSA_HASH160) - for credit transfers
+    #[wasm_bindgen(js_name = "generateTestIdentityKeys")]
+    pub fn generate_test_identity_keys(seed: u64) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dash_sdk::dpp::identity::IdentityPublicKey;
+        use dash_sdk::dpp::version::LATEST_PLATFORM_VERSION;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let mut rng = StdRng::seed_from_u64(seed);
+        let platform_version = LATEST_PLATFORM_VERSION;
+
+        // Generate 3 authentication keys (master, critical, high)
+        let mut keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(
+            3,
+            &mut rng,
+            platform_version,
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to generate keys: {}", e)))?;
+
+        // Add a TRANSFER purpose key (key id 3) for identity credit transfers
+        // This matches what's created in the genesis state
+        let transfer_key = IdentityPublicKey::random_masternode_transfer_key_with_rng(
+            3, // key id 3 (after master=0, critical=1, high=2)
+            &mut rng,
+            platform_version,
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to generate transfer key: {}", e)))?;
+        keys.push(transfer_key);
+
+        let result: Vec<serde_json::Value> = keys
+            .into_iter()
+            .map(|(key, private_key_bytes)| {
+                serde_json::json!({
+                    "keyId": key.id(),
+                    "privateKeyHex": hex::encode(private_key_bytes),
+                    "publicKeyData": hex::encode(key.data().as_slice()),
+                    "keyType": format!("{:?}", key.key_type()),
+                    "purpose": format!("{:?}", key.purpose()),
+                    "securityLevel": format!("{:?}", key.security_level()),
+                })
+            })
+            .collect();
+
+        serde_wasm_bindgen::to_value(&result)
+            .map_err(|e| WasmSdkError::generic(format!("Serialization error: {}", e)))
+    }
 }

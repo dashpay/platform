@@ -54,18 +54,15 @@ describe('Data contract queries', function describeDataContractQueries() {
     expect(res.proof).to.be.ok();
   });
 
-  // TODO: fix dash drive: proof: corrupted error for historical contract
-  it.skip('getDataContractHistory() returns history for contract', async function skip() {
-    const tokenContractId = tokenContracts[0]?.contractId;
-    if (!tokenContractId) {
-      this.skip();
-      return;
-    }
-
+  // TODO: Fix proof verification error: dash drive: proof: corrupted error:
+  // we did not get back an element for the correct path for the historical contract
+  it.skip('getDataContractHistory() returns history for contract', async () => {
+    // Use DPNS contract to test history retrieval
+    // Note: This may return an empty map if the contract has no history (version = 1)
     const res = await client.getDataContractHistory({
-      dataContractId: tokenContractId,
-      limit: 1,
+      dataContractId: dpnsContractId,
+      limit: 10,
     });
-    expect(res).to.be.ok();
+    expect(res).to.be.instanceOf(Map);
   });
 });
