@@ -207,7 +207,7 @@ jobs:
 
       - name: Run tests
         run: |
-          ulimit -c unlimited      
+          ulimit -c unlimited
           RUST_MIN_STACK=4194304 cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
