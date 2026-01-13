@@ -252,37 +252,23 @@ impl WasmSdk {
         Ok(Arc::new(contract))
     }
 
-    async fn prepare_dpns_usernames_query(
-        &self,
-        identity_id: Identifier,
-        limit: Option<u32>,
-    ) -> Result<DocumentQuery, WasmSdkError> {
-        let dpns_contract = self.get_dpns_contract().await?;
-
-        let mut query = DocumentQuery::new(dpns_contract, DPNS_DOCUMENT_TYPE)?;
-
-        let where_clause = WhereClause {
-            field: "records.identity".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier(identity_id.to_buffer()),
-        };
-
-        query = query.with_where(where_clause);
-        query.limit = resolve_dpns_usernames_limit(limit);
-
-        Ok(query)
-    }
-
     async fn fetch_dpns_usernames(
         &self,
         identity_id: Identifier,
         limit: Option<u32>,
     ) -> Result<Array, WasmSdkError> {
-        let query = self
-            .prepare_dpns_usernames_query(identity_id, limit)
+        // Use rs-sdk method with resolved limit for consistency with proof path
+        let resolved_limit = resolve_dpns_usernames_limit(limit);
+        let usernames = self
+            .as_ref()
+            .get_dpns_usernames_by_identity(identity_id, Some(resolved_limit))
             .await?;
-        let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
-        Ok(usernames_from_documents(documents_result))
+
+        let array = Array::new();
+        for username in usernames {
+            array.push(&JsValue::from_str(&username.full_name));
+        }
+        Ok(array)
     }
 
     async fn fetch_dpns_usernames_with_proof(
@@ -290,9 +276,23 @@ impl WasmSdk {
         identity_id: Identifier,
         limit: Option<u32>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = self
-            .prepare_dpns_usernames_query(identity_id, limit)
-            .await?;
+        // For proof queries, we still need to use document query directly
+        // as rs-sdk doesn't have a with_proof variant
+        let dpns_contract = self.get_dpns_contract().await?;
+
+        let query = DocumentQuery {
+            data_contract: dpns_contract,
+            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![WhereClause {
+                field: "records.identity".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(identity_id.to_buffer()),
+            }],
+            order_by_clauses: vec![],
+            limit: resolve_dpns_usernames_limit(limit),
+            start: None,
+        };
+
         let (documents_result, metadata, proof) =
             Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
         let usernames_array = usernames_from_documents(documents_result);
