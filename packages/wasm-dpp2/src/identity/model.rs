@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::impl_try_from_options;
 use crate::serialization;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
@@ -176,3 +177,5 @@ impl IdentityWasm {
         Ok(IdentityWasm(identity))
     }
 }
+
+impl_try_from_options!(IdentityWasm, "Identity");

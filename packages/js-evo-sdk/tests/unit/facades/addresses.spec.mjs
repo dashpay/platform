@@ -131,7 +131,7 @@ describe('AddressesFacade', () => {
     expect(result.message).to.include('successfully');
   });
 
-  it('topUpIdentity() forwards options to identityTopUpFromAddresses', async function () {
+  it('topUpIdentity() forwards options to identityTopUpFromAddresses', async function topUpTest() {
     // Create mock address and result
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -157,7 +157,7 @@ describe('AddressesFacade', () => {
     expect(result.newBalance).to.equal(150000n);
   });
 
-  it('withdraw() forwards options to addressFundsWithdraw', async function () {
+  it('withdraw() forwards options to addressFundsWithdraw', async function withdrawTest() {
     // Create mock address and result map
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -185,7 +185,7 @@ describe('AddressesFacade', () => {
     expect(result).to.be.instanceOf(Map);
   });
 
-  it('transferFromIdentity() forwards options to identityTransferToAddresses', async function () {
+  it('transferFromIdentity() forwards options to identityTransferToAddresses', async function transferFromIdentityTest() {
     // Create mock address
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -211,7 +211,7 @@ describe('AddressesFacade', () => {
     expect(result.newBalance).to.equal(400000n);
   });
 
-  it('fundFromAssetLock() forwards options to addressFundingFromAssetLock', async function () {
+  it('fundFromAssetLock() forwards options to addressFundingFromAssetLock', async function fundFromAssetLockTest() {
     // Create mock address and result map
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -235,7 +235,7 @@ describe('AddressesFacade', () => {
     expect(result).to.be.instanceOf(Map);
   });
 
-  it('createIdentity() forwards options to identityCreateFromAddresses', async function () {
+  it('createIdentity() forwards options to identityCreateFromAddresses', async function createIdentityTest() {
     // Create mock address
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
