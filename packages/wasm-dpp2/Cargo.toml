@@ -9,8 +9,10 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 # TODO: Consider to use talc allocator
 #talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
-bincode = "=2.0.0-rc.3"
-wasm-bindgen = { version = "=0.2.103", default-features = false, features = ["serde-serialize"] }
+bincode = "2.0.1"
+wasm-bindgen = { version = "=0.2.103", default-features = false, features = [
+    "serde-serialize",
+] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-signing",
     "state-transition-value-conversion",
@@ -24,7 +26,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "platform-value",
     "state-transitions",
     "state-transition-serde-conversion",
-    "vote-serde-conversion"
+    "vote-serde-conversion",
 ] }
 serde-wasm-bindgen = { git = "https://github.com/dashpay/serde-wasm-bindgen", branch = "fix/uint8array-to-bytes" }
 serde = { version = "1.0.197", features = ["derive"] }
