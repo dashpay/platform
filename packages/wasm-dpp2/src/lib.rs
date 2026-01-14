@@ -31,6 +31,7 @@ pub mod utils;
 pub mod voting;
 
 pub use core_script::CoreScriptWasm;
+pub use enums::network::NetworkWasm;
 pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
 pub use private_key::PrivateKeyWasm;

@@ -1,8 +1,21 @@
-use crate::error::WasmDppError;
+use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::Network;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+/// TypeScript type alias for flexible network input
+#[wasm_bindgen(typescript_custom_section)]
+const NETWORK_LIKE_TS: &'static str = r#"
+/**
+ * Flexible network type that accepts Network enum or string names.
+ *
+ * String values (case-insensitive): "mainnet", "testnet", "devnet", "regtest"
+ */
+export type NetworkLike = Network | "mainnet" | "testnet" | "devnet" | "regtest";
+"#;
+
 #[wasm_bindgen(js_name = "Network")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 pub enum NetworkWasm {
     Mainnet = 0,
@@ -21,27 +34,14 @@ impl TryFrom<JsValue> for NetworkWasm {
                 "devnet" => Ok(NetworkWasm::Devnet),
                 "regtest" => Ok(NetworkWasm::Regtest),
                 _ => Err(WasmDppError::invalid_argument(format!(
-                    "unsupported network name ({})",
-                    enum_val
-                ))),
-            };
-        }
-
-        if let Some(enum_val) = value.as_f64() {
-            return match enum_val as u8 {
-                0 => Ok(NetworkWasm::Mainnet),
-                1 => Ok(NetworkWasm::Testnet),
-                2 => Ok(NetworkWasm::Devnet),
-                3 => Ok(NetworkWasm::Regtest),
-                _ => Err(WasmDppError::invalid_argument(format!(
-                    "unsupported network name ({})",
+                    "unsupported network name '{}'. Expected: mainnet, testnet, devnet, or regtest",
                     enum_val
                 ))),
             };
         }
 
         Err(WasmDppError::invalid_argument(
-            "cannot read value from network enum",
+            "network must be a string: 'mainnet', 'testnet', 'devnet', or 'regtest'",
         ))
     }
 }
@@ -57,6 +57,13 @@ impl From<NetworkWasm> for String {
     }
 }
 
+impl TryFrom<&JsValue> for NetworkWasm {
+    type Error = WasmDppError;
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        NetworkWasm::try_from(value.clone())
+    }
+}
+
 impl From<NetworkWasm> for Network {
     fn from(network: NetworkWasm) -> Self {
         match network {
@@ -64,6 +71,70 @@ impl From<NetworkWasm> for Network {
             NetworkWasm::Testnet => Network::Testnet,
             NetworkWasm::Devnet => Network::Devnet,
             NetworkWasm::Regtest => Network::Regtest,
+        }
+    }
+}
+
+impl From<Network> for NetworkWasm {
+    fn from(network: Network) -> Self {
+        match network {
+            Network::Dash => NetworkWasm::Mainnet,
+            Network::Testnet => NetworkWasm::Testnet,
+            Network::Devnet => NetworkWasm::Devnet,
+            Network::Regtest => NetworkWasm::Regtest,
+            // Handle any future network variants by defaulting to Testnet
+            _ => NetworkWasm::Testnet,
+        }
+    }
+}
+
+impl NetworkWasm {
+    /// Try to extract a Network from an options object field.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to a NetworkWasm. Accepts Network enum or string names.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let network_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if network_js.is_undefined() || network_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        NetworkWasm::try_from(&network_js)
+    }
+
+    /// Try to extract an optional Network from an options object field.
+    ///
+    /// Returns None if the field is undefined or null, otherwise attempts conversion.
+    pub fn try_from_options_optional(
+        options: &JsValue,
+        field_name: &str,
+    ) -> WasmDppResult<Option<Self>> {
+        let network_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Failed to get '{}'", field_name))
+            })?;
+
+        if network_js.is_undefined() || network_js.is_null() {
+            return Ok(None);
+        }
+
+        NetworkWasm::try_from(&network_js).map(Some)
+    }
+
+    /// Get the network name as a lowercase string (for compatibility with existing code)
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NetworkWasm::Mainnet => "mainnet",
+            NetworkWasm::Testnet => "testnet",
+            NetworkWasm::Devnet => "devnet",
+            NetworkWasm::Regtest => "regtest",
         }
     }
 }

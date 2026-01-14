@@ -30,23 +30,15 @@ type ProTxHashLike = ProTxHash | Uint8Array | string;
 - `getEvonodesProposedEpochBlocksByIdsWithProofInfo` (proTxHashes parameter)
 - `EvonodeProposedBlocksRangeQuery.startAfter` field
 
-### Network Wrapper
+### ~~Network Wrapper~~ ✅ DONE
 
-Create a wrapper around `Network` from dashcore with flexible input types:
+~~Create a wrapper around `Network` from dashcore with flexible input types:~~
 
 ```typescript
-type NetworkLike = Network | string;
+type NetworkLike = Network | "mainnet" | "testnet" | "devnet" | "regtest";
 ```
 
-**Requirements:**
+**Implemented in:**
 
-- Create `NetworkWasm` wrapper in wasm-dpp2
-- Accept string ("mainnet", "testnet", "devnet", "regtest") or Network object
-- Centralize parsing logic
-- Use everywhere we pass network parameter
-
-**Affected areas:**
-
-- SDK builder methods
-- Wallet key derivation
-- Address generation/validation
+- `wasm-dpp2/src/enums/network.rs` - `NetworkWasm` with `TryFrom<JsValue>`, `try_from_options()`, `as_str()`
+- `wasm-sdk/src/wallet/key_generation.rs` - Updated all functions to use `NetworkLike`

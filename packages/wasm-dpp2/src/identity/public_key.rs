@@ -104,7 +104,7 @@ impl IdentityPublicKeyWasm {
     pub fn validate_private_key(
         &self,
         js_private_key_bytes: Vec<u8>,
-        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
     ) -> WasmDppResult<bool> {
         let mut private_key_bytes = [0u8; 32];
         let len = js_private_key_bytes.len().min(32);
