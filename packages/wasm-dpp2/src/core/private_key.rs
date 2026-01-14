@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use crate::enums::network::NetworkWasm;
+use super::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::public_key::PublicKeyWasm;
 use crate::utils::IntoWasm;

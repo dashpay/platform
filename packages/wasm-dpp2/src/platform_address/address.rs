@@ -1,4 +1,4 @@
-use crate::enums::network::NetworkWasm;
+use crate::core::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;

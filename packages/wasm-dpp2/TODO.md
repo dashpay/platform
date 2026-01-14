@@ -2,33 +2,19 @@
 
 ## Type Wrappers for Flexible Input
 
-### ProTxHash Wrapper
+### ~~ProTxHash Wrapper~~ ✅ DONE
 
-Create a wrapper around `ProTxHash` from dashcore with flexible input types.
-
-`ProTxHash` is a newtype wrapper around `sha256d::Hash`:
-
-```rust
-pub struct ProTxHash(sha256d::Hash);
-```
+~~Create a wrapper around `ProTxHash` from dashcore with flexible input types.~~
 
 ```typescript
 type ProTxHashLike = ProTxHash | Uint8Array | string;
 ```
 
-**Requirements:**
+**Implemented in:**
 
-- Create `ProTxHashWasm` wrapper in wasm-dpp2
-- Accept hex string, raw bytes (Uint8Array), or ProTxHash object
-- Centralize parsing logic (currently duplicated in wasm-sdk methods)
-
-**Affected areas in wasm-sdk:**
-
-- `getProtocolVersionUpgradeVoteStatus` (startProTxHash parameter)
-- `getProtocolVersionUpgradeVoteStatusWithProofInfo` (startProTxHash parameter)
-- `getEvonodesProposedEpochBlocksByIds` (ids parameter)
-- `getEvonodesProposedEpochBlocksByIdsWithProofInfo` (proTxHashes parameter)
-- `EvonodeProposedBlocksRangeQuery.startAfter` field
+- `wasm-dpp2/src/enums/pro_tx_hash.rs` - `ProTxHashWasm` with `TryFrom<JsValue>`, `from_hex()`, `from_bytes()`, `try_from_options()`, `try_from_options_optional()`
+- `wasm-sdk/src/queries/protocol.rs` - Updated `getProtocolVersionUpgradeVoteStatus`, `getProtocolVersionUpgradeVoteStatusWithProofInfo`
+- `wasm-sdk/src/queries/epoch.rs` - Updated `getEvonodesProposedEpochBlocksByIds`, `getEvonodesProposedEpochBlocksByIdsWithProofInfo`, `parse_evonode_range_query`
 
 ### ~~Network Wrapper~~ ✅ DONE
 

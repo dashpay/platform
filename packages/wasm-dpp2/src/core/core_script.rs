@@ -1,4 +1,4 @@
-use crate::enums::network::NetworkWasm;
+use super::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use dpp::dashcore::address::Payload;

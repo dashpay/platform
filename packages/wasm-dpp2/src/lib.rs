@@ -12,7 +12,7 @@
 pub mod asset_lock_proof;
 pub mod block;
 pub mod consensus_error;
-pub mod core_script;
+pub mod core;
 pub mod data_contract;
 pub mod enums;
 pub mod epoch;
@@ -22,7 +22,6 @@ pub mod identifier;
 pub mod identity;
 pub mod mock_bls;
 pub mod platform_address;
-pub mod private_key;
 pub mod public_key;
 pub mod serialization;
 pub mod state_transitions;
@@ -30,11 +29,12 @@ pub mod tokens;
 pub mod utils;
 pub mod voting;
 
-pub use core_script::CoreScriptWasm;
-pub use enums::network::NetworkWasm;
+pub use core::core_script::CoreScriptWasm;
+pub use core::network::NetworkWasm;
+pub use core::private_key::PrivateKeyWasm;
+pub use core::pro_tx_hash::ProTxHashWasm;
 pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
-pub use private_key::PrivateKeyWasm;
 
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
