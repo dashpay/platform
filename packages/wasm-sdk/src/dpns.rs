@@ -100,6 +100,30 @@ fn usernames_from_documents(documents_result: Documents) -> Array {
 const DPNS_REGISTER_NAME_OPTIONS_TS: &'static str = r#"
 /**
  * Options for registering a DPNS username on Dash Platform.
+ *
+ * Two parameter styles are supported:
+ *
+ * **Style A - Typed objects (current, full control):**
+ * ```typescript
+ * await sdk.dpns.registerName({
+ *   label: 'alice',
+ *   identity,           // Pre-fetched Identity object
+ *   identityKey,        // IdentityPublicKey from the identity
+ *   signer,             // IdentitySigner with private key loaded
+ * });
+ * ```
+ *
+ * **Style B - Simple credentials (convenience):**
+ * ```typescript
+ * await sdk.dpns.registerName({
+ *   label: 'alice',
+ *   identityId: 'abc123...',   // Identity ID (string, Identifier, or bytes)
+ *   publicKeyId: 1,             // Key index on the identity
+ *   privateKey: privateKeyBytes, // 32-byte Uint8Array
+ * });
+ * ```
+ *
+ * Style B automatically fetches the identity and retrieves the public key internally.
  */
 export interface DpnsRegisterNameOptions {
   /**
@@ -108,23 +132,51 @@ export interface DpnsRegisterNameOptions {
    */
   label: string;
 
+  // === Style A: Typed objects (full control) ===
+
   /**
    * The identity that will own the username.
    * Fetch the identity first using `getIdentity()`.
+   * Required for Style A.
    */
-  identity: Identity;
+  identity?: Identity;
 
   /**
    * The identity public key to use for signing the transition.
    * Get this from the identity's public keys.
+   * Required for Style A.
    */
-  identityKey: IdentityPublicKey;
+  identityKey?: IdentityPublicKey;
 
   /**
    * Signer containing the private key that corresponds to the identity key.
    * Use IdentitySigner to add the private key before calling.
+   * Required for Style A.
    */
-  signer: IdentitySigner;
+  signer?: IdentitySigner;
+
+  // === Style B: Simple credentials (convenience) ===
+
+  /**
+   * The identity ID that will own the username.
+   * Can be a string (base58), Identifier object, or 32-byte Uint8Array.
+   * Required for Style B.
+   */
+  identityId?: IdentifierLike;
+
+  /**
+   * The ID/index of the public key on the identity to use for signing.
+   * Required for Style B.
+   */
+  publicKeyId?: number;
+
+  /**
+   * The 32-byte private key corresponding to the public key.
+   * Required for Style B.
+   */
+  privateKey?: Uint8Array;
+
+  // === Common options ===
 
   /**
    * Optional callback called after the preorder document is submitted.
@@ -221,6 +273,70 @@ fn extract_callback_from_options(
     })?;
 
     Ok(Some(func))
+}
+
+/// Extracts an optional u32 field from options.
+fn extract_optional_u32_from_options(
+    options: &JsValue,
+    field_name: &str,
+) -> Result<Option<u32>, WasmSdkError> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
+        .map_err(|_| WasmSdkError::invalid_argument(format!("Failed to get {}", field_name)))?;
+
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+
+    let num = value
+        .as_f64()
+        .ok_or_else(|| WasmSdkError::invalid_argument(format!("{} must be a number", field_name)))?;
+
+    Ok(Some(num as u32))
+}
+
+/// Extracts an optional Uint8Array field from options as [u8; 32].
+fn extract_optional_bytes32_from_options(
+    options: &JsValue,
+    field_name: &str,
+) -> Result<Option<[u8; 32]>, WasmSdkError> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
+        .map_err(|_| WasmSdkError::invalid_argument(format!("Failed to get {}", field_name)))?;
+
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+
+    let array = js_sys::Uint8Array::new(&value);
+    let bytes = array.to_vec();
+
+    if bytes.len() != 32 {
+        return Err(WasmSdkError::invalid_argument(format!(
+            "{} must be exactly 32 bytes, got {}",
+            field_name,
+            bytes.len()
+        )));
+    }
+
+    let mut result = [0u8; 32];
+    result.copy_from_slice(&bytes);
+    Ok(Some(result))
+}
+
+/// Checks if options contains simple credentials (Style B).
+fn has_simple_credentials(options: &JsValue) -> bool {
+    let identity_id = js_sys::Reflect::get(options, &JsValue::from_str("identityId"))
+        .map(|v| !v.is_undefined() && !v.is_null())
+        .unwrap_or(false);
+
+    let public_key_id = js_sys::Reflect::get(options, &JsValue::from_str("publicKeyId"))
+        .map(|v| !v.is_undefined() && !v.is_null())
+        .unwrap_or(false);
+
+    let private_key = js_sys::Reflect::get(options, &JsValue::from_str("privateKey"))
+        .map(|v| !v.is_undefined() && !v.is_null())
+        .unwrap_or(false);
+
+    identity_id && public_key_id && private_key
 }
 
 /// DPNS contract ID constant
@@ -330,7 +446,11 @@ impl WasmSdk {
     /// 3. Creates and submits the domain document
     /// 4. Returns the result with both document IDs
     ///
-    /// @param options - Registration options including label, identity, key, and signer
+    /// Supports two parameter styles:
+    /// - **Style A (typed objects)**: Pass `identity`, `identityKey`, and `signer`
+    /// - **Style B (simple credentials)**: Pass `identityId`, `publicKeyId`, and `privateKey`
+    ///
+    /// @param options - Registration options including label and either typed objects or simple credentials
     /// @returns Promise that resolves to the registration result
     #[wasm_bindgen(js_name = "dpnsRegisterName")]
     pub async fn dpns_register_name(
@@ -339,21 +459,10 @@ impl WasmSdk {
     ) -> Result<RegisterDpnsNameResult, WasmSdkError> {
         let options_value: JsValue = options.into();
 
-        // Extract label from options
+        // Extract label from options (required for both styles)
         let label = extract_string_from_options(&options_value, "label")?;
 
-        // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
-
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_public_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
-        // Extract optional preorder callback
+        // Extract optional preorder callback (common to both styles)
         let preorder_callback = extract_callback_from_options(&options_value, "preorderCallback")?;
 
         // Set up the callback if provided
@@ -390,15 +499,51 @@ impl WasmSdk {
             None
         };
 
-        let input = RegisterDpnsNameInput {
-            label,
-            identity,
-            identity_public_key,
-            signer,
-            preorder_callback: callback_box,
-        };
+        // Check which style is being used and route accordingly
+        let result = if has_simple_credentials(&options_value) {
+            // Style B: Simple credentials
+            let identity_id_value =
+                js_sys::Reflect::get(&options_value, &JsValue::from_str("identityId"))
+                    .map_err(|_| WasmSdkError::invalid_argument("Failed to get identityId"))?;
+            let identity_id = identifier_from_js(&identity_id_value, "identityId")?;
 
-        let result = self.as_ref().register_dpns_name(input).await?;
+            let public_key_id = extract_optional_u32_from_options(&options_value, "publicKeyId")?
+                .ok_or_else(|| WasmSdkError::invalid_argument("publicKeyId is required"))?;
+
+            let private_key = extract_optional_bytes32_from_options(&options_value, "privateKey")?
+                .ok_or_else(|| WasmSdkError::invalid_argument("privateKey is required"))?;
+
+            // Use the credentials-based method
+            self.as_ref()
+                .register_dpns_name_with_credentials(
+                    label,
+                    identity_id,
+                    public_key_id,
+                    private_key,
+                    callback_box,
+                )
+                .await?
+        } else {
+            // Style A: Typed objects
+            let identity: Identity =
+                IdentityWasm::try_from_options(&options_value, "identity")?.into();
+
+            let identity_key_wasm =
+                IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+            let identity_public_key: IdentityPublicKey = identity_key_wasm.into();
+
+            let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+
+            let input = RegisterDpnsNameInput {
+                label,
+                identity,
+                identity_public_key,
+                signer,
+                preorder_callback: callback_box,
+            };
+
+            self.as_ref().register_dpns_name(input).await?
+        };
 
         // Clean up callback
         PREORDER_CALLBACK.with(|cb| {

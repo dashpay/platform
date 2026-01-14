@@ -15,9 +15,10 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
+use simple_signer::signer::SimpleSigner;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -359,6 +360,81 @@ impl Sdk {
             domain_document: platform_domain_document,
             full_domain_name: format!("{}.dash", normalized_label),
         })
+    }
+
+    /// Register a DPNS username using simple credentials
+    ///
+    /// This is a convenience method that accepts simple credential parameters instead of
+    /// requiring pre-constructed typed objects. It internally fetches the identity,
+    /// retrieves the public key, and creates the signer.
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - The label for the domain (e.g., "alice" for "alice.dash")
+    /// * `identity_id` - The identifier of the identity that will own the domain
+    /// * `public_key_id` - The ID of the public key to use for signing
+    /// * `private_key` - The 32-byte private key corresponding to the public key
+    /// * `preorder_callback` - Optional callback to be called with the preorder document result
+    ///
+    /// # Returns
+    ///
+    /// Returns a `RegisterDpnsNameResult` containing both created documents and the full domain name
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The identity cannot be fetched
+    /// - The public key is not found on the identity
+    /// - The DPNS contract cannot be fetched
+    /// - Document creation or submission fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let result = sdk.register_dpns_name_with_credentials(
+    ///     "alice".to_string(),
+    ///     identity_id,
+    ///     1,  // public key ID
+    ///     private_key_bytes,
+    ///     None,
+    /// ).await?;
+    /// ```
+    pub async fn register_dpns_name_with_credentials(
+        &self,
+        label: String,
+        identity_id: Identifier,
+        public_key_id: KeyID,
+        private_key: [u8; 32],
+        preorder_callback: Option<PreorderCallback>,
+    ) -> Result<RegisterDpnsNameResult, Error> {
+        // Fetch the identity
+        let identity = Identity::fetch(self, identity_id)
+            .await?
+            .ok_or_else(|| Error::Generic(format!("Identity {} not found", identity_id)))?;
+
+        // Get the public key by ID
+        let identity_public_key = identity
+            .get_public_key_by_id(public_key_id)
+            .ok_or_else(|| {
+                Error::Generic(format!(
+                    "Public key with ID {} not found on identity {}",
+                    public_key_id, identity_id
+                ))
+            })?
+            .clone();
+
+        // Create the signer with the private key
+        let signer = SimpleSigner::from_private_key(identity_public_key.clone(), private_key);
+
+        // Call the existing register method
+        self.register_dpns_name(RegisterDpnsNameInput {
+            label,
+            identity,
+            identity_public_key,
+            signer,
+            preorder_callback,
+        })
+        .await
     }
 
     /// Check if a DPNS name is available

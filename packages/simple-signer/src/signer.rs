@@ -17,7 +17,10 @@ use dpp::{bls_signatures, dashcore, ed25519_dalek, ProtocolError};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
-/// This simple signer is only to be used in tests
+/// A simple signer implementation for signing operations with identity keys.
+///
+/// This signer stores private keys in memory and can be used for both testing
+/// and production scenarios where convenience methods are preferred.
 #[derive(Default, Clone, PartialEq, Encode, Decode)]
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
@@ -80,6 +83,72 @@ impl SimpleSigner {
     /// Add keys to the signer
     pub fn add_address_keys<I: IntoIterator<Item = ([u8; 20], [u8; 32])>>(&mut self, keys: I) {
         self.address_private_keys_in_creation.extend(keys)
+    }
+
+    /// Add a key from a WIF-encoded private key string.
+    ///
+    /// This method parses the WIF string and adds the key to the signer.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_public_key` - The identity public key associated with this private key
+    /// * `wif` - The WIF-encoded private key string
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the key was added successfully, or an error if WIF parsing fails.
+    pub fn add_key_from_wif(
+        &mut self,
+        identity_public_key: IdentityPublicKey,
+        wif: &str,
+    ) -> Result<(), ProtocolError> {
+        let private_key = dashcore::PrivateKey::from_wif(wif)
+            .map_err(|e| ProtocolError::Generic(format!("Invalid WIF private key: {}", e)))?;
+        self.add_identity_public_key(identity_public_key, private_key.inner.secret_bytes());
+        Ok(())
+    }
+
+    /// Create a new SimpleSigner with a single key loaded from WIF.
+    ///
+    /// This is a convenience method for creating a signer with a single key.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_public_key` - The identity public key associated with this private key
+    /// * `wif` - The WIF-encoded private key string
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `SimpleSigner` with the key loaded, or an error if WIF parsing fails.
+    pub fn from_wif(
+        identity_public_key: IdentityPublicKey,
+        wif: &str,
+    ) -> Result<Self, ProtocolError> {
+        let mut signer = Self::default();
+        signer.add_key_from_wif(identity_public_key, wif)?;
+        Ok(signer)
+    }
+
+    /// Create a new SimpleSigner with a single key from raw bytes.
+    ///
+    /// This is a convenience method for creating a signer with a single key
+    /// when you already have the private key as raw bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_public_key` - The identity public key associated with this private key
+    /// * `private_key` - The 32-byte private key
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `SimpleSigner` with the key loaded.
+    pub fn from_private_key(
+        identity_public_key: IdentityPublicKey,
+        private_key: [u8; 32],
+    ) -> Self {
+        let mut signer = Self::default();
+        signer.add_identity_public_key(identity_public_key, private_key);
+        signer
     }
 
     /// Commit keys in creation

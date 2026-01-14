@@ -33,6 +33,38 @@ export class DpnsFacade {
     return w.dpnsResolveName(name);
   }
 
+  /**
+   * Register a DPNS username on Dash Platform.
+   *
+   * Two parameter styles are supported:
+   *
+   * **Style A - Typed objects (full control):**
+   * ```typescript
+   * const identity = await sdk.identities.fetch(identityId);
+   * const identityKey = identity.getPublicKeyById(publicKeyId);
+   * const signer = new IdentitySigner();
+   * signer.addKeyFromWif(privateKeyWif);
+   *
+   * await sdk.dpns.registerName({
+   *   label: 'alice',
+   *   identity,
+   *   identityKey,
+   *   signer,
+   * });
+   * ```
+   *
+   * **Style B - Simple credentials (convenience):**
+   * ```typescript
+   * await sdk.dpns.registerName({
+   *   label: 'alice',
+   *   identityId: '...',    // Identity ID (string, Identifier, or bytes)
+   *   publicKeyId: 1,       // Key index on the identity
+   *   privateKey: bytes,    // 32-byte Uint8Array
+   * });
+   * ```
+   *
+   * Style B automatically fetches the identity and retrieves the public key internally.
+   */
   async registerName(options: wasm.DpnsRegisterNameOptions): Promise<wasm.RegisterDpnsNameResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.dpnsRegisterName(options);
