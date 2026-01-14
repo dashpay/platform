@@ -27,7 +27,9 @@ dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "e7792c
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+bincode = { git = "https://github.com/dashpay/bincode", tag = "v2.0.0-rc.3", version = "=2.0.0-rc.3", features = [
+    "serde",
+] }
 
 # Async runtime
 tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }

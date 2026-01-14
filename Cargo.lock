@@ -435,8 +435,7 @@ dependencies = [
 [[package]]
 name = "bincode"
 version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11ea1a0346b94ef188834a65c068a03aec181c94896d481d7a0a40d85b0ce95"
+source = "git+https://github.com/dashpay/bincode?tag=v2.0.0-rc.3#aada4bb4cb457677a4b8e47572ae7ca8dd44927c"
 dependencies = [
  "bincode_derive",
  "serde",
@@ -445,8 +444,7 @@ dependencies = [
 [[package]]
 name = "bincode_derive"
 version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
+source = "git+https://github.com/dashpay/bincode?tag=v2.0.0-rc.3#aada4bb4cb457677a4b8e47572ae7ca8dd44927c"
 dependencies = [
  "virtue 0.0.13",
 ]

@@ -16,7 +16,9 @@ state-transitions = [
 ]
 
 [dependencies]
-bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+bincode = { git = "https://github.com/dashpay/bincode", tag = "v2.0.0-rc.3", version = "=2.0.0-rc.3", features = [
+    "serde",
+] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "ed25519-dalek",
 ] }
