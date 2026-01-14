@@ -4,13 +4,17 @@ describe('Protocol versions', function describeProtocolVersions() {
   this.timeout(60000);
 
   let client;
-  let builder;
+  let evonodeProTxHash;
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    const builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
+
+    // Get the proTxHash from the node status
+    const status = await client.getStatus();
+    evonodeProTxHash = status.node.proTxHash;
   });
 
   after(() => {
@@ -31,14 +35,16 @@ describe('Protocol versions', function describeProtocolVersions() {
   });
 
   it('lists protocol upgrade vote statuses', async () => {
-    const START_PROTX = '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113';
-    const res = await client.getProtocolVersionUpgradeVoteStatus(START_PROTX, 50);
+    // Use evonodeProTxHash if available, otherwise start from beginning with empty string
+    const startProTxHash = evonodeProTxHash || '';
+    const res = await client.getProtocolVersionUpgradeVoteStatus(startProTxHash, 50);
     expect(res).to.be.instanceOf(Map);
   });
 
   it('lists protocol upgrade vote statuses with proof', async () => {
-    const START_PROTX = '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113';
-    const res = await client.getProtocolVersionUpgradeVoteStatusWithProofInfo(START_PROTX, 50);
+    // Use evonodeProTxHash if available, otherwise start from beginning with empty string
+    const startProTxHash = evonodeProTxHash || '';
+    const res = await client.getProtocolVersionUpgradeVoteStatusWithProofInfo(startProTxHash, 50);
     expect(res).to.be.ok();
     expect(res.data).to.be.instanceOf(Map);
     expect(res.proof).to.be.ok();

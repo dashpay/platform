@@ -132,6 +132,7 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub update_state_cache: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
+    pub should_checkpoint: OptionalFeatureVersion,
     pub update_checkpoints: OptionalFeatureVersion,
 }
 
@@ -174,4 +175,6 @@ pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub process_raw_state_transitions: FeatureVersion,
     pub decode_raw_state_transitions: FeatureVersion,
     pub validate_fees_of_event: FeatureVersion,
+    pub store_address_balances_to_recent_block_storage: OptionalFeatureVersion,
+    pub cleanup_recent_block_storage_address_balances: OptionalFeatureVersion,
 }

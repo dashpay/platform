@@ -13,6 +13,7 @@ use dapi_grpc::mock::Mockable;
 pub use futures::future::BoxFuture;
 use std::any;
 use std::fmt::Debug;
+use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use tonic_channel::{
@@ -22,6 +23,18 @@ pub use tonic_channel::{
 pub use wasm_channel::{
     create_channel, CoreGrpcClient, PlatformGrpcClient, WasmBackonSleeper as BackonSleeper,
 };
+
+/// Sleep for the given duration.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn sleep(duration: Duration) {
+    tokio::time::sleep(duration).await;
+}
+
+/// Sleep for the given duration.
+#[cfg(target_arch = "wasm32")]
+pub async fn sleep(duration: Duration) {
+    wasm_channel::into_send_sleep(duration).await;
+}
 
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
@@ -69,6 +82,24 @@ pub enum TransportError {
     ),
 }
 
+impl Clone for TransportError {
+    fn clone(&self) -> Self {
+        match self {
+            TransportError::Grpc(status) => {
+                // tonic::Status doesn't implement Clone, so we reconstruct it
+                // from its components. Note: this loses the original error source.
+                let cloned_status = dapi_grpc::tonic::Status::with_details_and_metadata(
+                    status.code(),
+                    status.message(),
+                    status.details().to_vec().into(),
+                    status.metadata().clone(),
+                );
+                TransportError::Grpc(cloned_status)
+            }
+        }
+    }
+}
+
 impl CanRetry for TransportError {
     fn can_retry(&self) -> bool {
         match self {
@@ -89,6 +120,19 @@ impl Mockable for TransportError {
     #[cfg(feature = "mocks")]
     fn mock_deserialize(data: &[u8]) -> Option<Self> {
         Some(serde_json::from_slice(data).expect("deserialize Transport error"))
+    }
+}
+
+/// Serialization of boxed [TransportError].
+impl Mockable for Box<TransportError> {
+    #[cfg(feature = "mocks")]
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        self.as_ref().mock_serialize()
+    }
+
+    #[cfg(feature = "mocks")]
+    fn mock_deserialize(data: &[u8]) -> Option<Self> {
+        TransportError::mock_deserialize(data).map(Box::new)
     }
 }
 

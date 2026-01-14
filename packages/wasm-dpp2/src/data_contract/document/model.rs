@@ -2,6 +2,7 @@ use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_options;
 use crate::serialization;
 use crate::utils::ToSerdeJSONExt;
 use dpp::document::serialization_traits::{
@@ -625,3 +626,5 @@ impl DocumentWasm {
         Ok(identifier.to_vec())
     }
 }
+
+impl_try_from_options!(DocumentWasm, "Document");

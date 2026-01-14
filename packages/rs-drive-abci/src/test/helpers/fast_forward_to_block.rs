@@ -106,6 +106,7 @@ pub(crate) fn process_epoch_change(
             is_epoch_change: true,
         }),
         unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+        block_address_balance_changes: Default::default(),
         block_platform_state: platform_state,
         proposer_results: None,
     }

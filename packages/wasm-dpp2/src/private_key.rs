@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::public_key::PublicKeyWasm;
+use crate::utils::IntoWasm;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::hashes::hex::FromHex;
 use dpp::dashcore::key::Secp256k1;
@@ -122,5 +123,29 @@ impl PrivateKeyWasm {
         let secp = Secp256k1::new();
 
         self.0.public_key(&secp).pubkey_hash().to_hex()
+    }
+}
+
+impl PrivateKeyWasm {
+    /// Try to extract a PrivateKey from an options object field.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to a PrivateKeyWasm.
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let key_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if key_js.is_undefined() || key_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        key_js
+            .to_wasm::<PrivateKeyWasm>("PrivateKey")
+            .map(|boxed| (*boxed).clone())
     }
 }

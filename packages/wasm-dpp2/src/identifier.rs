@@ -227,6 +227,13 @@ impl IdentifierWasm {
         self.0.to_string(Base58)
     }
 
+    /// Returns the identifier as a Base58 string.
+    /// This is the default string representation for JavaScript.
+    #[wasm_bindgen(js_name = "toString")]
+    pub fn to_string_js(&self) -> String {
+        self.to_base58()
+    }
+
     /// Returns the identifier as a Base58 string for JSON serialization.
     /// This method is called automatically when the object is serialized to JSON.
     #[wasm_bindgen(js_name = "toJSON")]
@@ -285,5 +292,25 @@ impl IdentifierWasm {
 impl IdentifierWasm {
     pub fn to_slice(&self) -> [u8; 32] {
         *self.0.as_bytes()
+    }
+
+    /// Try to extract an Identifier from an options object field.
+    ///
+    /// This helper reads the specified field from an options object and converts it
+    /// to an IdentifierWasm. Accepts Identifier, Uint8Array, or string (Base58/hex).
+    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        let id_js =
+            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
+            })?;
+
+        if id_js.is_undefined() || id_js.is_null() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' is required",
+                field_name
+            )));
+        }
+
+        IdentifierWasm::try_from(&id_js)
     }
 }

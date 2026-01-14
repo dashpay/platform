@@ -50,6 +50,7 @@ enum KnownPath {
     PoolsRoot,                                                        //Level 1
     PoolsInsideEpoch(Epoch),                                          //Level 2
     PreFundedSpecializedBalancesRoot,                                 //Level 1
+    SavedBlockTransactionsRoot,                                       //Level 1
     SpentAssetLockTransactionsRoot,                                   //Level 1
     MiscRoot,                                                         //Level 1
     WithdrawalTransactionsRoot,                                       //Level 1
@@ -83,6 +84,7 @@ impl From<RootTree> for KnownPath {
             }
             RootTree::Pools => KnownPath::PoolsRoot,
             RootTree::PreFundedSpecializedBalances => KnownPath::PreFundedSpecializedBalancesRoot,
+            RootTree::SavedBlockTransactions => KnownPath::SavedBlockTransactionsRoot,
             RootTree::SpentAssetLockTransactions => KnownPath::SpentAssetLockTransactionsRoot,
             RootTree::Misc => KnownPath::MiscRoot,
             RootTree::WithdrawalTransactions => KnownPath::WithdrawalTransactionsRoot,

@@ -1,5 +1,4 @@
 import * as wasm from '../wasm.js';
-import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
 export class VotingFacade {
@@ -38,10 +37,8 @@ export class VotingFacade {
     return w.getVotePollsByEndDateWithProofInfo(query ?? null);
   }
 
-  async masternodeVote(args: { masternodeProTxHash: string; contractId: wasm.IdentifierLike; documentTypeName: string; indexName: string; indexValues: string | any[]; voteChoice: string; votingKeyWif: string }): Promise<any> {
-    const { masternodeProTxHash, contractId, documentTypeName, indexName, indexValues, voteChoice, votingKeyWif } = args;
-    const indexValuesStr = typeof indexValues === 'string' ? indexValues : asJsonString(indexValues)!;
+  async masternodeVote(options: wasm.MasternodeVoteOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.masternodeVote(masternodeProTxHash, contractId, documentTypeName, indexName, indexValuesStr, voteChoice, votingKeyWif);
+    return w.masternodeVote(options);
   }
 }

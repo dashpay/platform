@@ -2,28 +2,31 @@
 //!
 //! This module provides WASM bindings for address fund operations like transfers and withdrawals.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::error::WasmSdkError;
 use crate::queries::address::PlatformAddressInfoWasm;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::address_funds::PlatformAddress;
+use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::core_script::CoreScript;
+use dash_sdk::dpp::prelude::AddressNonce;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
-use dash_sdk::platform::{Fetch, Identifier, Identity};
+use dash_sdk::platform::{FetchMany, Identity};
+use dash_sdk::Sdk;
 use drive_proof_verifier::types::{AddressInfo, IndexMap};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
-use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::utils::IntoWasm;
 use wasm_dpp2::{
     fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
-    CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, PlatformAddressOutputWasm,
-    PlatformAddressSignerWasm, PlatformAddressWasm, PoolingWasm,
+    CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, IdentityWasm,
+    PlatformAddressOutputWasm, PlatformAddressSignerWasm, PlatformAddressWasm, PoolingWasm,
 };
 
 /// Converts address infos from SDK response to a JavaScript Map.
@@ -200,7 +203,6 @@ impl WasmSdk {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityTopUpFromAddressesOptionsInput {
-    identity_id: IdentifierWasm,
     inputs: Vec<PlatformAddressOutputWasm>,
 }
 
@@ -252,9 +254,9 @@ const IDENTITY_TOP_UP_OPTIONS_TS: &'static str = r#"
  */
 export interface IdentityTopUpFromAddressesOptions {
   /**
-   * The identity ID to top up.
+   * The identity to top up.
    */
-  identityId: Identifier;
+  identity: Identity;
 
   /**
    * Array of input addresses with amounts to use for top up.
@@ -287,12 +289,11 @@ impl WasmSdk {
     /// Top up an identity from Platform addresses.
     ///
     /// This method handles the complete top up flow:
-    /// 1. Fetches the identity from Platform
-    /// 2. Fetches current nonces for all input addresses
-    /// 3. Builds and signs the identity top up transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 1. Fetches current nonces for all input addresses
+    /// 2. Builds and signs the identity top up transition
+    /// 3. Broadcasts and waits for confirmation
     ///
-    /// @param options - Top up options including identity ID, inputs, and signer
+    /// @param options - Top up options including identity, inputs, and signer
     /// @returns Promise resolving to result with updated address infos and new identity balance
     #[wasm_bindgen(js_name = "identityTopUpFromAddresses")]
     pub async fn identity_top_up_from_addresses(
@@ -304,15 +305,8 @@ impl WasmSdk {
         // Deserialize and validate options
         let parsed = deserialize_identity_top_up_options(options_value.clone())?;
 
-        // Convert identity ID
-        let identity_id: Identifier = parsed.identity_id.into();
-
-        // Fetch the identity
-        let identity = Identity::fetch_by_identifier(self.as_ref(), identity_id)
-            .await?
-            .ok_or_else(|| {
-                WasmSdkError::not_found(format!("Identity {} not found", identity_id))
-            })?;
+        // Extract identity from options
+        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Convert inputs to map
         let inputs_map = outputs_to_btree_map(parsed.inputs);
@@ -466,14 +460,8 @@ impl WasmSdk {
         let change_output = parsed.change_output.map(|output| output.into_inner());
 
         // Extract output script from options
-        let output_script_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("outputScript"))
-                .map_err(|_| WasmSdkError::invalid_argument("outputScript is required"))?;
-
-        let output_script: CoreScript = output_script_js
-            .to_wasm::<CoreScriptWasm>("CoreScript")?
-            .clone()
-            .into();
+        let output_script: CoreScript =
+            CoreScriptWasm::try_from_options(&options_value, "outputScript")?.into();
 
         // Extract signer from options
         let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
@@ -509,12 +497,11 @@ impl WasmSdk {
     /// Transfer credits from an identity to Platform addresses.
     ///
     /// This method handles the complete transfer flow:
-    /// 1. Fetches the identity from Platform
-    /// 2. Finds the appropriate transfer key to use for signing (if signingTransferKeyId specified)
-    /// 3. Builds and signs the identity credit transfer to addresses transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 1. Finds the appropriate transfer key to use for signing (if signingTransferKeyId specified)
+    /// 2. Builds and signs the identity credit transfer to addresses transition
+    /// 3. Broadcasts and waits for confirmation
     ///
-    /// @param options - Transfer options including identity ID, outputs, and signer
+    /// @param options - Transfer options including identity, outputs, and signer
     /// @returns Promise resolving to result with updated address infos and new identity balance
     #[wasm_bindgen(js_name = "identityTransferToAddresses")]
     pub async fn identity_transfer_to_addresses(
@@ -526,15 +513,8 @@ impl WasmSdk {
         // Deserialize and validate options
         let parsed = deserialize_identity_transfer_options(options_value.clone())?;
 
-        // Convert identity ID
-        let identity_id: Identifier = parsed.identity_id.into();
-
-        // Fetch the identity
-        let identity = Identity::fetch_by_identifier(self.as_ref(), identity_id)
-            .await?
-            .ok_or_else(|| {
-                WasmSdkError::not_found(format!("Identity {} not found", identity_id))
-            })?;
+        // Extract identity from options
+        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Convert outputs to map (recipient addresses with amounts)
         let outputs_map = outputs_to_btree_map(parsed.outputs);
@@ -581,7 +561,6 @@ impl WasmSdk {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityTransferToAddressesOptionsInput {
-    identity_id: IdentifierWasm,
     outputs: Vec<PlatformAddressOutputWasm>,
     #[serde(default)]
     signing_transfer_key_id: Option<u32>,
@@ -635,9 +614,9 @@ const IDENTITY_TRANSFER_OPTIONS_TS: &'static str = r#"
  */
 export interface IdentityTransferToAddressesOptions {
   /**
-   * The identity ID to transfer credits from.
+   * The identity to transfer credits from.
    */
-  identityId: Identifier;
+  identity: Identity;
 
   /**
    * Array of output addresses with amounts to receive.
@@ -776,7 +755,6 @@ impl WasmSdk {
         use dash_sdk::platform::transition::top_up_address::TopUpAddress;
         use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
         use wasm_dpp2::private_key::PrivateKeyWasm;
-        use wasm_dpp2::utils::IntoWasm;
 
         let options_value: JsValue = options.into();
 
@@ -784,22 +762,12 @@ impl WasmSdk {
         let parsed = deserialize_address_funding_options(options_value.clone())?;
 
         // Extract asset lock proof from options
-        let asset_lock_proof_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockProof"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockProof is required"))?;
-        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof = asset_lock_proof_js
-            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
-            .clone()
-            .into();
+        let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
+            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
-        let asset_lock_private_key_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("assetLockPrivateKey"))
-                .map_err(|_| WasmSdkError::invalid_argument("assetLockPrivateKey is required"))?;
-        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey = asset_lock_private_key_js
-            .to_wasm::<PrivateKeyWasm>("PrivateKey")?
-            .clone()
-            .into();
+        let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
+            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Convert outputs to map (address -> optional amount)
         let outputs_map = outputs_to_optional_btree_map(parsed.outputs);
@@ -945,6 +913,14 @@ impl WasmSdk {
     ///
     /// @param options - Creation options including identity, inputs, and signers
     /// @returns Promise resolving to result with created identity and updated address infos
+    ///
+    /// ## Unstable
+    ///
+    /// This function is planned to be changed to require address nonces in the options to avoid potential privacy leaks.
+    // TODO: This function should require address nonces in the `IdentityCreateFromAddressesOptionsJs`
+    // to avoid potential leak of address owner IP address. Currently, it fetches nonces internally which may expose address usage.
+    // We need to implement address sync mechanism ([`sync_address_balances`](crate::platform::Platform::sync_address_balances))
+    // to allow users to update nonces in a privacy-preserving way before calling this function.
     #[wasm_bindgen(js_name = "identityCreateFromAddresses")]
     pub async fn identity_create_from_addresses(
         &self,
@@ -968,7 +944,8 @@ impl WasmSdk {
 
         // Convert inputs to map (address -> amount)
         let inputs_map = outputs_to_btree_map(parsed.inputs);
-
+        // Extend inputs with nonces
+        let inputs = fetch_nonces_into_address_map(self.inner_sdk(), inputs_map).await?;
         // Convert change output if provided
         let change_output = parsed.change_output.map(|output| output.into_inner());
 
@@ -987,7 +964,7 @@ impl WasmSdk {
         let (created_identity, address_infos) = identity
             .put_with_address_funding(
                 self.inner_sdk(),
-                inputs_map,
+                inputs,
                 change_output,
                 &identity_signer,
                 &address_signer,
@@ -1003,4 +980,63 @@ impl WasmSdk {
             address_infos: address_infos_to_js_map(address_infos, "identity creation")?,
         })
     }
+}
+
+/// Fetch nonces for a set of Platform addresses and merge into provided map.
+///
+/// Credits provided in the inputs_map are preserved.
+///
+/// Returns error when any address is not found or has insufficient balance.
+async fn fetch_nonces_into_address_map(
+    sdk: &Sdk,
+    inputs_map: BTreeMap<PlatformAddress, Credits>,
+) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, WasmSdkError> {
+    // collect addresses
+    let input_addresses: BTreeSet<PlatformAddress> =
+        inputs_map.keys().cloned().collect::<BTreeSet<_>>();
+
+    // fetch nonces
+    let fetched_addresses = dash_sdk::query_types::AddressInfo::fetch_many(sdk, input_addresses)
+        .await
+        .map_err(|e| {
+            WasmSdkError::generic(format!(
+                "Failed to fetch address infos for identity creation: {}",
+                e
+            ))
+        })?
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|info| (k, info)))
+        .collect::<BTreeMap<_, _>>();
+
+    // sanity check - filter_map above should have removed any non-existing addresses
+    if inputs_map.len() != fetched_addresses.len() {
+        return Err(WasmSdkError::invalid_argument(
+            "Some input addresses were not found when fetching nonces",
+        ));
+    }
+    // merge nonces into inputs map
+    let inputs = inputs_map
+        .into_iter()
+        .zip(fetched_addresses)
+        .map(
+            |((address_requested, amount), (address_received, info_received))| {
+                if address_requested != address_received {
+                    Err(WasmSdkError::invalid_argument(
+                        format!("Address mismatch when merging nonces for identity creation ({} vs {}); platform bug?",
+                            address_requested, address_received)
+                    ))?
+                }
+                if amount > info_received.balance {
+                    Err(WasmSdkError::invalid_argument(format!(
+                        "Input address {} has insufficient balance: requested {}, available {}",
+                        address_requested, amount, info_received.balance
+                    )))?
+                }
+                let nonce = info_received.nonce;
+                Ok((address_requested, (nonce, amount)))
+            },
+        )
+        .collect::<Result<BTreeMap<_, _>, WasmSdkError>>()?;
+
+    Ok(inputs)
 }

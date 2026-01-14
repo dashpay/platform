@@ -1,7 +1,19 @@
 import os from 'os';
 import path from 'path';
-import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
+import { DASHMATE_HELPER_DOCKER_IMAGE, NETWORK_LOCAL } from '../constants.js';
 import convertObjectToEnvs from './convertObjectToEnvs.js';
+
+/**
+ * Maps dashmate network name to Dash Core network name.
+ * @param {string} network - dashmate network (local, devnet, testnet, mainnet)
+ * @returns {string} Dash Core network name (regtest, devnet, testnet, mainnet)
+ */
+function getDashCoreNetwork(network) {
+  if (network === NETWORK_LOCAL) {
+    return 'regtest';
+  }
+  return network;
+}
 
 /**
  * @param {ConfigFile} configFile
@@ -87,6 +99,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DISABLED: !config.get('platform.gateway.rateLimiter.metrics.enabled'),
       PLATFORM_DRIVE_ABCI_METRICS_URL: driveAbciMetricsUrl,
+      DASH_CORE_NETWORK: getDashCoreNetwork(config.get('network')),
       ...convertObjectToEnvs(config.getOptions()),
     };
 

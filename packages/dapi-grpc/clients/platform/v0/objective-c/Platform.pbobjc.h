@@ -35,8 +35,12 @@ CF_EXTERN_C_BEGIN
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
 @class GetAddressInfoResponse_GetAddressInfoResponseV0;
+@class GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0;
+@class GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0;
 @class GetAddressesInfosRequest_GetAddressesInfosRequestV0;
 @class GetAddressesInfosResponse_GetAddressesInfosResponseV0;
+@class GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0;
+@class GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0;
 @class GetConsensusParamsRequest_GetConsensusParamsRequestV0;
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
@@ -8017,6 +8021,154 @@ GPB_FINAL @interface GetAddressesInfosResponse_GetAddressesInfosResponseV0 : GPB
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetAddressesInfosResponse_GetAddressesInfosResponseV0_ClearResultOneOfCase(GetAddressesInfosResponse_GetAddressesInfosResponseV0 *message);
+
+#pragma mark - GetAddressesTrunkStateRequest
+
+typedef GPB_ENUM(GetAddressesTrunkStateRequest_FieldNumber) {
+  GetAddressesTrunkStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressesTrunkStateRequest_Version_OneOfCase) {
+  GetAddressesTrunkStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesTrunkStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressesTrunkStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesTrunkStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressesTrunkStateRequest_ClearVersionOneOfCase(GetAddressesTrunkStateRequest *message);
+
+#pragma mark - GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0
+
+GPB_FINAL @interface GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0 : GPBMessage
+
+@end
+
+#pragma mark - GetAddressesTrunkStateResponse
+
+typedef GPB_ENUM(GetAddressesTrunkStateResponse_FieldNumber) {
+  GetAddressesTrunkStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressesTrunkStateResponse_Version_OneOfCase) {
+  GetAddressesTrunkStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesTrunkStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressesTrunkStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesTrunkStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressesTrunkStateResponse_ClearVersionOneOfCase(GetAddressesTrunkStateResponse *message);
+
+#pragma mark - GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0
+
+typedef GPB_ENUM(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0_FieldNumber) {
+  GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0_FieldNumber_Proof = 2,
+  GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0_FieldNumber_Metadata = 3,
+};
+
+GPB_FINAL @interface GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+#pragma mark - GetAddressesBranchStateRequest
+
+typedef GPB_ENUM(GetAddressesBranchStateRequest_FieldNumber) {
+  GetAddressesBranchStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressesBranchStateRequest_Version_OneOfCase) {
+  GetAddressesBranchStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesBranchStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressesBranchStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesBranchStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressesBranchStateRequest_ClearVersionOneOfCase(GetAddressesBranchStateRequest *message);
+
+#pragma mark - GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0
+
+typedef GPB_ENUM(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber) {
+  GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_Key = 1,
+  GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_Depth = 2,
+};
+
+GPB_FINAL @interface GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+@property(nonatomic, readwrite) uint32_t depth;
+
+@end
+
+#pragma mark - GetAddressesBranchStateResponse
+
+typedef GPB_ENUM(GetAddressesBranchStateResponse_FieldNumber) {
+  GetAddressesBranchStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetAddressesBranchStateResponse_Version_OneOfCase) {
+  GetAddressesBranchStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetAddressesBranchStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetAddressesBranchStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetAddressesBranchStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetAddressesBranchStateResponse_ClearVersionOneOfCase(GetAddressesBranchStateResponse *message);
+
+#pragma mark - GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0
+
+typedef GPB_ENUM(GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0_FieldNumber) {
+  GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0_FieldNumber_MerkProof = 2,
+};
+
+GPB_FINAL @interface GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *merkProof;
+
+@end
 
 NS_ASSUME_NONNULL_END
 

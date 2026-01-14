@@ -702,11 +702,11 @@ mod tests {
 
         assert!(matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(
-                    StateError::DocumentTypeUpdateError(error)
-                ), _
-            ) if error.data_contract_id() == &contract.id()
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(ref error)
+                ), ..
+            } if error.data_contract_id() == &contract.id()
                 && error.document_type_name() == "card"
                 && error.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
         ));
@@ -812,12 +812,13 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Extract the error and check the message
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
+            if let [StateTransitionExecutionResult::PaidConsensusError {
+                error:
+                    ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                        error,
+                    )),
+                ..
+            }] = processing_result.execution_results().as_slice()
             {
                 assert_eq!(
                     error.action(),
@@ -943,12 +944,13 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Extract the error and check the message
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
+            if let [StateTransitionExecutionResult::PaidConsensusError {
+                error:
+                    ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                        error,
+                    )),
+                ..
+            }] = processing_result.execution_results().as_slice()
             {
                 assert_eq!(
                     error.action(),
@@ -1206,7 +1208,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1333,7 +1335,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1455,7 +1457,7 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1555,12 +1557,12 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::IdentityInTokenConfigurationNotFoundError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -2225,12 +2227,12 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::DataContractUpdateActionNotAllowedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
         }
     }
@@ -2322,7 +2324,7 @@ mod tests {
 
             assert_matches!(
                 res.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2413,7 +2415,7 @@ mod tests {
 
             if matches!(
                 outcome.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             ) {
                 platform
                     .drive
@@ -2511,10 +2513,10 @@ mod tests {
 
                     assert_matches!(
                         err.as_slice(),
-                        [StateTransitionExecutionResult::PaidConsensusError(
-                            ConsensusError::BasicError($error),
-                            _
-                        )]
+                        [StateTransitionExecutionResult::PaidConsensusError {
+                            error: ConsensusError::BasicError($error),
+                            ..
+                        }]
                     );
 
                     // original keyword docs must still be there
@@ -2703,7 +2705,7 @@ mod tests {
 
             assert_matches!(
                 res.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2789,7 +2791,7 @@ mod tests {
 
             if matches!(
                 outcome.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             ) {
                 platform
                     .drive
@@ -2894,10 +2896,10 @@ mod tests {
 
                     assert_matches!(
                         err.as_slice(),
-                        [StateTransitionExecutionResult::PaidConsensusError(
-                            ConsensusError::BasicError($error),
-                            _
-                        )]
+                        [StateTransitionExecutionResult::PaidConsensusError {
+                            error: ConsensusError::BasicError($error),
+                            ..
+                        }]
                     );
 
                     // original description docs must still be there
