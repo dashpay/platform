@@ -13,7 +13,7 @@ macro_rules! impl_tuple {
             $extra : PlatformVersionedBorrowDecode<'de>,
         )*
          {
-            fn platform_versioned_borrow_decode<BD: BorrowDecoder<'de, Context = ()>>(decoder: &mut BD, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+            fn platform_versioned_borrow_decode<BD: BorrowDecoder<'de, Context = crate::BincodeContext>>(decoder: &mut BD, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
                 Ok((
                     $first::platform_versioned_borrow_decode(decoder, platform_version)?,
                     $($extra :: platform_versioned_borrow_decode(decoder, platform_version)?, )*
@@ -28,7 +28,7 @@ macro_rules! impl_tuple {
             $extra : PlatformVersionedDecode,
         )*
         {
-            fn platform_versioned_decode<DE: Decoder<Context = ()>>(decoder: &mut DE, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
+            fn platform_versioned_decode<DE: Decoder<Context = crate::BincodeContext>>(decoder: &mut DE, platform_version: &PlatformVersion) -> Result<Self, DecodeError> {
                 Ok((
                     $first::platform_versioned_decode(decoder, platform_version)?,
                     $($extra :: platform_versioned_decode(decoder, platform_version)?, )*

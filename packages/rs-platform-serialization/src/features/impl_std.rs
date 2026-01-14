@@ -29,12 +29,16 @@ use std::{
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
 #[allow(deprecated)]
-pub fn platform_versioned_decode_from_std_read<D: Decode<()>, C: Config, R: std::io::Read>(
+pub fn platform_versioned_decode_from_std_read<
+    D: Decode<crate::BincodeContext>,
+    C: Config,
+    R: std::io::Read,
+>(
     src: &mut R,
     config: C,
 ) -> Result<D, DecodeError> {
     let reader = IoReader::new(src);
-    let mut decoder = DecoderImpl::<_, C, ()>::new(reader, config, ());
+    let mut decoder = DecoderImpl::<_, C, crate::BincodeContext>::new(reader, config, ());
     D::decode(&mut decoder)
 }
 
@@ -144,7 +148,7 @@ impl PlatformVersionEncode for CString {
 }
 
 impl PlatformVersionedDecode for CString {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -173,7 +177,7 @@ impl<T> PlatformVersionedDecode for Mutex<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -185,7 +189,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Mutex<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -214,7 +218,7 @@ impl<T> PlatformVersionedDecode for RwLock<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -226,7 +230,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for RwLock<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -246,7 +250,7 @@ impl PlatformVersionEncode for SystemTime {
 }
 
 impl PlatformVersionedDecode for SystemTime {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -266,7 +270,7 @@ impl PlatformVersionEncode for &'_ Path {
 }
 
 impl<'de> PlatformVersionedBorrowDecode<'de> for &'de Path {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -285,7 +289,7 @@ impl PlatformVersionEncode for PathBuf {
 }
 
 impl PlatformVersionedDecode for PathBuf {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -306,7 +310,7 @@ impl PlatformVersionEncode for IpAddr {
 }
 
 impl PlatformVersionedDecode for IpAddr {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -326,7 +330,7 @@ impl PlatformVersionEncode for Ipv4Addr {
 }
 
 impl PlatformVersionedDecode for Ipv4Addr {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -346,7 +350,7 @@ impl PlatformVersionEncode for Ipv6Addr {
 }
 
 impl PlatformVersionedDecode for Ipv6Addr {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -366,7 +370,7 @@ impl PlatformVersionEncode for SocketAddr {
 }
 
 impl PlatformVersionedDecode for SocketAddr {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -386,7 +390,7 @@ impl PlatformVersionEncode for SocketAddrV4 {
 }
 
 impl PlatformVersionedDecode for SocketAddrV4 {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -406,7 +410,7 @@ impl PlatformVersionEncode for SocketAddrV6 {
 }
 
 impl PlatformVersionedDecode for SocketAddrV6 {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -440,7 +444,7 @@ where
     V: PlatformVersionedDecode,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -466,7 +470,7 @@ where
     V: PlatformVersionedBorrowDecode<'de>,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -492,7 +496,7 @@ where
     T: PlatformVersionedDecode + Eq + Hash,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -517,7 +521,7 @@ where
     T: PlatformVersionedBorrowDecode<'de> + Eq + Hash,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {

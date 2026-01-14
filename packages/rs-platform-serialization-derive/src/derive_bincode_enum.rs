@@ -246,7 +246,13 @@ impl DeriveEnum {
                 Ok(())
             })?
             .generate_fn("platform_versioned_decode")
-            .with_generic_deps("__D", [format!("{}::de::Decoder<Context = ()>", crate_name)])
+            .with_generic_deps(
+                "__D",
+                [format!(
+                    "{}::de::Decoder<Context = {}::BincodeContext>",
+                    crate_name, crate_name
+                )],
+            )
             .with_arg("decoder", "&mut __D")
             .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))
@@ -353,7 +359,13 @@ impl DeriveEnum {
                 Ok(())
             })?
             .generate_fn("platform_versioned_borrow_decode")
-            .with_generic_deps("__D", [format!("{}::de::BorrowDecoder<'__de, Context = ()>", crate_name)])
+            .with_generic_deps(
+                "__D",
+                [format!(
+                    "{}::de::BorrowDecoder<'__de, Context = {}::BincodeContext>",
+                    crate_name, crate_name
+                )],
+            )
             .with_arg("decoder", "&mut __D")
             .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))

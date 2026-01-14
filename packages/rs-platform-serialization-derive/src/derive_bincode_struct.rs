@@ -86,7 +86,13 @@ impl DeriveStruct {
                 Ok(())
             })?
             .generate_fn("platform_versioned_decode")
-            .with_generic_deps("__D", [format!("{}::de::Decoder<Context = ()>", crate_name)])
+            .with_generic_deps(
+                "__D",
+                [format!(
+                    "{}::de::Decoder<Context = {}::BincodeContext>",
+                    crate_name, crate_name
+                )],
+            )
             .with_arg("decoder", "&mut __D")
             .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))
@@ -152,7 +158,13 @@ impl DeriveStruct {
                     where_constraints.push_parsed_constraint(bounds).map_err(|e| e.with_span(lit.span()))?;
                 } else {
                     for g in generics.iter_generics() {
-                        where_constraints.push_constraint(g, format!("{}::de::BorrowDecode<'__de, ()>", crate_name)).unwrap();
+                        where_constraints.push_constraint(
+                            g,
+                            format!(
+                                "{}::de::BorrowDecode<'__de, {}::BincodeContext>",
+                                crate_name, crate_name
+                            ),
+                        ).unwrap();
                     }
                     for lt in generics.iter_lifetimes() {
                         where_constraints.push_parsed_constraint(format!("'__de: '{}", lt.ident))?;
@@ -161,7 +173,13 @@ impl DeriveStruct {
                 Ok(())
             })?
             .generate_fn("platform_versioned_borrow_decode")
-            .with_generic_deps("__D", [format!("{}::de::BorrowDecoder<'__de, Context = ()>", crate_name)])
+            .with_generic_deps(
+                "__D",
+                [format!(
+                    "{}::de::BorrowDecoder<'__de, Context = {}::BincodeContext>",
+                    crate_name, crate_name
+                )],
+            )
             .with_arg("decoder", "&mut __D")
             .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))

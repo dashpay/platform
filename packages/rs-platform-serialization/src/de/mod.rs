@@ -10,28 +10,33 @@ pub use bincode::{BorrowDecode, Decode};
 use platform_version::version::PlatformVersion;
 
 /// Decode with the default `()` context to avoid repeated generic arguments.
-pub trait DefaultDecode: bincode::Decode<()> {
-    fn decode<D: Decoder<Context = ()>>(decoder: &mut D) -> Result<Self, DecodeError>
-    where
-        Self: Sized,
-    {
-        <Self as bincode::Decode<()>>::decode(decoder)
-    }
-}
-impl<T> DefaultDecode for T where T: bincode::Decode<()> {}
-
-/// BorrowDecode with the default `()` context.
-pub trait DefaultBorrowDecode<'de>: bincode::BorrowDecode<'de, ()> {
-    fn borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+pub trait DefaultDecode: bincode::Decode<crate::BincodeContext> {
+    fn decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
     ) -> Result<Self, DecodeError>
     where
         Self: Sized,
     {
-        <Self as bincode::BorrowDecode<'de, ()>>::borrow_decode(decoder)
+        <Self as bincode::Decode<crate::BincodeContext>>::decode(decoder)
     }
 }
-impl<'de, T> DefaultBorrowDecode<'de> for T where T: bincode::BorrowDecode<'de, ()> {}
+impl<T> DefaultDecode for T where T: bincode::Decode<crate::BincodeContext> {}
+
+/// BorrowDecode with the default `()` context.
+pub trait DefaultBorrowDecode<'de>: bincode::BorrowDecode<'de, crate::BincodeContext> {
+    fn borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
+        decoder: &mut D,
+    ) -> Result<Self, DecodeError>
+    where
+        Self: Sized,
+    {
+        <Self as bincode::BorrowDecode<'de, crate::BincodeContext>>::borrow_decode(decoder)
+    }
+}
+impl<'de, T> DefaultBorrowDecode<'de> for T where
+    T: bincode::BorrowDecode<'de, crate::BincodeContext>
+{
+}
 
 /// Trait that makes a type able to be decoded, akin to serde's `DeserializeOwned` trait.
 ///
@@ -72,7 +77,7 @@ impl<'de, T> DefaultBorrowDecode<'de> for T where T: bincode::BorrowDecode<'de, 
 ///     }
 /// }
 /// impl<'de> bincode::BorrowDecode<'de> for Entity {
-///     fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = ()>>(
+///     fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = crate::BincodeContext>>(
 ///         decoder: &mut D,
 ///     ) -> core::result::Result<Self, bincode::error::DecodeError> {
 ///         Ok(Self {
@@ -101,7 +106,7 @@ impl<'de, T> DefaultBorrowDecode<'de> for T where T: bincode::BorrowDecode<'de, 
 /// ```
 pub trait PlatformVersionedDecode: Sized {
     /// Attempt to decode this type with the given [Decode].
-    fn platform_versioned_decode<D: Decoder<Context = ()>>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError>;
@@ -114,7 +119,7 @@ pub trait PlatformVersionedDecode: Sized {
 /// This trait will be automatically implemented if you enable the `derive` feature and add `#[derive(bincode::Decode)]` to a type with a lifetime.
 pub trait PlatformVersionedBorrowDecode<'de>: Sized {
     /// Attempt to decode this type with the given [BorrowDecode].
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = ()>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError>;
@@ -126,7 +131,7 @@ macro_rules! impl_platform_versioned_borrow_decode {
     ($ty:ty) => {
         impl<'de> $crate::PlatformVersionedBorrowDecode<'de> for $ty {
             fn platform_versioned_borrow_decode<
-                D: bincode::de::BorrowDecoder<'de, Context = ()>,
+                D: bincode::de::BorrowDecoder<'de, Context = $crate::BincodeContext>,
             >(
                 decoder: &mut D,
                 platform_version: &PlatformVersion,
@@ -145,7 +150,7 @@ macro_rules! impl_platform_versioned_borrow_decode {
 
 /// Decodes only the option variant from the decoder. Will not read any more data than that.
 #[inline]
-pub(crate) fn decode_option_variant<D: Decoder<Context = ()>>(
+pub(crate) fn decode_option_variant<D: Decoder<Context = crate::BincodeContext>>(
     decoder: &mut D,
     type_name: &'static str,
 ) -> Result<Option<()>, DecodeError> {
@@ -163,7 +168,7 @@ pub(crate) fn decode_option_variant<D: Decoder<Context = ()>>(
 
 /// Decodes the length of any slice, container, etc from the decoder
 #[inline]
-pub(crate) fn decode_slice_len<D: Decoder<Context = ()>>(
+pub(crate) fn decode_slice_len<D: Decoder<Context = crate::BincodeContext>>(
     decoder: &mut D,
 ) -> Result<usize, DecodeError> {
     let v = <u64 as DefaultDecode>::decode(decoder)?;
