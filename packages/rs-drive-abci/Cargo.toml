@@ -14,9 +14,7 @@ license = "MIT"
 
 [dependencies]
 arc-swap = "1.7.0"
-bincode = { git = "https://github.com/dashpay/bincode", tag = "v2.0.0-rc.3", version = "=2.0.0-rc.3", features = [
-  "serde",
-] }
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 ciborium = { version = "0.2.2" }
 chrono = "0.4.35"
 serde = { version = "1.0.219", features = ["derive"] }

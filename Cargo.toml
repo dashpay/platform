@@ -47,8 +47,3 @@ members = [
 
 version = "3.0.0-rc.1"
 rust-version = "1.92"
-
-# Override bincode to use our own fork, as we consider original bincode potentially compromised
-[patch.crates-io]
-bincode = { git = "https://github.com/dashpay/bincode", tag = "v2.0.0-rc.3" }
-bincode_derive = { git = "https://github.com/dashpay/bincode", tag = "v2.0.0-rc.3" }
