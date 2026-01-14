@@ -2,8 +2,8 @@ use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 /// TypeScript type alias for flexible ProTxHash input
 #[wasm_bindgen(typescript_custom_section)]
@@ -115,7 +115,7 @@ impl TryFrom<JsValue> for ProTxHashWasm {
         }
 
         // Try as Uint8Array
-        if value.is_object() {
+        if value.is_instance_of::<js_sys::Uint8Array>() {
             let bytes = js_sys::Uint8Array::new(&value).to_vec();
             if bytes.len() != 32 {
                 return Err(WasmDppError::invalid_argument(format!(

@@ -82,8 +82,7 @@ impl From<Network> for NetworkWasm {
             Network::Testnet => NetworkWasm::Testnet,
             Network::Devnet => NetworkWasm::Devnet,
             Network::Regtest => NetworkWasm::Regtest,
-            // Handle any future network variants by defaulting to Testnet
-            _ => NetworkWasm::Testnet,
+            _ => unreachable!("Unknown network variant"),
         }
     }
 }
