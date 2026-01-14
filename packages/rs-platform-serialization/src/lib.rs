@@ -10,13 +10,15 @@ use bincode::enc::{write, EncoderImpl};
 pub use enc::PlatformVersionEncode;
 pub use features::platform_encode_to_vec;
 
+pub use de::DefaultBorrowDecode;
+pub use de::DefaultDecode;
 pub use de::PlatformVersionedBorrowDecode;
 pub use de::PlatformVersionedDecode;
 
-pub use bincode::de::BorrowDecode;
-pub use bincode::de::Decode;
 pub use bincode::enc::Encode;
 pub use bincode::error;
+pub use de::BorrowDecode;
+pub use de::Decode;
 use platform_version::version::PlatformVersion;
 
 extern crate alloc;
@@ -65,7 +67,7 @@ pub fn platform_versioned_decode_from_slice<D: PlatformVersionedDecode, C: Confi
     platform_version: &PlatformVersion,
 ) -> Result<D, error::DecodeError> {
     let reader = read::SliceReader::new(src);
-    let mut decoder = DecoderImpl::<_, C>::new(reader, config);
+    let mut decoder = DecoderImpl::<_, C, ()>::new(reader, config, ());
     D::platform_versioned_decode(&mut decoder, platform_version)
 }
 
@@ -84,7 +86,7 @@ pub fn platform_versioned_borrow_decode_from_slice<
     platform_version: &PlatformVersion,
 ) -> Result<D, error::DecodeError> {
     let reader = read::SliceReader::new(src);
-    let mut decoder = DecoderImpl::<_, C>::new(reader, config);
+    let mut decoder = DecoderImpl::<_, C, ()>::new(reader, config, ());
     D::platform_versioned_borrow_decode(&mut decoder, platform_version)
 }
 
@@ -98,6 +100,6 @@ pub fn platform_versioned_decode_from_reader<D: PlatformVersionedDecode, R: Read
     config: C,
     platform_version: &PlatformVersion,
 ) -> Result<D, error::DecodeError> {
-    let mut decoder = DecoderImpl::<_, C>::new(reader, config);
+    let mut decoder = DecoderImpl::<_, C, ()>::new(reader, config, ());
     D::platform_versioned_decode(&mut decoder, platform_version)
 }

@@ -246,7 +246,7 @@ impl DeriveEnum {
                 Ok(())
             })?
             .generate_fn("platform_versioned_decode")
-            .with_generic_deps("__D", [format!("{}::de::Decoder", crate_name)])
+            .with_generic_deps("__D", [format!("{}::de::Decoder<Context = ()>", crate_name)])
             .with_arg("decoder", "&mut __D")
             .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))
@@ -259,7 +259,7 @@ impl DeriveEnum {
                 } else {
                     fn_builder
                         .push_parsed(format!(
-                            "let variant_index = <u32 as {}::Decode>::decode(decoder)?;",
+                            "let variant_index = <u32 as {}::DefaultDecode>::decode(decoder)?;",
                             crate_name
                         ))?;
                     fn_builder.push_parsed("match variant_index")?;
@@ -296,7 +296,7 @@ impl DeriveEnum {
                                             if attributes.with_serde {
                                                 variant_body
                                                     .push_parsed(format!(
-                                                        "<bincode::serde::Compat<_> as {0}::Decode>::decode(decoder)?.0,",
+                                                        "<bincode::serde::Compat<_> as {0}::DefaultDecode>::decode(decoder)?.0,",
                                                         crate_name
                                                     ))?;
                                             } else if attributes.with_platform_version {
@@ -308,7 +308,7 @@ impl DeriveEnum {
                                             } else {
                                                 variant_body
                                                     .push_parsed(format!(
-                                                        "{}::Decode::decode(decoder)?,",
+                                                        "{}::DefaultDecode::decode(decoder)?,",
                                                         crate_name
                                                     ))?;
                                             }
@@ -353,7 +353,7 @@ impl DeriveEnum {
                 Ok(())
             })?
             .generate_fn("platform_versioned_borrow_decode")
-            .with_generic_deps("__D", [format!("{}::de::BorrowDecoder<'__de>", crate_name)])
+            .with_generic_deps("__D", [format!("{}::de::BorrowDecoder<'__de, Context = ()>", crate_name)])
             .with_arg("decoder", "&mut __D")
             .with_arg("platform_version", "&platform_version::version::PlatformVersion")
             .with_return_type(format!("core::result::Result<Self, {}::error::DecodeError>", crate_name))
@@ -365,7 +365,7 @@ impl DeriveEnum {
                     ))?;
                 } else {
                     fn_builder
-                        .push_parsed(format!("let variant_index = <u32 as {}::Decode>::decode(decoder)?;", crate_name))?;
+                        .push_parsed(format!("let variant_index = <u32 as {}::DefaultDecode>::decode(decoder)?;", crate_name))?;
                     fn_builder.push_parsed("match variant_index")?;
                     fn_builder.group(Delimiter::Brace, |variant_case| {
                         for (mut variant_index, variant) in self.iter_fields() {
@@ -399,11 +399,11 @@ impl DeriveEnum {
                                             let attributes = field.attributes().get_attribute::<FieldAttributes>()?.unwrap_or_default();
                                             if attributes.with_serde {
                                                 variant_body
-                                                    .push_parsed(format!("<bincode::serde::BorrowCompat<_> as {0}::BorrowDecode>::borrow_decode(decoder)?.0,", crate_name))?;
+                                                    .push_parsed(format!("<bincode::serde::BorrowCompat<_> as {0}::DefaultBorrowDecode>::borrow_decode(decoder)?.0,", crate_name))?;
                                             } else if attributes.with_platform_version {
                                                 variant_body.push_parsed(format!("{}::PlatformVersionedBorrowDecode::platform_versioned_borrow_decode(decoder, platform_version)?,", crate_name))?;
                                             } else {
-                                                variant_body.push_parsed(format!("{}::BorrowDecode::borrow_decode(decoder)?,", crate_name))?;
+                                                variant_body.push_parsed(format!("{}::DefaultBorrowDecode::borrow_decode(decoder)?,", crate_name))?;
                                             }
                                         }
                                     }
