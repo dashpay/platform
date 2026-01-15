@@ -293,13 +293,20 @@ public class CoreWalletManager: ObservableObject {
     }
     
     public func deleteWallet(_ wallet: HDWallet) async throws {
+        let walletId = wallet.id
+
+        // Update observable state FIRST to prevent UI from accessing deleted relationships
+        // This prevents the "Never access a full future backing data" crash
+        if currentWallet?.id == walletId {
+            currentWallet = wallets.first(where: { $0.id != walletId })
+        }
+        wallets.removeAll(where: { $0.id == walletId })
+
+        // Now safe to delete from SwiftData (cascade will delete accounts/addresses)
         modelContainer.mainContext.delete(wallet)
         try modelContainer.mainContext.save()
-        
-        if currentWallet?.id == wallet.id {
-            currentWallet = wallets.first(where: { $0.id != wallet.id })
-        }
-        
+
+        // Reload to ensure consistency
         await loadWallets()
     }
     
@@ -738,9 +745,21 @@ public class CoreWalletManager: ObservableObject {
     }
 
     // MARK: - Public Utility Methods
-    
+
     func reloadWallets() async {
         await loadWallets()
+    }
+
+    /// Remove a wallet from the observable arrays without touching SwiftData
+    /// Call this BEFORE deleting from SwiftData to prevent UI from accessing deleted relationships
+    public func removeWalletFromObservableState(_ wallet: HDWallet) {
+        let walletId = wallet.id
+
+        // Update observable state to prevent UI from accessing deleted relationships
+        if currentWallet?.id == walletId {
+            currentWallet = wallets.first(where: { $0.id != walletId })
+        }
+        wallets.removeAll(where: { $0.id == walletId })
     }
     
     // MARK: - Private Methods
@@ -749,34 +768,54 @@ public class CoreWalletManager: ObservableObject {
         do {
             let descriptor = FetchDescriptor<HDWallet>(sortBy: [SortDescriptor(\.createdAt)])
             wallets = try modelContainer.mainContext.fetch(descriptor)
-            
+
             // Restore each wallet to the FFI wallet manager
             for wallet in wallets {
                 if let walletBytes = wallet.serializedWalletBytes {
                     do {
                         // Restore wallet to FFI and update the wallet ID
                         let restoredWalletId = try restoreWalletFromBytes(walletBytes)
-                        
+
                         // Update wallet ID if it changed (shouldn't happen, but good to verify)
                         if wallet.walletId != restoredWalletId {
                             print("Warning: Wallet ID changed during restoration. Old: \(wallet.walletId?.hexString ?? "nil"), New: \(restoredWalletId.hexString)")
                             wallet.walletId = restoredWalletId
                         }
-                        
+
                         print("Successfully restored wallet '\(wallet.label)' to FFI wallet manager")
                     } catch {
-                        print("Failed to restore wallet '\(wallet.label)': \(error)")
+                        // Handle wallet format migration errors
+                        // The wallet serialization format changed from multi-network to single-network.
+                        // Old wallet bytes cannot be deserialized with the new format.
+                        let errorString = String(describing: error)
+                        let isFormatMigrationError = errorString.contains("UnexpectedVariant") ||
+                                                     errorString.contains("serialization") ||
+                                                     errorString.contains("deserialize") ||
+                                                     errorString.contains("Network")
+
+                        if isFormatMigrationError {
+                            print("⚠️ Wallet '\(wallet.label)' has incompatible serialization format (likely from old multi-network format).")
+                            print("   Clearing invalid serialized bytes. Please delete and re-import this wallet using your mnemonic.")
+                            print("   Error details: \(errorString)")
+
+                            // Clear the invalid serialized bytes so future loads don't keep failing
+                            wallet.serializedWalletBytes = nil
+                            // Mark wallet as needing recreation so UI can indicate this to user
+                            wallet.needsRecreation = true
+                        } else {
+                            print("Failed to restore wallet '\(wallet.label)': \(error)")
+                        }
                         // Continue loading other wallets even if one fails
                     }
                 } else {
                     print("Warning: Wallet '\(wallet.label)' has no serialized bytes - cannot restore to FFI")
                 }
             }
-            
+
             if currentWallet == nil, let firstWallet = wallets.first {
                 currentWallet = firstWallet
             }
-            
+
             // Save any wallet ID updates
             try? modelContainer.mainContext.save()
         } catch {

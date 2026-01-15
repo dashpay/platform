@@ -1,5 +1,7 @@
 use crate::platform_wallet_info::PlatformWalletInfo;
+use crate::IdentityManager;
 use dashcore::{Address as DashAddress, Address, Network, Transaction};
+use dpp::prelude::CoreBlockHeight;
 use key_wallet::account::{ManagedAccountCollection, TransactionRecord};
 use key_wallet::wallet::immature_transaction::{
     ImmatureTransaction, ImmatureTransactionCollection,
@@ -12,8 +14,6 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{Utxo, Wallet, WalletBalance};
 use std::collections::BTreeSet;
-use dpp::prelude::CoreBlockHeight;
-use crate::IdentityManager;
 
 /// Implement WalletInfoInterface for PlatformWalletInfo
 impl WalletInfoInterface for PlatformWalletInfo {
@@ -111,10 +111,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.accounts()
     }
 
-    fn process_matured_transactions(
-        &mut self,
-        current_height: u32,
-    ) -> Vec<ImmatureTransaction> {
+    fn process_matured_transactions(&mut self, current_height: u32) -> Vec<ImmatureTransaction> {
         self.wallet_info
             .process_matured_transactions(current_height)
     }
@@ -153,7 +150,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_chain_height(&mut self, current_height: u32) {
         // Delegate to the underlying wallet_info
-        self.wallet_info
-            .update_chain_height(current_height)
+        self.wallet_info.update_chain_height(current_height)
     }
 }

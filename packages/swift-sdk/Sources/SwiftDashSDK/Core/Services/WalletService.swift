@@ -773,11 +773,12 @@ public class WalletService: ObservableObject {
             transactions = []
             balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
         }
-        
-        // Reload wallets from the wallet manager
+
+        // Remove wallet from observable state BEFORE SwiftData delete
+        // This prevents "Never access a full future backing data" crash
         if let walletManager = walletManager {
-            await walletManager.reloadWallets()
-            
+            await walletManager.removeWalletFromObservableState(wallet)
+
             // Set a new current wallet if available
             if currentWallet == nil, let firstWallet = walletManager.wallets.first {
                 await loadWallet(firstWallet)

@@ -35,6 +35,10 @@ public final class HDWallet: HDWalletModels {
     // This indicates the starting block to sync from.
     // 0 means start from genesis.
     public var syncBaseHeight: Int = 0
+
+    // Migration flag: true if wallet needs to be re-imported due to format change
+    // This happens when old multi-network wallet bytes can't be deserialized
+    public var needsRecreation: Bool = false
     
     init(label: String, network: AppNetwork, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()

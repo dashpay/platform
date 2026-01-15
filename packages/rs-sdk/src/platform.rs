@@ -7,6 +7,7 @@
 
 pub mod address_sync;
 pub mod block_info_from_metadata;
+pub mod dashpay;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;
@@ -20,7 +21,6 @@ pub mod query;
 pub mod tokens;
 pub mod transition;
 pub mod types;
-pub mod dashpay;
 
 pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;

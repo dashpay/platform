@@ -33,20 +33,19 @@ public class WalletManager {
         }
         
         var error = FFIError()
-        var network = FFINetwork(rawValue: 0)
-        wallet_manager_network(managerHandle, &error, &network);
-        
+        let network = wallet_manager_network(managerHandle, &error)
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         // Check if there was an error
         if error.code != FFIErrorCode(rawValue: 0) {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         self.handle = managerHandle
         self.network = KeyWalletNetwork(ffiNetwork: network)
         self.ownsHandle = true
@@ -57,20 +56,19 @@ public class WalletManager {
     internal init(handle: UnsafeMutablePointer<FFIWalletManager>) throws {
         
         var error = FFIError()
-        var network = FFINetwork(rawValue: 0)
-        wallet_manager_network(handle, &error, &network);
-        
+        let network = wallet_manager_network(handle, &error)
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         // Check if there was an error
         if error.code != FFIErrorCode(rawValue: 0) {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         self.handle = handle
         self.network = KeyWalletNetwork(ffiNetwork: network)
         self.ownsHandle = false

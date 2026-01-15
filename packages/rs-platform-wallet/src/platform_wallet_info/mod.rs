@@ -58,7 +58,11 @@ mod tests {
     #[test]
     fn test_platform_wallet_creation() {
         let wallet_id = [1u8; 32];
-        let wallet = PlatformWalletInfo::new(Network::Testnet, wallet_id, "Test Platform Wallet".to_string());
+        let wallet = PlatformWalletInfo::new(
+            Network::Testnet,
+            wallet_id,
+            "Test Platform Wallet".to_string(),
+        );
 
         assert_eq!(wallet.wallet_id(), wallet_id);
         assert_eq!(wallet.name(), Some("Test Platform Wallet"));

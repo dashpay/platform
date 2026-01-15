@@ -487,26 +487,27 @@ struct WalletInfoView: View {
     
     private func deleteWallet() async {
         isDeleting = true
-        defer { 
+        defer {
             Task { @MainActor in
                 isDeleting = false
             }
         }
-        
+
         do {
-            // Delete the wallet from Core Data
-            modelContext.delete(wallet)
-            try modelContext.save()
-            
-            // Dismiss both the info view and the wallet detail view
+            // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
+            // This prevents "Never access a full future backing data" crash
             await MainActor.run {
                 dismiss()
                 onWalletDeleted()
             }
-            
-            // Notify the wallet service to reload
+
+            // Notify the wallet service (removes wallet from observable arrays)
             await walletService.walletDeleted(wallet)
-            
+
+            // Now safe to delete from Core Data (cascade will delete accounts/addresses)
+            modelContext.delete(wallet)
+            try modelContext.save()
+
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
