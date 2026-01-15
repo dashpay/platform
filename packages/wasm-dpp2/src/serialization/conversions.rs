@@ -193,10 +193,10 @@ fn map_key_to_string(key: &JsValue) -> String {
         && to_string_fn.is_function()
     {
         let func: js_sys::Function = to_string_fn.unchecked_into();
-        if let Ok(str_result) = func.call0(key) {
-            if let Some(s) = str_result.as_string() {
-                return s;
-            }
+        if let Ok(str_result) = func.call0(key)
+            && let Some(s) = str_result.as_string()
+        {
+            return s;
         }
     }
 
