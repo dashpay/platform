@@ -32,9 +32,8 @@ Introduce an optional `refersTo` keyword on document properties so contracts can
 - Avoid overloading signature errors; ensure deterministic mapping to codes.
 
 ## Backward Compatibility
-- Gated by platform/protocol version (and/or data contract system version). Nodes on older protocol should ignore/allow the keyword; enforcement begins at the gated version.
-- Existing contracts and documents remain valid; documents are rejected only when the contract opts in with `mustExist:true`.
-- Legacy nodes should ignore `refersTo` until activation; newer nodes enforce `mustExist:true` semantics.
+- Gated by platform/protocol version (and/or data contract system version). Legacy nodes reject contracts containing `refersTo`; such contracts are accepted only after activation. Post-activation, newer nodes enforce `mustExist:true` semantics.
+- Existing pre-activation contracts and documents remain valid; documents are rejected only when the contract opts in with `mustExist:true` and the network is past activation.
 
 ## Acceptance Criteria
 - Contracts containing `refersTo` validate against updated meta-schema and pass compatibility checks when added to existing identifier fields.
