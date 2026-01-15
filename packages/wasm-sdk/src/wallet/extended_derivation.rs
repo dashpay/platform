@@ -14,6 +14,7 @@ use std::str::FromStr;
 use tracing::debug;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::NetworkWasm;
 
 // TypeScript option bags (module scope) for extended derivation helpers
 #[wasm_bindgen(typescript_custom_section)]
@@ -97,11 +98,8 @@ fn derive_common_from_mnemonic(
     // Get seed from mnemonic
     let seed = WasmSdk::mnemonic_to_seed(mnemonic, passphrase)?;
 
-    let net = match network {
-        "mainnet" => dashcore::Network::Dash,
-        "testnet" => dashcore::Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
-    };
+    let network_wasm = NetworkWasm::try_from(JsValue::from_str(network))?;
+    let net: dashcore::Network = network_wasm.into();
 
     // Create master extended private key from seed
     let master_key = ExtendedPrivKey::new_master(net, &seed)

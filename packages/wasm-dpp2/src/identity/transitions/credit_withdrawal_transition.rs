@@ -1,6 +1,6 @@
 use super::pooling::PoolingWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
-use crate::core_script::CoreScriptWasm;
+use crate::core::core_script::CoreScriptWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;

@@ -3,9 +3,9 @@
 //! This module provides a signer for identity-based state transitions that implements
 //! `Signer<IdentityPublicKey>`.
 
+use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
-use crate::private_key::PrivateKeyWasm;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};

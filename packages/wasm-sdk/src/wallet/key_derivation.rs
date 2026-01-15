@@ -17,6 +17,7 @@ use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::NetworkWasm;
 
 // TypeScript option bags (module scope) for wallet derivation helpers
 #[wasm_bindgen(typescript_custom_section)]
@@ -418,11 +419,8 @@ impl WasmSdk {
             return Err(WasmSdkError::generic("Seed too short"));
         };
 
-        let net = match network.as_str() {
-            "mainnet" => dashcore::Network::Dash,
-            "testnet" => dashcore::Network::Testnet,
-            _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
-        };
+        let network_wasm = NetworkWasm::try_from(JsValue::from_str(&network))?;
+        let net: dashcore::Network = network_wasm.into();
 
         // Create private key from seed bytes
         let key_array: [u8; 32] = key_bytes
@@ -471,11 +469,8 @@ impl WasmSdk {
         // Get seed from mnemonic
         let seed = Self::mnemonic_to_seed(&mnemonic, passphrase)?;
 
-        let net = match network.as_str() {
-            "mainnet" => dashcore::Network::Dash,
-            "testnet" => dashcore::Network::Testnet,
-            _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
-        };
+        let network_wasm = NetworkWasm::try_from(JsValue::from_str(&network))?;
+        let net: dashcore::Network = network_wasm.into();
 
         // Parse derivation path
         let derivation_path = DerivationPath::from_str(&path).map_err(|e| {

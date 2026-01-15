@@ -1,3 +1,4 @@
+use crate::core::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;
@@ -164,19 +165,6 @@ impl<'de> Deserialize<'de> for PlatformAddressWasm {
     }
 }
 
-fn parse_network(network: &str) -> Result<Network, WasmDppError> {
-    match network.to_lowercase().as_str() {
-        "mainnet" | "dash" => Ok(Network::Dash),
-        "testnet" => Ok(Network::Testnet),
-        "devnet" => Ok(Network::Devnet),
-        "regtest" => Ok(Network::Regtest),
-        _ => Err(WasmDppError::invalid_argument(format!(
-            "Invalid network: {}. Expected 'mainnet', 'testnet', 'devnet', or 'regtest'",
-            network
-        ))),
-    }
-}
-
 #[wasm_bindgen(js_class = PlatformAddress)]
 impl PlatformAddressWasm {
     #[wasm_bindgen(getter = __type)]
@@ -204,11 +192,12 @@ impl PlatformAddressWasm {
     }
 
     /// Returns the bech32m-encoded address string for the specified network.
-    ///
-    /// @param network - "mainnet", "testnet", "devnet", or "regtest"
     #[wasm_bindgen(js_name = "toBech32m")]
-    pub fn to_bech32m(&self, network: &str) -> WasmDppResult<String> {
-        let net = parse_network(network)?;
+    pub fn to_bech32m(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+    ) -> WasmDppResult<String> {
+        let net: Network = NetworkWasm::try_from(&network)?.into();
         Ok(self.0.to_bech32m_string(net))
     }
 

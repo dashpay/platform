@@ -10,11 +10,11 @@ use dash_sdk::platform::types::proposed_blocks::ProposedBlockCountEx;
 use dash_sdk::platform::{FetchMany, LimitQuery, QueryStartInfo};
 use js_sys::{BigInt, Map, Number};
 use serde::Deserialize;
-use std::str::FromStr;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::ProTxHashWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const EPOCHS_QUERY_TS: &'static str = r#"
@@ -199,9 +199,7 @@ fn parse_evonode_range_query(
     )?;
 
     let start_info = if let Some(start) = input.start_after {
-        let pro_tx_hash = ProTxHash::from_str(&start).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("Invalid startAfter ProTxHash: {}", e))
-        })?;
+        let pro_tx_hash: ProTxHash = ProTxHashWasm::from_hex(&start)?.into();
         Some(QueryStartInfo {
             start_key: pro_tx_hash.to_byte_array().to_vec(),
             start_included: false,
@@ -319,22 +317,15 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         &self,
         epoch: u16,
-        ids: Vec<String>,
+        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike[]")] ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
-        // Parse the ProTxHash strings
+        // Parse the ProTxHash values using centralized wrapper
         let pro_tx_hashes: Vec<ProTxHash> = ids
             .into_iter()
-            .map(|hash_str| {
-                ProTxHash::from_str(&hash_str).map_err(|e| {
-                    WasmSdkError::invalid_argument(format!(
-                        "Invalid ProTxHash '{}': {}",
-                        hash_str, e
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, WasmSdkError>>()?;
+            .map(|hash_js| ProTxHashWasm::try_from(&hash_js).map(|w| w.into()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Use FetchMany to get block counts for specific IDs
         let counts =
@@ -511,22 +502,17 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
-        #[wasm_bindgen(js_name = "proTxHashes")] pro_tx_hashes: Vec<String>,
+        #[wasm_bindgen(js_name = "proTxHashes")]
+        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike[]")]
+        pro_tx_hashes: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
-        // Parse the ProTxHash strings
+        // Parse the ProTxHash values using centralized wrapper
         let parsed_hashes: Vec<ProTxHash> = pro_tx_hashes
             .into_iter()
-            .map(|hash_str| {
-                ProTxHash::from_str(&hash_str).map_err(|e| {
-                    WasmSdkError::invalid_argument(format!(
-                        "Invalid ProTxHash '{}': {}",
-                        hash_str, e
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, WasmSdkError>>()?;
+            .map(|hash_js| ProTxHashWasm::try_from(&hash_js).map(|w| w.into()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Use FetchMany with proof to get block counts for specific IDs
         let (counts, metadata, proof) = ProposerBlockCountById::fetch_many_with_metadata_and_proof(
