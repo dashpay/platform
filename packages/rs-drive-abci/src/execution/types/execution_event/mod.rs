@@ -32,6 +32,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         identity: PartialIdentity,
         /// The removed balance in the case of a transfer or withdrawal
         removed_balance: Option<Credits>,
+        /// Optional address outputs that should be tracked (for IdentityCreditTransferToAddresses)
+        added_to_balance_outputs: Option<BTreeMap<PlatformAddress, Credits>>,
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
@@ -41,7 +43,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
     },
-    /// A drive event that is paid by an identity
+    /// A drive event that is paid by address inputs, this one can also be used by asset lock to address
     PaidFromAddressInputs {
         /// The removed balance in the case of a transfer or withdrawal
         input_current_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -155,6 +157,7 @@ impl ExecutionEvent<'_> {
                     Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: Some(removed_balance),
+                        added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
@@ -175,6 +178,7 @@ impl ExecutionEvent<'_> {
                     Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: Some(removed_balance),
+                        added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
@@ -195,6 +199,7 @@ impl ExecutionEvent<'_> {
                     Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance,
+                        added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,
@@ -229,6 +234,7 @@ impl ExecutionEvent<'_> {
                     Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: None,
+                        added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: Some(registration_cost),
@@ -253,6 +259,7 @@ impl ExecutionEvent<'_> {
                     Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: None,
+                        added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: Some(registration_cost),
@@ -406,6 +413,35 @@ impl ExecutionEvent<'_> {
                     user_fee_increase,
                 })
             }
+            StateTransitionAction::IdentityCreditTransferToAddressesAction(
+                identity_credit_transfer_to_addresses,
+            ) => {
+                let user_fee_increase = identity_credit_transfer_to_addresses.user_fee_increase();
+                let removed_balance: Credits = identity_credit_transfer_to_addresses
+                    .recipient_addresses()
+                    .values()
+                    .sum();
+                let added_to_balance_outputs = identity_credit_transfer_to_addresses
+                    .recipient_addresses()
+                    .clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                if let Some(identity) = identity {
+                    Ok(ExecutionEvent::Paid {
+                        identity,
+                        removed_balance: Some(removed_balance),
+                        added_to_balance_outputs: Some(added_to_balance_outputs),
+                        operations,
+                        execution_operations: execution_context.operations_consume(),
+                        additional_fixed_fee_cost: None,
+                        user_fee_increase,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present for identity credit transfer to addresses action",
+                    )))
+                }
+            }
             _ => {
                 let user_fee_increase = action.user_fee_increase();
                 let operations =
@@ -414,6 +450,7 @@ impl ExecutionEvent<'_> {
                     Ok(ExecutionEvent::Paid {
                         identity,
                         removed_balance: None,
+                        added_to_balance_outputs: None,
                         operations,
                         execution_operations: execution_context.operations_consume(),
                         additional_fixed_fee_cost: None,

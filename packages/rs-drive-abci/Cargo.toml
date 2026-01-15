@@ -30,8 +30,8 @@ hex = "0.4.3"
 indexmap = { version = "2.2.6", features = ["serde"] }
 dpp = { path = "../rs-dpp", default-features = false, features = ["abci"] }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
-rust_decimal = "1.2.5"
-rust_decimal_macros = "1.25.0"
+rust_decimal = "1.39.0"
+rust_decimal_macros = "1.39.0"
 mockall = { version = "0.13", optional = true }
 prost = { version = "0.14", default-features = false }
 tracing = { version = "0.1.41", default-features = false, features = [] }
@@ -95,6 +95,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "data-contract-cbor-conversion",
 ] }
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }

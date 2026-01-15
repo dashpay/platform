@@ -115,4 +115,6 @@ pub struct DriveVerifyAddressFundsMethodVersions {
     pub verify_addresses_infos: FeatureVersion,
     pub verify_address_funds_trunk_query: FeatureVersion,
     pub verify_address_funds_branch_query: FeatureVersion,
+    pub verify_recent_address_balance_changes: FeatureVersion,
+    pub verify_compacted_address_balance_changes: FeatureVersion,
 }

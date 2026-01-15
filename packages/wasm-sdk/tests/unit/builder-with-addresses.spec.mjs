@@ -54,6 +54,17 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       expect(built).to.be.an.instanceof(sdk.WasmSdk);
       built.free();
     });
+
+    it('builds with local address', async () => {
+      const builder = sdk.WasmSdkBuilder.withAddresses(
+        [TEST_ADDRESS_1],
+        'local',
+      );
+      expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
+      const built = await builder.build();
+      expect(built).to.be.an.instanceof(sdk.WasmSdk);
+      built.free();
+    });
   });
 
   describe('network validation', () => {
@@ -65,19 +76,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
         );
         expect.fail('Should have thrown error for devnet');
       } catch (error) {
-        expect(error.message).to.include('mainnet or testnet');
-      }
-    });
-
-    it('rejects regtest', async () => {
-      try {
-        sdk.WasmSdkBuilder.withAddresses(
-          [TEST_ADDRESS_1],
-          'regtest',
-        );
-        expect.fail('Should have thrown error for regtest');
-      } catch (error) {
-        expect(error.message).to.include('mainnet or testnet');
+        expect(error.message).to.include('mainnet, testnet or local');
       }
     });
 
@@ -89,7 +88,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
         );
         expect.fail('Should have thrown error for invalid network');
       } catch (error) {
-        expect(error.message).to.include('mainnet or testnet');
+        expect(error.message).to.include('mainnet, testnet or local');
       }
     });
 
@@ -105,6 +104,12 @@ describe('WasmSdkBuilder.withAddresses()', () => {
         'Mainnet',
       );
       expect(builder2).to.be.an.instanceof(sdk.WasmSdkBuilder);
+
+      const builder3 = sdk.WasmSdkBuilder.withAddresses(
+        [TEST_ADDRESS_1],
+        'LOCAL',
+      );
+      expect(builder3).to.be.an.instanceof(sdk.WasmSdkBuilder);
     });
   });
 

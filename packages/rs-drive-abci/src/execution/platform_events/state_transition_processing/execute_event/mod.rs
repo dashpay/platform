@@ -5,8 +5,11 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
+use std::collections::BTreeMap;
 
 use crate::rpc::core::CoreRPCLike;
+use dpp::address_funds::PlatformAddress;
+use dpp::balances::credits::CreditOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
@@ -24,6 +27,7 @@ where
     /// * `event` - The execution event to be processed.
     /// * `block_info` - Information about the current block being processed.
     /// * `transaction` - The transaction associated with the execution event.
+    /// * `address_balances_in_update` - Optional map to track address balance changes.
     /// * `platform_version` - A `PlatformVersion` reference that dictates which version of
     ///   the method to call.
     ///
@@ -37,12 +41,14 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) fn execute_event(
         &self,
         event: ExecutionEvent,
         consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
@@ -57,6 +63,7 @@ where
                 consensus_errors,
                 block_info,
                 transaction,
+                address_balances_in_update,
                 platform_version,
                 previous_fee_versions,
             ),

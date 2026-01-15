@@ -5,6 +5,7 @@
 //! This crate provides C-compatible FFI bindings for both Dash Core (SPV) and Platform SDKs,
 //! enabling cross-platform applications to interact with the complete Dash ecosystem through C interfaces.
 
+mod address_sync;
 mod callback_bridge;
 mod contested_resource;
 mod context_callbacks;
@@ -35,6 +36,7 @@ mod voting;
 #[cfg(test)]
 mod test_utils;
 
+pub use address_sync::*;
 pub use callback_bridge::*;
 pub use contested_resource::*;
 pub use context_callbacks::*;

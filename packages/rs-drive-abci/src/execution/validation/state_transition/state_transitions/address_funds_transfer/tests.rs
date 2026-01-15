@@ -1415,7 +1415,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1482,7 +1482,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -2637,7 +2637,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2696,7 +2696,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -2756,7 +2756,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -3464,7 +3464,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -3540,7 +3540,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -3607,7 +3607,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -3677,7 +3677,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -3744,7 +3744,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -3827,7 +3827,7 @@ mod tests {
 
             // Get the fee from the result
             let fee = match &processing_result.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.processing_fee + fee_result.storage_fee
                 }
                 _ => panic!("Expected successful execution"),
@@ -3897,7 +3897,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -3974,7 +3974,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -4057,7 +4057,7 @@ mod tests {
             // Verify the transition succeeded - the output address should have been created
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Note: We don't verify the output address state here because the execution
@@ -4140,7 +4140,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             let fee = match &processing_result.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.processing_fee + fee_result.storage_fee
                 }
                 _ => panic!("Expected successful execution"),
@@ -4237,7 +4237,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             let fee = match &processing_result.execution_results()[0] {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => {
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => {
                     fee_result.processing_fee + fee_result.storage_fee
                 }
                 _ => panic!("Expected successful execution"),
@@ -4334,7 +4334,7 @@ mod tests {
             // Verify it executed successfully with increased fee
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // The fee should be higher due to user_fee_increase
@@ -4493,7 +4493,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -4561,7 +4561,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -4733,7 +4733,7 @@ mod tests {
             // Succeeds because ReduceOutput deducts the fee from the output amount
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -4803,7 +4803,7 @@ mod tests {
             // Should succeed - exactly at minimum output (which is > min input)
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -4870,7 +4870,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -4938,7 +4938,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -5019,7 +5019,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -5091,7 +5091,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -5195,7 +5195,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -5239,7 +5239,7 @@ mod tests {
             assert!(!processing_result.execution_results().is_empty());
             assert!(!matches!(
                 processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             ));
         }
     }
@@ -5318,13 +5318,13 @@ mod tests {
             // First should succeed
             assert_matches!(
                 &processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Second should also succeed (nonces are sequential)
             assert_matches!(
                 &processing_result.execution_results()[1],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
 
@@ -5403,7 +5403,7 @@ mod tests {
             // Second should succeed (nonce 1 is correct since first failed)
             assert_matches!(
                 &processing_result.execution_results()[1],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
     }
@@ -5632,7 +5632,7 @@ mod tests {
             // First should succeed
             assert_matches!(
                 &processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Second should fail with insufficient balance
@@ -5707,7 +5707,7 @@ mod tests {
 
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                 );
 
                 platform
@@ -5823,7 +5823,7 @@ mod tests {
             let result = &processing_result.execution_results()[0];
             // Document the actual behavior
             match result {
-                StateTransitionExecutionResult::SuccessfulExecution(..) => {
+                StateTransitionExecutionResult::SuccessfulExecution { .. } => {
                     // If it succeeds, verify the output was reduced but still valid
                     platform
                         .drive
@@ -5997,7 +5997,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -6103,7 +6103,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Timelock (CLTV) script should not be accepted"
             );
@@ -6179,7 +6179,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "OP_RETURN script should not be accepted"
             );
@@ -6291,14 +6291,14 @@ mod tests {
             // First should succeed
             assert_matches!(
                 &processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Second should also succeed during block execution
             // (the first tx creates middle_address before second tx is validated)
             assert_matches!(
                 &processing_result.execution_results()[1],
-                StateTransitionExecutionResult::SuccessfulExecution(..),
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
                 "Block execution should allow spending funds received in same block"
             );
         }
@@ -6387,11 +6387,11 @@ mod tests {
             // Both should succeed
             assert_matches!(
                 &processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
             assert_matches!(
                 &processing_result.execution_results()[1],
-                StateTransitionExecutionResult::SuccessfulExecution(..)
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
 
             // Commit and verify output has both amounts
@@ -6488,7 +6488,7 @@ mod tests {
             // Should succeed without overflow issues
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -6568,7 +6568,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "OP_TRUE script should NOT be accepted - this would be a critical vulnerability!"
             );
@@ -6642,7 +6642,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "OP_1 script should NOT be accepted"
             );
@@ -6754,7 +6754,7 @@ mod tests {
             // The important thing is it doesn't panic or cause undefined behavior
             let result = &processing_result.execution_results()[0];
             match result {
-                StateTransitionExecutionResult::SuccessfulExecution(..) => {
+                StateTransitionExecutionResult::SuccessfulExecution { .. } => {
                     // Acceptable if system ignores extra signatures
                 }
                 StateTransitionExecutionResult::UnpaidConsensusError(_) => {
@@ -6834,7 +6834,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Disabled opcode OP_CAT should not be accepted"
             );
@@ -6908,7 +6908,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Disabled opcode OP_VER should not be accepted"
             );
@@ -6989,7 +6989,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Very large redeem script should be rejected"
             );
@@ -7102,7 +7102,7 @@ mod tests {
                             // Original low-S signature should work
                             assert_matches!(
                                 processing_result.execution_results().as_slice(),
-                                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
                             );
                         }
                     }
@@ -7190,7 +7190,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Non-canonical DER signature should be rejected"
             );
@@ -7265,7 +7265,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Empty script should be rejected"
             );
@@ -7342,7 +7342,7 @@ mod tests {
             assert!(
                 !matches!(
                     &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
                 ),
                 "Script with OP_CODESEPARATOR should be rejected"
             );
@@ -7415,7 +7415,7 @@ mod tests {
         /// Helper to extract fees from a successful execution result
         fn extract_fees(result: &StateTransitionExecutionResult) -> (Credits, Credits, Credits) {
             match result {
-                StateTransitionExecutionResult::SuccessfulExecution(_, fee_result) => (
+                StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } => (
                     fee_result.processing_fee,
                     fee_result.storage_fee,
                     fee_result.processing_fee + fee_result.storage_fee,

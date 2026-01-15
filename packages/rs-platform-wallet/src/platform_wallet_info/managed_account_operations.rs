@@ -9,8 +9,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         wallet: &Wallet,
         account_type: AccountType,
     ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_account(wallet, account_type)
+        self.wallet_info.add_managed_account(wallet, account_type)
     }
 
     fn add_managed_account_with_passphrase(
@@ -19,11 +18,8 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_account_with_passphrase(
-            wallet,
-            account_type,
-            passphrase,
-        )
+        self.wallet_info
+            .add_managed_account_with_passphrase(wallet, account_type, passphrase)
     }
 
     fn add_managed_account_from_xpub(
@@ -52,11 +48,8 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_bls_account_with_passphrase(
-            wallet,
-            account_type,
-            passphrase,
-        )
+        self.wallet_info
+            .add_managed_bls_account_with_passphrase(wallet, account_type, passphrase)
     }
 
     #[cfg(feature = "bls")]
@@ -65,10 +58,8 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         bls_public_key: [u8; 48],
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_bls_account_from_public_key(
-            account_type,
-            bls_public_key,
-        )
+        self.wallet_info
+            .add_managed_bls_account_from_public_key(account_type, bls_public_key)
     }
 
     #[cfg(feature = "eddsa")]
@@ -88,11 +79,8 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_eddsa_account_with_passphrase(
-            wallet,
-            account_type,
-            passphrase,
-        )
+        self.wallet_info
+            .add_managed_eddsa_account_with_passphrase(wallet, account_type, passphrase)
     }
 
     #[cfg(feature = "eddsa")]
@@ -101,9 +89,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         account_type: AccountType,
         ed25519_public_key: [u8; 32],
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_eddsa_account_from_public_key(
-            account_type,
-            ed25519_public_key,
-        )
+        self.wallet_info
+            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key)
     }
 }

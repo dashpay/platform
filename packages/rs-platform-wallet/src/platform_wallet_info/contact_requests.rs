@@ -33,7 +33,8 @@ impl PlatformWalletInfo {
         request: ContactRequest,
     ) -> Result<(), PlatformWalletError> {
         if self
-            .identity_manager().managed_identity(identity_id)
+            .identity_manager()
+            .managed_identity(identity_id)
             .is_none()
         {
             return Err(PlatformWalletError::IdentityNotFound(*identity_id));
@@ -55,9 +56,7 @@ impl PlatformWalletInfo {
             friend_identity_id,
         };
 
-        let wallet_has_account = wallet
-            .accounts.account_of_type(account_type)
-            .is_some();
+        let wallet_has_account = wallet.accounts.account_of_type(account_type).is_some();
 
         if wallet_has_account {
             return Err(PlatformWalletError::DashpayReceivingAccountAlreadyExists {
@@ -69,11 +68,13 @@ impl PlatformWalletInfo {
         }
 
         if !wallet_has_account {
-            let account_path = account_type.derivation_path(self.network()).map_err(|err| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to derive DashPay receiving account path: {err}"
-                ))
-            })?;
+            let account_path = account_type
+                .derivation_path(self.network())
+                .map_err(|err| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to derive DashPay receiving account path: {err}"
+                    ))
+                })?;
 
             let account_xpub = wallet
                 .derive_extended_public_key(&account_path)
@@ -94,7 +95,9 @@ impl PlatformWalletInfo {
 
         let managed_has_account = self
             .wallet_info
-            .accounts().dashpay_receival_accounts.get(&account_key)
+            .accounts()
+            .dashpay_receival_accounts
+            .get(&account_key)
             .is_some();
 
         if managed_has_account {
@@ -116,9 +119,7 @@ impl PlatformWalletInfo {
                 })?;
         }
 
-        let managed_account_collection = self
-            .wallet_info
-            .accounts_mut();
+        let managed_account_collection = self.wallet_info.accounts_mut();
 
         let managed_account = managed_account_collection
             .dashpay_receival_accounts
@@ -149,7 +150,8 @@ impl PlatformWalletInfo {
         request: ContactRequest,
     ) -> Result<(), PlatformWalletError> {
         if self
-            .identity_manager().managed_identity(identity_id)
+            .identity_manager()
+            .managed_identity(identity_id)
             .is_none()
         {
             return Err(PlatformWalletError::IdentityNotFound(*identity_id));
@@ -177,7 +179,8 @@ impl PlatformWalletInfo {
         }
 
         if self
-            .identity_manager().managed_identity(identity_id)
+            .identity_manager()
+            .managed_identity(identity_id)
             .and_then(|managed| {
                 managed
                     .identity
@@ -210,9 +213,7 @@ impl PlatformWalletInfo {
             friend_identity_id,
         };
 
-        let wallet_has_account = wallet
-            .accounts.account_of_type(account_type)
-            .is_some();
+        let wallet_has_account = wallet.accounts.account_of_type(account_type).is_some();
 
         if wallet_has_account {
             return Err(PlatformWalletError::DashpayExternalAccountAlreadyExists {
@@ -239,7 +240,9 @@ impl PlatformWalletInfo {
 
         let managed_has_account = self
             .wallet_info
-            .accounts().dashpay_external_accounts.get(&account_key)
+            .accounts()
+            .dashpay_external_accounts
+            .get(&account_key)
             .is_some();
 
         if managed_has_account {
@@ -259,9 +262,7 @@ impl PlatformWalletInfo {
                 ))
             })?;
 
-        let managed_account_collection = self
-            .wallet_info
-            .accounts_mut();
+        let managed_account_collection = self.wallet_info.accounts_mut();
 
         let managed_account = managed_account_collection
             .dashpay_external_accounts
@@ -366,7 +367,9 @@ impl PlatformWalletInfo {
 
         // Get SDK from identity manager
         let sdk = self
-            .identity_manager().sdk.as_ref()
+            .identity_manager()
+            .sdk
+            .as_ref()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "SDK not configured in identity manager".to_string(),
@@ -395,11 +398,13 @@ impl PlatformWalletInfo {
         };
 
         // Derive the account path and xpub
-        let account_path = account_type.derivation_path(self.network()).map_err(|err| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to derive DashPay receiving account path: {err}"
-            ))
-        })?;
+        let account_path = account_type
+            .derivation_path(self.network())
+            .map_err(|err| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to derive DashPay receiving account path: {err}"
+                ))
+            })?;
 
         let account_xpub = wallet
             .derive_extended_public_key(&account_path)
@@ -442,12 +447,7 @@ impl PlatformWalletInfo {
             result.document.created_at().unwrap_or(0),
         );
 
-        self.add_sent_contact_request(
-            wallet,
-            account_index,
-            &sender_identity_id,
-            contact_request,
-        )?;
+        self.add_sent_contact_request(wallet, account_index, &sender_identity_id, contact_request)?;
 
         Ok((result.document.id(), result.recipient_id))
     }
@@ -489,7 +489,10 @@ mod tests {
         let xpub_str = "xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ";
         let xpub = xpub_str.parse::<ExtendedPubKey>().unwrap();
         let root_xpub = RootExtendedPubKey::from_extended_pub_key(&xpub);
-        Wallet::from_wallet_type(Network::Testnet, key_wallet::wallet::WalletType::WatchOnly(root_xpub))
+        Wallet::from_wallet_type(
+            Network::Testnet,
+            key_wallet::wallet::WalletType::WatchOnly(root_xpub),
+        )
     }
 
     fn create_test_identity(id_bytes: [u8; 32]) -> Identity {
@@ -537,7 +540,8 @@ mod tests {
 
     #[test]
     fn test_accept_incoming_request_identity_not_found() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let identity_id = Identifier::from([1u8; 32]);
         let sender_id = Identifier::from([2u8; 32]);
 
@@ -553,7 +557,8 @@ mod tests {
 
     #[test]
     fn test_accept_incoming_request_contact_not_found() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let identity_id = Identifier::from([1u8; 32]);
         let sender_id = Identifier::from([2u8; 32]);
 
@@ -576,7 +581,8 @@ mod tests {
 
     #[test]
     fn test_error_identity_not_found_for_sent_request() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let mut wallet = create_dummy_wallet();
         let identity_id = Identifier::from([1u8; 32]);
         let recipient_id = Identifier::from([2u8; 32]);
@@ -584,12 +590,8 @@ mod tests {
         let request = create_contact_request(identity_id, recipient_id, 1234567890);
 
         // Try to add sent request for non-existent identity
-        let result = platform_wallet.add_sent_contact_request(
-            &mut wallet,
-            0,
-            &identity_id,
-            request,
-        );
+        let result =
+            platform_wallet.add_sent_contact_request(&mut wallet, 0, &identity_id, request);
 
         assert!(result.is_err());
         assert!(matches!(
@@ -600,7 +602,8 @@ mod tests {
 
     #[test]
     fn test_error_identity_not_found_for_incoming_request() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let mut wallet = create_dummy_wallet();
         let identity_id = Identifier::from([1u8; 32]);
         let friend_id = Identifier::from([2u8; 32]);
@@ -625,7 +628,8 @@ mod tests {
 
     #[test]
     fn test_error_sender_mismatch_for_incoming_request() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let mut wallet = create_dummy_wallet();
         let identity_id = Identifier::from([1u8; 32]);
         let friend_id = Identifier::from([2u8; 32]);
@@ -661,7 +665,8 @@ mod tests {
 
     #[test]
     fn test_error_missing_encryption_key_in_sender() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let mut wallet = create_dummy_wallet();
         let identity_id = Identifier::from([1u8; 32]);
         let friend_id = Identifier::from([2u8; 32]);
@@ -703,7 +708,8 @@ mod tests {
 
     #[test]
     fn test_error_wrong_key_purpose_in_sender() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let mut wallet = create_dummy_wallet();
         let identity_id = Identifier::from([1u8; 32]);
         let friend_id = Identifier::from([2u8; 32]);
@@ -756,7 +762,8 @@ mod tests {
 
     #[test]
     fn test_error_missing_recipient_encryption_key() {
-        let mut platform_wallet = PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
+        let mut platform_wallet =
+            PlatformWalletInfo::new(Network::Testnet, [1u8; 32], "Test Wallet".to_string());
         let mut wallet = create_dummy_wallet();
         let identity_id = Identifier::from([1u8; 32]);
         let friend_id = Identifier::from([2u8; 32]);

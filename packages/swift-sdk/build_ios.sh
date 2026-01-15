@@ -85,7 +85,7 @@ if command -v xcodebuild >/dev/null 2>&1; then
   xcodebuild -project "$SCRIPT_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj" \
              -scheme SwiftExampleApp \
              -sdk iphonesimulator \
-             -destination 'platform=iOS Simulator,name=iPhone 17' \
+             -destination 'platform=iOS Simulator,name=iPhone 16' \
              -quiet build
   XC_STATUS=$?
   set -e

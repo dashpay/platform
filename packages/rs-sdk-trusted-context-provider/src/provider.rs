@@ -74,6 +74,8 @@ struct MasternodeEntry {
     status: String,
     #[serde(rename = "versionCheck")]
     version_check: Option<String>,
+    #[serde(rename = "platformHTTPPort")]
+    platform_http_port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -203,6 +205,20 @@ impl TrustedHttpContextProvider {
         known.insert(id, Arc::new(contract));
     }
 
+    /// Get a data contract from the known contracts cache
+    /// Returns None if the contract is not in the cache
+    pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        let known = self.known_contracts.lock().unwrap();
+        known.get(id).cloned()
+    }
+
+    /// Remove a data contract from the known contracts cache
+    /// Returns true if the contract was present and removed, false otherwise
+    pub fn remove_known_contract(&self, id: &Identifier) -> bool {
+        let mut known = self.known_contracts.lock().unwrap();
+        known.remove(id).is_some()
+    }
+
     /// Add multiple data contracts to the known contracts cache
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
         let mut known = self.known_contracts.lock().unwrap();
@@ -219,10 +235,7 @@ impl TrustedHttpContextProvider {
     }
 
     /// Add multiple token configurations to the known token configurations cache
-    pub fn add_known_token_configurations(
-        &self,
-        configs: Vec<(Identifier, TokenConfiguration)>,
-    ) {
+    pub fn add_known_token_configurations(&self, configs: Vec<(Identifier, TokenConfiguration)>) {
         let mut known = self.known_token_configurations.lock().unwrap();
         for (token_id, config) in configs {
             known.insert(token_id, config);
@@ -292,7 +305,7 @@ impl TrustedHttpContextProvider {
             ));
         }
 
-        let dapi_port = match self.network {
+        let default_dapi_port = match self.network {
             Network::Dash => 443,
             Network::Testnet => 1443,
             _ => 443,
@@ -309,6 +322,8 @@ impl TrustedHttpContextProvider {
                 .rsplit_once(':')
                 .map(|(h, _)| h)
                 .unwrap_or(host_port.as_str());
+            // Use platformHTTPPort from the entry if available, otherwise use network default
+            let dapi_port = entry.platform_http_port.unwrap_or(default_dapi_port);
             let https_url = format!("https://{}:{}", host, dapi_port);
             let url = url::Url::parse(&https_url).map_err(|e| {
                 TrustedContextProviderError::NetworkError(format!(

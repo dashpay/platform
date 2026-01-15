@@ -10,6 +10,11 @@ use dpp::data_contract::associated_token::token_configuration_localization::Toke
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::config::DataContractConfig;
@@ -41,6 +46,11 @@ const IDENTITY_ID_2: Identifier = Identifier::new([2; 32]);
 const IDENTITY_ID_3: Identifier = Identifier::new([3; 32]);
 
 const DATA_CONTRACT_ID: Identifier = Identifier::new([3; 32]);
+
+/// Credits amount per identity (10000 DASH worth).
+/// Tests need significant credits for contract publish (~12-14 DASH each),
+/// token operations, and other state transitions.
+pub const CREDITS_PER_IDENTITY: u64 = 10_000_000_000_000;
 
 static TOKEN_ID_0: LazyLock<Identifier> =
     LazyLock::new(|| calculate_token_id(&DATA_CONTRACT_ID.to_buffer(), 0).into());
@@ -166,14 +176,31 @@ impl<C> Platform<C> {
         let non_unique_key =
             IdentityPublicKey::random_voting_key_with_rng(11, &mut rng, platform_version)?;
 
+        // Add total credits to system first (credits must be backed by system credits)
+        let total_credits = CREDITS_PER_IDENTITY * 3; // 3 identities
+        self.drive
+            .add_to_system_credits(total_credits, transaction, platform_version)?;
+
         for id in [IDENTITY_ID_1, IDENTITY_ID_2, IDENTITY_ID_3] {
             // Create identity without keys
             let mut identity = Identity::create_basic_identity(id, platform_version)?;
+
+            // Fund the identity with credits for state transition fees
+            identity.set_balance(CREDITS_PER_IDENTITY);
 
             // Generate keys
             let seed = id.to_buffer()[0];
             let mut rng = StdRng::seed_from_u64(seed as u64);
             let mut keys = IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(3, &mut rng, platform_version)?;
+
+            // Add a TRANSFER purpose key (key id 3) for identity credit transfers
+            let transfer_key = IdentityPublicKey::random_masternode_transfer_key_with_rng(
+                3, // key id 3 (after master=0, critical=1, high=2)
+                &mut rng,
+                platform_version,
+            )?;
+            keys.push(transfer_key);
+
             // every identity has the same non-unique key
             keys.push(non_unique_key.clone());
 
@@ -186,11 +213,10 @@ impl<C> Platform<C> {
                     "Generated random {} key {} for test identity {}", key.purpose(), key.id(), id);
             }
 
-            // Print private keys if necessary
+            // Set public keys using their original key IDs (not enumeration position)
             identity.set_public_keys(
                 keys.into_iter()
-                    .enumerate()
-                    .map(|(i, (key, _private_key))| (i as KeyID, key))
+                    .map(|(key, _private_key)| (key.id(), key))
                     .collect(),
             );
 
@@ -232,7 +258,7 @@ impl<C> Platform<C> {
                 2,
                 Group::V0(GroupV0 {
                     members: [(IDENTITY_ID_1, 1), (IDENTITY_ID_3, 1)].into(),
-                    required_power: 2,
+                    required_power: 1, // Identity 1 alone can burn (power=1)
                 }),
             ),
         ]
@@ -252,14 +278,29 @@ impl<C> Platform<C> {
             allow_transfer_to_frozen_balance: true,
             max_supply_change_rules: ChangeControlRulesV0::default().into(),
             distribution_rules: TokenDistributionRulesV0 {
-                perpetual_distribution: None,
+                perpetual_distribution: Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 10, // Distribute every 10 blocks
+                            function: DistributionFunction::FixedAmount { amount: 100 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::ContractOwner,
+                    },
+                )),
                 perpetual_distribution_rules: ChangeControlRulesV0::default().into(),
                 pre_programmed_distribution: None,
                 new_tokens_destination_identity: None,
                 new_tokens_destination_identity_rules: ChangeControlRulesV0::default().into(),
                 minting_allow_choosing_destination: true,
                 minting_allow_choosing_destination_rules: ChangeControlRulesV0::default().into(),
-                change_direct_purchase_pricing_rules: ChangeControlRulesV0::default().into(),
+                change_direct_purchase_pricing_rules: ChangeControlRulesV0 {
+                    authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                    admin_action_takers: Default::default(),
+                    changing_authorized_action_takers_to_no_one_allowed: false,
+                    changing_admin_action_takers_to_no_one_allowed: false,
+                    self_changing_admin_action_takers_allowed: false,
+                }
+                .into(),
             }
             .into(),
             marketplace_rules: TokenMarketplaceRulesV0 {
@@ -283,10 +324,38 @@ impl<C> Platform<C> {
                 self_changing_admin_action_takers_allowed: false,
             }
             .into(),
-            freeze_rules: ChangeControlRulesV0::default().into(),
-            unfreeze_rules: ChangeControlRulesV0::default().into(),
-            destroy_frozen_funds_rules: ChangeControlRulesV0::default().into(),
-            emergency_action_rules: ChangeControlRulesV0::default().into(),
+            freeze_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: Default::default(),
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }
+            .into(),
+            unfreeze_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: Default::default(),
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }
+            .into(),
+            destroy_frozen_funds_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: Default::default(),
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }
+            .into(),
+            emergency_action_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: Default::default(),
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }
+            .into(),
             main_control_group: None,
             main_control_group_can_be_modified: Default::default(),
             description: Some("Some token description".to_string()),

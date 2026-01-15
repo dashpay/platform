@@ -251,3 +251,34 @@ pub fn parse_put_settings(
         .map_err(|e| WasmSdkError::serialization(format!("Failed to parse put settings: {}", e)))?;
     Ok(Some(input.into()))
 }
+
+/// Extracts PutSettings from the 'settings' field of an options object.
+///
+/// This helper is useful when you have a typed options JS object and want to
+/// extract the optional settings field.
+pub fn extract_settings_from_options(
+    options: &JsValue,
+) -> Result<Option<PutSettings>, WasmSdkError> {
+    let settings_js = js_sys::Reflect::get(options, &JsValue::from_str("settings"))
+        .map_err(|e| WasmSdkError::generic(format!("Failed to extract settings: {:?}", e)))?;
+
+    if settings_js.is_undefined() || settings_js.is_null() {
+        return Ok(None);
+    }
+
+    // Convert JsValue to PutSettingsJs and parse
+    let settings_typed: PutSettingsJs = settings_js.into();
+    parse_put_settings(Some(settings_typed))
+}
+
+/// Extracts user_fee_increase from optional PutSettings, defaulting to 0.
+///
+/// This helper simplifies the common pattern of extracting user_fee_increase
+/// from settings for state transition creation.
+pub fn get_user_fee_increase(
+    settings: Option<&PutSettings>,
+) -> dash_sdk::dpp::prelude::UserFeeIncrease {
+    settings
+        .and_then(|s| s.user_fee_increase)
+        .unwrap_or_default()
+}

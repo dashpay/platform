@@ -141,7 +141,7 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1711420);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1666860);
 
         let issues = platform
             .drive
@@ -827,7 +827,7 @@ mod deletion_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -891,7 +891,7 @@ mod deletion_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -1004,7 +1004,7 @@ mod deletion_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -1068,12 +1068,12 @@ mod deletion_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
-                    _
-                )),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
         );
 
         platform
@@ -1227,10 +1227,10 @@ mod deletion_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::DocumentOwnerIdMismatchError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentOwnerIdMismatchError(_)),
+                ..
+            }]
         );
     }
 }

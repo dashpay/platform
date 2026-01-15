@@ -65,8 +65,8 @@ platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = { version = "1.0", features = ["from", "display", "try_into"] }
 nohash-hasher = "0.2.0"
-rust_decimal = { version = "1.29.1", optional = true }
-rust_decimal_macros = { version = "1.29.1", optional = true }
+rust_decimal = { version = "1.39.0", optional = true }
+rust_decimal_macros = { version = "1.39.0", optional = true }
 indexmap = { version = "2.7.0", features = ["serde"] }
 strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }

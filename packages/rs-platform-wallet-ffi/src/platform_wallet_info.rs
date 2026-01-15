@@ -327,8 +327,8 @@ pub extern "C" fn platform_wallet_info_destroy(wallet_handle: Handle) -> Platfor
 
 #[cfg(test)]
 mod tests {
-    use crate::platform_wallet_string_free;
     use super::*;
+    use crate::platform_wallet_string_free;
 
     #[test]
     fn test_create_from_seed() {
@@ -382,7 +382,13 @@ mod tests {
         let mut handle: Handle = NULL_HANDLE;
         let mut error = PlatformWalletFFIError::success();
 
-        platform_wallet_info_create_from_seed(Network::Testnet, seed.as_ptr(), seed.len(), &mut handle, &mut error);
+        platform_wallet_info_create_from_seed(
+            Network::Testnet,
+            seed.as_ptr(),
+            seed.len(),
+            &mut handle,
+            &mut error,
+        );
 
         let mut json_ptr: *mut c_char = std::ptr::null_mut();
         let result = platform_wallet_info_to_json(handle, &mut json_ptr, &mut error);

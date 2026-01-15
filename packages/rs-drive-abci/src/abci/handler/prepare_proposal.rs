@@ -205,9 +205,9 @@ where
         execution_results.into_iter().zip(request.txs)
     {
         let tx_action = match &state_transition_execution_result {
-            StateTransitionExecutionResult::SuccessfulExecution(..) => TxAction::Unmodified,
+            StateTransitionExecutionResult::SuccessfulExecution { .. } => TxAction::Unmodified,
             // We have identity to pay for the state transition, so we keep it in the block
-            StateTransitionExecutionResult::PaidConsensusError(..) => TxAction::Unmodified,
+            StateTransitionExecutionResult::PaidConsensusError { .. } => TxAction::Unmodified,
             // We don't have any associated identity to pay for the state transition,
             // so we remove it from the block to prevent spam attacks.
             // Such state transitions must be invalidated by check tx, but they might

@@ -5,13 +5,13 @@
 
 use super::PlatformWalletInfo;
 use crate::error::PlatformWalletError;
+#[allow(unused_imports)]
+use crate::ContactRequest;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::immature_transaction::ImmatureTransaction;
-use key_wallet::Network;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-#[allow(unused_imports)]
-use crate::ContactRequest;
+use key_wallet::Network;
 
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -56,10 +56,7 @@ impl PlatformWalletInfo {
         };
 
         let result = self
-            .fetch_contact_requests_for_identities_after_asset_locks(
-                wallet,
-                &[immature_tx],
-            )
+            .fetch_contact_requests_for_identities_after_asset_locks(wallet, &[immature_tx])
             .await?;
 
         Ok(result.first().copied())
@@ -97,7 +94,9 @@ impl PlatformWalletInfo {
 
         // Get SDK from identity manager
         let sdk = self
-            .identity_manager().sdk.as_ref()
+            .identity_manager()
+            .sdk
+            .as_ref()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "SDK not configured in identity manager".to_string(),
@@ -166,10 +165,11 @@ impl PlatformWalletInfo {
 
                 // Add identity to manager if not already present
                 if !self
-                    .identity_manager().identities().contains_key(&identity_id)
+                    .identity_manager()
+                    .identities()
+                    .contains_key(&identity_id)
                 {
-                    self.identity_manager_mut()
-                        .add_identity(identity.clone())?;
+                    self.identity_manager_mut().add_identity(identity.clone())?;
                 }
 
                 // Fetch DashPay contact requests for this identity

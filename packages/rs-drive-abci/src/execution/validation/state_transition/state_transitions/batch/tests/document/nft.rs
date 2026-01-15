@@ -154,7 +154,11 @@ mod nft_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document transition action card is in trade mode No Trading that does not support the seller setting the price is not supported");
@@ -1830,7 +1834,11 @@ mod nft_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)");
@@ -2019,7 +2027,11 @@ mod nft_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document transition action on document type: card identity trying to purchase a document that is already owned by the purchaser is not supported");
@@ -2323,7 +2335,11 @@ mod nft_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError(consensus_error, _) = result else {
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(
@@ -2888,7 +2904,7 @@ mod nft_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let sender_documents_sql_string =
@@ -2990,7 +3006,7 @@ mod nft_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         let query_sender_results = platform
@@ -3078,7 +3094,7 @@ mod nft_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform

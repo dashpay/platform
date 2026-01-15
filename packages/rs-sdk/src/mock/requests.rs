@@ -32,11 +32,13 @@ use drive_proof_verifier::types::identity_token_balance::{
 };
 use drive_proof_verifier::types::token_info::{IdentitiesTokenInfos, IdentityTokenInfos};
 use drive_proof_verifier::types::token_status::TokenStatuses;
+use drive::grovedb::GroveTrunkQueryResult;
 use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
-    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PrefundedSpecializedBalance,
-    ProposerBlockCounts, RetrievedValues, TotalCreditsInPlatform, VotePollsGroupedByTimestamp,
-    Voters,
+    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PlatformAddressTrunkState,
+    PrefundedSpecializedBalance, ProposerBlockCounts, RecentAddressBalanceChanges,
+    RecentCompactedAddressBalanceChanges, RetrievedValues, TotalCreditsInPlatform,
+    VotePollsGroupedByTimestamp, Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -503,3 +505,35 @@ impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
 impl_mock_response!(PlatformAddress);
 impl_mock_response!(AddressInfo);
+impl_mock_response!(RecentAddressBalanceChanges);
+impl_mock_response!(RecentCompactedAddressBalanceChanges);
+
+/// MockResponse for GroveTrunkQueryResult - panics when called because the Tree type
+/// doesn't support serialization. Address sync operations should not be mocked.
+impl MockResponse for GroveTrunkQueryResult {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        unimplemented!("GroveTrunkQueryResult does not support mock serialization - the Tree type is not serializable")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, _buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!("GroveTrunkQueryResult does not support mock deserialization - the Tree type is not serializable")
+    }
+}
+
+/// MockResponse for PlatformAddressTrunkState - panics when called because the underlying
+/// Tree type doesn't support serialization. Address sync operations should not be mocked.
+impl MockResponse for PlatformAddressTrunkState {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        unimplemented!("PlatformAddressTrunkState does not support mock serialization - the Tree type is not serializable")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, _buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!("PlatformAddressTrunkState does not support mock deserialization - the Tree type is not serializable")
+    }
+}

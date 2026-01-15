@@ -8,15 +8,14 @@ use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 fn main() -> Result<(), PlatformWalletError> {
     // Create a platform wallet
     let wallet_id = [1u8; 32];
-    let network = dashcore::Network::Testnet;
+    let network = Network::Testnet;
     let platform_wallet =
-        PlatformWalletInfo::new(wallet_id, "My Platform Wallet".to_string(), network);
+        PlatformWalletInfo::new(network, wallet_id, "My Platform Wallet".to_string());
 
     println!("Created wallet: {:?}", platform_wallet.name());
 
     // You can manage identities
     // In a real application, you would load identities from the platform
-    let network = Network::Testnet;
     println!(
         "Total identities on {:?}: {}",
         network,
@@ -28,7 +27,7 @@ fn main() -> Result<(), PlatformWalletError> {
     {
         use key_wallet_manager::wallet_manager::WalletManager;
 
-        let _wallet_manager = WalletManager::<PlatformWalletInfo>::new();
+        let _wallet_manager = WalletManager::<PlatformWalletInfo>::new(network);
         println!("Platform wallet successfully integrated with wallet managers!");
     }
 

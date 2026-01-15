@@ -6,6 +6,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::GroveDBToUse;
 
 use dpp::version::drive_versions::DriveVersion;
 
@@ -17,6 +18,7 @@ impl Drive {
     ///
     /// # Parameters
     /// * `query`: The branch chunk query to retrieve a proof for.
+    /// * `grove_db_to_use`: Which GroveDB instance to use (current, latest checkpoint, or specific checkpoint).
     /// * `drive_operations`: A vector to collect the costs of operations for later computation.
     /// * `drive_version`: The drive version to select the correct function version to run.
     ///
@@ -26,6 +28,7 @@ impl Drive {
     pub fn grove_get_proved_branch_chunk_query(
         &self,
         query: &PathBranchChunkQuery,
+        grove_db_to_use: GroveDBToUse,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -34,9 +37,12 @@ impl Drive {
             .basic
             .grove_get_proved_branch_chunk_query
         {
-            0 => {
-                self.grove_get_proved_branch_chunk_query_v0(query, drive_operations, drive_version)
-            }
+            0 => self.grove_get_proved_branch_chunk_query_v0(
+                query,
+                grove_db_to_use,
+                drive_operations,
+                drive_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_proved_branch_chunk_query".to_string(),
                 known_versions: vec![0],

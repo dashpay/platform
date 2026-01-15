@@ -140,6 +140,8 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 process_raw_state_transitions: 0,
                 decode_raw_state_transitions: 0,
                 validate_fees_of_event: 0,
+                store_address_balances_to_recent_block_storage: None,
+                cleanup_recent_block_storage_address_balances: None,
             },
             epoch: DriveAbciEpochMethodVersions {
                 gather_epoch_info: 0,
@@ -152,6 +154,7 @@ pub const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 update_state_cache: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
+                should_checkpoint: None,
                 update_checkpoints: None,
             },
             platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {

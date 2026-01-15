@@ -12,17 +12,12 @@ impl PlatformWalletInfo {
     }
 
     /// Get direct access to managed identities
-    pub fn managed_identities(
-        &self,
-    ) -> &IndexMap<Identifier, ManagedIdentity> {
+    pub fn managed_identities(&self) -> &IndexMap<Identifier, ManagedIdentity> {
         &self.identity_manager().identities
     }
 
     /// Add an identity to this wallet
-    pub fn add_identity(
-        &mut self,
-        identity: Identity,
-    ) -> Result<(), PlatformWalletError> {
+    pub fn add_identity(&mut self, identity: Identity) -> Result<(), PlatformWalletError> {
         self.identity_manager_mut().add_identity(identity)
     }
 
@@ -36,8 +31,7 @@ impl PlatformWalletInfo {
         &mut self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        self.identity_manager_mut()
-            .remove_identity(identity_id)
+        self.identity_manager_mut().remove_identity(identity_id)
     }
 
     /// Get the primary identity (if set)

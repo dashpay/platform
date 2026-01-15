@@ -5,7 +5,9 @@
 // generated types. Later these re-exports could be swapped with actual dash-platform-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
+pub mod address_sync;
 pub mod block_info_from_metadata;
+pub mod dashpay;
 mod delegate;
 pub mod documents;
 pub mod dpns_usernames;
@@ -19,7 +21,6 @@ pub mod query;
 pub mod tokens;
 pub mod transition;
 pub mod types;
-pub mod dashpay;
 
 pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;
@@ -39,6 +40,7 @@ pub use {
     fetch_unproved::FetchUnproved,
     query::{
         IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
+        RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
 };

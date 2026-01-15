@@ -67,7 +67,7 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -153,12 +153,12 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
-                    _
-                )),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
         );
 
         platform
@@ -246,10 +246,10 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                ..
+            }]
         );
 
         platform
@@ -370,7 +370,7 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -422,7 +422,7 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -509,7 +509,7 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -629,7 +629,7 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -681,7 +681,7 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -768,12 +768,12 @@ mod token_burn_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
-                    _
-                )),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
         );
 
         platform
