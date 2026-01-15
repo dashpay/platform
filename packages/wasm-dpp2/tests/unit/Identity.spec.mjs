@@ -57,7 +57,6 @@ describe('Identity', () => {
       expect(restoredIdentity.id.toBytes()).to.deep.equal(identity.id.toBytes());
       expect(restoredIdentity.getPublicKeys().length).to.equal(identity.getPublicKeys().length);
     });
-
   });
 
   describe('getters', () => {

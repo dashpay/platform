@@ -223,7 +223,9 @@ fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
         // Normalize the value - handle WASM objects, BigInt, nested Maps, etc.
         match normalize_js_value_for_json(&val) {
             Ok(normalized_val) => {
-                if let Err(e) = js_sys::Reflect::set(&new_obj, &JsValue::from_str(&key_str), &normalized_val) {
+                if let Err(e) =
+                    js_sys::Reflect::set(&new_obj, &JsValue::from_str(&key_str), &normalized_val)
+                {
                     *error.borrow_mut() = Some(WasmDppError::serialization(format!(
                         "Failed to set Map entry '{}': {:?}",
                         key_str, e

@@ -173,8 +173,8 @@ describe('JS value to JSON conversion (testJsValueToJson)', () => {
       expect(json).to.have.property('H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1');
       expect(json).to.have.property('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
       // Values are BigInt, should be strings
-      expect(json['H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1']).to.equal('100');
-      expect(json['ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U']).to.equal('200');
+      expect(json.H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1).to.equal('100');
+      expect(json.ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U).to.equal('200');
     });
   });
 
@@ -226,7 +226,7 @@ describe('JS value to JSON conversion (testJsValueToJson)', () => {
 
       expect(json['0']).to.deep.equal({ epoch: 0 });
       // Note: In JSON, undefined becomes null (JSON doesn't have undefined)
-      expect(json['1']).to.satisfy(v => v === null || v === undefined);
+      expect(json['1']).to.satisfy((v) => v === null || v === undefined);
       expect(json['2']).to.equal(null);
       expect(json['3']).to.deep.equal({ epoch: 3 });
     });
@@ -348,7 +348,7 @@ describe('JS value to JSON conversion (testJsValueToJson)', () => {
 
       expect(json['1'].index).to.equal(1);
       // Note: In JSON, undefined becomes null (JSON doesn't have undefined)
-      expect(json['2']).to.satisfy(v => v === null || v === undefined);
+      expect(json['2']).to.satisfy((v) => v === null || v === undefined);
     });
   });
 
@@ -389,7 +389,7 @@ describe('JS value to JSON conversion (testJsValueToJson)', () => {
 
     it('should handle large Maps', () => {
       const map = new Map();
-      for (let i = 0; i < 1000; i++) {
+      for (let i = 0; i < 1000; i += 1) {
         map.set(i, { index: i, value: `item${i}` });
       }
 

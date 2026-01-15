@@ -96,7 +96,10 @@ impl ProtocolVersionUpgradeVoteStatusWasm {
 }
 
 impl_wasm_serde_conversions!(ProtocolVersionUpgradeStateWasm, ProtocolVersionUpgradeState);
-impl_wasm_serde_conversions!(ProtocolVersionUpgradeVoteStatusWasm, ProtocolVersionUpgradeVoteStatus);
+impl_wasm_serde_conversions!(
+    ProtocolVersionUpgradeVoteStatusWasm,
+    ProtocolVersionUpgradeVoteStatus
+);
 
 #[wasm_bindgen]
 impl WasmSdk {
