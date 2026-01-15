@@ -171,8 +171,13 @@ impl Serialize for PlatformAddressWasm {
     where
         S: Serializer,
     {
-        // Serialize as hex string (consistent with to_hex method)
-        serializer.serialize_str(&hex::encode(self.0.to_bytes()))
+        if serializer.is_human_readable() {
+            // JSON, TOML, etc. - use hex string
+            serializer.serialize_str(&hex::encode(self.0.to_bytes()))
+        } else {
+            // Binary formats (bincode, MessagePack, etc.) - use raw bytes
+            serializer.serialize_bytes(&self.0.to_bytes())
+        }
     }
 }
 
