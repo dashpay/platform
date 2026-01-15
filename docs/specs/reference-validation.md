@@ -20,10 +20,11 @@ Introduce an optional `refersTo` keyword on document properties so contracts can
 - Keep existing `identifier_paths`/`binary_paths` behavior (the sets of property paths already tracked for identifier and binary fields); `refersTo` is additive on top.
 
 ## Runtime Validation
-- Enforce in state validation (Drive) for document create and replace transitions:
+- Enforce during Drive advanced structure validation (`validate_advanced_structure_from_state` in batch transitions) for document create and replace transitions:
   - For each property with `refersTo.mustExist == true`, fetch the referenced identity ID and fail with a consensus state error if missing.
   - Support nested properties (use flattened property paths).
-  - Count identity fetches in execution context fee accounting; use batching/caching within a batch transition to minimize repeated lookups.
+  - Count identity fetches in execution context fee accounting.
+- Implement via versioned advanced structure validators for document create/replace (new v1 modules) while keeping v0 behavior unchanged.
 - Applied in ABCI paths: CheckTx, PrepareProposal, and ProcessProposal.
 - Basic validation (DPP) only checks keyword shape/placement; no state access.
 
