@@ -26,7 +26,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "platform-value-json",
 ] }
 
-bincode = { version = "2.0.1" }
+bincode = { version = "=2.0.1" }
 wasm-bindgen = { version = "=0.2.103" }
 serde = { version = "1.0.193", default-features = false, features = [
     "alloc",
