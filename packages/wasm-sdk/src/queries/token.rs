@@ -125,8 +125,8 @@ impl TokenTotalSupplyWasm {
     }
 }
 
-impl_wasm_serde_conversions!(TokenTotalSupplyWasm);
-impl_wasm_serde_conversions!(TokenPriceInfoWasm);
+impl_wasm_serde_conversions!(TokenTotalSupplyWasm, TokenTotalSupply);
+impl_wasm_serde_conversions!(TokenPriceInfoWasm, TokenPriceInfo);
 
 #[wasm_bindgen]
 impl WasmSdk {

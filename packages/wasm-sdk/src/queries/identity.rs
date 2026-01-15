@@ -20,7 +20,8 @@ use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityWasm;
 
 #[wasm_bindgen(js_name = "IdentityKeyInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityKeyInfoWasm {
     key_id: u32,
     key_type: String,
@@ -83,8 +84,11 @@ impl IdentityKeyInfoWasm {
     }
 }
 
+impl_wasm_serde_conversions!(IdentityKeyInfoWasm, IdentityKeyInfo);
+
 #[wasm_bindgen(js_name = "IdentityContractKeys")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentityContractKeysWasm {
     identity_id: IdentifierWasm,
     keys: Vec<IdentityKeyInfoWasm>,
@@ -104,14 +108,17 @@ impl IdentityContractKeysWasm {
     }
 
     #[wasm_bindgen(getter = "keys")]
-    pub fn keys(&self) -> Array {
+    pub fn keys(&self) -> Result<Array, WasmSdkError> {
         let array = Array::new();
         for key in &self.keys {
-            array.push(&JsValue::from(key.clone()));
+            // Use to_object() to properly serialize each key
+            array.push(&key.to_object()?);
         }
-        array
+        Ok(array)
     }
 }
+
+impl_wasm_serde_conversions!(IdentityContractKeysWasm, IdentityContractKeys);
 
 #[wasm_bindgen(js_name = "IdentityBalanceAndRevision")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -140,7 +147,7 @@ impl IdentityBalanceAndRevisionWasm {
     }
 }
 
-impl_wasm_serde_conversions!(IdentityBalanceAndRevisionWasm);
+impl_wasm_serde_conversions!(IdentityBalanceAndRevisionWasm, IdentityBalanceAndRevision);
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
 /**
@@ -608,9 +615,9 @@ impl WasmSdk {
         let array = Array::new();
         for (key_id, key_opt) in keys_result {
             if let Some(key) = key_opt {
-                array.push(&JsValue::from(IdentityKeyInfoWasm::from_entry(
-                    key_id, &key,
-                )));
+                let key_info = IdentityKeyInfoWasm::from_entry(key_id, &key);
+                // Use to_object() to properly serialize the key info
+                array.push(&key_info.to_object()?);
             }
         }
 
@@ -910,7 +917,8 @@ impl WasmSdk {
 
         let array = Array::new();
         for response in responses {
-            array.push(&JsValue::from(response));
+            // Use to_object() to properly serialize the response with nested keys
+            array.push(&response.to_object()?);
         }
 
         Ok(array)
@@ -1083,9 +1091,9 @@ impl WasmSdk {
         let keys_array = Array::new();
         for (key_id, key_opt) in keys_result {
             if let Some(key) = key_opt {
-                keys_array.push(&JsValue::from(IdentityKeyInfoWasm::from_entry(
-                    key_id, &key,
-                )));
+                let key_info = IdentityKeyInfoWasm::from_entry(key_id, &key);
+                // Use to_object() to properly serialize the key info
+                keys_array.push(&key_info.to_object()?);
             }
         }
 
@@ -1359,7 +1367,8 @@ impl WasmSdk {
 
         let responses_array = Array::new();
         for response in all_responses {
-            responses_array.push(&JsValue::from(response));
+            // Use to_object() to properly serialize the response with nested keys
+            responses_array.push(&response.to_object()?);
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(

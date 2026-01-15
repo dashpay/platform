@@ -5,7 +5,8 @@ use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
 use js_sys::Uint8Array;
 use serde::de::{self, Error, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::ser::Serializer;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 use wasm_bindgen::prelude::*;
 
@@ -162,6 +163,16 @@ impl<'de> Deserialize<'de> for PlatformAddressWasm {
         D: Deserializer<'de>,
     {
         deserializer.deserialize_any(PlatformAddressWasmVisitor)
+    }
+}
+
+impl Serialize for PlatformAddressWasm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // Serialize as hex string (consistent with to_hex method)
+        serializer.serialize_str(&hex::encode(self.0.to_bytes()))
     }
 }
 
