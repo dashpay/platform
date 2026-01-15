@@ -3,6 +3,7 @@ use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
 
+use bincode::{Decode, Encode};
 use crate::data_contract::errors::DataContractError;
 
 use crate::consensus::basic::decode::DecodingError;
@@ -16,6 +17,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use itertools::Itertools;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -55,10 +57,22 @@ pub struct DocumentPropertyReference {
     pub must_exist: bool,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize)]
+#[derive(
+    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum DocumentPropertyReferenceTarget {
     Identity,
     Contract,
+}
+
+impl std::fmt::Display for DocumentPropertyReferenceTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
+            DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
+        }
+    }
 }
 
 // @append_only

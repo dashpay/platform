@@ -36,6 +36,7 @@ use crate::consensus::state::document::document_contest_not_joinable_error::Docu
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
+use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use crate::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
 use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
@@ -108,6 +109,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DocumentTimestampWindowViolationError(DocumentTimestampWindowViolationError),
+
+    #[error(transparent)]
+    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
 
     #[error(transparent)]
     DuplicateUniqueIndexError(DuplicateUniqueIndexError),
