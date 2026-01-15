@@ -17,85 +17,17 @@ use std::collections::{BTreeMap, HashMap};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identity::public_key::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
 
-#[wasm_bindgen(js_name = "IdentityKeyInfo")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IdentityKeyInfoWasm {
-    key_id: u32,
-    key_type: String,
-    public_key_data: String,
-    purpose: String,
-    security_level: String,
-    read_only: bool,
-    disabled: bool,
-}
-
-impl IdentityKeyInfoWasm {
-    fn from_entry(key_id: u32, key: &IdentityPublicKey) -> Self {
-        IdentityKeyInfoWasm {
-            key_id,
-            key_type: format!("{:?}", key.key_type()),
-            public_key_data: hex::encode(key.data().as_slice()),
-            purpose: format!("{:?}", key.purpose()),
-            security_level: format!("{:?}", key.security_level()),
-            read_only: key.read_only(),
-            disabled: key.disabled_at().is_some(),
-        }
-    }
-}
-
-#[wasm_bindgen(js_class = IdentityKeyInfo)]
-impl IdentityKeyInfoWasm {
-    #[wasm_bindgen(getter = "keyId")]
-    pub fn key_id(&self) -> u32 {
-        self.key_id
-    }
-
-    #[wasm_bindgen(getter = "keyType")]
-    pub fn key_type(&self) -> String {
-        self.key_type.clone()
-    }
-
-    #[wasm_bindgen(getter = "publicKeyData")]
-    pub fn public_key_data(&self) -> String {
-        self.public_key_data.clone()
-    }
-
-    #[wasm_bindgen(getter = "purpose")]
-    pub fn purpose(&self) -> String {
-        self.purpose.clone()
-    }
-
-    #[wasm_bindgen(getter = "securityLevel")]
-    pub fn security_level(&self) -> String {
-        self.security_level.clone()
-    }
-
-    #[wasm_bindgen(getter = "readOnly")]
-    pub fn read_only(&self) -> bool {
-        self.read_only
-    }
-
-    #[wasm_bindgen(getter = "disabled")]
-    pub fn disabled(&self) -> bool {
-        self.disabled
-    }
-}
-
-impl_wasm_serde_conversions!(IdentityKeyInfoWasm, IdentityKeyInfo);
-
 #[wasm_bindgen(js_name = "IdentityContractKeys")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct IdentityContractKeysWasm {
     identity_id: IdentifierWasm,
-    keys: Vec<IdentityKeyInfoWasm>,
+    keys: Vec<IdentityPublicKeyWasm>,
 }
 
 impl IdentityContractKeysWasm {
-    fn new(identity_id: IdentifierWasm, keys: Vec<IdentityKeyInfoWasm>) -> Self {
+    fn new(identity_id: IdentifierWasm, keys: Vec<IdentityPublicKeyWasm>) -> Self {
         IdentityContractKeysWasm { identity_id, keys }
     }
 }
@@ -108,17 +40,10 @@ impl IdentityContractKeysWasm {
     }
 
     #[wasm_bindgen(getter = "keys")]
-    pub fn keys(&self) -> Result<Array, WasmSdkError> {
-        let array = Array::new();
-        for key in &self.keys {
-            // Use to_object() to properly serialize each key
-            array.push(&key.to_object()?);
-        }
-        Ok(array)
+    pub fn keys(&self) -> Vec<IdentityPublicKeyWasm> {
+        self.keys.clone()
     }
 }
-
-impl_wasm_serde_conversions!(IdentityContractKeysWasm, IdentityContractKeys);
 
 #[wasm_bindgen(js_name = "IdentityBalanceAndRevision")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -488,7 +413,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityKeys",
-        unchecked_return_type = "Array<IdentityKeyInfo>"
+        unchecked_return_type = "Array<IdentityPublicKey>"
     )]
     pub async fn get_identity_keys(
         &self,
@@ -613,11 +538,9 @@ impl WasmSdk {
         };
 
         let array = Array::new();
-        for (key_id, key_opt) in keys_result {
+        for (_key_id, key_opt) in keys_result {
             if let Some(key) = key_opt {
-                let key_info = IdentityKeyInfoWasm::from_entry(key_id, &key);
-                // Use to_object() to properly serialize the key info
-                array.push(&key_info.to_object()?);
+                array.push(&IdentityPublicKeyWasm::from(key).into());
             }
         }
 
@@ -895,30 +818,22 @@ impl WasmSdk {
         let keys_result: Option<IdentitiesContractKeys> =
             IdentitiesContractKeys::fetch(self.as_ref(), query).await?;
 
-        let mut responses: Vec<IdentityContractKeysWasm> = Vec::new();
+        let array = Array::new();
         if let Some(keys_map) = keys_result {
             for (identity_id, purposes_map) in keys_map {
-                let mut identity_keys = Vec::new();
-                for (_, key_opt) in purposes_map {
-                    if let Some(key) = key_opt {
-                        identity_keys.push(IdentityKeyInfoWasm::from_entry(key.id(), &key));
-                    }
-                }
+                let identity_keys: Vec<IdentityPublicKeyWasm> = purposes_map
+                    .into_iter()
+                    .filter_map(|(_, key_opt)| key_opt.map(IdentityPublicKeyWasm::from))
+                    .collect();
 
                 if !identity_keys.is_empty() {
-                    let identity_id_str = IdentifierWasm::from(identity_id);
-                    responses.push(IdentityContractKeysWasm::new(
-                        identity_id_str,
+                    let response = IdentityContractKeysWasm::new(
+                        IdentifierWasm::from(identity_id),
                         identity_keys,
-                    ));
+                    );
+                    array.push(&response.into());
                 }
             }
-        }
-
-        let array = Array::new();
-        for response in responses {
-            // Use to_object() to properly serialize the response with nested keys
-            array.push(&response.to_object()?);
         }
 
         Ok(array)
@@ -1043,7 +958,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityKeysWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityKeyInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityPublicKey>>"
     )]
     pub async fn get_identity_keys_with_proof_info(
         &self,
@@ -1089,11 +1004,9 @@ impl WasmSdk {
         };
 
         let keys_array = Array::new();
-        for (key_id, key_opt) in keys_result {
+        for (_key_id, key_opt) in keys_result {
             if let Some(key) = key_opt {
-                let key_info = IdentityKeyInfoWasm::from_entry(key_id, &key);
-                // Use to_object() to properly serialize the key info
-                keys_array.push(&key_info.to_object()?);
+                keys_array.push(&IdentityPublicKeyWasm::from(key).into());
             }
         }
 
@@ -1346,29 +1259,22 @@ impl WasmSdk {
             IdentitiesContractKeys::fetch_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let mut all_responses: Vec<IdentityContractKeysWasm> = Vec::new();
+        let responses_array = Array::new();
         if let Some(keys_map) = keys_result {
             for (identity_id, purposes_map) in keys_map {
-                let mut identity_keys = Vec::new();
-                for (_, key_opt) in purposes_map {
-                    if let Some(key) = key_opt {
-                        identity_keys.push(IdentityKeyInfoWasm::from_entry(key.id(), &key));
-                    }
-                }
+                let identity_keys: Vec<IdentityPublicKeyWasm> = purposes_map
+                    .into_iter()
+                    .filter_map(|(_, key_opt)| key_opt.map(IdentityPublicKeyWasm::from))
+                    .collect();
 
                 if !identity_keys.is_empty() {
-                    all_responses.push(IdentityContractKeysWasm::new(
+                    let response = IdentityContractKeysWasm::new(
                         IdentifierWasm::from(identity_id),
                         identity_keys,
-                    ));
+                    );
+                    responses_array.push(&response.into());
                 }
             }
-        }
-
-        let responses_array = Array::new();
-        for response in all_responses {
-            // Use to_object() to properly serialize the response with nested keys
-            responses_array.push(&response.to_object()?);
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
