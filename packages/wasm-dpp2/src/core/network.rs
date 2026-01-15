@@ -44,6 +44,14 @@ impl TryFrom<JsValue> for NetworkWasm {
 
         // Handle numeric enum value (Network.Mainnet = 0, Testnet = 1, etc.)
         if let Some(num) = value.as_f64() {
+            // Validate that the number is a non-negative integer within u32 range
+            if num.fract() != 0.0 || num < 0.0 || num > u32::MAX as f64 {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "network value must be a non-negative integer, got '{}'",
+                    num
+                )));
+            }
+
             return match num as u32 {
                 0 => Ok(NetworkWasm::Mainnet),
                 1 => Ok(NetworkWasm::Testnet),
