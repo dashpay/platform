@@ -7,11 +7,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const NETWORK_LIKE_TS: &'static str = r#"
 /**
- * Flexible network type that accepts Network enum or string names.
+ * Flexible network type that accepts Network enum, string names, or numeric values.
  *
  * String values (case-insensitive): "mainnet", "testnet", "devnet", "regtest"
+ * Numeric values: 0 (mainnet), 1 (testnet), 2 (devnet), 3 (regtest)
  */
-export type NetworkLike = Network | "mainnet" | "testnet" | "devnet" | "regtest";
+export type NetworkLike = Network | "mainnet" | "testnet" | "devnet" | "regtest" | 0 | 1 | 2 | 3;
 "#;
 
 #[wasm_bindgen(js_name = "Network")]
@@ -27,6 +28,7 @@ pub enum NetworkWasm {
 impl TryFrom<JsValue> for NetworkWasm {
     type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        // Handle string input
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "mainnet" => Ok(NetworkWasm::Mainnet),
@@ -40,8 +42,22 @@ impl TryFrom<JsValue> for NetworkWasm {
             };
         }
 
+        // Handle numeric enum value (Network.Mainnet = 0, Testnet = 1, etc.)
+        if let Some(num) = value.as_f64() {
+            return match num as u32 {
+                0 => Ok(NetworkWasm::Mainnet),
+                1 => Ok(NetworkWasm::Testnet),
+                2 => Ok(NetworkWasm::Devnet),
+                3 => Ok(NetworkWasm::Regtest),
+                _ => Err(WasmDppError::invalid_argument(format!(
+                    "unsupported network value '{}'. Expected: 0 (mainnet), 1 (testnet), 2 (devnet), or 3 (regtest)",
+                    num
+                ))),
+            };
+        }
+
         Err(WasmDppError::invalid_argument(
-            "network must be a string: 'mainnet', 'testnet', 'devnet', or 'regtest'",
+            "network must be a string ('mainnet', 'testnet', 'devnet', 'regtest') or Network enum value",
         ))
     }
 }
