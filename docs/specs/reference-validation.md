@@ -6,7 +6,7 @@ Introduce an optional `refersTo` keyword on document properties so contracts can
 ## Schema Changes
 - Extend document meta-schema (`packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json`) to allow a `refersTo` object alongside existing keywords.
 - `refersTo` structure:
-  - `type`: `"identity"` (reserved for future target types later).
+  - `type`: `"identity"` (current target; keep the mechanism extensible for other reference targets such as documents or contracts).
   - `mustExist`: `boolean` (optional, defaults to `true`; `false` means no reference validation).
 - Validation rules during schema parsing:
   - Only allowed on identifier-typed properties (array byteArray=true, minItems=32, maxItems=32, `contentMediaType` identifier).
