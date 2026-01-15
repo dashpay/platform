@@ -123,6 +123,25 @@
           "minItems": 1,
           "uniqueItems": true
         },
+        "refersTo": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "identity",
+                "contract"
+              ]
+            },
+            "mustExist": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
         "type": {
           "$ref": "https://json-schema.org/draft/2020-12/meta/validation#/properties/type"
         },

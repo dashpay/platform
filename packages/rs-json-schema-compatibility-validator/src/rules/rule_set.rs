@@ -1161,6 +1161,54 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
             },
         ),
         (
+            "refersTo",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "refersTo": { "type": "identity" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/refersTo".to_string(),
+                            value: json!({ "type": "identity" }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "refersTo": { "type": "identity" } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/refersTo".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "refersTo": { "type": "identity" } }),
+                        json!({ "refersTo": { "type": "identity", "mustExist": false } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/refersTo/mustExist".to_string(),
+                            value: json!(false),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "refersTo": { "type": "identity" } }),
+                        json!({ "refersTo": { "type": "contract" } }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/refersTo/type".to_string(),
+                            value: json!("contract"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        (
             "byteArray",
             CompatibilityRules {
                 allow_addition: false,
