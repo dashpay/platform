@@ -34,6 +34,7 @@ pub struct DocumentProperty {
     pub property_type: DocumentPropertyType,
     pub required: bool,
     pub transient: bool,
+    pub reference: Option<DocumentPropertyReference>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
@@ -46,6 +47,18 @@ pub struct StringPropertySizes {
 pub struct ByteArrayPropertySizes {
     pub min_size: Option<u16>,
     pub max_size: Option<u16>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct DocumentPropertyReference {
+    pub target: DocumentPropertyReferenceTarget,
+    pub must_exist: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub enum DocumentPropertyReferenceTarget {
+    Identity,
+    Contract,
 }
 
 // @append_only

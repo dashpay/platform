@@ -197,6 +197,7 @@ impl DocumentTypeV0 {
                 property_type: document_type,
                 required,
                 transient: false,
+                reference: None,
             }
         };
 
@@ -523,6 +524,7 @@ impl DocumentTypeV0 {
                 property_type: document_type,
                 required,
                 transient: false,
+                reference: None,
             }
         };
 
