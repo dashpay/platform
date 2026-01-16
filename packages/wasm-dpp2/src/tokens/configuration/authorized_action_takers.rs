@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
@@ -24,16 +25,6 @@ impl From<AuthorizedActionTakersWasm> for AuthorizedActionTakers {
 
 #[wasm_bindgen(js_class = AuthorizedActionTakers)]
 impl AuthorizedActionTakersWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "AuthorizedActionTakers".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "AuthorizedActionTakers".to_string()
-    }
-
     #[wasm_bindgen(js_name = "NoOne")]
     pub fn no_one() -> Self {
         AuthorizedActionTakersWasm(AuthorizedActionTakers::NoOne)
@@ -66,7 +57,7 @@ impl AuthorizedActionTakersWasm {
         AuthorizedActionTakersWasm(AuthorizedActionTakers::Group(group_contract_position))
     }
 
-    #[wasm_bindgen(js_name = "getTakerType")]
+    #[wasm_bindgen(getter = "takerType")]
     pub fn taker_type(&self) -> String {
         match self.0 {
             AuthorizedActionTakers::NoOne => "NoOne".to_string(),
@@ -79,8 +70,8 @@ impl AuthorizedActionTakersWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> JsValue {
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> JsValue {
         match self.0 {
             AuthorizedActionTakers::NoOne => JsValue::undefined(),
             AuthorizedActionTakers::ContractOwner => JsValue::undefined(),
@@ -92,3 +83,5 @@ impl AuthorizedActionTakersWasm {
         }
     }
 }
+
+impl_wasm_type_info!(AuthorizedActionTakersWasm, AuthorizedActionTakers);

@@ -1,5 +1,6 @@
 use crate::enums::batch::gas_fees_paid_by::GasFeesPaidByWasm;
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
@@ -8,8 +9,31 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
+use js_sys::{Object, Reflect};
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenPaymentInfoOptions {
+    token_contract_position: TokenContractPosition,
+    #[serde(default)]
+    minimum_token_cost: Option<TokenAmount>,
+    #[serde(default)]
+    maximum_token_cost: Option<TokenAmount>,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface TokenPaymentInfoOptions {
+    paymentTokenContractId?: Identifier | Uint8Array | string | null;
+    tokenContractPosition: number;
+    minimumTokenCost?: bigint;
+    maximumTokenCost?: bigint;
+    gasFeesPaidBy?: GasFeesPaidBy | string;
+}
+"#;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "TokenPaymentInfo")]
@@ -29,47 +53,42 @@ impl From<TokenPaymentInfoWasm> for TokenPaymentInfo {
 
 #[wasm_bindgen(js_class = TokenPaymentInfo)]
 impl TokenPaymentInfoWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenPaymentInfo".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenPaymentInfo".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_payment_token_contract_id: &JsValue,
-        token_contract_position: TokenContractPosition,
-        minimum_token_cost: Option<TokenAmount>,
-        maximum_token_cost: Option<TokenAmount>,
-        js_gas_fees_paid_by: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "TokenPaymentInfoOptions")] options: JsValue,
     ) -> WasmDppResult<Self> {
-        let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
-            .is_null()
-            | js_payment_token_contract_id.is_undefined()
-        {
-            true => None,
-            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id)?.into()),
-        };
+        let object = Object::from(options.clone());
 
+        // Extract paymentTokenContractId (optional, can be null/undefined)
+        let js_payment_token_contract_id =
+            Reflect::get(&object, &JsValue::from_str("paymentTokenContractId"))
+                .unwrap_or(JsValue::UNDEFINED);
+        let payment_token_contract_id: Option<Identifier> =
+            match js_payment_token_contract_id.is_null() | js_payment_token_contract_id.is_undefined()
+            {
+                true => None,
+                false => Some(IdentifierWasm::try_from(&js_payment_token_contract_id)?.into()),
+            };
+
+        // Extract gasFeesPaidBy (optional)
+        let js_gas_fees_paid_by = Reflect::get(&object, &JsValue::from_str("gasFeesPaidBy"))
+            .unwrap_or(JsValue::UNDEFINED);
         let gas_fees_paid_by =
             match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
                 true => GasFeesPaidBy::default(),
-                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by.clone())?
-                    .clone()
-                    .into(),
+                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by)?.clone().into(),
             };
+
+        // Extract simple fields via serde
+        let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(TokenPaymentInfoWasm(TokenPaymentInfo::V0(
             TokenPaymentInfoV0 {
                 payment_token_contract_id,
-                token_contract_position,
-                minimum_token_cost,
-                maximum_token_cost,
+                token_contract_position: opts.token_contract_position,
+                minimum_token_cost: opts.minimum_token_cost,
+                maximum_token_cost: opts.maximum_token_cost,
                 gas_fees_paid_by,
             },
         )))
@@ -150,3 +169,5 @@ impl TokenPaymentInfoWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(TokenPaymentInfoWasm, TokenPaymentInfo);

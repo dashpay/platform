@@ -2,6 +2,7 @@ use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -21,25 +22,16 @@ pub struct DataContractUpdateTransitionWasm(DataContractUpdateTransition);
 
 #[wasm_bindgen(js_class = DataContractUpdateTransition)]
 impl DataContractUpdateTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DataContractUpdateTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DataContractUpdateTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         data_contract: &DataContractWasm,
         identity_nonce: IdentityNonce,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let rs_data_contract_update_transition =
@@ -113,11 +105,12 @@ impl DataContractUpdateTransitionWasm {
     pub fn set_data_contract(
         &mut self,
         data_contract: &DataContractWasm,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<()> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let data_contract_serialization_format =
@@ -140,11 +133,12 @@ impl DataContractUpdateTransitionWasm {
     pub fn get_data_contract(
         &self,
         full_validation: Option<bool>,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let data_contract_serialization_format = self.0.data_contract();
@@ -187,3 +181,4 @@ impl_wasm_conversions!(
     DataContractUpdateTransitionWasm,
     DataContractUpdateTransition
 );
+impl_wasm_type_info!(DataContractUpdateTransitionWasm, DataContractUpdateTransition);

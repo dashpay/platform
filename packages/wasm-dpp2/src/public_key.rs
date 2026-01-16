@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use dpp::dashcore::key::constants;
 use dpp::dashcore::{PublicKey, secp256k1};
 use std::convert::TryInto;
@@ -21,16 +22,6 @@ impl From<PublicKeyWasm> for PublicKey {
 
 #[wasm_bindgen(js_class = PublicKey)]
 impl PublicKeyWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PublicKey".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PublicKey".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> WasmDppResult<PublicKeyWasm> {
         let inner = match compressed {
@@ -140,3 +131,5 @@ impl PublicKeyWasm {
         ))
     }
 }
+
+impl_wasm_type_info!(PublicKeyWasm, PublicKey);

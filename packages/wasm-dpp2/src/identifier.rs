@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
@@ -204,16 +205,6 @@ impl Serialize for IdentifierWasm {
 
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Identifier".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Identifier".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
@@ -314,3 +305,5 @@ impl IdentifierWasm {
         IdentifierWasm::try_from(&id_js)
     }
 }
+
+impl_wasm_type_info!(IdentifierWasm, Identifier);

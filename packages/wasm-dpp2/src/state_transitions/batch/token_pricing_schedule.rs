@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::utils::{JsValueExt, ToSerdeJSONExt};
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
@@ -26,16 +27,6 @@ impl From<TokenPricingSchedule> for TokenPricingScheduleWasm {
 
 #[wasm_bindgen(js_class = TokenPricingSchedule)]
 impl TokenPricingScheduleWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenPricingSchedule".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenPricingSchedule".to_string()
-    }
-
     #[wasm_bindgen(js_name = "SinglePrice")]
     pub fn single_price(credits: Credits) -> Self {
         Self(TokenPricingSchedule::SinglePrice(credits))
@@ -68,16 +59,16 @@ impl TokenPricingScheduleWasm {
         Ok(Self(TokenPricingSchedule::SetPrices(prices)))
     }
 
-    #[wasm_bindgen(js_name = "getScheduleType")]
-    pub fn get_scheduled_type(&self) -> String {
+    #[wasm_bindgen(getter = "scheduleType")]
+    pub fn schedule_type(&self) -> String {
         match &self.0 {
             TokenPricingSchedule::SinglePrice(_) => String::from("SinglePrice"),
             TokenPricingSchedule::SetPrices(_) => String::from("SetPrices"),
         }
     }
 
-    #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> WasmDppResult<JsValue> {
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> WasmDppResult<JsValue> {
         match &self.0 {
             TokenPricingSchedule::SinglePrice(credits) => {
                 Ok(JsValue::bigint_from_str(&credits.to_string()))
@@ -105,3 +96,5 @@ impl TokenPricingScheduleWasm {
         }
     }
 }
+
+impl_wasm_type_info!(TokenPricingScheduleWasm, TokenPricingSchedule);

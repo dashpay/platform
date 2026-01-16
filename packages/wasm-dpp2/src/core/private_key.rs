@@ -2,6 +2,7 @@ use std::convert::TryInto;
 
 use super::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::public_key::PublicKeyWasm;
 use crate::utils::IntoWasm;
 use dpp::dashcore::PrivateKey;
@@ -36,16 +37,6 @@ impl PrivateKeyWasm {
 
 #[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PrivateKey".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PrivateKey".to_string()
-    }
-
     #[wasm_bindgen(js_name = "fromWIF")]
     pub fn from_wif(wif: &str) -> WasmDppResult<Self> {
         let pk = PrivateKey::from_wif(wif)
@@ -91,8 +82,8 @@ impl PrivateKeyWasm {
         Ok(PrivateKeyWasm(pk))
     }
 
-    #[wasm_bindgen(js_name = "getPublicKey")]
-    pub fn get_public_key(&self) -> PublicKeyWasm {
+    #[wasm_bindgen(getter = "publicKey")]
+    pub fn public_key(&self) -> PublicKeyWasm {
         let secp = Secp256k1::new();
 
         let public_key = self.0.public_key(&secp);
@@ -118,8 +109,8 @@ impl PrivateKeyWasm {
         self.0.to_bytes().to_hex_string(Case::Upper)
     }
 
-    #[wasm_bindgen(js_name = "getPublicKeyHash")]
-    pub fn get_public_key_hash(&self) -> String {
+    #[wasm_bindgen(getter = "publicKeyHash")]
+    pub fn public_key_hash(&self) -> String {
         let secp = Secp256k1::new();
 
         self.0.public_key(&secp).pubkey_hash().to_hex()
@@ -149,3 +140,5 @@ impl PrivateKeyWasm {
             .map(|boxed| (*boxed).clone())
     }
 }
+
+impl_wasm_type_info!(PrivateKeyWasm, PrivateKey);

@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::token_transition::TokenTransitionWasm;
 use crate::utils::{IntoWasm, get_class_type};
@@ -32,16 +33,6 @@ impl From<BatchedTransitionWasm> for BatchedTransition {
 
 #[wasm_bindgen(js_class = BatchedTransition)]
 impl BatchedTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "BatchedTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "BatchedTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(js_transition: &JsValue) -> WasmDppResult<BatchedTransitionWasm> {
         if js_transition.is_undefined() || !js_transition.is_object() {
@@ -115,3 +106,5 @@ impl BatchedTransitionWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(BatchedTransitionWasm, BatchedTransition);

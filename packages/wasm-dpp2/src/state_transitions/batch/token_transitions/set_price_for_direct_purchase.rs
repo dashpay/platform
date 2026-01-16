@@ -1,6 +1,7 @@
+use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
-use crate::error::WasmDppResult;
 use crate::utils::IntoWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
@@ -32,16 +33,6 @@ impl From<TokenSetPriceForDirectPurchaseTransitionWasm>
 
 #[wasm_bindgen(js_class = TokenSetPriceForDirectPurchaseTransition)]
 impl TokenSetPriceForDirectPurchaseTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenSetPriceForDirectPurchaseTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenSetPriceForDirectPurchaseTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -113,3 +104,8 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(
+    TokenSetPriceForDirectPurchaseTransitionWasm,
+    TokenSetPriceForDirectPurchaseTransition
+);

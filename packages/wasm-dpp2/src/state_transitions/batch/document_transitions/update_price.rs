@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_update_price_transition;
@@ -25,16 +26,6 @@ impl From<DocumentUpdatePriceTransition> for DocumentUpdatePriceTransitionWasm {
 
 #[wasm_bindgen(js_class = DocumentUpdatePriceTransition)]
 impl DocumentUpdatePriceTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentUpdatePriceTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentUpdatePriceTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         document: &DocumentWasm,
@@ -99,3 +90,5 @@ impl DocumentUpdatePriceTransitionWasm {
         js_transition.get_update_price_transition()
     }
 }
+
+impl_wasm_type_info!(DocumentUpdatePriceTransitionWasm, DocumentUpdatePriceTransition);

@@ -4,7 +4,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::utils::IntoWasm;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -16,8 +18,29 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
+use js_sys::{Array, Object, Reflect};
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityCreateTransitionOptions {
+    #[serde(default)]
+    signature: Option<Vec<u8>>,
+    #[serde(default)]
+    user_fee_increase: Option<UserFeeIncrease>,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface IdentityCreateTransitionOptions {
+    publicKeys: IdentityPublicKeyInCreation[];
+    assetLock: AssetLockProof;
+    signature?: Uint8Array;
+    userFeeIncrease?: number;
+}
+"#;
 
 #[wasm_bindgen(js_name = "IdentityCreateTransition")]
 #[derive(Clone)]
@@ -37,40 +60,47 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 
 #[wasm_bindgen(js_class = IdentityCreateTransition)]
 impl IdentityCreateTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityCreateTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityCreateTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
-        js_public_keys: &js_sys::Array,
-        asset_lock: &AssetLockProofWasm,
-        signature: Option<Vec<u8>>,
-        user_fee_increase: Option<UserFeeIncrease>,
+        #[wasm_bindgen(unchecked_param_type = "IdentityCreateTransitionOptions")] options: JsValue,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let object = Object::from(options.clone());
+
+        // Extract publicKeys (required array)
+        let js_public_keys = Reflect::get(&object, &JsValue::from_str("publicKeys"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing publicKeys: {:?}", e)))?;
+        let js_public_keys_array = Array::from(&js_public_keys);
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(js_public_keys)?;
+            IdentityPublicKeyInCreationWasm::vec_from_js_value(&js_public_keys_array)?;
+
+        // Extract assetLock (required)
+        let js_asset_lock = Reflect::get(&object, &JsValue::from_str("assetLock"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing assetLock: {:?}", e)))?;
+        let asset_lock = js_asset_lock
+            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
+            .clone();
+
+        // Extract simple fields via serde
+        let opts: IdentityCreateTransitionOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityCreateTransitionWasm(IdentityCreateTransition::V0(
             IdentityCreateTransitionV0 {
                 public_keys: public_keys.iter().map(|key| key.clone().into()).collect(),
                 asset_lock_proof: asset_lock.clone().into(),
-                user_fee_increase: user_fee_increase.unwrap_or(0),
-                signature: BinaryData::from(signature.unwrap_or_default()),
+                user_fee_increase: opts.user_fee_increase.unwrap_or(0),
+                signature: BinaryData::from(opts.signature.unwrap_or_default()),
                 identity_id: asset_lock.create_identifier()?.into(),
             },
         )))
     }
 
     #[wasm_bindgen(js_name = "default")]
-    pub fn default(js_platform_version: JsValue) -> WasmDppResult<IdentityCreateTransitionWasm> {
-        let platform_version = PlatformVersionWasm::try_from(js_platform_version)?;
+    pub fn default(
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
+    ) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         IdentityCreateTransition::default_versioned(&platform_version.into())
             .map_err(|err| WasmDppError::generic(err.to_string()))
@@ -114,8 +144,8 @@ impl IdentityCreateTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = "getIdentifier")]
-    pub fn get_identity_id(&self) -> IdentifierWasm {
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> IdentifierWasm {
         self.0.identity_id().into()
     }
 
@@ -201,3 +231,4 @@ impl IdentityCreateTransitionWasm {
 }
 
 impl_wasm_conversions!(IdentityCreateTransitionWasm, IdentityCreateTransition);
+impl_wasm_type_info!(IdentityCreateTransitionWasm, IdentityCreateTransition);

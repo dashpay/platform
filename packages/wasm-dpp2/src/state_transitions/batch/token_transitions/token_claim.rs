@@ -1,6 +1,7 @@
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::enums::token::distribution_type::TokenDistributionTypeWasm;
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
@@ -26,16 +27,6 @@ impl From<TokenClaimTransitionWasm> for TokenClaimTransition {
 
 #[wasm_bindgen(js_class = TokenClaimTransition)]
 impl TokenClaimTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenClaimTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenClaimTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -92,3 +83,5 @@ impl TokenClaimTransitionWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(TokenClaimTransitionWasm, TokenClaimTransition);

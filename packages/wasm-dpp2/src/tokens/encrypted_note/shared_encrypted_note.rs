@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use dpp::prelude::{RecipientKeyIndex, SenderKeyIndex};
 use dpp::tokens::SharedEncryptedNote;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -20,16 +21,6 @@ impl From<SharedEncryptedNoteWasm> for SharedEncryptedNote {
 
 #[wasm_bindgen(js_class = SharedEncryptedNote)]
 impl SharedEncryptedNoteWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "SharedEncryptedNote".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "SharedEncryptedNote".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         sender_key_index: SenderKeyIndex,
@@ -69,3 +60,5 @@ impl SharedEncryptedNoteWasm {
         self.0.2 = value;
     }
 }
+
+impl_wasm_type_info!(SharedEncryptedNoteWasm, SharedEncryptedNote);

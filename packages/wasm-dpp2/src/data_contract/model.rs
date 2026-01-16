@@ -2,6 +2,7 @@ use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
@@ -28,9 +29,35 @@ use dpp::serialization::{
 };
 use dpp::version::PlatformVersion;
 use js_sys::{Object, Reflect};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataContractOptions {
+    identity_nonce: IdentityNonce,
+    #[serde(default = "default_full_validation")]
+    full_validation: bool,
+}
+
+fn default_full_validation() -> bool {
+    true
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface DataContractOptions {
+    ownerId: Identifier | Uint8Array | string;
+    identityNonce: bigint;
+    schemas: object;
+    definitions?: object;
+    tokens?: Record<number, TokenConfiguration>;
+    fullValidation?: boolean;
+    platformVersion?: PlatformVersion | string | number;
+}
+"#;
 
 #[wasm_bindgen(js_name = "DataContract")]
 #[derive(Clone)]
@@ -85,41 +112,50 @@ pub fn tokens_configuration_from_js_value(
 
 #[wasm_bindgen(js_class = DataContract)]
 impl DataContractWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DataContract".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DataContract".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn from_js_values(
-        js_owner_id: &JsValue,
-        identity_nonce: IdentityNonce,
-        js_schema: JsValue,
-        js_definitions: Option<js_sys::Object>,
-        js_tokens: &JsValue,
-        full_validation: bool,
-        js_platform_version: JsValue,
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "DataContractOptions")] options: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
-        let owner_id: IdentifierWasm = js_owner_id.clone().try_into()?;
+        let object = Object::from(options.clone());
 
-        // Use object format deserializer (handles BigInt/Uint8Array)
+        // Extract ownerId (required)
+        let js_owner_id = Reflect::get(&object, &JsValue::from_str("ownerId"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing ownerId: {:?}", e)))?;
+        let owner_id: IdentifierWasm = js_owner_id.try_into()?;
+
+        // Extract schemas (required)
+        let js_schema = Reflect::get(&object, &JsValue::from_str("schemas"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing schemas: {:?}", e)))?;
         let schema: Value = serialization::platform_value_from_object(js_schema)?;
 
+        // Extract definitions (optional)
+        let js_definitions = Reflect::get(&object, &JsValue::from_str("definitions"))
+            .unwrap_or(JsValue::UNDEFINED);
+        let definitions: Option<Value> = match js_definitions.is_undefined() | js_definitions.is_null() {
+            true => None,
+            false => Some(serialization::platform_value_from_object(js_definitions)?),
+        };
+
+        // Extract tokens (optional)
+        let js_tokens = Reflect::get(&object, &JsValue::from_str("tokens"))
+            .unwrap_or(JsValue::UNDEFINED);
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
-            match js_tokens.is_undefined() {
+            match js_tokens.is_undefined() | js_tokens.is_null() {
                 true => BTreeMap::new(),
-                false => tokens_configuration_from_js_value(js_tokens)?,
+                false => tokens_configuration_from_js_value(&js_tokens)?,
             };
 
+        // Extract platformVersion (optional)
+        let js_platform_version = Reflect::get(&object, &JsValue::from_str("platformVersion"))
+            .unwrap_or(JsValue::UNDEFINED);
         let platform_version: PlatformVersion = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default().into(),
             false => PlatformVersionWasm::try_from(js_platform_version)?.into(),
         };
+
+        // Extract simple fields via serde
+        let opts: DataContractOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let data_contract_structure_version_value = Value::from(
             platform_version
@@ -129,14 +165,10 @@ impl DataContractWasm {
                 .to_string(),
         );
 
-        let definitions: Option<Value> = js_definitions
-            .map(|definitions| serialization::platform_value_from_object(definitions.into()))
-            .transpose()?;
-
         let definitions_value = Value::from(definitions);
 
         let data_contract_id =
-            DataContract::generate_data_contract_id_v0(owner_id.to_bytes(), identity_nonce);
+            DataContract::generate_data_contract_id_v0(owner_id.to_bytes(), opts.identity_nonce);
 
         let data_contract_id_value = Value::Identifier(data_contract_id.to_buffer());
 
@@ -181,7 +213,7 @@ impl DataContractWasm {
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let data_contract =
-            DataContract::from_value(contract_value, full_validation, &platform_version)?;
+            DataContract::from_value(contract_value, opts.full_validation, &platform_version)?;
 
         let data_contract_with_tokens = match data_contract {
             DataContract::V0(v0) => DataContract::from(v0),
@@ -197,16 +229,17 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
-        js_value: JsValue,
+        value: JsValue,
         full_validation: bool,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
-        let json_value = serialization::js_value_to_json(&js_value)?;
+        let json_value = serialization::js_value_to_json(&value)?;
 
         let contract =
             DataContract::from_json(json_value, full_validation, &platform_version.into())?;
@@ -216,16 +249,17 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
-        js_value: JsValue,
+        value: JsValue,
         full_validation: bool,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
-        let platform_value: Value = serialization::platform_value_from_object(js_value)?;
+        let platform_value: Value = serialization::platform_value_from_object(value)?;
 
         let contract =
             DataContract::from_value(platform_value, full_validation, &platform_version.into())
@@ -238,11 +272,12 @@ impl DataContractWasm {
     pub fn from_bytes(
         bytes: Vec<u8>,
         full_validation: bool,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let rs_data_contract = DataContract::versioned_deserialize(
@@ -258,31 +293,37 @@ impl DataContractWasm {
     pub fn from_hex(
         hex: String,
         full_validation: bool,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let bytes =
             decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        DataContractWasm::from_bytes(bytes, full_validation, js_platform_version)
+        DataContractWasm::from_bytes(bytes, full_validation, platform_version)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
     pub fn from_base64(
         base64: String,
         full_validation: bool,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let bytes = decode(base64.as_str(), Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        DataContractWasm::from_bytes(bytes, full_validation, js_platform_version)
+        DataContractWasm::from_bytes(bytes, full_validation, platform_version)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self, js_platform_version: JsValue) -> WasmDppResult<Vec<u8>> {
-        let platform_version = match js_platform_version.is_undefined() {
+    pub fn to_bytes(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
+    ) -> WasmDppResult<Vec<u8>> {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let rs_data_contract: DataContract = self.0.clone();
@@ -291,31 +332,43 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self, js_platform_version: JsValue) -> WasmDppResult<String> {
-        Ok(encode(self.to_bytes(js_platform_version)?.as_slice(), Hex))
+    pub fn to_hex(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
+    ) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes(platform_version)?.as_slice(), Hex))
     }
 
     #[wasm_bindgen(js_name = "toBase64")]
-    pub fn to_base64(&self, js_platform_version: JsValue) -> WasmDppResult<String> {
+    pub fn to_base64(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
+    ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes(js_platform_version)?.as_slice(),
+            self.to_bytes(platform_version)?.as_slice(),
             Base64,
         ))
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self, js_platform_version: JsValue) -> WasmDppResult<JsValue> {
-        let platform_version = match js_platform_version.is_undefined() {
+    pub fn to_object(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
+    ) -> WasmDppResult<JsValue> {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let value = self.0.clone().to_value(&platform_version.into())?;
         serialization::platform_value_to_object(&value)
     }
 
-    #[wasm_bindgen(js_name = "getSchemas")]
-    pub fn get_schemas(&self) -> WasmDppResult<JsValue> {
+    #[wasm_bindgen(getter = "schemas")]
+    pub fn schemas(&self) -> WasmDppResult<JsValue> {
         serialization::to_object(&self.0.document_schemas())
     }
 
@@ -334,8 +387,8 @@ impl DataContractWasm {
         self.0.owner_id().into()
     }
 
-    #[wasm_bindgen(js_name = "getConfig")]
-    pub fn get_config(&self) -> WasmDppResult<JsValue> {
+    #[wasm_bindgen(getter = "config")]
+    pub fn config(&self) -> WasmDppResult<JsValue> {
         serialization::to_object(self.0.config())
     }
 
@@ -387,10 +440,10 @@ impl DataContractWasm {
     pub fn set_id(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_data_contract_id: &JsValue,
+        id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
-            .set_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
+            .set_id(IdentifierWasm::try_from(id)?.into());
         Ok(())
     }
 
@@ -398,10 +451,10 @@ impl DataContractWasm {
     pub fn set_owner_id(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_owner_id: &JsValue,
+        owner_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
-            .set_owner_id(IdentifierWasm::try_from(js_owner_id)?.into());
+            .set_owner_id(IdentifierWasm::try_from(owner_id)?.into());
         Ok(())
     }
 
@@ -413,15 +466,16 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "setConfig")]
     pub fn set_config(
         &mut self,
-        js_config: JsValue,
-        js_platform_version: JsValue,
+        config: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<()> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
-        let config_value: Value = serde_wasm_bindgen::from_value(js_config)
+        let config_value: Value = serde_wasm_bindgen::from_value(config)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let config = DataContractConfig::from_value(config_value, &platform_version.into())?;
@@ -434,25 +488,26 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "setSchemas")]
     pub fn set_schemas(
         &mut self,
-        js_schema: JsValue,
-        js_definitions: Option<js_sys::Object>,
+        schemas: JsValue,
+        definitions: Option<js_sys::Object>,
         full_validation: bool,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
     ) -> WasmDppResult<()> {
-        let platform_version = match js_platform_version.is_undefined() {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         // Use platform_value_from_object to match getSchemas' to_object serialization
         // This preserves integer types properly (avoids JSON round-trip which converts to strings)
-        let schema_value = serialization::platform_value_from_object(js_schema)?;
+        let schema_value = serialization::platform_value_from_object(schemas)?;
         let schema = schema_value
             .into_btree_string_map()
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        let definitions: Option<BTreeMap<String, Value>> = js_definitions
-            .map(|definitions| serde_wasm_bindgen::from_value(definitions.into()))
+        let definitions: Option<BTreeMap<String, Value>> = definitions
+            .map(|defs| serde_wasm_bindgen::from_value(defs.into()))
             .transpose()
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
@@ -468,15 +523,15 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "tokens")]
-    pub fn set_tokens(&mut self, js_tokens: &JsValue) -> WasmDppResult<()> {
+    pub fn set_tokens(&mut self, tokens: &JsValue) -> WasmDppResult<()> {
         self.0
-            .set_tokens(tokens_configuration_from_js_value(js_tokens)?);
+            .set_tokens(tokens_configuration_from_js_value(tokens)?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "groups")]
-    pub fn set_groups(&mut self, js_groups: &JsValue) -> WasmDppResult<()> {
-        let groups_object = Object::from(js_groups.clone());
+    pub fn set_groups(&mut self, groups: &JsValue) -> WasmDppResult<()> {
+        let groups_object = Object::from(groups.clone());
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();
 
@@ -514,10 +569,14 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self, js_platform_version: JsValue) -> WasmDppResult<JsValue> {
-        let platform_version = match js_platform_version.is_undefined() {
+    pub fn to_json(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        platform_version: JsValue,
+    ) -> WasmDppResult<JsValue> {
+        let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
+            false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let json = self.0.to_json(&platform_version.into())?;
@@ -527,10 +586,10 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "generateId")]
     pub fn generate_id(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_owner_id: &JsValue,
+        owner_id: &JsValue,
         identity_nonce: IdentityNonce,
     ) -> WasmDppResult<IdentifierWasm> {
-        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
+        let owner_id: Identifier = IdentifierWasm::try_from(owner_id)?.into();
 
         Ok(DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce).into())
     }
@@ -546,3 +605,4 @@ impl DataContractWasm {
 }
 
 impl_try_from_options!(DataContractWasm, "DataContract");
+impl_wasm_type_info!(DataContractWasm, DataContract);

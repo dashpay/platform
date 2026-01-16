@@ -6,6 +6,7 @@
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
@@ -45,16 +46,6 @@ fn hash160(pubkey: &[u8]) -> [u8; 20] {
 
 #[wasm_bindgen(js_class = IdentitySigner)]
 impl IdentitySignerWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentitySigner".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentitySigner".to_string()
-    }
-
     /// Creates a new empty IdentitySigner.
     #[wasm_bindgen(constructor)]
     pub fn new() -> IdentitySignerWasm {
@@ -189,6 +180,7 @@ impl IdentitySignerWasm {
 }
 
 impl_try_from_options!(IdentitySignerWasm, "IdentitySigner", "signer");
+impl_wasm_type_info!(IdentitySignerWasm, IdentitySigner);
 
 impl TryFrom<&JsValue> for IdentitySignerWasm {
     type Error = WasmDppError;

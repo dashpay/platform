@@ -1,6 +1,7 @@
 use super::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
@@ -27,16 +28,6 @@ impl From<CoreScript> for CoreScriptWasm {
 
 #[wasm_bindgen(js_class = CoreScript)]
 impl CoreScriptWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "CoreScript".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "CoreScript".to_string()
-    }
-
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         CoreScriptWasm(CoreScript::from_bytes(bytes))
@@ -110,3 +101,5 @@ impl CoreScriptWasm {
 }
 
 impl_try_from_options!(CoreScriptWasm, "CoreScript");
+
+impl_wasm_type_info!(CoreScriptWasm, CoreScript);

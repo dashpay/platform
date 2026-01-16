@@ -1,4 +1,5 @@
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::tokens::token_event::TokenEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -37,16 +38,6 @@ impl From<TokenEventWasm> for TokenEvent {
 
 #[wasm_bindgen(js_class = TokenEvent)]
 impl TokenEventWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenEvent".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name(&self) -> String {
-        "TokenEvent".to_string()
-    }
-
     #[wasm_bindgen(getter = "variant")]
     pub fn variant(&self) -> TokenEventVariant {
         match &self.0 {
@@ -68,3 +59,4 @@ impl TokenEventWasm {
 }
 
 impl_wasm_conversions!(TokenEventWasm, TokenEvent);
+impl_wasm_type_info!(TokenEventWasm, TokenEvent);

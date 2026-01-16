@@ -20,8 +20,8 @@ impl From<IdentityTokenInfoWasm> for IdentityTokenInfo {
 
 #[wasm_bindgen(js_class = IdentityTokenInfo)]
 impl IdentityTokenInfoWasm {
-    #[wasm_bindgen(getter = "frozen")]
-    pub fn frozen(&self) -> bool {
+    #[wasm_bindgen(getter = "isFrozen")]
+    pub fn is_frozen(&self) -> bool {
         match &self.0 {
             IdentityTokenInfo::V0(v0) => v0.frozen(),
         }

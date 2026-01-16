@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::error::WasmDppResult;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -24,16 +25,6 @@ impl From<TokenBurnTransitionWasm> for TokenBurnTransition {
 
 #[wasm_bindgen(js_class = TokenBurnTransition)]
 impl TokenBurnTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenBurnTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenBurnTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -79,3 +70,5 @@ impl TokenBurnTransitionWasm {
         self.0.set_public_note(note)
     }
 }
+
+impl_wasm_type_info!(TokenBurnTransitionWasm, TokenBurnTransition);

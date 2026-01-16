@@ -1,5 +1,6 @@
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
@@ -25,16 +26,6 @@ impl From<TokenConfigUpdateTransition> for TokenConfigUpdateTransitionWasm {
 
 #[wasm_bindgen(js_class = TokenConfigUpdateTransition)]
 impl TokenConfigUpdateTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfigUpdateTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfigUpdateTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -81,3 +72,5 @@ impl TokenConfigUpdateTransitionWasm {
             .set_update_token_configuration_item(item.clone().into())
     }
 }
+
+impl_wasm_type_info!(TokenConfigUpdateTransitionWasm, TokenConfigUpdateTransition);

@@ -302,3 +302,48 @@ macro_rules! impl_try_from_options {
         }
     };
 }
+
+/// Macro to implement `__type` and `__struct` getters for WASM type identification.
+///
+/// These getters are used by `get_class_type()` and `to_wasm()` to verify that a JsValue
+/// is the expected WASM class before extracting its internal pointer. This is necessary
+/// because wasm-bindgen doesn't support `instanceof` or `JsCast` for exported structs.
+///
+/// Using explicit `__type` properties instead of `constructor.name` ensures the type
+/// identification works correctly even when the code is bundled and minified by consumers.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl_wasm_type_info!(IdentifierWasm, Identifier);
+/// impl_wasm_type_info!(DataContractWasm, DataContract);
+/// ```
+///
+/// This generates:
+/// ```ignore
+/// #[wasm_bindgen(js_class = Identifier)]
+/// impl IdentifierWasm {
+///     #[wasm_bindgen(getter = __type)]
+///     pub fn type_name(&self) -> String { "Identifier".to_string() }
+///
+///     #[wasm_bindgen(getter = __struct)]
+///     pub fn struct_name() -> String { "Identifier".to_string() }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_wasm_type_info {
+    ($wrapper:ty, $js_class:ident) => {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
+        impl $wrapper {
+            #[wasm_bindgen::prelude::wasm_bindgen(getter = __type)]
+            pub fn type_name(&self) -> String {
+                stringify!($js_class).to_string()
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(getter = __struct)]
+            pub fn struct_name() -> String {
+                stringify!($js_class).to_string()
+            }
+        }
+    };
+}

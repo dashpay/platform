@@ -1,6 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
-use crate::{impl_try_from_options, impl_wasm_conversions};
+use crate::{impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -23,16 +23,6 @@ impl From<ResourceVoteChoiceWasm> for ResourceVoteChoice {
 
 #[wasm_bindgen(js_class = ResourceVoteChoice)]
 impl ResourceVoteChoiceWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ResourceVoteChoice".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ResourceVoteChoice".to_string()
-    }
-
     #[wasm_bindgen(js_name = "TowardsIdentity")]
     pub fn towards_identity(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
@@ -54,8 +44,8 @@ impl ResourceVoteChoiceWasm {
         ResourceVoteChoiceWasm(ResourceVoteChoice::Lock)
     }
 
-    #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> JsValue {
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> JsValue {
         match self.0 {
             ResourceVoteChoice::TowardsIdentity(id) => JsValue::from(IdentifierWasm::from(id)),
             ResourceVoteChoice::Abstain => JsValue::undefined(),
@@ -63,8 +53,8 @@ impl ResourceVoteChoiceWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getType")]
-    pub fn get_type(&self) -> String {
+    #[wasm_bindgen(getter = "voteType")]
+    pub fn vote_type(&self) -> String {
         match self.0 {
             ResourceVoteChoice::TowardsIdentity(_) => "TowardsIdentity".to_string(),
             ResourceVoteChoice::Abstain => "Abstain".to_string(),
@@ -75,3 +65,4 @@ impl ResourceVoteChoiceWasm {
 
 impl_try_from_options!(ResourceVoteChoiceWasm, "ResourceVoteChoice");
 impl_wasm_conversions!(ResourceVoteChoiceWasm, ResourceVoteChoice);
+impl_wasm_type_info!(ResourceVoteChoiceWasm, ResourceVoteChoice);

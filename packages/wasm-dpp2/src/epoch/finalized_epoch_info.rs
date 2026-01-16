@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use crate::utils::{JsValueExt, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
@@ -112,16 +113,6 @@ fn block_proposers_to_js(map: &BTreeMap<Identifier, u64>) -> WasmDppResult<JsVal
 
 #[wasm_bindgen(js_class = FinalizedEpochInfo)]
 impl FinalizedEpochInfoWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "FinalizedEpochInfo".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name(&self) -> String {
-        "FinalizedEpochInfo".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -290,3 +281,4 @@ impl FinalizedEpochInfoWasm {
 }
 
 crate::impl_wasm_conversions!(FinalizedEpochInfoWasm, FinalizedEpochInfo);
+impl_wasm_type_info!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

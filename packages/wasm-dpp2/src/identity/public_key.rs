@@ -5,6 +5,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::IntoWasm;
 use dpp::dashcore::Network;
@@ -23,10 +24,37 @@ use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::version::PlatformVersion;
+use js_sys::{Object, Reflect};
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::from_value as serde_from_value;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityPublicKeyOptions {
+    key_id: u32,
+    #[serde(default)]
+    is_read_only: bool,
+    data: String,
+    #[serde(default)]
+    disabled_at: Option<TimestampMillis>,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface IdentityPublicKeyOptions {
+    keyId: number;
+    purpose: Purpose | string | number;
+    securityLevel: SecurityLevel | string | number;
+    keyType: KeyType | string | number;
+    isReadOnly?: boolean;
+    data: string; // hex encoded
+    disabledAt?: number;
+    contractBounds?: ContractBounds;
+}
+"#;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = IdentityPublicKey)]
@@ -46,31 +74,30 @@ impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
 
 #[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityPublicKey".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityPublicKey".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: u32,
-        js_purpose: JsValue,
-        js_security_level: JsValue,
-        js_key_type: JsValue,
-        read_only: bool,
-        binary_data: &str,
-        disabled_at: Option<TimestampMillis>,
-        js_contract_bounds: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyOptions")] options: JsValue,
     ) -> WasmDppResult<Self> {
+        let object = Object::from(options.clone());
+
+        // Extract purpose (required, complex type)
+        let js_purpose = Reflect::get(&object, &JsValue::from_str("purpose"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing purpose: {:?}", e)))?;
         let purpose = PurposeWasm::try_from(js_purpose)?;
+
+        // Extract securityLevel (required, complex type)
+        let js_security_level = Reflect::get(&object, &JsValue::from_str("securityLevel"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e)))?;
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
+
+        // Extract keyType (required, complex type)
+        let js_key_type = Reflect::get(&object, &JsValue::from_str("keyType"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing keyType: {:?}", e)))?;
         let key_type = KeyTypeWasm::try_from(js_key_type)?;
+
+        // Extract contractBounds (optional)
+        let js_contract_bounds = Reflect::get(&object, &JsValue::from_str("contractBounds"))
+            .unwrap_or(JsValue::UNDEFINED);
         let contract_bounds: Option<ContractBounds> =
             match js_contract_bounds.is_undefined() | js_contract_bounds.is_null() {
                 true => None,
@@ -82,17 +109,21 @@ impl IdentityPublicKeyWasm {
                 ),
             };
 
+        // Extract simple fields via serde
+        let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
         Ok(IdentityPublicKeyWasm(IdentityPublicKey::from(
             IdentityPublicKeyV0 {
-                id,
+                id: opts.key_id,
                 purpose: Purpose::from(purpose),
                 security_level: SecurityLevel::from(security_level),
                 contract_bounds,
                 key_type: KeyType::from(key_type),
-                read_only,
-                data: BinaryData::from_string(binary_data, Hex)
+                read_only: opts.is_read_only,
+                data: BinaryData::from_string(&opts.data, Hex)
                     .map_err(|e| WasmDppError::serialization(e.to_string()))?,
-                disabled_at,
+                disabled_at: opts.disabled_at,
             },
         )))
     }
@@ -103,12 +134,12 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name = "validatePrivateKey")]
     pub fn validate_private_key(
         &self,
-        js_private_key_bytes: Vec<u8>,
+        private_key_bytes_input: Vec<u8>,
         #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
     ) -> WasmDppResult<bool> {
         let mut private_key_bytes = [0u8; 32];
-        let len = js_private_key_bytes.len().min(32);
-        private_key_bytes[..len].copy_from_slice(&js_private_key_bytes[..len]);
+        let len = private_key_bytes_input.len().min(32);
+        private_key_bytes[..len].copy_from_slice(&private_key_bytes_input[..len]);
 
         let network = Network::from(NetworkWasm::try_from(network)?);
 
@@ -119,7 +150,7 @@ impl IdentityPublicKeyWasm {
         Ok(is_valid)
     }
 
-    #[wasm_bindgen(js_name = "getContractBounds")]
+    #[wasm_bindgen(getter = "contractBounds")]
     pub fn contract_bounds(&self) -> JsValue {
         match self.0.contract_bounds() {
             None => JsValue::undefined(),
@@ -162,8 +193,8 @@ impl IdentityPublicKeyWasm {
         KeyTypeWasm::from(self.0.key_type())
     }
 
-    #[wasm_bindgen(getter = readOnly)]
-    pub fn get_read_only(&self) -> bool {
+    #[wasm_bindgen(getter = "isReadOnly")]
+    pub fn is_read_only(&self) -> bool {
         self.0.read_only()
     }
 
@@ -219,9 +250,9 @@ impl IdentityPublicKeyWasm {
         self.set_key_type(key_type)
     }
 
-    #[wasm_bindgen(setter = readOnly)]
-    pub fn set_read_only(&mut self, read_only: bool) {
-        self.0.set_read_only(read_only)
+    #[wasm_bindgen(setter = "isReadOnly")]
+    pub fn set_is_read_only(&mut self, is_read_only: bool) {
+        self.0.set_read_only(is_read_only)
     }
 
     #[wasm_bindgen(setter = data)]
@@ -249,7 +280,7 @@ impl IdentityPublicKeyWasm {
         Ok(hash)
     }
 
-    #[wasm_bindgen(js_name = "isMaster")]
+    #[wasm_bindgen(getter = "isMaster")]
     pub fn is_master(&self) -> bool {
         self.0.is_master()
     }
@@ -350,3 +381,4 @@ impl IdentityPublicKeyWasm {
 }
 
 impl_try_from_options!(IdentityPublicKeyWasm, "IdentityPublicKey");
+impl_wasm_type_info!(IdentityPublicKeyWasm, IdentityPublicKey);

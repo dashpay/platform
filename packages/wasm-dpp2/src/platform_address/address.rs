@@ -1,5 +1,6 @@
 use crate::core::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
@@ -194,16 +195,6 @@ impl Serialize for PlatformAddressWasm {
 
 #[wasm_bindgen(js_class = PlatformAddress)]
 impl PlatformAddressWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PlatformAddress".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PlatformAddress".to_string()
-    }
-
     /// Creates a new PlatformAddress from various input types.
     ///
     /// Accepts:
@@ -341,3 +332,5 @@ impl PlatformAddressWasm {
         self.0
     }
 }
+
+impl_wasm_type_info!(PlatformAddressWasm, PlatformAddress);

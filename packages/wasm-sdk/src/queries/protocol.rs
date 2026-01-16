@@ -16,7 +16,8 @@ pub struct ProtocolVersionUpgradeStateWasm {
     next_protocol_version: Option<u32>,
     activation_height: Option<u64>,
     vote_count: Option<u32>,
-    threshold_reached: bool,
+    #[serde(rename = "thresholdReached")]
+    is_threshold_reached: bool,
 }
 
 impl ProtocolVersionUpgradeStateWasm {
@@ -25,14 +26,14 @@ impl ProtocolVersionUpgradeStateWasm {
         next_protocol_version: Option<u32>,
         activation_height: Option<u64>,
         vote_count: Option<u32>,
-        threshold_reached: bool,
+        is_threshold_reached: bool,
     ) -> Self {
         Self {
             current_protocol_version,
             next_protocol_version,
             activation_height,
             vote_count,
-            threshold_reached,
+            is_threshold_reached,
         }
     }
 }
@@ -59,9 +60,9 @@ impl ProtocolVersionUpgradeStateWasm {
         self.vote_count
     }
 
-    #[wasm_bindgen(getter = "thresholdReached")]
-    pub fn threshold_reached(&self) -> bool {
-        self.threshold_reached
+    #[wasm_bindgen(getter = "isThresholdReached")]
+    pub fn is_threshold_reached(&self) -> bool {
+        self.is_threshold_reached
     }
 }
 

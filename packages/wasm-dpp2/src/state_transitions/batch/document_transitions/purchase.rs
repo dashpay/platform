@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_purchase_transition;
@@ -31,16 +32,6 @@ impl From<DocumentPurchaseTransition> for DocumentPurchaseTransitionWasm {
 
 #[wasm_bindgen(js_class = DocumentPurchaseTransition)]
 impl DocumentPurchaseTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentPurchaseTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentPurchaseTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         document: &DocumentWasm,
@@ -115,3 +106,5 @@ impl DocumentPurchaseTransitionWasm {
         js_transition.get_purchase_transition()
     }
 }
+
+impl_wasm_type_info!(DocumentPurchaseTransitionWasm, DocumentPurchaseTransition);

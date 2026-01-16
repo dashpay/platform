@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use dpp::prelude::{DerivationEncryptionKeyIndex, RootEncryptionKeyIndex};
 use dpp::tokens::PrivateEncryptedNote;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -20,16 +21,6 @@ impl From<PrivateEncryptedNoteWasm> for PrivateEncryptedNote {
 
 #[wasm_bindgen(js_class = PrivateEncryptedNote)]
 impl PrivateEncryptedNoteWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PrivateEncryptedNote".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PrivateEncryptedNote".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         root_encryption_key_index: RootEncryptionKeyIndex,
@@ -73,3 +64,5 @@ impl PrivateEncryptedNoteWasm {
         self.0.2 = value;
     }
 }
+
+impl_wasm_type_info!(PrivateEncryptedNoteWasm, PrivateEncryptedNote);

@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::trade_mode::TokenTradeModeWasm;
 use dpp::data_contract::associated_token::token_marketplace_rules::TokenMarketplaceRules;
@@ -25,16 +26,6 @@ impl From<TokenMarketplaceRulesWasm> for TokenMarketplaceRules {
 
 #[wasm_bindgen(js_class = TokenMarketplaceRules)]
 impl TokenMarketplaceRulesWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenMarketplaceRules".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenMarketplaceRules".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         trade_mode: &TokenTradeModeWasm,
@@ -72,3 +63,5 @@ impl TokenMarketplaceRulesWasm {
             .set_trade_mode_change_rules(trade_mode_change_rules.clone().into());
     }
 }
+
+impl_wasm_type_info!(TokenMarketplaceRulesWasm, TokenMarketplaceRules);

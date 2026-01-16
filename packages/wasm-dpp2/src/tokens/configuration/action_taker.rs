@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
@@ -25,16 +26,6 @@ impl From<ActionTakerWasm> for ActionTaker {
 
 #[wasm_bindgen(js_class = ActionTaker)]
 impl ActionTakerWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ActionTaker".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ActionTaker".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
         if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
@@ -68,8 +59,8 @@ impl ActionTakerWasm {
         )))
     }
 
-    #[wasm_bindgen(js_name = "getType")]
-    pub fn get_type(&self) -> String {
+    #[wasm_bindgen(getter = "takerType")]
+    pub fn taker_type(&self) -> String {
         match &self.0 {
             ActionTaker::SpecifiedIdentities(_) => "SpecifiedIdentities".to_string(),
             ActionTaker::SingleIdentity(_) => "SingleIdentity".to_string(),
@@ -97,3 +88,5 @@ impl ActionTakerWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(ActionTakerWasm, ActionTaker);

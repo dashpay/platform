@@ -6,6 +6,7 @@ use crate::enums::lock_types::AssetLockProofTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, JsValueExt, get_class_type};
 use dpp::prelude::AssetLockProof;
 use js_sys::{Object, Reflect};
@@ -60,28 +61,18 @@ impl From<AssetLockProof> for InstantAssetLockProofWasm {
 
 #[wasm_bindgen(js_class = AssetLockProof)]
 impl AssetLockProofWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "AssetLockProof".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "AssetLockProof".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(js_asset_lock_proof: &JsValue) -> WasmDppResult<AssetLockProofWasm> {
-        match get_class_type(js_asset_lock_proof)?.as_str() {
+    pub fn new(asset_lock_proof: &JsValue) -> WasmDppResult<AssetLockProofWasm> {
+        match get_class_type(asset_lock_proof)?.as_str() {
             "ChainAssetLockProof" => {
-                let chain_lock = js_asset_lock_proof
+                let chain_lock = asset_lock_proof
                     .to_wasm::<ChainAssetLockProofWasm>("ChainAssetLockProof")?
                     .clone();
 
                 Ok(AssetLockProofWasm::from(chain_lock))
             }
             "InstantAssetLockProof" => {
-                let instant_lock = js_asset_lock_proof
+                let instant_lock = asset_lock_proof
                     .to_wasm::<InstantAssetLockProofWasm>("InstantAssetLockProof")?
                     .clone();
 
@@ -110,26 +101,26 @@ impl AssetLockProofWasm {
         Ok(ChainAssetLockProofWasm::new(core_chain_locked_height, out_point)?.into())
     }
 
-    #[wasm_bindgen(js_name = "getLockType")]
-    pub fn get_lock_type(&self) -> String {
+    #[wasm_bindgen(getter = "lockType")]
+    pub fn lock_type(&self) -> String {
         match self.0 {
             AssetLockProof::Chain(_) => AssetLockProofTypeWasm::Chain.into(),
             AssetLockProof::Instant(_) => AssetLockProofTypeWasm::Instant.into(),
         }
     }
 
-    #[wasm_bindgen(js_name = "getInstantLockProof")]
-    pub fn get_instant_lock(&self) -> InstantAssetLockProofWasm {
+    #[wasm_bindgen(getter = "instantLockProof")]
+    pub fn instant_lock_proof(&self) -> InstantAssetLockProofWasm {
         self.clone().0.into()
     }
 
-    #[wasm_bindgen(js_name = "getChainLockProof")]
-    pub fn get_chain_lock(&self) -> ChainAssetLockProofWasm {
+    #[wasm_bindgen(getter = "chainLockProof")]
+    pub fn chain_lock_proof(&self) -> ChainAssetLockProofWasm {
         self.clone().0.into()
     }
 
-    #[wasm_bindgen(js_name = "getOutPoint")]
-    pub fn get_out_point(&self) -> Option<OutPointWasm> {
+    #[wasm_bindgen(getter = "outPoint")]
+    pub fn out_point(&self) -> Option<OutPointWasm> {
         self.0.out_point().map(OutPointWasm::from)
     }
 
@@ -272,3 +263,4 @@ impl AssetLockProofWasm {
 }
 
 impl_try_from_options!(AssetLockProofWasm, "AssetLockProof");
+impl_wasm_type_info!(AssetLockProofWasm, AssetLockProof);

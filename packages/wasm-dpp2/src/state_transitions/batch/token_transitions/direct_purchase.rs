@@ -1,11 +1,12 @@
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransitionV0;
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransitionV0;
 use dpp::state_transition::batch_transition::TokenDirectPurchaseTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenDirectPurchaseTransition)]
@@ -25,16 +26,6 @@ impl From<TokenDirectPurchaseTransition> for TokenDirectPurchaseTransitionWasm {
 
 #[wasm_bindgen(js_class = TokenDirectPurchaseTransition)]
 impl TokenDirectPurchaseTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenDirectPurchaseTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenDirectPurchaseTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -80,3 +71,5 @@ impl TokenDirectPurchaseTransitionWasm {
         self.0.set_total_agreed_price(total_agreed_price)
     }
 }
+
+impl_wasm_type_info!(TokenDirectPurchaseTransitionWasm, TokenDirectPurchaseTransition);

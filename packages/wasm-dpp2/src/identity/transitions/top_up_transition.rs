@@ -2,6 +2,7 @@ use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identifier::Identifier;
 use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
@@ -22,24 +23,14 @@ pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 
 #[wasm_bindgen(js_class = IdentityTopUpTransition)]
 impl IdentityTopUpTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityTopUpTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityTopUpTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         asset_lock_proof: &AssetLockProofWasm,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identity_id: JsValue,
+        identity_id: JsValue,
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let identity_id: Identifier = IdentifierWasm::try_from(&js_identity_id)?.into();
+        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)?.into();
 
         Ok(IdentityTopUpTransitionWasm(IdentityTopUpTransition::V0(
             IdentityTopUpTransitionV0 {
@@ -51,8 +42,8 @@ impl IdentityTopUpTransitionWasm {
         )))
     }
 
-    #[wasm_bindgen(js_name = "getModifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
+    #[wasm_bindgen(getter = "modifiedDataIds")]
+    pub fn modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -60,8 +51,8 @@ impl IdentityTopUpTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = "getOptionalAssetLockProof")]
-    pub fn get_optional_asset_lock_proof(&self) -> JsValue {
+    #[wasm_bindgen(getter = "optionalAssetLockProof")]
+    pub fn optional_asset_lock_proof(&self) -> JsValue {
         match self.0.optional_asset_lock_proof() {
             Some(asset_lock) => JsValue::from(AssetLockProofWasm::from(asset_lock.clone())),
             None => JsValue::null(),
@@ -92,10 +83,10 @@ impl IdentityTopUpTransitionWasm {
     pub fn set_identity_identifier(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identity_identifier: &JsValue,
+        identity_identifier: &JsValue,
     ) -> WasmDppResult<()> {
         let identity_identifier: Identifier =
-            IdentifierWasm::try_from(js_identity_identifier)?.into();
+            IdentifierWasm::try_from(identity_identifier)?.into();
         self.0.set_identity_id(identity_identifier);
         Ok(())
     }
@@ -184,3 +175,4 @@ impl IdentityTopUpTransitionWasm {
 }
 
 impl_wasm_conversions!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);
+impl_wasm_type_info!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);

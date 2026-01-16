@@ -4,6 +4,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -28,30 +29,20 @@ pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityUpdateTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityUpdateTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identity_id: &JsValue,
+        identity_id: &JsValue,
         revision: Revision,
         nonce: IdentityNonce,
-        js_add_public_keys: &js_sys::Array,
+        add_public_keys: &js_sys::Array,
         disable_public_keys: Vec<KeyID>,
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();
+        let identity_id = IdentifierWasm::try_from(identity_id)?.into();
 
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(js_add_public_keys)?;
+            IdentityPublicKeyInCreationWasm::vec_from_js_value(add_public_keys)?;
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
@@ -86,8 +77,8 @@ impl IdentityUpdateTransitionWasm {
         self.0.identity_id().into()
     }
 
-    #[wasm_bindgen(js_name = "getPurposeRequirement")]
-    pub fn get_purpose_requirement(&self) -> Vec<String> {
+    #[wasm_bindgen(getter = "purposeRequirement")]
+    pub fn purpose_requirement(&self) -> Vec<String> {
         self.0
             .purpose_requirement()
             .iter()
@@ -95,8 +86,8 @@ impl IdentityUpdateTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = "getModifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
+    #[wasm_bindgen(getter = "modifiedDataIds")]
+    pub fn modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -104,8 +95,8 @@ impl IdentityUpdateTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = "getOptionalAssetLockProof")]
-    pub fn get_optional_asset_lock_proof(&self) -> JsValue {
+    #[wasm_bindgen(getter = "optionalAssetLockProof")]
+    pub fn optional_asset_lock_proof(&self) -> JsValue {
         match self.0.optional_asset_lock_proof() {
             Some(asset_lock) => JsValue::from(AssetLockProofWasm::from(asset_lock.clone())),
             None => JsValue::null(),
@@ -146,9 +137,9 @@ impl IdentityUpdateTransitionWasm {
     pub fn set_identity_identifier(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identity_id: &JsValue,
+        identity_id: &JsValue,
     ) -> WasmDppResult<()> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();
+        let identity_id = IdentifierWasm::try_from(identity_id)?.into();
         self.0.set_identity_id(identity_id);
         Ok(())
     }
@@ -156,10 +147,10 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(setter = "publicKeyIdsToAdd")]
     pub fn set_public_key_ids_to_add(
         &mut self,
-        js_add_public_keys: &js_sys::Array,
+        add_public_keys: &js_sys::Array,
     ) -> WasmDppResult<()> {
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(js_add_public_keys)?;
+            IdentityPublicKeyInCreationWasm::vec_from_js_value(add_public_keys)?;
 
         let keys: Vec<IdentityPublicKeyInCreation> =
             add_public_keys.iter().map(|id| id.clone().into()).collect();
@@ -264,3 +255,4 @@ impl IdentityUpdateTransitionWasm {
 }
 
 impl_wasm_conversions!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);
+impl_wasm_type_info!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);

@@ -1,5 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::Identifier;
 use wasm_bindgen::JsValue;
@@ -23,16 +24,6 @@ impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWasm {
 
 #[wasm_bindgen(js_class = GroupStateTransitionInfo)]
 impl GroupStateTransitionInfoWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupStateTransitionInfo".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "GroupStateTransitionInfo".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         group_contract_position: u16,
@@ -64,9 +55,9 @@ impl GroupStateTransitionInfoWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(setter = "actionIsProposer")]
-    pub fn set_action_is_proposer(&mut self, action_is_proposer: bool) {
-        self.0.action_is_proposer = action_is_proposer;
+    #[wasm_bindgen(setter = "isActionProposer")]
+    pub fn set_is_action_proposer(&mut self, is_action_proposer: bool) {
+        self.0.action_is_proposer = is_action_proposer;
     }
 
     #[wasm_bindgen(getter = "groupContractPosition")]
@@ -79,8 +70,10 @@ impl GroupStateTransitionInfoWasm {
         self.0.action_id.into()
     }
 
-    #[wasm_bindgen(getter = "actionIsProposer")]
-    pub fn get_action_is_proposer(&self) -> bool {
+    #[wasm_bindgen(getter = "isActionProposer")]
+    pub fn is_action_proposer(&self) -> bool {
         self.0.action_is_proposer
     }
 }
+
+impl_wasm_type_info!(GroupStateTransitionInfoWasm, GroupStateTransitionInfo);

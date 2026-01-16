@@ -1,10 +1,11 @@
+use crate::enums::token::emergency_action::TokenEmergencyActionWasm;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
 use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
 use dpp::state_transition::batch_transition::TokenEmergencyActionTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::enums::token::emergency_action::TokenEmergencyActionWasm;
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenEmergencyActionTransition")]
@@ -24,16 +25,6 @@ impl From<TokenEmergencyActionTransition> for TokenEmergencyActionTransitionWasm
 
 #[wasm_bindgen(js_class = TokenEmergencyActionTransition)]
 impl TokenEmergencyActionTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenEmergencyActionTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenEmergencyActionTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -79,3 +70,5 @@ impl TokenEmergencyActionTransitionWasm {
         self.0.set_emergency_action(action.into())
     }
 }
+
+impl_wasm_type_info!(TokenEmergencyActionTransitionWasm, TokenEmergencyActionTransition);

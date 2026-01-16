@@ -1,6 +1,7 @@
 use crate::group::action_event::GroupActionEventWasm;
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::data_contract::TokenContractPosition;
 use dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -23,16 +24,6 @@ impl From<GroupActionWasm> for GroupAction {
 
 #[wasm_bindgen(js_class = GroupAction)]
 impl GroupActionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupAction".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "GroupAction".to_string()
-    }
-
     #[wasm_bindgen(getter = "contractId")]
     pub fn contract_id(&self) -> IdentifierWasm {
         self.0.contract_id().into()
@@ -55,3 +46,4 @@ impl GroupActionWasm {
 }
 
 impl_wasm_conversions!(GroupActionWasm, GroupAction);
+impl_wasm_type_info!(GroupActionWasm, GroupAction);

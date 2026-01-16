@@ -7,6 +7,7 @@ use crate::state_transitions::batch::document_transitions::update_price::Documen
 use crate::enums::batch::batch_enum::BatchTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
@@ -35,16 +36,6 @@ impl From<DocumentTransitionWasm> for DocumentTransition {
 
 #[wasm_bindgen(js_class = DocumentTransition)]
 impl DocumentTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentTransition".to_string()
-    }
-
     #[wasm_bindgen(getter = "actionType")]
     pub fn get_action_type(&self) -> String {
         BatchTypeWasm::from(self.0.action_type()).into()
@@ -182,3 +173,5 @@ impl DocumentTransitionWasm {
         self.0.set_identity_contract_nonce(identity_contract_nonce)
     }
 }
+
+impl_wasm_type_info!(DocumentTransitionWasm, DocumentTransition);

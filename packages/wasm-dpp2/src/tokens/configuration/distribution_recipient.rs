@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use wasm_bindgen::JsValue;
@@ -22,16 +23,6 @@ impl From<TokenDistributionRecipientWasm> for TokenDistributionRecipient {
 
 #[wasm_bindgen(js_class = TokenDistributionRecipient)]
 impl TokenDistributionRecipientWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenDistributionRecipient".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenDistributionRecipient".to_string()
-    }
-
     #[wasm_bindgen(js_name = "ContractOwner")]
     pub fn contract_owner() -> TokenDistributionRecipientWasm {
         TokenDistributionRecipientWasm(TokenDistributionRecipient::ContractOwner)
@@ -54,8 +45,8 @@ impl TokenDistributionRecipientWasm {
         TokenDistributionRecipientWasm(TokenDistributionRecipient::EvonodesByParticipation)
     }
 
-    #[wasm_bindgen(js_name = "getType")]
-    pub fn get_type(&self) -> String {
+    #[wasm_bindgen(getter = "recipientType")]
+    pub fn recipient_type(&self) -> String {
         match self.0 {
             TokenDistributionRecipient::EvonodesByParticipation => {
                 String::from("EvonodesByParticipation")
@@ -67,8 +58,8 @@ impl TokenDistributionRecipientWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> JsValue {
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> JsValue {
         match self.0 {
             TokenDistributionRecipient::EvonodesByParticipation => JsValue::undefined(),
             TokenDistributionRecipient::ContractOwner => JsValue::undefined(),
@@ -78,3 +69,5 @@ impl TokenDistributionRecipientWasm {
         }
     }
 }
+
+impl_wasm_type_info!(TokenDistributionRecipientWasm, TokenDistributionRecipient);

@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
@@ -27,16 +28,6 @@ impl From<TokenDestroyFrozenFundsTransitionWasm> for TokenDestroyFrozenFundsTran
 
 #[wasm_bindgen(js_class = TokenDestroyFrozenFundsTransition)]
 impl TokenDestroyFrozenFundsTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenDestroyFrozenFundsTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenDestroyFrozenFundsTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -92,3 +83,5 @@ impl TokenDestroyFrozenFundsTransitionWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(TokenDestroyFrozenFundsTransitionWasm, TokenDestroyFrozenFundsTransition);

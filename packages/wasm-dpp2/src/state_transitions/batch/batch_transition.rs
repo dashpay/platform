@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::state_transitions::StateTransitionWasm;
 use crate::state_transitions::batch::batched_transition::BatchedTransitionWasm;
@@ -55,16 +56,6 @@ fn convert_array_to_vec_batched(
 
 #[wasm_bindgen(js_class = BatchTransition)]
 impl BatchTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "BatchTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "BatchTransition".to_string()
-    }
-
     #[wasm_bindgen(js_name = "fromBatchedTransitions")]
     pub fn from_batched_transitions(
         js_batched_transitions: &js_sys::Array,
@@ -233,3 +224,5 @@ impl BatchTransitionWasm {
         )
     }
 }
+
+impl_wasm_type_info!(BatchTransitionWasm, BatchTransition);

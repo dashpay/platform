@@ -1,4 +1,5 @@
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
 use dpp::voting::votes::Vote;
@@ -25,16 +26,6 @@ impl From<VoteWasm> for Vote {
 
 #[wasm_bindgen(js_class = Vote)]
 impl VoteWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Vote".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Vote".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(vote_poll: &VotePollWasm, resource_vote_choice: &ResourceVoteChoiceWasm) -> Self {
         VoteWasm(Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
@@ -79,3 +70,4 @@ impl VoteWasm {
 }
 
 impl_wasm_conversions!(VoteWasm, Vote);
+impl_wasm_type_info!(VoteWasm, Vote);

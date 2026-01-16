@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::dashcore::{OutPoint, Txid};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -33,16 +34,6 @@ impl TryFrom<JsValue> for OutPointWasm {
 
 #[wasm_bindgen(js_class = OutPoint)]
 impl OutPointWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "OutPoint".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "OutPoint".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(txid_hex: String, vout: u32) -> WasmDppResult<OutPointWasm> {
         let out_point = Txid::from_hex(&txid_hex)
@@ -54,13 +45,13 @@ impl OutPointWasm {
         }))
     }
 
-    #[wasm_bindgen(js_name = "getVOUT")]
-    pub fn get_vout(&self) -> u32 {
+    #[wasm_bindgen(getter = "vout")]
+    pub fn vout(&self) -> u32 {
         self.0.vout
     }
 
-    #[wasm_bindgen(js_name = "getTXID")]
-    pub fn get_tx_id(&self) -> String {
+    #[wasm_bindgen(getter = "txid")]
+    pub fn txid(&self) -> String {
         self.0.txid.to_hex()
     }
 
@@ -119,3 +110,5 @@ impl OutPointWasm {
         Ok(outpoints)
     }
 }
+
+impl_wasm_type_info!(OutPointWasm, OutPoint);

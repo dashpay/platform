@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::IntoWasm;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
@@ -27,16 +28,6 @@ impl From<TokenConfigurationLocalizationWasm> for TokenConfigurationLocalization
 
 #[wasm_bindgen(js_class = TokenConfigurationLocalization)]
 impl TokenConfigurationLocalizationWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfigurationLocalization".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfigurationLocalization".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         should_capitalize: bool,
@@ -120,3 +111,5 @@ impl TokenConfigurationLocalizationWasm {
         serialization::from_object(js_value.clone())
     }
 }
+
+impl_wasm_type_info!(TokenConfigurationLocalizationWasm, TokenConfigurationLocalization);

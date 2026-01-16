@@ -1,4 +1,5 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
@@ -6,6 +7,7 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
+use crate::utils::IntoWasm;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -14,8 +16,52 @@ use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigur
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
 use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
+use js_sys::{Object, Reflect};
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenConfigurationOptions {
+    base_supply: TokenAmount,
+    #[serde(default)]
+    max_supply: Option<TokenAmount>,
+    #[serde(default)]
+    is_started_as_paused: bool,
+    #[serde(default)]
+    is_allowed_transfer_to_frozen_balance: bool,
+    #[serde(default)]
+    main_control_group: Option<GroupContractPosition>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface TokenConfigurationOptions {
+    conventions: TokenConfigurationConvention;
+    conventionsChangeRules: ChangeControlRules;
+    baseSupply: bigint;
+    maxSupply?: bigint;
+    keepsHistory: TokenKeepsHistoryRules;
+    isStartedAsPaused?: boolean;
+    isAllowedTransferToFrozenBalance?: boolean;
+    maxSupplyChangeRules: ChangeControlRules;
+    distributionRules: TokenDistributionRules;
+    marketplaceRules: TokenMarketplaceRules;
+    manualMintingRules: ChangeControlRules;
+    manualBurningRules: ChangeControlRules;
+    freezeRules: ChangeControlRules;
+    unfreezeRules: ChangeControlRules;
+    destroyFrozenFundsRules: ChangeControlRules;
+    emergencyActionRules: ChangeControlRules;
+    mainControlGroup?: number;
+    mainControlGroupCanBeModified: AuthorizedActionTakers;
+    description?: string;
+}
+"#;
+
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "TokenConfiguration")]
 pub struct TokenConfigurationWasm(TokenConfiguration);
@@ -34,60 +80,128 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfiguration".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfiguration".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        conventions: &TokenConfigurationConventionWasm,
-        conventions_change_rules: &ChangeControlRulesWasm,
-        base_supply: TokenAmount,
-        max_supply: Option<TokenAmount>,
-        keeps_history: &TokenKeepsHistoryRulesWasm,
-        start_as_paused: bool,
-        allow_transfer_to_frozen_balance: bool,
-        max_supply_change_rules: &ChangeControlRulesWasm,
-        distribution_rules: &TokenDistributionRulesWasm,
-        marketplace_rules: &TokenMarketplaceRulesWasm,
-        manual_minting_rules: &ChangeControlRulesWasm,
-        manual_burning_rules: &ChangeControlRulesWasm,
-        freeze_rules: &ChangeControlRulesWasm,
-        unfreeze_rules: &ChangeControlRulesWasm,
-        destroy_frozen_funds_rules: &ChangeControlRulesWasm,
-        emergency_action_rules: &ChangeControlRulesWasm,
-        main_control_group: Option<GroupContractPosition>,
-        main_control_group_can_be_modified: &AuthorizedActionTakersWasm,
-        description: Option<String>,
-    ) -> TokenConfigurationWasm {
-        TokenConfigurationWasm(TokenConfiguration::V0(TokenConfigurationV0 {
-            conventions: conventions.clone().into(),
-            conventions_change_rules: conventions_change_rules.clone().into(),
-            base_supply,
-            max_supply,
-            keeps_history: keeps_history.clone().into(),
-            start_as_paused,
-            allow_transfer_to_frozen_balance,
-            max_supply_change_rules: max_supply_change_rules.clone().into(),
-            distribution_rules: distribution_rules.clone().into(),
-            marketplace_rules: marketplace_rules.clone().into(),
-            manual_minting_rules: manual_minting_rules.clone().into(),
-            manual_burning_rules: manual_burning_rules.clone().into(),
-            freeze_rules: freeze_rules.clone().into(),
-            unfreeze_rules: unfreeze_rules.clone().into(),
-            destroy_frozen_funds_rules: destroy_frozen_funds_rules.clone().into(),
-            emergency_action_rules: emergency_action_rules.clone().into(),
-            main_control_group,
-            main_control_group_can_be_modified: main_control_group_can_be_modified.clone().into(),
-            description,
-        }))
+        #[wasm_bindgen(unchecked_param_type = "TokenConfigurationOptions")] options: JsValue,
+    ) -> WasmDppResult<TokenConfigurationWasm> {
+        let object = Object::from(options.clone());
+
+        // Extract conventions (required)
+        let js_conventions = Reflect::get(&object, &JsValue::from_str("conventions"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing conventions: {:?}", e)))?;
+        let conventions = js_conventions
+            .to_wasm::<TokenConfigurationConventionWasm>("TokenConfigurationConvention")?
+            .clone();
+
+        // Extract conventionsChangeRules (required)
+        let js_conventions_change_rules = Reflect::get(&object, &JsValue::from_str("conventionsChangeRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing conventionsChangeRules: {:?}", e)))?;
+        let conventions_change_rules = js_conventions_change_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract keepsHistory (required)
+        let js_keeps_history = Reflect::get(&object, &JsValue::from_str("keepsHistory"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing keepsHistory: {:?}", e)))?;
+        let keeps_history = js_keeps_history
+            .to_wasm::<TokenKeepsHistoryRulesWasm>("TokenKeepsHistoryRules")?
+            .clone();
+
+        // Extract maxSupplyChangeRules (required)
+        let js_max_supply_change_rules = Reflect::get(&object, &JsValue::from_str("maxSupplyChangeRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing maxSupplyChangeRules: {:?}", e)))?;
+        let max_supply_change_rules = js_max_supply_change_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract distributionRules (required)
+        let js_distribution_rules = Reflect::get(&object, &JsValue::from_str("distributionRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing distributionRules: {:?}", e)))?;
+        let distribution_rules = js_distribution_rules
+            .to_wasm::<TokenDistributionRulesWasm>("TokenDistributionRules")?
+            .clone();
+
+        // Extract marketplaceRules (required)
+        let js_marketplace_rules = Reflect::get(&object, &JsValue::from_str("marketplaceRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing marketplaceRules: {:?}", e)))?;
+        let marketplace_rules = js_marketplace_rules
+            .to_wasm::<TokenMarketplaceRulesWasm>("TokenMarketplaceRules")?
+            .clone();
+
+        // Extract manualMintingRules (required)
+        let js_manual_minting_rules = Reflect::get(&object, &JsValue::from_str("manualMintingRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing manualMintingRules: {:?}", e)))?;
+        let manual_minting_rules = js_manual_minting_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract manualBurningRules (required)
+        let js_manual_burning_rules = Reflect::get(&object, &JsValue::from_str("manualBurningRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing manualBurningRules: {:?}", e)))?;
+        let manual_burning_rules = js_manual_burning_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract freezeRules (required)
+        let js_freeze_rules = Reflect::get(&object, &JsValue::from_str("freezeRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing freezeRules: {:?}", e)))?;
+        let freeze_rules = js_freeze_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract unfreezeRules (required)
+        let js_unfreeze_rules = Reflect::get(&object, &JsValue::from_str("unfreezeRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing unfreezeRules: {:?}", e)))?;
+        let unfreeze_rules = js_unfreeze_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract destroyFrozenFundsRules (required)
+        let js_destroy_frozen_funds_rules = Reflect::get(&object, &JsValue::from_str("destroyFrozenFundsRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing destroyFrozenFundsRules: {:?}", e)))?;
+        let destroy_frozen_funds_rules = js_destroy_frozen_funds_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract emergencyActionRules (required)
+        let js_emergency_action_rules = Reflect::get(&object, &JsValue::from_str("emergencyActionRules"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing emergencyActionRules: {:?}", e)))?;
+        let emergency_action_rules = js_emergency_action_rules
+            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
+            .clone();
+
+        // Extract mainControlGroupCanBeModified (required)
+        let js_main_control_group_can_be_modified = Reflect::get(&object, &JsValue::from_str("mainControlGroupCanBeModified"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing mainControlGroupCanBeModified: {:?}", e)))?;
+        let main_control_group_can_be_modified = js_main_control_group_can_be_modified
+            .to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")?
+            .clone();
+
+        // Extract simple fields via serde
+        let opts: TokenConfigurationOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        Ok(TokenConfigurationWasm(TokenConfiguration::V0(TokenConfigurationV0 {
+            conventions: conventions.into(),
+            conventions_change_rules: conventions_change_rules.into(),
+            base_supply: opts.base_supply,
+            max_supply: opts.max_supply,
+            keeps_history: keeps_history.into(),
+            start_as_paused: opts.is_started_as_paused,
+            allow_transfer_to_frozen_balance: opts.is_allowed_transfer_to_frozen_balance,
+            max_supply_change_rules: max_supply_change_rules.into(),
+            distribution_rules: distribution_rules.into(),
+            marketplace_rules: marketplace_rules.into(),
+            manual_minting_rules: manual_minting_rules.into(),
+            manual_burning_rules: manual_burning_rules.into(),
+            freeze_rules: freeze_rules.into(),
+            unfreeze_rules: unfreeze_rules.into(),
+            destroy_frozen_funds_rules: destroy_frozen_funds_rules.into(),
+            emergency_action_rules: emergency_action_rules.into(),
+            main_control_group: opts.main_control_group,
+            main_control_group_can_be_modified: main_control_group_can_be_modified.into(),
+            description: opts.description,
+        })))
     }
 
     #[wasm_bindgen(getter = "conventions")]
@@ -110,8 +224,8 @@ impl TokenConfigurationWasm {
         (*self.0.keeps_history()).into()
     }
 
-    #[wasm_bindgen(getter = "startAsPaused")]
-    pub fn get_start_as_paused(&self) -> bool {
+    #[wasm_bindgen(getter = "isStartedAsPaused")]
+    pub fn is_started_as_paused(&self) -> bool {
         self.0.start_as_paused()
     }
 
@@ -207,9 +321,9 @@ impl TokenConfigurationWasm {
         *self.0.keeps_history_mut() = keeps_history.clone().into();
     }
 
-    #[wasm_bindgen(setter = "startAsPaused")]
-    pub fn set_start_as_paused(&mut self, start_as_paused: bool) {
-        self.0.set_start_as_paused(start_as_paused)
+    #[wasm_bindgen(setter = "isStartedAsPaused")]
+    pub fn set_is_started_as_paused(&mut self, is_started_as_paused: bool) {
+        self.0.set_start_as_paused(is_started_as_paused)
     }
 
     #[wasm_bindgen(setter = "isAllowedTransferToFrozenBalance")]
@@ -310,3 +424,5 @@ impl TokenConfigurationWasm {
         )))
     }
 }
+
+impl_wasm_type_info!(TokenConfigurationWasm, TokenConfiguration);

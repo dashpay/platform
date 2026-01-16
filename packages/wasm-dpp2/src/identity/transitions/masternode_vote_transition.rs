@@ -3,6 +3,7 @@ use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -39,29 +40,19 @@ impl From<MasternodeVoteTransitionWasm> for MasternodeVoteTransition {
 
 #[wasm_bindgen(js_class = MasternodeVoteTransition)]
 impl MasternodeVoteTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "MasternodeVoteTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "MasternodeVoteTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_pro_tx_hash: &JsValue,
+        pro_tx_hash: &JsValue,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_voter_identity_id: &JsValue,
+        voter_identity_id: &JsValue,
         vote: &VoteWasm,
         nonce: IdentityNonce,
         signature_public_key: Option<KeyID>,
         signature: Option<Vec<u8>>,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?.into();
-        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?.into();
+        let pro_tx_hash = IdentifierWasm::try_from(pro_tx_hash)?.into();
+        let voter_identity_id = IdentifierWasm::try_from(voter_identity_id)?.into();
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
@@ -109,9 +100,9 @@ impl MasternodeVoteTransitionWasm {
     pub fn set_pro_tx_hash(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_pro_tx_hash: &JsValue,
+        pro_tx_hash: &JsValue,
     ) -> WasmDppResult<()> {
-        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?.into();
+        let pro_tx_hash = IdentifierWasm::try_from(pro_tx_hash)?.into();
 
         self.0.set_pro_tx_hash(pro_tx_hash);
 
@@ -122,9 +113,9 @@ impl MasternodeVoteTransitionWasm {
     pub fn set_voter_identity_id(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_voter_identity_id: &JsValue,
+        voter_identity_id: &JsValue,
     ) -> WasmDppResult<()> {
-        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?.into();
+        let voter_identity_id = IdentifierWasm::try_from(voter_identity_id)?.into();
 
         self.0.set_voter_identity_id(voter_identity_id);
 
@@ -249,3 +240,5 @@ impl MasternodeVoteTransitionWasm {
 }
 
 impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);
+
+impl_wasm_type_info!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);

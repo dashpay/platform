@@ -5,6 +5,7 @@
 
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::base::GroupStateTransitionInfoWasm;
 use crate::utils::IntoWasm;
 use dpp::data_contract::GroupContractPosition;
@@ -36,16 +37,6 @@ impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfoStatusWasm
 
 #[wasm_bindgen(js_class = GroupStateTransitionInfoStatus)]
 impl GroupStateTransitionInfoStatusWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupStateTransitionInfoStatus".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "GroupStateTransitionInfoStatus".to_string()
-    }
-
     /// Create a new proposer status for initiating a group action.
     ///
     /// Use this when the identity is proposing a new group action.
@@ -163,3 +154,5 @@ impl GroupStateTransitionInfoStatusWasm {
         Self::try_from_options(options, field_name).map(Some)
     }
 }
+
+impl_wasm_type_info!(GroupStateTransitionInfoStatusWasm, GroupStateTransitionInfoStatus);

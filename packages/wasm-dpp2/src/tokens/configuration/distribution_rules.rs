@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
@@ -30,16 +31,6 @@ impl From<TokenDistributionRules> for TokenDistributionRulesWasm {
 
 #[wasm_bindgen(js_class = TokenDistributionRules)]
 impl TokenDistributionRulesWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenDistributionRules".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenDistributionRules".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -137,8 +128,8 @@ impl TokenDistributionRulesWasm {
             .into()
     }
 
-    #[wasm_bindgen(getter = "mintingAllowChoosingDestination")]
-    pub fn get_minting_allow_choosing_destination(&self) -> bool {
+    #[wasm_bindgen(getter = "isMintingAllowingChoosingDestination")]
+    pub fn is_minting_allowing_choosing_destination(&self) -> bool {
         self.0.minting_allow_choosing_destination()
     }
 
@@ -223,9 +214,9 @@ impl TokenDistributionRulesWasm {
             .set_new_tokens_destination_identity_rules(rules.clone().into());
     }
 
-    #[wasm_bindgen(setter = "mintingAllowChoosingDestination")]
-    pub fn set_minting_allow_choosing_destination(&mut self, flag: bool) {
-        self.0.set_minting_allow_choosing_destination(flag);
+    #[wasm_bindgen(setter = "isMintingAllowingChoosingDestination")]
+    pub fn set_is_minting_allowing_choosing_destination(&mut self, is_minting_allowing_choosing_destination: bool) {
+        self.0.set_minting_allow_choosing_destination(is_minting_allowing_choosing_destination);
     }
 
     #[wasm_bindgen(setter = "mintingAllowChoosingDestinationRules")]
@@ -240,3 +231,5 @@ impl TokenDistributionRulesWasm {
             .set_change_direct_purchase_pricing_rules(rules.clone().into());
     }
 }
+
+impl_wasm_type_info!(TokenDistributionRulesWasm, TokenDistributionRules);

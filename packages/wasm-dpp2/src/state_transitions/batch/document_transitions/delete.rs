@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_delete_transition;
@@ -23,16 +24,6 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
 
 #[wasm_bindgen(js_class = DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentDeleteTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentDeleteTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         document: &DocumentWasm,
@@ -89,3 +80,5 @@ impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
         document_delete_transition.0
     }
 }
+
+impl_wasm_type_info!(DocumentDeleteTransitionWasm, DocumentDeleteTransition);

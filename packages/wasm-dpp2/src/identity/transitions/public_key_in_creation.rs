@@ -5,6 +5,7 @@ use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -16,8 +17,34 @@ use dpp::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
 use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+use js_sys::{Object, Reflect};
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityPublicKeyInCreationOptions {
+    key_id: u32,
+    #[serde(default)]
+    is_read_only: bool,
+    #[serde(default)]
+    signature: Option<Vec<u8>>,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface IdentityPublicKeyInCreationOptions {
+    keyId: number;
+    purpose: Purpose | string | number;
+    securityLevel: SecurityLevel | string | number;
+    keyType: KeyType | string | number;
+    isReadOnly?: boolean;
+    data: Uint8Array;
+    signature?: Uint8Array;
+    contractBounds?: ContractBounds;
+}
+"#;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "IdentityPublicKeyInCreation")]
@@ -64,31 +91,36 @@ impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKey {
 
 #[wasm_bindgen(js_class = IdentityPublicKeyInCreation)]
 impl IdentityPublicKeyInCreationWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityPublicKeyInCreation".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityPublicKeyInCreation".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: u32,
-        js_purpose: JsValue,
-        js_security_level: JsValue,
-        js_key_type: JsValue,
-        read_only: bool,
-        binary_data: Vec<u8>,
-        signature: Option<Vec<u8>>,
-        js_contract_bounds: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyInCreationOptions")] options: JsValue,
     ) -> WasmDppResult<IdentityPublicKeyInCreationWasm> {
+        let object = Object::from(options.clone());
+
+        // Extract purpose (required, complex type)
+        let js_purpose = Reflect::get(&object, &JsValue::from_str("purpose"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing purpose: {:?}", e)))?;
         let purpose = PurposeWasm::try_from(js_purpose)?;
+
+        // Extract securityLevel (required, complex type)
+        let js_security_level = Reflect::get(&object, &JsValue::from_str("securityLevel"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e)))?;
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
+
+        // Extract keyType (required, complex type)
+        let js_key_type = Reflect::get(&object, &JsValue::from_str("keyType"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing keyType: {:?}", e)))?;
         let key_type = KeyTypeWasm::try_from(js_key_type)?;
+
+        // Extract data (required, Uint8Array)
+        let js_data = Reflect::get(&object, &JsValue::from_str("data"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing data: {:?}", e)))?;
+        let data: Vec<u8> = serde_wasm_bindgen::from_value(js_data)
+            .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))?;
+
+        // Extract contractBounds (optional)
+        let js_contract_bounds = Reflect::get(&object, &JsValue::from_str("contractBounds"))
+            .unwrap_or(JsValue::UNDEFINED);
         let contract_bounds: Option<ContractBounds> =
             match js_contract_bounds.is_undefined() | js_contract_bounds.is_null() {
                 true => None,
@@ -100,32 +132,48 @@ impl IdentityPublicKeyInCreationWasm {
                 ),
             };
 
+        // Extract simple fields via serde
+        let opts: IdentityPublicKeyInCreationOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
         Ok(IdentityPublicKeyInCreationWasm(
             IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
-                id,
+                id: opts.key_id,
                 key_type: KeyType::from(key_type),
                 purpose: Purpose::from(purpose),
                 security_level: SecurityLevel::from(security_level),
                 contract_bounds,
-                read_only,
-                data: BinaryData::from(binary_data),
-                signature: BinaryData::from(signature.unwrap_or_default()),
+                read_only: opts.is_read_only,
+                data: BinaryData::from(data),
+                signature: BinaryData::from(opts.signature.unwrap_or_default()),
             }),
         ))
     }
 
     #[wasm_bindgen(js_name = toIdentityPublicKey)]
     pub fn to_identity_public_key(&self) -> WasmDppResult<IdentityPublicKeyWasm> {
-        IdentityPublicKeyWasm::new(
-            self.0.id(),
-            JsValue::from(PurposeWasm::from(self.0.purpose())),
-            JsValue::from(SecurityLevelWasm::from(self.0.security_level())),
-            JsValue::from(KeyTypeWasm::from(self.0.key_type())),
-            self.0.read_only(),
-            self.0.data().to_string(Hex).as_str(),
-            None,
-            &JsValue::from(self.get_contract_bounds().clone()),
-        )
+        // Build options object for IdentityPublicKey constructor
+        let options = Object::new();
+
+        Reflect::set(&options, &JsValue::from_str("keyId"), &JsValue::from(self.0.id()))
+            .map_err(|e| WasmDppError::generic(format!("Failed to set keyId: {:?}", e)))?;
+        Reflect::set(&options, &JsValue::from_str("purpose"), &JsValue::from(PurposeWasm::from(self.0.purpose())))
+            .map_err(|e| WasmDppError::generic(format!("Failed to set purpose: {:?}", e)))?;
+        Reflect::set(&options, &JsValue::from_str("securityLevel"), &JsValue::from(SecurityLevelWasm::from(self.0.security_level())))
+            .map_err(|e| WasmDppError::generic(format!("Failed to set securityLevel: {:?}", e)))?;
+        Reflect::set(&options, &JsValue::from_str("keyType"), &JsValue::from(KeyTypeWasm::from(self.0.key_type())))
+            .map_err(|e| WasmDppError::generic(format!("Failed to set keyType: {:?}", e)))?;
+        Reflect::set(&options, &JsValue::from_str("isReadOnly"), &JsValue::from(self.0.read_only()))
+            .map_err(|e| WasmDppError::generic(format!("Failed to set isReadOnly: {:?}", e)))?;
+        Reflect::set(&options, &JsValue::from_str("data"), &JsValue::from(self.0.data().to_string(Hex)))
+            .map_err(|e| WasmDppError::generic(format!("Failed to set data: {:?}", e)))?;
+
+        if let Some(bounds) = self.get_contract_bounds() {
+            Reflect::set(&options, &JsValue::from_str("contractBounds"), &JsValue::from(bounds))
+                .map_err(|e| WasmDppError::generic(format!("Failed to set contractBounds: {:?}", e)))?;
+        }
+
+        IdentityPublicKeyWasm::new(options.into())
     }
 
     #[wasm_bindgen(js_name = "getHash")]
@@ -161,8 +209,8 @@ impl IdentityPublicKeyInCreationWasm {
         KeyTypeWasm::from(self.0.key_type()).into()
     }
 
-    #[wasm_bindgen(getter = readOnly)]
-    pub fn get_read_only(&self) -> bool {
+    #[wasm_bindgen(getter = "isReadOnly")]
+    pub fn is_read_only(&self) -> bool {
         self.0.read_only()
     }
 
@@ -203,9 +251,9 @@ impl IdentityPublicKeyInCreationWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(setter = readOnly)]
-    pub fn set_read_only(&mut self, read_only: bool) {
-        self.0.set_read_only(read_only)
+    #[wasm_bindgen(setter = "isReadOnly")]
+    pub fn set_is_read_only(&mut self, is_read_only: bool) {
+        self.0.set_read_only(is_read_only)
     }
 
     #[wasm_bindgen(setter = data)]
@@ -251,3 +299,5 @@ impl IdentityPublicKeyInCreationWasm {
 }
 
 impl_wasm_conversions!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);
+
+impl_wasm_type_info!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);

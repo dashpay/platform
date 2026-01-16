@@ -1,4 +1,4 @@
-use crate::impl_wasm_conversions;
+use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use js_sys::BigInt;
@@ -30,16 +30,6 @@ impl ExtendedEpochInfoWasm {
 
 #[wasm_bindgen(js_class = ExtendedEpochInfo)]
 impl ExtendedEpochInfoWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ExtendedEpochInfo".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ExtendedEpochInfo".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         index: u16,
@@ -126,3 +116,4 @@ impl ExtendedEpochInfoWasm {
 }
 
 impl_wasm_conversions!(ExtendedEpochInfoWasm, ExtendedEpochInfo);
+impl_wasm_type_info!(ExtendedEpochInfoWasm, ExtendedEpochInfo);

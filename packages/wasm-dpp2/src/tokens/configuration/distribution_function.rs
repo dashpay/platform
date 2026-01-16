@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::distribution_structs::{
     DistributionExponentialWasm, DistributionFixedAmountWasm, DistributionInvertedLogarithmicWasm,
     DistributionLinearWasm, DistributionLogarithmicWasm, DistributionPolynomialWasm,
@@ -30,16 +31,6 @@ impl From<DistributionFunction> for DistributionFunctionWasm {
 
 #[wasm_bindgen(js_class = DistributionFunction)]
 impl DistributionFunctionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DistributionFunction".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DistributionFunction".to_string()
-    }
-
     #[wasm_bindgen(js_name = "FixedAmountDistribution")]
     pub fn fixed_amount_distribution(amount: TokenAmount) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::FixedAmount { amount })
@@ -231,8 +222,8 @@ impl DistributionFunctionWasm {
         })
     }
 
-    #[wasm_bindgen(js_name = "getFunctionName")]
-    pub fn get_function_name(&self) -> String {
+    #[wasm_bindgen(getter = "functionName")]
+    pub fn function_name(&self) -> String {
         match self.0 {
             DistributionFunction::FixedAmount { .. } => String::from("FixedAmount"),
             DistributionFunction::Random { .. } => String::from("Random"),
@@ -248,8 +239,8 @@ impl DistributionFunctionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getFunctionValue")]
-    pub fn get_function_values(&self) -> WasmDppResult<JsValue> {
+    #[wasm_bindgen(getter = "functionValue")]
+    pub fn function_value(&self) -> WasmDppResult<JsValue> {
         match self.0.clone() {
             DistributionFunction::FixedAmount { amount } => {
                 Ok(JsValue::from(DistributionFixedAmountWasm { amount }))
@@ -398,3 +389,5 @@ impl DistributionFunctionWasm {
         }
     }
 }
+
+impl_wasm_type_info!(DistributionFunctionWasm, DistributionFunction);

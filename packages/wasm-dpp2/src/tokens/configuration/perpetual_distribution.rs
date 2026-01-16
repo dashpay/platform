@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::distribution_recipient::TokenDistributionRecipientWasm;
 use crate::tokens::configuration::reward_distribution_type::RewardDistributionTypeWasm;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
@@ -23,16 +24,6 @@ impl From<TokenPerpetualDistribution> for TokenPerpetualDistributionWasm {
 
 #[wasm_bindgen(js_class = TokenPerpetualDistribution)]
 impl TokenPerpetualDistributionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenPerpetualDistribution".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenPerpetualDistribution".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         distribution_type: &RewardDistributionTypeWasm,
@@ -68,3 +59,5 @@ impl TokenPerpetualDistributionWasm {
             .set_distribution_recipient(distribution_recipient.clone().into());
     }
 }
+
+impl_wasm_type_info!(TokenPerpetualDistributionWasm, TokenPerpetualDistribution);

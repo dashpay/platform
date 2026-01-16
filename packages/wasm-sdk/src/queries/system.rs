@@ -116,8 +116,9 @@ impl StatusNodeWasm {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusChainWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub catching_up: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "isCatchingUp")]
+    #[serde(rename = "catchingUp")]
+    pub is_catching_up: bool,
     #[wasm_bindgen(getter_with_clone)]
     pub latest_block_hash: String,
     #[wasm_bindgen(getter_with_clone)]
@@ -139,7 +140,7 @@ pub struct StatusChainWasm {
 impl StatusChainWasm {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        catching_up: bool,
+        is_catching_up: bool,
         latest_block_hash: String,
         latest_app_hash: String,
         latest_block_height: String,
@@ -150,7 +151,7 @@ impl StatusChainWasm {
         core_chain_locked_height: Option<u32>,
     ) -> Self {
         Self {
-            catching_up,
+            is_catching_up,
             latest_block_hash,
             latest_app_hash,
             latest_block_height,
@@ -171,16 +172,17 @@ pub struct StatusNetworkWasm {
     pub chain_id: String,
     #[wasm_bindgen(getter_with_clone)]
     pub peers_count: u32,
-    #[wasm_bindgen(getter_with_clone)]
-    pub listening: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "isListening")]
+    #[serde(rename = "listening")]
+    pub is_listening: bool,
 }
 
 impl StatusNetworkWasm {
-    fn new(chain_id: String, peers_count: u32, listening: bool) -> Self {
+    fn new(chain_id: String, peers_count: u32, is_listening: bool) -> Self {
         Self {
             chain_id,
             peers_count,
-            listening,
+            is_listening,
         }
     }
 }

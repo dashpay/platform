@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use crate::serialization;
 use crate::utils::JsValueExt;
@@ -63,16 +64,6 @@ pub fn js_members_to_map(
 
 #[wasm_bindgen(js_class = Group)]
 impl GroupWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Group".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Group".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         js_members: &JsValue,
@@ -167,3 +158,5 @@ impl GroupWasm {
         serialization::from_object(js_value).map(GroupWasm)
     }
 }
+
+impl_wasm_type_info!(GroupWasm, Group);

@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_transitions::config_update::TokenConfigUpdateTransitionWasm;
 use crate::state_transitions::batch::token_transitions::direct_purchase::TokenDirectPurchaseTransitionWasm;
 use crate::state_transitions::batch::token_transitions::set_price_for_direct_purchase::TokenSetPriceForDirectPurchaseTransitionWasm;
@@ -43,46 +44,36 @@ impl From<TokenTransitionWasm> for TokenTransition {
 
 #[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(js_transition: &JsValue) -> WasmDppResult<TokenTransitionWasm> {
-        if !js_transition.is_object() {
+    pub fn new(transition: &JsValue) -> WasmDppResult<TokenTransitionWasm> {
+        if !transition.is_object() {
             return Err(WasmDppError::invalid_argument("Bad token transition input"));
         }
 
-        let transition = match get_class_type(js_transition)?.as_str() {
+        let transition = match get_class_type(transition)?.as_str() {
             "TokenMintTransition" => TokenTransition::from(TokenMintTransition::from(
-                js_transition
+                transition
                     .to_wasm::<TokenMintTransitionWasm>("TokenMintTransition")?
                     .clone(),
             )),
             "TokenUnFreezeTransition" => TokenTransition::from(TokenUnfreezeTransition::from(
-                js_transition
+                transition
                     .to_wasm::<TokenUnFreezeTransitionWasm>("TokenUnFreezeTransition")?
                     .clone(),
             )),
             "TokenTransferTransition" => TokenTransition::from(TokenTransferTransition::from(
-                js_transition
+                transition
                     .to_wasm::<TokenTransferTransitionWasm>("TokenTransferTransition")?
                     .clone(),
             )),
             "TokenFreezeTransition" => TokenTransition::from(TokenFreezeTransition::from(
-                js_transition
+                transition
                     .to_wasm::<TokenFreezeTransitionWasm>("TokenFreezeTransition")?
                     .clone(),
             )),
             "TokenDestroyFrozenFundsTransition" => {
                 TokenTransition::from(TokenDestroyFrozenFundsTransition::from(
-                    js_transition
+                    transition
                         .to_wasm::<TokenDestroyFrozenFundsTransitionWasm>(
                             "TokenDestroyFrozenFundsTransition",
                         )?
@@ -90,18 +81,18 @@ impl TokenTransitionWasm {
                 ))
             }
             "TokenClaimTransition" => TokenTransition::from(TokenClaimTransition::from(
-                js_transition
+                transition
                     .to_wasm::<TokenClaimTransitionWasm>("TokenClaimTransition")?
                     .clone(),
             )),
             "TokenBurnTransition" => TokenTransition::from(TokenBurnTransition::from(
-                js_transition
+                transition
                     .to_wasm::<TokenBurnTransitionWasm>("TokenBurnTransition")?
                     .clone(),
             )),
             "TokenSetPriceForDirectPurchaseTransition" => {
                 TokenTransition::from(TokenSetPriceForDirectPurchaseTransition::from(
-                    js_transition
+                    transition
                         .to_wasm::<TokenSetPriceForDirectPurchaseTransitionWasm>(
                             "TokenSetPriceForDirectPurchaseTransition",
                         )?
@@ -110,7 +101,7 @@ impl TokenTransitionWasm {
             }
             "TokenDirectPurchaseTransition" => {
                 TokenTransition::from(TokenDirectPurchaseTransition::from(
-                    js_transition
+                    transition
                         .to_wasm::<TokenDirectPurchaseTransitionWasm>(
                             "TokenDirectPurchaseTransition",
                         )?
@@ -119,14 +110,14 @@ impl TokenTransitionWasm {
             }
             "TokenConfigUpdateTransition" => {
                 TokenTransition::from(TokenConfigUpdateTransition::from(
-                    js_transition
+                    transition
                         .to_wasm::<TokenConfigUpdateTransitionWasm>("TokenConfigUpdateTransition")?
                         .clone(),
                 ))
             }
             "TokenEmergencyActionTransition" => {
                 TokenTransition::from(TokenEmergencyActionTransition::from(
-                    js_transition
+                    transition
                         .to_wasm::<TokenEmergencyActionTransitionWasm>(
                             "TokenEmergencyActionTransition",
                         )?
@@ -141,8 +132,8 @@ impl TokenTransitionWasm {
         Ok(TokenTransitionWasm(transition))
     }
 
-    #[wasm_bindgen(js_name = "getTransition")]
-    pub fn to_transition(&self) -> JsValue {
+    #[wasm_bindgen(getter = "transition")]
+    pub fn transition(&self) -> JsValue {
         match self.clone().0 {
             TokenTransition::Burn(token_transition) => {
                 TokenBurnTransitionWasm::from(token_transition).into()
@@ -180,8 +171,8 @@ impl TokenTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getTransitionTypeNumber")]
-    pub fn get_transition_type_number(&self) -> u8 {
+    #[wasm_bindgen(getter = "transitionTypeNumber")]
+    pub fn transition_type_number(&self) -> u8 {
         match self.clone().0 {
             TokenTransition::Burn(_) => 0,
             TokenTransition::Mint(_) => 1,
@@ -197,8 +188,8 @@ impl TokenTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getTransitionType")]
-    pub fn get_transition_type(&self) -> String {
+    #[wasm_bindgen(getter = "transitionType")]
+    pub fn transition_type(&self) -> String {
         match self.clone().0 {
             TokenTransition::Burn(_) => "Burn".to_string(),
             TokenTransition::Mint(_) => "Mint".to_string(),
@@ -216,8 +207,8 @@ impl TokenTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getHistoricalDocumentTypeName")]
-    pub fn get_historical_document_type_name(&self) -> String {
+    #[wasm_bindgen(getter = "historicalDocumentTypeName")]
+    pub fn historical_document_type_name(&self) -> String {
         self.0.historical_document_type_name().to_string()
     }
 
@@ -225,9 +216,9 @@ impl TokenTransitionWasm {
     pub fn get_historical_document_id(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_owner: &JsValue,
+        owner: &JsValue,
     ) -> WasmDppResult<IdentifierWasm> {
-        let owner = IdentifierWasm::try_from(js_owner)?.into();
+        let owner = IdentifierWasm::try_from(owner)?.into();
         Ok(self.0.historical_document_id(owner).into())
     }
 
@@ -254,9 +245,9 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(setter = "tokenId")]
     pub fn set_token_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] token_id: &JsValue,
     ) -> WasmDppResult<()> {
-        let id = IdentifierWasm::try_from(js_id)?.into();
+        let id = IdentifierWasm::try_from(token_id)?.into();
 
         self.0.set_token_id(id);
 
@@ -266,12 +257,14 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(setter = "contractId")]
     pub fn set_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] contract_id: &JsValue,
     ) -> WasmDppResult<()> {
-        let id = IdentifierWasm::try_from(js_id)?.into();
+        let id = IdentifierWasm::try_from(contract_id)?.into();
 
         self.0.set_data_contract_id(id);
 
         Ok(())
     }
 }
+
+impl_wasm_type_info!(TokenTransitionWasm, TokenTransition);

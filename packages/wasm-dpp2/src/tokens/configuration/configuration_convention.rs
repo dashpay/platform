@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::localization::TokenConfigurationLocalizationWasm;
 use crate::utils::JsValueExt;
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
@@ -30,16 +31,6 @@ impl From<TokenConfigurationConventionWasm> for TokenConfigurationConvention {
 
 #[wasm_bindgen(js_class = TokenConfigurationConvention)]
 impl TokenConfigurationConventionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfigurationConvention".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfigurationConvention".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         js_localizations: &JsValue,
@@ -124,3 +115,5 @@ fn js_value_to_localizations(
 
     Ok(localizations)
 }
+
+impl_wasm_type_info!(TokenConfigurationConventionWasm, TokenConfigurationConvention);

@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
 use crate::utils::{JsValueExt, try_to_u64};
 use dpp::balances::credits::TokenAmount;
@@ -84,16 +85,6 @@ pub fn js_distributions_to_distributions(
 
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]
 impl TokenPreProgrammedDistributionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenPreProgrammedDistribution".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenPreProgrammedDistribution".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(js_distributions: &JsValue) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
         let distributions = js_distributions_to_distributions(js_distributions)?;
@@ -149,3 +140,5 @@ impl TokenPreProgrammedDistributionWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(TokenPreProgrammedDistributionWasm, TokenPreProgrammedDistribution);

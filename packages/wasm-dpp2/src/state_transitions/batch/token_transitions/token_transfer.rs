@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
@@ -31,16 +32,6 @@ impl From<TokenTransferTransitionWasm> for TokenTransferTransition {
 
 #[wasm_bindgen(js_class = TokenTransferTransition)]
 impl TokenTransferTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenTransferTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenTransferTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
@@ -191,3 +182,5 @@ impl TokenTransferTransitionWasm {
         Ok(())
     }
 }
+
+impl_wasm_type_info!(TokenTransferTransitionWasm, TokenTransferTransition);

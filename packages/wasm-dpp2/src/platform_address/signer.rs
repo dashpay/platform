@@ -2,6 +2,7 @@ use super::PlatformAddressWasm;
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
@@ -54,17 +55,6 @@ impl PlatformAddressSignerWasm {
         self.private_keys
             .insert(platform_address, private_key.clone());
         Ok(platform_address)
-    }
-
-    /// Returns the type name for WASM object identification (instance getter).
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PlatformAddressSigner".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PlatformAddressSigner".to_string()
     }
 
     /// Returns the number of keys in this signer.
@@ -165,3 +155,5 @@ impl TryFrom<&JsValue> for PlatformAddressSignerWasm {
             .map_err(|_| WasmDppError::invalid_argument("Expected a PlatformAddressSigner object"))
     }
 }
+
+impl_wasm_type_info!(PlatformAddressSignerWasm, PlatformAddressSigner);

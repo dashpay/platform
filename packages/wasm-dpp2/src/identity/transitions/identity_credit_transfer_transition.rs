@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -23,28 +24,18 @@ pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]
 impl IdentityCreditTransferWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityCreditTransfer".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityCreditTransfer".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         amount: u64,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_sender: &JsValue,
+        sender: &JsValue,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient: &JsValue,
+        recipient: &JsValue,
         nonce: u64,
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
-        let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
-        let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
+        let sender: Identifier = IdentifierWasm::try_from(sender)?.into();
+        let recipient: Identifier = IdentifierWasm::try_from(recipient)?.into();
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
@@ -102,9 +93,9 @@ impl IdentityCreditTransferWasm {
     pub fn set_recipient_id(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient: &JsValue,
+        recipient: &JsValue,
     ) -> WasmDppResult<()> {
-        let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
+        let recipient: Identifier = IdentifierWasm::try_from(recipient)?.into();
 
         self.0.set_recipient_id(recipient);
         Ok(())
@@ -114,9 +105,9 @@ impl IdentityCreditTransferWasm {
     pub fn set_sender_id(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_sender: &JsValue,
+        sender: &JsValue,
     ) -> WasmDppResult<()> {
-        let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
+        let sender: Identifier = IdentifierWasm::try_from(sender)?.into();
 
         self.0.set_identity_id(sender);
         Ok(())
@@ -214,3 +205,5 @@ impl IdentityCreditTransferWasm {
 }
 
 impl_wasm_conversions!(IdentityCreditTransferWasm, IdentityCreditTransferTransition);
+
+impl_wasm_type_info!(IdentityCreditTransferWasm, IdentityCreditTransfer);

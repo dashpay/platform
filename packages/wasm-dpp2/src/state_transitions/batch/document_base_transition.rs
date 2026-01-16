@@ -1,5 +1,6 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::utils::IntoWasm;
 use dpp::prelude::IdentityNonce;
@@ -8,8 +9,28 @@ use dpp::state_transition::batch_transition::document_base_transition::v0::v0_me
 use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
+use js_sys::{Object, Reflect};
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentBaseTransitionOptions {
+    identity_contract_nonce: IdentityNonce,
+    document_type_name: String,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export interface DocumentBaseTransitionOptions {
+    documentId: Identifier | Uint8Array | string;
+    identityContractNonce: bigint;
+    documentTypeName: string;
+    dataContractId: Identifier | Uint8Array | string;
+    tokenPaymentInfo?: TokenPaymentInfo;
+}
+"#;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentBaseTransition")]
@@ -29,26 +50,25 @@ impl From<DocumentBaseTransitionWasm> for DocumentBaseTransition {
 
 #[wasm_bindgen(js_class = DocumentBaseTransition)]
 impl DocumentBaseTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentBaseTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentBaseTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_document_id: &JsValue,
-        identity_contract_nonce: IdentityNonce,
-        document_type_name: String,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_data_contract_id: &JsValue,
-        js_token_payment_info: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DocumentBaseTransitionOptions")] options: JsValue,
     ) -> WasmDppResult<DocumentBaseTransitionWasm> {
+        let object = Object::from(options.clone());
+
+        // Extract documentId (required)
+        let js_document_id = Reflect::get(&object, &JsValue::from_str("documentId"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing documentId: {:?}", e)))?;
+        let document_id = IdentifierWasm::try_from(&js_document_id)?.into();
+
+        // Extract dataContractId (required)
+        let js_data_contract_id = Reflect::get(&object, &JsValue::from_str("dataContractId"))
+            .map_err(|e| WasmDppError::invalid_argument(format!("Missing dataContractId: {:?}", e)))?;
+        let data_contract_id = IdentifierWasm::try_from(&js_data_contract_id)?.into();
+
+        // Extract tokenPaymentInfo (optional)
+        let js_token_payment_info = Reflect::get(&object, &JsValue::from_str("tokenPaymentInfo"))
+            .unwrap_or(JsValue::UNDEFINED);
         let token_payment_info: Option<TokenPaymentInfo> =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
@@ -60,11 +80,15 @@ impl DocumentBaseTransitionWasm {
                 ),
             };
 
+        // Extract simple fields via serde
+        let opts: DocumentBaseTransitionOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
         let rs_base_v1 = DocumentBaseTransitionV1 {
-            id: IdentifierWasm::try_from(js_document_id)?.into(),
-            identity_contract_nonce,
-            document_type_name,
-            data_contract_id: IdentifierWasm::try_from(js_data_contract_id)?.into(),
+            id: document_id,
+            identity_contract_nonce: opts.identity_contract_nonce,
+            document_type_name: opts.document_type_name,
+            data_contract_id,
             token_payment_info,
         };
 
@@ -134,3 +158,5 @@ impl DocumentBaseTransitionWasm {
             .set_token_payment_info(token_payment_info.clone().into())
     }
 }
+
+impl_wasm_type_info!(DocumentBaseTransitionWasm, DocumentBaseTransition);

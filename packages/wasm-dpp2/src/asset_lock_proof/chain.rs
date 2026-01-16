@@ -2,6 +2,7 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use serde::{Deserialize, Serialize};
@@ -25,16 +26,6 @@ impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
 
 #[wasm_bindgen(js_class = ChainAssetLockProof)]
 impl ChainAssetLockProofWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ChainAssetLockProof".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ChainAssetLockProof".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         core_chain_locked_height: u32,
@@ -89,3 +80,4 @@ impl ChainAssetLockProofWasm {
 }
 
 impl_wasm_conversions!(ChainAssetLockProofWasm, ChainAssetLockProof);
+impl_wasm_type_info!(ChainAssetLockProofWasm, ChainAssetLockProof);

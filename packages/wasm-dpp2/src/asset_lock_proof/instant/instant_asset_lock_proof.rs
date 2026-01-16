@@ -2,6 +2,7 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
@@ -25,16 +26,6 @@ impl From<InstantAssetLockProof> for InstantAssetLockProofWasm {
 
 #[wasm_bindgen(js_class = InstantAssetLockProof)]
 impl InstantAssetLockProofWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "InstantAssetLockProof".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "InstantAssetLockProof".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         instant_lock: Vec<u8>,
@@ -53,13 +44,13 @@ impl InstantAssetLockProofWasm {
         }))
     }
 
-    #[wasm_bindgen(js_name = "getOutput")]
-    pub fn get_output(&self) -> Option<Vec<u8>> {
+    #[wasm_bindgen(getter = "output")]
+    pub fn output(&self) -> Option<Vec<u8>> {
         self.0.output().map(serialize)
     }
 
-    #[wasm_bindgen(js_name = "getOutPoint")]
-    pub fn get_out_point(&self) -> Option<OutPointWasm> {
+    #[wasm_bindgen(getter = "outPoint")]
+    pub fn out_point(&self) -> Option<OutPointWasm> {
         self.0.out_point().map(|output| output.into())
     }
 
@@ -85,8 +76,8 @@ impl InstantAssetLockProofWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(js_name=getTransaction)]
-    pub fn get_transaction(&self) -> Vec<u8> {
+    #[wasm_bindgen(getter = "transaction")]
+    pub fn transaction(&self) -> Vec<u8> {
         let transaction = self.0.transaction();
         serialize(transaction)
     }
@@ -100,3 +91,4 @@ impl InstantAssetLockProofWasm {
 }
 
 impl_wasm_conversions!(InstantAssetLockProofWasm, InstantAssetLockProof);
+impl_wasm_type_info!(InstantAssetLockProofWasm, InstantAssetLockProof);

@@ -2,6 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::serialization;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
@@ -32,22 +33,12 @@ impl From<IdentityWasm> for Identity {
 
 #[wasm_bindgen(js_class = Identity)]
 impl IdentityWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Identity".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Identity".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
+        id: &JsValue,
     ) -> WasmDppResult<IdentityWasm> {
-        let identifier: Identifier = IdentifierWasm::try_from(js_identifier)?.into();
+        let identifier: Identifier = IdentifierWasm::try_from(id)?.into();
 
         let identity = Identity::create_basic_identity(identifier, PlatformVersion::first())?;
 
@@ -58,9 +49,9 @@ impl IdentityWasm {
     pub fn set_id(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
+        id: &JsValue,
     ) -> WasmDppResult<()> {
-        let identifier: Identifier = IdentifierWasm::try_from(js_identifier)?.into();
+        let identifier: Identifier = IdentifierWasm::try_from(id)?.into();
         self.0.set_id(identifier);
         Ok(())
     }
@@ -104,8 +95,8 @@ impl IdentityWasm {
             .map(|key| IdentityPublicKeyWasm::from(key.clone()))
     }
 
-    #[wasm_bindgen(js_name = "getPublicKeys")]
-    pub fn get_public_keys(&self) -> Vec<IdentityPublicKeyWasm> {
+    #[wasm_bindgen(getter = "publicKeys")]
+    pub fn public_keys(&self) -> Vec<IdentityPublicKeyWasm> {
         self.0
             .public_keys()
             .values()
@@ -160,14 +151,14 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        serialization::from_json(js_value).map(IdentityWasm)
+    pub fn from_json(value: JsValue) -> WasmDppResult<IdentityWasm> {
+        serialization::from_json(value).map(IdentityWasm)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        let value = serialization::js_value_to_platform_value(&js_value)?;
-        let identity = Identity::try_from_platform_versioned(value, PlatformVersion::latest())?;
+    pub fn from_object(value: JsValue) -> WasmDppResult<IdentityWasm> {
+        let platform_value = serialization::js_value_to_platform_value(&value)?;
+        let identity = Identity::try_from_platform_versioned(platform_value, PlatformVersion::latest())?;
         Ok(IdentityWasm(identity))
     }
 
@@ -179,3 +170,4 @@ impl IdentityWasm {
 }
 
 impl_try_from_options!(IdentityWasm, "Identity");
+impl_wasm_type_info!(IdentityWasm, Identity);

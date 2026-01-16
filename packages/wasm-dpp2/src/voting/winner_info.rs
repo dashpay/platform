@@ -68,12 +68,12 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "isLocked")]
+    #[wasm_bindgen(getter = "isLocked")]
     pub fn is_locked(&self) -> bool {
         matches!(self.0, ContestedDocumentVotePollWinnerInfo::Locked)
     }
 
-    #[wasm_bindgen(js_name = "isWonByIdentity")]
+    #[wasm_bindgen(getter = "isWonByIdentity")]
     pub fn is_won_by_identity(&self) -> bool {
         matches!(
             self.0,
@@ -81,7 +81,7 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
         )
     }
 
-    #[wasm_bindgen(js_name = "isNoWinner")]
+    #[wasm_bindgen(getter = "isNoWinner")]
     pub fn is_no_winner(&self) -> bool {
         matches!(self.0, ContestedDocumentVotePollWinnerInfo::NoWinner)
     }

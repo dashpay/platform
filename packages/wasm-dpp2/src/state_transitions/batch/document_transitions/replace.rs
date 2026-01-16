@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_replace_transition;
@@ -31,16 +32,6 @@ impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
 
 #[wasm_bindgen(js_class = DocumentReplaceTransition)]
 impl DocumentReplaceTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentReplaceTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentReplaceTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
     pub fn new(
         document: &DocumentWasm,
@@ -114,3 +105,5 @@ impl DocumentReplaceTransitionWasm {
         js_transition.get_replace_transition()
     }
 }
+
+impl_wasm_type_info!(DocumentReplaceTransitionWasm, DocumentReplaceTransition);
