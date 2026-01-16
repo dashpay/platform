@@ -46,23 +46,23 @@ describe('BatchTransition', () => {
       });
 
       it('should allow to convert batch transition to base64 and back', () => {
-          const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
-          const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+        const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
-          const documentTransition = createTransition.toDocumentTransition();
+        const documentTransition = createTransition.toDocumentTransition();
 
-      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+        const batchedTransition = new wasm.BatchedTransition(documentTransition);
 
-      const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition], documentInstance.ownerId, 1);
+        const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition], documentInstance.ownerId, 1);
 
-      const base64 = batch.toBase64();
-      const bytes = batch.toBytes();
+        const base64 = batch.toBase64();
+        const bytes = batch.toBytes();
 
-          expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+        expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
 
-          const restoredBatch = wasm.BatchTransition.fromBase64(base64);
+        const restoredBatch = wasm.BatchTransition.fromBase64(base64);
 
-          expect(Buffer.from(restoredBatch.toBytes())).to.deep.equal(Buffer.from(bytes));
+        expect(Buffer.from(restoredBatch.toBytes())).to.deep.equal(Buffer.from(bytes));
       });
 
       it('should round-trip via object and JSON', () => {
@@ -87,8 +87,8 @@ describe('BatchTransition', () => {
         const fromJson = wasm.BatchTransition.fromJSON(json);
         expect(Buffer.from(fromJson.toBytes())).to.deep.equal(Buffer.from(batch.toBytes()));
       });
-  });
-  describe('tokens', () => {
+    });
+    describe('tokens', () => {
       it('should allow to create from v1 transition', () => {
         const baseTransition = new wasm.TokenBaseTransition(BigInt(1), 1, dataContractId, ownerId);
 

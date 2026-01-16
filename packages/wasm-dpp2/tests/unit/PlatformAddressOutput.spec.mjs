@@ -56,12 +56,10 @@ describe('PlatformAddressOutput', () => {
       const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
-      try {
+      expect(() => {
+        // eslint-disable-next-line no-new
         new wasm.PlatformAddressOutput(platformAddr, BigInt(-1));
-        expect.fail('Should have thrown error for negative amount');
-      } catch (error) {
-        expect(error).to.exist;
-      }
+      }).to.throw();
     });
   });
 

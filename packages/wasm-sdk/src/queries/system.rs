@@ -275,22 +275,22 @@ impl StatusResponseWasm {
     }
 }
 
-impl_wasm_serde_conversions!(StatusSoftwareWasm);
-impl_wasm_serde_conversions!(StatusTenderdashProtocolWasm);
-impl_wasm_serde_conversions!(StatusDriveProtocolWasm);
-impl_wasm_serde_conversions!(StatusProtocolWasm);
-impl_wasm_serde_conversions!(StatusVersionWasm);
-impl_wasm_serde_conversions!(StatusNodeWasm);
-impl_wasm_serde_conversions!(StatusChainWasm);
-impl_wasm_serde_conversions!(StatusNetworkWasm);
-impl_wasm_serde_conversions!(StatusStateSyncWasm);
-impl_wasm_serde_conversions!(StatusTimeWasm);
-impl_wasm_serde_conversions!(StatusResponseWasm);
-impl_wasm_serde_conversions!(QuorumInfoWasm);
-impl_wasm_serde_conversions!(CurrentQuorumsInfoWasm);
-impl_wasm_serde_conversions!(PrefundedSpecializedBalanceWasm);
-impl_wasm_serde_conversions!(PathElementWasm);
-impl_wasm_serde_conversions!(StateTransitionResultWasm);
+impl_wasm_serde_conversions!(StatusSoftwareWasm, StatusSoftware);
+impl_wasm_serde_conversions!(StatusTenderdashProtocolWasm, StatusTenderdashProtocol);
+impl_wasm_serde_conversions!(StatusDriveProtocolWasm, StatusDriveProtocol);
+impl_wasm_serde_conversions!(StatusProtocolWasm, StatusProtocol);
+impl_wasm_serde_conversions!(StatusVersionWasm, StatusVersion);
+impl_wasm_serde_conversions!(StatusNodeWasm, StatusNode);
+impl_wasm_serde_conversions!(StatusChainWasm, StatusChain);
+impl_wasm_serde_conversions!(StatusNetworkWasm, StatusNetwork);
+impl_wasm_serde_conversions!(StatusStateSyncWasm, StatusStateSync);
+impl_wasm_serde_conversions!(StatusTimeWasm, StatusTime);
+impl_wasm_serde_conversions!(StatusResponseWasm, StatusResponse);
+impl_wasm_serde_conversions!(QuorumInfoWasm, QuorumInfo);
+impl_wasm_serde_conversions!(CurrentQuorumsInfoWasm, CurrentQuorumsInfo);
+impl_wasm_serde_conversions!(PrefundedSpecializedBalanceWasm, PrefundedSpecializedBalance);
+impl_wasm_serde_conversions!(PathElementWasm, PathElement);
+impl_wasm_serde_conversions!(StateTransitionResultWasm, StateTransitionResult);
 
 #[wasm_bindgen(js_name = "QuorumInfo")]
 #[derive(Clone, Serialize, Deserialize)]

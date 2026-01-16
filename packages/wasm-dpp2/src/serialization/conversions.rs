@@ -29,6 +29,25 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
+/// Try to call toJSON() on a WASM object if it has one.
+///
+/// Returns Some(result) if the object has a toJSON method and it succeeds,
+/// None otherwise (for plain objects, arrays, primitives, etc.)
+fn try_call_to_json(value: &JsValue) -> Option<JsValue> {
+    if !value.is_object() || value.is_null() || js_sys::Array::is_array(value) {
+        return None;
+    }
+
+    // Check for toJSON method
+    let to_json_fn = js_sys::Reflect::get(value, &JsValue::from_str("toJSON")).ok()?;
+    if !to_json_fn.is_function() {
+        return None;
+    }
+
+    let func: js_sys::Function = to_json_fn.unchecked_into();
+    func.call0(value).ok()
+}
+
 /// Convert JsValue to serde_json::Value, handling BigInt values and WASM objects.
 ///
 /// This function:
@@ -37,18 +56,9 @@ use wasm_bindgen::prelude::*;
 /// - Falls back to serde_wasm_bindgen conversion for plain objects
 pub fn js_value_to_json(value: &JsValue) -> WasmDppResult<JsonValue> {
     // Check if the value has a toJSON method (WASM objects like DataContractWasm, IdentityWasm)
-    if value.is_object()
-        && !value.is_null()
-        && !js_sys::Array::is_array(value)
-        && let Ok(to_json_fn) = js_sys::Reflect::get(value, &JsValue::from_str("toJSON"))
-        && to_json_fn.is_function()
-    {
-        let func: js_sys::Function = to_json_fn.unchecked_into();
-        // Call toJSON() on the object
-        if let Ok(json_result) = func.call0(value) {
-            // Recursively convert the result (it might contain BigInt or nested WASM objects)
-            return js_value_to_json(&json_result);
-        }
+    if let Some(json_result) = try_call_to_json(value) {
+        // Recursively convert the result (it might contain BigInt or nested WASM objects)
+        return js_value_to_json(&json_result);
     }
 
     let normalized = normalize_js_value_for_json(value)?;
@@ -70,12 +80,15 @@ pub fn json_to_js_value(value: &JsonValue) -> WasmDppResult<JsValue> {
 /// Recursively normalizes a JsValue for JSON conversion.
 ///
 /// This converts:
+/// - WASM objects with toJSON() method - calls toJSON() and normalizes the result
 /// - BigInt values to strings (JSON doesn't support BigInt natively)
 /// - Uint8Array to plain arrays (so they serialize as JSON number arrays)
+/// - JavaScript Map to plain objects
+/// - Recursively processes nested objects and arrays
 ///
 /// Performance: Uses fast path for primitives, only recursively processes objects/arrays.
 fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
-    // Fast path: primitives that can't contain BigInt
+    // Fast path: primitives that can't contain BigInt or need conversion
     if value.is_string()
         || value.as_f64().is_some()
         || value.is_null()
@@ -85,6 +98,7 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
         return Ok(value.clone());
     }
 
+    // Convert BigInt to string (JSON doesn't support BigInt)
     if value.is_bigint() {
         let bigint: js_sys::BigInt = value.clone().unchecked_into();
         let bigint_str = bigint
@@ -101,6 +115,13 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
         return Ok(plain_array.into());
     }
 
+    // Convert JavaScript Map to an object for JSON compatibility
+    // Maps don't have enumerable properties, so Object.keys() returns empty array
+    if value.is_instance_of::<js_sys::Map>() {
+        return normalize_map_for_json(value);
+    }
+
+    // Handle arrays - recursively normalize each element
     if js_sys::Array::is_array(value) {
         let arr = js_sys::Array::from(value);
         let new_arr = js_sys::Array::new();
@@ -112,7 +133,15 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
         return Ok(new_arr.into());
     }
 
+    // Handle objects - check for toJSON method first (WASM objects), then normalize properties
     if value.is_object() && !value.is_null() {
+        // Try to call toJSON() on WASM objects (Identity, Identifier, DataContract, etc.)
+        if let Some(json_result) = try_call_to_json(value) {
+            // Recursively normalize the result (might contain BigInt, nested objects, etc.)
+            return normalize_js_value_for_json(&json_result);
+        }
+
+        // Plain object - normalize each property
         let obj = Object::from(value.clone());
         let new_obj = Object::new();
         let keys = Object::keys(&obj);
@@ -133,6 +162,88 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
 
     // Anything else (Symbol, Function, etc.): pass through
     Ok(value.clone())
+}
+
+/// Convert a JavaScript Map key to a string for JSON object keys.
+fn map_key_to_string(key: &JsValue) -> String {
+    // String keys - use as-is
+    if let Some(s) = key.as_string() {
+        return s;
+    }
+
+    // Number keys - convert to string
+    if key.as_f64().is_some() {
+        return js_sys::Number::from(key.clone())
+            .to_string(10)
+            .map(|s| s.into())
+            .unwrap_or_else(|_| "0".to_string());
+    }
+
+    // BigInt keys - convert to string
+    if key.is_bigint() {
+        let bigint: js_sys::BigInt = key.clone().unchecked_into();
+        return bigint
+            .to_string(10)
+            .map(|s| s.into())
+            .unwrap_or_else(|_| "0".to_string());
+    }
+
+    // Objects with toString (like Identifier) - call toString()
+    if let Ok(to_string_fn) = js_sys::Reflect::get(key, &JsValue::from_str("toString"))
+        && to_string_fn.is_function()
+    {
+        let func: js_sys::Function = to_string_fn.unchecked_into();
+        if let Ok(str_result) = func.call0(key)
+            && let Some(s) = str_result.as_string()
+        {
+            return s;
+        }
+    }
+
+    // Fallback - use debug representation
+    format!("{:?}", key)
+}
+
+/// Convert a JavaScript Map to a plain object for JSON serialization.
+fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
+    let map: js_sys::Map = value.clone().unchecked_into();
+    let new_obj = Object::new();
+
+    // We need to collect errors from the closure since for_each doesn't support Result
+    let error: std::cell::RefCell<Option<WasmDppError>> = std::cell::RefCell::new(None);
+
+    map.for_each(&mut |val, key| {
+        // Skip if we already have an error
+        if error.borrow().is_some() {
+            return;
+        }
+
+        let key_str = map_key_to_string(&key);
+
+        // Normalize the value - handle WASM objects, BigInt, nested Maps, etc.
+        match normalize_js_value_for_json(&val) {
+            Ok(normalized_val) => {
+                if let Err(e) =
+                    js_sys::Reflect::set(&new_obj, &JsValue::from_str(&key_str), &normalized_val)
+                {
+                    *error.borrow_mut() = Some(WasmDppError::serialization(format!(
+                        "Failed to set Map entry '{}': {:?}",
+                        key_str, e
+                    )));
+                }
+            }
+            Err(e) => {
+                *error.borrow_mut() = Some(e);
+            }
+        }
+    });
+
+    // Check if any error occurred during iteration
+    if let Some(e) = error.into_inner() {
+        return Err(e);
+    }
+
+    Ok(new_obj.into())
 }
 
 /// Serialize to JsValue as a JS object (non-human-readable).
@@ -352,6 +463,24 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
     Err(WasmDppError::serialization(
         "Unsupported JsValue type for platform_value conversion".to_string(),
     ))
+}
+
+/// Test helper: Convert a JsValue to a JSON-compatible JsValue.
+///
+/// This function is exposed for testing purposes to validate the Map normalization
+/// and BigInt handling logic in unit tests. It calls `js_value_to_json` internally
+/// and converts the result back to a JsValue.
+///
+/// # Example (JavaScript)
+/// ```javascript
+/// const map = new Map([['key', 'value']]);
+/// const json = testJsValueToJson(map);
+/// console.log(json); // { key: 'value' }
+/// ```
+#[wasm_bindgen(js_name = testJsValueToJson)]
+pub fn test_js_value_to_json(value: &JsValue) -> Result<JsValue, WasmDppError> {
+    let json_value = js_value_to_json(value)?;
+    json_to_js_value(&json_value)
 }
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods

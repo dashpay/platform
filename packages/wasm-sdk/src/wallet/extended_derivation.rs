@@ -169,7 +169,7 @@ impl From<CommonDerivation> for DerivedKeyInfoWasm {
 }
 
 // Field getters are generated via getter_with_clone annotations above
-impl_wasm_serde_conversions!(DerivedKeyInfoWasm);
+impl_wasm_serde_conversions!(DerivedKeyInfoWasm, DerivedKeyInfo);
 
 #[wasm_bindgen(js_name = "DashpayContactKeyInfo")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -235,7 +235,7 @@ impl DashpayContactKeyInfoWasm {
 }
 
 // Field getters are generated via getter_with_clone annotations above
-impl_wasm_serde_conversions!(DashpayContactKeyInfoWasm);
+impl_wasm_serde_conversions!(DashpayContactKeyInfoWasm, DashpayContactKeyInfo);
 #[wasm_bindgen]
 impl WasmSdk {
     /// Derive a key from seed phrase with extended path supporting 256-bit indices

@@ -266,10 +266,10 @@ pub struct PathDerivedKeyInfoWasm {
     pub network: String,
 }
 
-impl_wasm_serde_conversions!(DerivationPathWasm);
-impl_wasm_serde_conversions!(Dip13DerivationPathWasm);
-impl_wasm_serde_conversions!(SeedPhraseKeyInfoWasm);
-impl_wasm_serde_conversions!(PathDerivedKeyInfoWasm);
+impl_wasm_serde_conversions!(DerivationPathWasm, DerivationPathInfo);
+impl_wasm_serde_conversions!(Dip13DerivationPathWasm, Dip13DerivationPathInfo);
+impl_wasm_serde_conversions!(SeedPhraseKeyInfoWasm, SeedPhraseKeyInfo);
+impl_wasm_serde_conversions!(PathDerivedKeyInfoWasm, PathDerivedKeyInfo);
 
 /// HD Key information
 #[derive(Debug, Clone, Serialize, Deserialize)]

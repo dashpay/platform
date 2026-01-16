@@ -57,7 +57,7 @@ impl From<KeyPair> for KeyPairWasm {
     }
 }
 
-impl_wasm_serde_conversions!(KeyPairWasm);
+impl_wasm_serde_conversions!(KeyPairWasm, KeyPair);
 
 #[wasm_bindgen]
 impl WasmSdk {
