@@ -8,8 +8,10 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::v0::validate_identity_public_keys_contract_bounds_v0;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::v1::validate_identity_public_keys_contract_bounds_v1;
 
 pub mod v0;
+pub mod v1;
 
 pub(crate) fn validate_identity_public_keys_contract_bounds(
     identity_id: Identifier,
@@ -34,9 +36,17 @@ pub(crate) fn validate_identity_public_keys_contract_bounds(
             execution_context,
             platform_version,
         ),
+        1 => validate_identity_public_keys_contract_bounds_v1(
+            identity_id,
+            identity_public_keys_with_witness,
+            drive,
+            transaction,
+            execution_context,
+            platform_version,
+        ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "validate_identity_public_keys_contract_bounds".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         })),
     }
