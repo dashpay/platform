@@ -69,6 +69,7 @@ impl From<RequestSettingsInput> for RequestSettings {
             timeout: input.timeout_ms.map(Duration::from_millis),
             connect_timeout: input.connect_timeout_ms.map(Duration::from_millis),
             ban_failed_address: input.ban_failed_address,
+            max_decoding_message_size: None,
         }
     }
 }
