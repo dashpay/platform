@@ -352,33 +352,35 @@ public class ManagedWallet {
         guard let infoHandle = getInfoHandle() else {
             throw KeyWalletError.invalidState("Failed to get managed wallet info")
         }
-        
+
         var error = FFIError()
         var confirmed: UInt64 = 0
         var unconfirmed: UInt64 = 0
+        var immature: UInt64 = 0
         var locked: UInt64 = 0
         var total: UInt64 = 0
-        
+
         let success = managed_wallet_get_balance(
-            infoHandle, &confirmed, &unconfirmed, &locked, &total, &error)
-        
+            infoHandle, &confirmed, &unconfirmed, &immature, &locked, &total, &error)
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         let ffiBalance = FFIBalance(
             confirmed: confirmed,
             unconfirmed: unconfirmed,
-            immature: locked,  // Using locked as immature
+            immature: immature,
+            locked: locked,
             total: total
         )
-        
+
         return Balance(ffiBalance: ffiBalance)
     }
     

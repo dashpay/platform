@@ -166,26 +166,29 @@ public struct Balance: Equatable, Codable, Sendable {
     public let confirmed: UInt64
     public let unconfirmed: UInt64
     public let immature: UInt64
+    public let locked: UInt64
     public let total: UInt64
 
     init(ffiBalance: FFIBalance) {
         self.confirmed = ffiBalance.confirmed
         self.unconfirmed = ffiBalance.unconfirmed
         self.immature = ffiBalance.immature
+        self.locked = ffiBalance.locked
         self.total = ffiBalance.total
     }
 
     /// Public initializer for Balance
-    public init(confirmed: UInt64 = 0, unconfirmed: UInt64 = 0, immature: UInt64 = 0) {
+    public init(confirmed: UInt64 = 0, unconfirmed: UInt64 = 0, immature: UInt64 = 0, locked: UInt64 = 0) {
         self.confirmed = confirmed
         self.unconfirmed = unconfirmed
         self.immature = immature
+        self.locked = locked
         self.total = confirmed + unconfirmed + immature
     }
 
-    /// Spendable balance (only confirmed)
+    /// Spendable balance (only confirmed, excluding locked)
     public var spendable: UInt64 {
-        confirmed
+        confirmed > locked ? confirmed - locked : 0
     }
 
     // MARK: - Formatting Helpers

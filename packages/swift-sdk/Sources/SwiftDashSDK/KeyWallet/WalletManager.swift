@@ -415,26 +415,7 @@ public class WalletManager {
     }
     
     // MARK: - Block Height Management
-    
-    /// Update the current block height for a network
-    /// - Parameters:
-    ///   - height: The new block height
-    public func updateHeight(_ height: UInt32) throws {
-        var error = FFIError()
-        
-        let success = wallet_manager_update_height(handle, height, &error)
-        
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-        
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-    }
-    
+
     /// Get the current block height for a network
     /// - Parameter network: The network type
     /// - Returns: The current block height
