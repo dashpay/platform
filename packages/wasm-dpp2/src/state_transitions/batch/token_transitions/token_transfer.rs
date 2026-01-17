@@ -157,7 +157,7 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(setter = recipientId)]
     pub fn set_recipient_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_recipient: &JsValue,
     ) -> WasmDppResult<()> {
         let recipient = IdentifierWasm::try_from(js_recipient)?.into();

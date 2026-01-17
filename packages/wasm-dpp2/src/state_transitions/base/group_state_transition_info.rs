@@ -27,7 +27,7 @@ impl GroupStateTransitionInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         group_contract_position: u16,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         action_id: &JsValue,
         action_is_proposer: bool,
     ) -> WasmDppResult<GroupStateTransitionInfoWasm> {
@@ -48,7 +48,7 @@ impl GroupStateTransitionInfoWasm {
     #[wasm_bindgen(setter = "actionId")]
     pub fn set_action_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         action_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0.action_id = IdentifierWasm::try_from(action_id)?.into();

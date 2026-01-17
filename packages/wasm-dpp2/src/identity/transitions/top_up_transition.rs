@@ -26,7 +26,7 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         asset_lock_proof: &AssetLockProofWasm,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: JsValue,
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
@@ -82,7 +82,7 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(setter = "identityIdentifier")]
     pub fn set_identity_identifier(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_identifier: &JsValue,
     ) -> WasmDppResult<()> {
         let identity_identifier: Identifier =

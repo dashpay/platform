@@ -52,7 +52,7 @@ impl DocumentPurchaseTransitionWasm {
         let rs_purchase_transition = generate_purchase_transition(
             document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
+            document.document_type_name().to_string(),
             amount,
             token_payment_info,
         );

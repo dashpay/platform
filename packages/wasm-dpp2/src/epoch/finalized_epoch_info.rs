@@ -343,7 +343,10 @@ impl FinalizedEpochInfoWasm {
     }
 
     #[wasm_bindgen(setter = "blockProposers")]
-    pub fn set_block_proposers(&mut self, block_proposers: &JsValue) -> WasmDppResult<()> {
+    pub fn set_block_proposers(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, number>")] block_proposers: &JsValue,
+    ) -> WasmDppResult<()> {
         let block_proposers_map = block_proposers_from_js(block_proposers)?;
         self.v0_mut().block_proposers = block_proposers_map;
         Ok(())

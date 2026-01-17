@@ -59,7 +59,7 @@ impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromBatchedTransitions")]
     pub fn from_batched_transitions(
         js_batched_transitions: &js_sys::Array,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         owner_id: &JsValue,
         user_fee_increase: UserFeeIncrease,
     ) -> WasmDppResult<BatchTransitionWasm> {
@@ -199,12 +199,16 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<BatchTransitionWasm> {
+    pub fn from_object(
+        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+    ) -> WasmDppResult<BatchTransitionWasm> {
         serialization::from_object(js_value).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<BatchTransitionWasm> {
+    pub fn from_json(
+        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+    ) -> WasmDppResult<BatchTransitionWasm> {
         serialization::from_json(js_value).map(BatchTransitionWasm)
     }
 

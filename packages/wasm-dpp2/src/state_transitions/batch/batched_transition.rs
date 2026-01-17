@@ -15,6 +15,11 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const BATCHED_TRANSITION_TYPES_TS: &'static str = r#"
+export type BatchedTransitionLike = DocumentTransition | TokenTransition;
+"#;
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=BatchedTransition)]
 pub struct BatchedTransitionWasm(BatchedTransition);
@@ -34,7 +39,10 @@ impl From<BatchedTransitionWasm> for BatchedTransition {
 #[wasm_bindgen(js_class = BatchedTransition)]
 impl BatchedTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(js_transition: &JsValue) -> WasmDppResult<BatchedTransitionWasm> {
+    pub fn constructor(
+        #[wasm_bindgen(unchecked_param_type = "BatchedTransitionLike")]
+        js_transition: &JsValue,
+    ) -> WasmDppResult<BatchedTransitionWasm> {
         if js_transition.is_undefined() || !js_transition.is_object() {
             return Err(WasmDppError::invalid_argument("transition is undefined"));
         }
@@ -85,7 +93,7 @@ impl BatchedTransitionWasm {
     #[wasm_bindgen(setter = "dataContractId")]
     pub fn set_data_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();

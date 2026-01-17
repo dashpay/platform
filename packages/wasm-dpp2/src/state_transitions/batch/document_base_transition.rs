@@ -24,10 +24,10 @@ struct DocumentBaseTransitionOptions {
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
 export interface DocumentBaseTransitionOptions {
-    documentId: Identifier | Uint8Array | string;
+    documentId: IdentifierLike;
     identityContractNonce: bigint;
     documentTypeName: string;
-    dataContractId: Identifier | Uint8Array | string;
+    dataContractId: IdentifierLike;
     tokenPaymentInfo?: TokenPaymentInfo;
 }
 "#;
@@ -125,7 +125,7 @@ impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(setter = "id")]
     pub fn set_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] js_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0.set_id(IdentifierWasm::try_from(js_id)?.into());
         Ok(())
@@ -139,7 +139,7 @@ impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(setter = "dataContractId")]
     pub fn set_data_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_data_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0

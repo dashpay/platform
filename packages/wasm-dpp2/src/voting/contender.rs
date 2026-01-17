@@ -29,7 +29,7 @@ impl From<ContenderWithSerializedDocumentWasm> for ContenderWithSerializedDocume
 impl ContenderWithSerializedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: &JsValue,
         serialized_document: Option<Vec<u8>>,
         vote_tally: Option<u32>,

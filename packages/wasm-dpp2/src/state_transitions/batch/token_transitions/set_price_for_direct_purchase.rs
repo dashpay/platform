@@ -89,19 +89,8 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "price")]
-    pub fn set_price(&mut self, js_price: &JsValue) -> WasmDppResult<()> {
-        let price: Option<TokenPricingSchedule> = match js_price.is_undefined() {
-            true => None,
-            false => Some(
-                js_price
-                    .to_wasm::<TokenPricingScheduleWasm>("TokenPricingSchedule")?
-                    .clone()
-                    .into(),
-            ),
-        };
-
-        self.0.set_price(price);
-        Ok(())
+    pub fn set_price(&mut self, price: Option<TokenPricingScheduleWasm>) {
+        self.0.set_price(price.map(|p| p.into()));
     }
 }
 

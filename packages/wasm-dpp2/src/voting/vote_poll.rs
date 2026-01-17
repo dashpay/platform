@@ -20,7 +20,7 @@ struct VotePollOptions {
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
 export interface VotePollOptions {
-    contractId: Identifier | Uint8Array | string;
+    contractId: IdentifierLike;
     documentTypeName: string;
     indexName: string;
     indexValues: any[];
@@ -137,7 +137,7 @@ impl VotePollWasm {
     #[wasm_bindgen(setter = "contractId")]
     pub fn set_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         let contract_id = IdentifierWasm::try_from(js_contract_id)?.into();

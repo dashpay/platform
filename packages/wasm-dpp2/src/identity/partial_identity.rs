@@ -19,6 +19,28 @@ export interface PartialIdentityOptions {
     revision?: bigint | number;
     notFoundPublicKeys?: number[];
 }
+
+/**
+ * PartialIdentity serialized as a plain object.
+ */
+export interface PartialIdentityObject {
+    id: Identifier;
+    loadedPublicKeys: Record<number, IdentityPublicKey>;
+    balance: bigint | null;
+    revision: bigint | null;
+    notFoundPublicKeys: number[];
+}
+
+/**
+ * PartialIdentity serialized as JSON.
+ */
+export interface PartialIdentityJSON {
+    id: string;
+    loadedPublicKeys: Record<string, IdentityPublicKeyJSON>;
+    balance: number | null;
+    revision: number | null;
+    notFoundPublicKeys: number[];
+}
 "#;
 
 #[wasm_bindgen]
@@ -136,7 +158,7 @@ impl PartialIdentityWasm {
     #[wasm_bindgen(setter = "id")]
     pub fn set_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] id: &JsValue,
     ) -> WasmDppResult<()> {
         let identifier = IdentifierWasm::try_from(id)?.into();
 
@@ -146,7 +168,11 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "loadedPublicKeys")]
-    pub fn set_loaded_public_keys(&mut self, loaded_public_keys: &JsValue) -> WasmDppResult<()> {
+    pub fn set_loaded_public_keys(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<number, IdentityPublicKey>")]
+        loaded_public_keys: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0.loaded_public_keys = js_value_to_loaded_public_keys(loaded_public_keys)?;
 
         Ok(())

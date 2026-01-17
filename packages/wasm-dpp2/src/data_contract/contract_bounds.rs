@@ -27,7 +27,7 @@ impl From<ContractBoundsWasm> for ContractBounds {
 impl ContractBoundsWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         contract_id: &JsValue,
         document_type_name: Option<String>,
     ) -> WasmDppResult<ContractBoundsWasm> {
@@ -44,7 +44,7 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "SingleContract")]
     pub fn single_contract(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         contract_id: &JsValue,
     ) -> WasmDppResult<ContractBoundsWasm> {
         let contract_id: Identifier = IdentifierWasm::try_from(contract_id)?.into();
@@ -56,7 +56,7 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "SingleContractDocumentType")]
     pub fn single_contract_document_type_name(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         contract_id: &JsValue,
         document_type_name: String,
     ) -> WasmDppResult<ContractBoundsWasm> {
@@ -93,7 +93,7 @@ impl ContractBoundsWasm {
     #[wasm_bindgen(setter = "identifier")]
     pub fn set_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         let contract_id: Identifier = IdentifierWasm::try_from(contract_id)?.into();

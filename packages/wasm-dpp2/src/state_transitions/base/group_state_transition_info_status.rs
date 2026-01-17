@@ -62,7 +62,7 @@ impl GroupStateTransitionInfoStatusWasm {
     #[wasm_bindgen(js_name = "otherSigner")]
     pub fn other_signer(
         group_contract_position: u16,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         action_id: &JsValue,
     ) -> WasmDppResult<GroupStateTransitionInfoStatusWasm> {
         let action_id: Identifier = IdentifierWasm::try_from(action_id)?.into();

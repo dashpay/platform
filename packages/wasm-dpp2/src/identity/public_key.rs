@@ -44,15 +44,49 @@ struct IdentityPublicKeyOptions {
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
+export type PurposeLike = Purpose | string | number;
+export type SecurityLevelLike = SecurityLevel | string | number;
+export type KeyTypeLike = KeyType | string | number;
+
 export interface IdentityPublicKeyOptions {
     keyId: number;
-    purpose: Purpose | string | number;
-    securityLevel: SecurityLevel | string | number;
-    keyType: KeyType | string | number;
+    purpose: PurposeLike;
+    securityLevel: SecurityLevelLike;
+    keyType: KeyTypeLike;
     isReadOnly?: boolean;
     data: string; // hex encoded
     disabledAt?: number;
     contractBounds?: ContractBounds;
+}
+
+/**
+ * IdentityPublicKey serialized as a plain object.
+ */
+export interface IdentityPublicKeyObject {
+    $version: string;
+    id: number;
+    purpose: number;
+    securityLevel: number;
+    contractBounds?: ContractBounds;
+    type: number;
+    readOnly: boolean;
+    data: Uint8Array;
+    disabledAt?: number;
+}
+
+/**
+ * IdentityPublicKey serialized as JSON.
+ */
+export interface IdentityPublicKeyJSON {
+    $version: string;
+    id: number;
+    purpose: number;
+    securityLevel: number;
+    contractBounds?: object;
+    type: number;
+    readOnly: boolean;
+    data: string;
+    disabledAt?: number;
 }
 "#;
 
@@ -151,11 +185,8 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(getter = "contractBounds")]
-    pub fn contract_bounds(&self) -> JsValue {
-        match self.0.contract_bounds() {
-            None => JsValue::undefined(),
-            Some(bounds) => JsValue::from(ContractBoundsWasm::from(bounds.clone())),
-        }
+    pub fn contract_bounds(&self) -> Option<ContractBoundsWasm> {
+        self.0.contract_bounds().map(|b| ContractBoundsWasm::from(b.clone()))
     }
 
     #[wasm_bindgen(getter = keyId)]
@@ -214,40 +245,34 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = purpose)]
-    pub fn set_purpose(&mut self, purpose: JsValue) -> WasmDppResult<()> {
+    pub fn set_purpose(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "PurposeLike")] purpose: JsValue,
+    ) -> WasmDppResult<()> {
         let purpose = PurposeWasm::try_from(purpose)?;
         self.0.set_purpose(Purpose::from(purpose));
         Ok(())
     }
 
-    #[wasm_bindgen(setter = purposeNumber)]
-    pub fn set_purpose_number(&mut self, purpose: JsValue) -> WasmDppResult<()> {
-        self.set_purpose(purpose)
-    }
-
     #[wasm_bindgen(setter = securityLevel)]
-    pub fn set_security_level(&mut self, security_level: JsValue) -> WasmDppResult<()> {
+    pub fn set_security_level(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "SecurityLevelLike")] security_level: JsValue,
+    ) -> WasmDppResult<()> {
         let security_level = SecurityLevelWasm::try_from(security_level)?;
         self.0
             .set_security_level(SecurityLevel::from(security_level));
         Ok(())
     }
 
-    #[wasm_bindgen(setter = securityLevelNumber)]
-    pub fn set_security_level_number(&mut self, security_level: JsValue) -> WasmDppResult<()> {
-        self.set_security_level(security_level)
-    }
-
     #[wasm_bindgen(setter = keyType)]
-    pub fn set_key_type(&mut self, key_type: JsValue) -> WasmDppResult<()> {
+    pub fn set_key_type(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "KeyTypeLike")] key_type: JsValue,
+    ) -> WasmDppResult<()> {
         let key_type = KeyTypeWasm::try_from(key_type)?;
         self.0.set_key_type(KeyType::from(key_type));
         Ok(())
-    }
-
-    #[wasm_bindgen(setter = keyTypeNumber)]
-    pub fn set_key_type_number(&mut self, key_type: JsValue) -> WasmDppResult<()> {
-        self.set_key_type(key_type)
     }
 
     #[wasm_bindgen(setter = "isReadOnly")]
@@ -341,7 +366,9 @@ impl IdentityPublicKeyWasm {
     ///
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
+    pub fn from_object(
+        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+    ) -> WasmDppResult<IdentityPublicKeyWasm> {
         let platform_value = serialization::platform_value_from_object(js_value)?;
         let platform_version = PlatformVersion::latest();
         let key = IdentityPublicKey::from_object(platform_value, platform_version)
@@ -364,7 +391,9 @@ impl IdentityPublicKeyWasm {
     /// Uses serde_json conversion which properly handles the tagged enum
     /// and deserializes base64 strings to binary data.
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
+    pub fn from_json(
+        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+    ) -> WasmDppResult<IdentityPublicKeyWasm> {
         let json_value: JsonValue = serde_from_value(js_value).map_err(|err| {
             WasmDppError::serialization(format!(
                 "IdentityPublicKey.fromJSON: unable to parse JSON: {}",

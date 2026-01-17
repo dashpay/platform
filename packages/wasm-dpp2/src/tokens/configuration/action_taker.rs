@@ -8,6 +8,11 @@ use std::collections::BTreeSet;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const ACTION_TAKER_TYPES_TS: &'static str = r#"
+export type ActionTakerValue = IdentifierLike | IdentifierLike[];
+"#;
+
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ActionTaker")]
 pub struct ActionTakerWasm(ActionTaker);
@@ -27,7 +32,10 @@ impl From<ActionTakerWasm> for ActionTaker {
 #[wasm_bindgen(js_class = ActionTaker)]
 impl ActionTakerWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
+    pub fn constructor(
+        #[wasm_bindgen(unchecked_param_type = "ActionTakerValue")]
+        value: &JsValue,
+    ) -> WasmDppResult<ActionTakerWasm> {
         if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
             return Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
                 identifier.into(),
@@ -82,8 +90,12 @@ impl ActionTakerWasm {
     }
 
     #[wasm_bindgen(setter = "value")]
-    pub fn set_value(&mut self, value: &JsValue) -> WasmDppResult<()> {
-        self.0 = Self::new(value)?.0;
+    pub fn set_value(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "ActionTakerValue")]
+        value: &JsValue,
+    ) -> WasmDppResult<()> {
+        self.0 = Self::constructor(value)?.0;
 
         Ok(())
     }

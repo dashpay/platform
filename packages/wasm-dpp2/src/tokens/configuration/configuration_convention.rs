@@ -80,7 +80,11 @@ impl TokenConfigurationConventionWasm {
     }
 
     #[wasm_bindgen(setter = "localizations")]
-    pub fn set_localizations(&mut self, js_localizations: &JsValue) -> WasmDppResult<()> {
+    pub fn set_localizations(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, TokenConfigurationLocalization>")]
+        js_localizations: &JsValue,
+    ) -> WasmDppResult<()> {
         let localizations: BTreeMap<String, TokenConfigurationLocalization> =
             js_value_to_localizations(js_localizations)?;
 

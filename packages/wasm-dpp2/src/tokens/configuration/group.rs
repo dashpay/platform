@@ -108,7 +108,11 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(setter = "members")]
-    pub fn set_members(&mut self, js_members: &JsValue) -> WasmDppResult<()> {
+    pub fn set_members(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, number>")]
+        js_members: &JsValue,
+    ) -> WasmDppResult<()> {
         let members = js_members_to_map(js_members)?;
 
         self.0.set_members(members);
@@ -124,7 +128,7 @@ impl GroupWasm {
     #[wasm_bindgen(js_name = "setMemberRequiredPower")]
     pub fn set_member_required_power(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_member: &JsValue,
         member_required_power: GroupRequiredPower,
     ) -> WasmDppResult<()> {
@@ -141,7 +145,10 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<GroupWasm> {
+    pub fn from_json(
+        #[wasm_bindgen(unchecked_param_type = "object")]
+        js_value: JsValue,
+    ) -> WasmDppResult<GroupWasm> {
         serialization::from_json(js_value).map(GroupWasm)
     }
 

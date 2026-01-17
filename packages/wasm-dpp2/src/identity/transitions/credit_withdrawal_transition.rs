@@ -29,11 +29,13 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CREDIT_WITHDRAWAL_OPTIONS_TS: &'static str = r#"
+export type CreditWithdrawalTransitionPoolingLike = CreditWithdrawalTransitionPooling | string | number;
+
 export interface IdentityCreditWithdrawalTransitionOptions {
     identityId: IdentifierLike;
     amount: bigint | number;
     coreFeePerByte: number;
-    pooling: string;
+    pooling: CreditWithdrawalTransitionPoolingLike;
     outputScript?: CoreScript;
     nonce?: bigint | number;
     userFeeIncrease?: number;
@@ -178,7 +180,10 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "outputScript")]
-    pub fn set_output_script(&mut self, script: &JsValue) -> WasmDppResult<()> {
+    pub fn set_output_script(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "CoreScript | undefined")] script: &JsValue,
+    ) -> WasmDppResult<()> {
         if script.is_undefined() {
             self.0.set_output_script(None);
         } else {
@@ -190,7 +195,11 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "pooling")]
-    pub fn set_pooling(&mut self, pooling: JsValue) -> WasmDppResult<()> {
+    pub fn set_pooling(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "CreditWithdrawalTransitionPoolingLike")]
+        pooling: JsValue,
+    ) -> WasmDppResult<()> {
         let pooling: PoolingWasm = PoolingWasm::try_from(pooling)?;
         self.0.set_pooling(pooling.into());
         Ok(())
@@ -199,7 +208,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(setter = "identityId")]
     pub fn set_identity_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: JsValue,
     ) -> WasmDppResult<()> {
         let identity_id = IdentifierWasm::try_from(&identity_id)?.into();

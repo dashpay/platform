@@ -173,7 +173,7 @@ impl IdentityPublicKeyInCreationWasm {
                 .map_err(|e| WasmDppError::generic(format!("Failed to set contractBounds: {:?}", e)))?;
         }
 
-        IdentityPublicKeyWasm::new(options.into())
+        IdentityPublicKeyWasm::constructor(options.into())
     }
 
     #[wasm_bindgen(js_name = "getHash")]
@@ -230,14 +230,20 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = purpose)]
-    pub fn set_purpose(&mut self, js_purpose: JsValue) -> WasmDppResult<()> {
+    pub fn set_purpose(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "PurposeLike")] js_purpose: JsValue,
+    ) -> WasmDppResult<()> {
         let purpose = PurposeWasm::try_from(js_purpose)?;
         self.0.set_purpose(Purpose::from(purpose));
         Ok(())
     }
 
     #[wasm_bindgen(setter = securityLevel)]
-    pub fn set_security_level(&mut self, js_security_level: JsValue) -> WasmDppResult<()> {
+    pub fn set_security_level(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "SecurityLevelLike")] js_security_level: JsValue,
+    ) -> WasmDppResult<()> {
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
         self.0
             .set_security_level(SecurityLevel::from(security_level));
@@ -245,7 +251,10 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = keyType)]
-    pub fn set_key_type(&mut self, key_type: JsValue) -> WasmDppResult<()> {
+    pub fn set_key_type(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "KeyTypeLike")] key_type: JsValue,
+    ) -> WasmDppResult<()> {
         let key_type = KeyTypeWasm::try_from(key_type)?;
         self.0.set_type(key_type.into());
         Ok(())
@@ -269,19 +278,8 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = "contractBounds")]
-    pub fn set_contract_bounds(&mut self, js_bounds: &JsValue) -> WasmDppResult<()> {
-        match js_bounds.is_undefined() {
-            true => self.0.set_contract_bounds(None),
-            false => {
-                let bounds = js_bounds
-                    .to_wasm::<ContractBoundsWasm>("ContractBounds")?
-                    .clone();
-
-                self.0.set_contract_bounds(Some(bounds.into()))
-            }
-        };
-
-        Ok(())
+    pub fn set_contract_bounds(&mut self, bounds: Option<ContractBoundsWasm>) {
+        self.0.set_contract_bounds(bounds.map(|b| b.into()));
     }
 }
 

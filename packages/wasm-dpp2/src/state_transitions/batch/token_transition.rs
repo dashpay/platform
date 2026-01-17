@@ -26,6 +26,11 @@ use dpp::state_transition::batch_transition::{
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_TRANSITION_TYPES_TS: &'static str = r#"
+export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition;
+"#;
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenTransition)]
 pub struct TokenTransitionWasm(TokenTransition);
@@ -45,7 +50,10 @@ impl From<TokenTransitionWasm> for TokenTransition {
 #[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(transition: &JsValue) -> WasmDppResult<TokenTransitionWasm> {
+    pub fn constructor(
+        #[wasm_bindgen(unchecked_param_type = "TokenTransitionLike")]
+        transition: &JsValue,
+    ) -> WasmDppResult<TokenTransitionWasm> {
         if !transition.is_object() {
             return Err(WasmDppError::invalid_argument("Bad token transition input"));
         }
@@ -215,7 +223,7 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(js_name = "getHistoricalDocumentId")]
     pub fn get_historical_document_id(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         owner: &JsValue,
     ) -> WasmDppResult<IdentifierWasm> {
         let owner = IdentifierWasm::try_from(owner)?.into();
@@ -245,7 +253,7 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(setter = "tokenId")]
     pub fn set_token_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] token_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] token_id: &JsValue,
     ) -> WasmDppResult<()> {
         let id = IdentifierWasm::try_from(token_id)?.into();
 
@@ -257,7 +265,7 @@ impl TokenTransitionWasm {
     #[wasm_bindgen(setter = "contractId")]
     pub fn set_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] contract_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         let id = IdentifierWasm::try_from(contract_id)?.into();
 

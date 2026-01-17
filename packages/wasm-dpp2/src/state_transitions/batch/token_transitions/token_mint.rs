@@ -32,7 +32,7 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_issued_to_identity_id: &JsValue,
         amount: u64,
         public_note: Option<String>,
@@ -81,7 +81,7 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(setter = issuedToIdentityId)]
     pub fn set_issued_to_identity_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] js_id: &JsValue,
     ) -> WasmDppResult<()> {
         match js_id.is_undefined() {
             true => {

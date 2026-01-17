@@ -412,7 +412,7 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(js_name = "calculateTokenId")]
     pub fn calculate_token_id(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_contract_id: &JsValue,
         token_pos: TokenContractPosition,
     ) -> WasmDppResult<IdentifierWasm> {

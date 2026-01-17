@@ -25,7 +25,7 @@ impl From<ResourceVoteChoiceWasm> for ResourceVoteChoice {
 impl ResourceVoteChoiceWasm {
     #[wasm_bindgen(js_name = "TowardsIdentity")]
     pub fn towards_identity(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] js_id: &JsValue,
     ) -> WasmDppResult<Self> {
         let id = IdentifierWasm::try_from(js_id)?.into();
 

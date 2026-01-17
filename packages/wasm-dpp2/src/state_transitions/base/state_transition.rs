@@ -429,7 +429,7 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "setOwnerId")]
     pub fn set_owner_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         owner_id: &JsValue,
     ) -> WasmDppResult<()> {
         use dpp::state_transition::StateTransition::*;

@@ -51,7 +51,7 @@ impl DocumentReplaceTransitionWasm {
         let rs_update_transition = generate_replace_transition(
             document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
+            document.document_type_name().to_string(),
             token_payment_info,
         );
 
@@ -74,7 +74,11 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "data")]
-    pub fn set_data(&mut self, js_data: JsValue) -> WasmDppResult<()> {
+    pub fn set_data(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")]
+        js_data: JsValue,
+    ) -> WasmDppResult<()> {
         let data = js_data.with_serde_to_platform_value_map()?;
 
         self.0.set_data(data);

@@ -61,8 +61,11 @@ impl From<AssetLockProof> for InstantAssetLockProofWasm {
 
 #[wasm_bindgen(js_class = AssetLockProof)]
 impl AssetLockProofWasm {
-    #[wasm_bindgen(constructor, typescript_type_unchecked = "ChainAssetLockProof | InstantAssetLockProof")]
-    pub fn constructor(asset_lock_proof: &JsValue) -> WasmDppResult<AssetLockProofWasm> {
+    #[wasm_bindgen(constructor)]
+    pub fn constructor(
+        #[wasm_bindgen(unchecked_param_type = "ChainAssetLockProof | InstantAssetLockProof")]
+        asset_lock_proof: &JsValue,
+    ) -> WasmDppResult<AssetLockProofWasm> {
         match get_class_type(asset_lock_proof)?.as_str() {
             "ChainAssetLockProof" => {
                 let chain_lock = asset_lock_proof
@@ -90,7 +93,7 @@ impl AssetLockProofWasm {
         transaction: Vec<u8>,
         output_index: u32,
     ) -> WasmDppResult<AssetLockProofWasm> {
-        Ok(InstantAssetLockProofWasm::new(instant_lock, transaction, output_index)?.into())
+        Ok(InstantAssetLockProofWasm::constructor(instant_lock, transaction, output_index)?.into())
     }
 
     #[wasm_bindgen(js_name = "createChainAssetLockProof")]
@@ -98,7 +101,7 @@ impl AssetLockProofWasm {
         core_chain_locked_height: u32,
         out_point: &OutPointWasm,
     ) -> WasmDppResult<AssetLockProofWasm> {
-        Ok(ChainAssetLockProofWasm::new(core_chain_locked_height, out_point)?.into())
+        Ok(ChainAssetLockProofWasm::constructor(core_chain_locked_height, out_point)?.into())
     }
 
     #[wasm_bindgen(getter = "lockType")]
@@ -167,7 +170,9 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
+    pub fn from_object(
+        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+    ) -> WasmDppResult<AssetLockProofWasm> {
         let object = Object::from(js_value.clone());
         let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
             .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
@@ -217,7 +222,9 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
+    pub fn from_json(
+        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+    ) -> WasmDppResult<AssetLockProofWasm> {
         let object = Object::from(js_value.clone());
         let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
             .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;

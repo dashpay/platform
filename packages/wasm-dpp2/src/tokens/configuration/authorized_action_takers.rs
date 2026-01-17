@@ -37,7 +37,7 @@ impl AuthorizedActionTakersWasm {
 
     #[wasm_bindgen(js_name = "Identity")]
     pub fn identity(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_identity_id: &JsValue,
     ) -> WasmDppResult<Self> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();

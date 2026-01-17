@@ -138,7 +138,7 @@ impl TokenBaseTransitionWasm {
     #[wasm_bindgen(setter = dataContractId)]
     pub fn set_data_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         data_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
@@ -149,7 +149,7 @@ impl TokenBaseTransitionWasm {
     #[wasm_bindgen(setter = tokenId)]
     pub fn set_token_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         token_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
@@ -159,7 +159,11 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = usingGroupInfo)]
-    pub fn set_using_group_info(&mut self, using_group_info: &JsValue) -> WasmDppResult<()> {
+    pub fn set_using_group_info(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "GroupStateTransitionInfo | undefined")]
+        using_group_info: &JsValue,
+    ) -> WasmDppResult<()> {
         let group_info: Option<GroupStateTransitionInfo> =
             match using_group_info.is_undefined() {
                 false => Some(

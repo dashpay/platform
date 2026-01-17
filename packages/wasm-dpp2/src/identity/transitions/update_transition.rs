@@ -191,7 +191,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(setter = "identityIdentifier")]
     pub fn set_identity_identifier(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: &JsValue,
     ) -> WasmDppResult<()> {
         let identity_id = IdentifierWasm::try_from(identity_id)?.into();

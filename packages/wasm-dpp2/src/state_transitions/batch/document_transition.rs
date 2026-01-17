@@ -155,7 +155,7 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(setter = "dataContractId")]
     pub fn set_data_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_data_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0

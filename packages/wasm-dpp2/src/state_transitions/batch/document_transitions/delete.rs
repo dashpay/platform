@@ -43,7 +43,7 @@ impl DocumentDeleteTransitionWasm {
         let rs_delete_transition = generate_delete_transition(
             document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
+            document.document_type_name().to_string(),
             token_payment_info,
         );
 

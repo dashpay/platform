@@ -148,7 +148,7 @@ impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(setter = proTxHash)]
     pub fn set_pro_tx_hash(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         pro_tx_hash: &JsValue,
     ) -> WasmDppResult<()> {
         let pro_tx_hash = IdentifierWasm::try_from(pro_tx_hash)?.into();
@@ -161,7 +161,7 @@ impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(setter = voterIdentityId)]
     pub fn set_voter_identity_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         voter_identity_id: &JsValue,
     ) -> WasmDppResult<()> {
         let voter_identity_id = IdentifierWasm::try_from(voter_identity_id)?.into();

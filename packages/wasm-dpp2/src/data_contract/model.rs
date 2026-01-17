@@ -49,13 +49,57 @@ fn default_full_validation() -> bool {
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
 export interface DataContractOptions {
-    ownerId: Identifier | Uint8Array | string;
+    ownerId: IdentifierLike;
     identityNonce: bigint;
     schemas: object;
     definitions?: object;
     tokens?: Record<number, TokenConfiguration>;
     fullValidation?: boolean;
     platformVersion?: PlatformVersion | string | number;
+}
+
+/**
+ * DataContract serialized as a plain object.
+ */
+export interface DataContractObject {
+    $format_version: string;
+    id: Identifier;
+    ownerId: Identifier;
+    version: number;
+    documentSchemas: Record<string, object>;
+    config?: DataContractConfig;
+    groups?: Record<number, Group>;
+    tokens?: Record<number, TokenConfiguration>;
+    [key: string]: unknown;
+}
+
+/**
+ * DataContract serialized as JSON (with string identifiers).
+ */
+export interface DataContractJSON {
+    $format_version: string;
+    id: string;
+    ownerId: string;
+    version: number;
+    documentSchemas: Record<string, object>;
+    config?: DataContractConfig;
+    groups?: Record<number, object>;
+    tokens?: Record<number, object>;
+    [key: string]: unknown;
+}
+
+/**
+ * DataContract configuration.
+ */
+export interface DataContractConfig {
+    canBeDeleted: boolean;
+    readonly: boolean;
+    keepsHistory: boolean;
+    documentsKeepHistoryContractDefault: boolean;
+    documentsMutableContractDefault: boolean;
+    documentsCanBeDeletedContractDefault: boolean;
+    requiresIdentityEncryptionBoundedKey?: number;
+    requiresIdentityDecryptionBoundedKey?: number;
 }
 "#;
 
@@ -229,7 +273,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
-        value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
         full_validation: bool,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
@@ -249,7 +293,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
-        value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
         full_validation: bool,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
@@ -439,7 +483,7 @@ impl DataContractWasm {
     #[wasm_bindgen(setter = "id")]
     pub fn set_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
@@ -450,7 +494,7 @@ impl DataContractWasm {
     #[wasm_bindgen(setter = "ownerId")]
     pub fn set_owner_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         owner_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
@@ -466,7 +510,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "setConfig")]
     pub fn set_config(
         &mut self,
-        config: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DataContractConfig")] config: JsValue,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
     ) -> WasmDppResult<()> {
@@ -488,7 +532,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "setSchemas")]
     pub fn set_schemas(
         &mut self,
-        schemas: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, object>")] schemas: JsValue,
         definitions: Option<js_sys::Object>,
         full_validation: bool,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
@@ -523,14 +567,20 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "tokens")]
-    pub fn set_tokens(&mut self, tokens: &JsValue) -> WasmDppResult<()> {
+    pub fn set_tokens(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<number, TokenConfiguration>")] tokens: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_tokens(tokens_configuration_from_js_value(tokens)?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "groups")]
-    pub fn set_groups(&mut self, groups: &JsValue) -> WasmDppResult<()> {
+    pub fn set_groups(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<number, Group>")] groups: &JsValue,
+    ) -> WasmDppResult<()> {
         let groups_object = Object::from(groups.clone());
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();
@@ -585,7 +635,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "generateId")]
     pub fn generate_id(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         owner_id: &JsValue,
         identity_nonce: IdentityNonce,
     ) -> WasmDppResult<IdentifierWasm> {

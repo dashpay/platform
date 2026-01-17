@@ -18,7 +18,7 @@ use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
-use js_sys::{Object, Reflect};
+use js_sys::Reflect;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -44,6 +44,48 @@ export interface DocumentOptions {
   id?: IdentifierLike;
   /** Entropy bytes (32 bytes, auto-generated if not provided) */
   entropy?: Uint8Array;
+}
+
+/**
+ * Document serialized as a plain object.
+ */
+export interface DocumentObject {
+  $id: Identifier;
+  $ownerId: Identifier;
+  $revision?: number;
+  $createdAt?: number;
+  $updatedAt?: number;
+  $transferredAt?: number;
+  $createdAtBlockHeight?: number;
+  $updatedAtBlockHeight?: number;
+  $transferredAtBlockHeight?: number;
+  $createdAtCoreBlockHeight?: number;
+  $updatedAtCoreBlockHeight?: number;
+  $transferredAtCoreBlockHeight?: number;
+  $dataContractId: Identifier;
+  $type: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Document serialized as JSON (with string identifiers).
+ */
+export interface DocumentJSON {
+  $id: string;
+  $ownerId: string;
+  $revision?: number;
+  $createdAt?: number;
+  $updatedAt?: number;
+  $transferredAt?: number;
+  $createdAtBlockHeight?: number;
+  $updatedAtBlockHeight?: number;
+  $transferredAtBlockHeight?: number;
+  $createdAtCoreBlockHeight?: number;
+  $updatedAtCoreBlockHeight?: number;
+  $transferredAtCoreBlockHeight?: number;
+  $dataContractId: string;
+  $type: string;
+  [key: string]: unknown;
 }
 "#;
 
@@ -129,16 +171,18 @@ impl DocumentWasm {
         let properties_js = Reflect::get(&options_value, &JsValue::from_str("properties"))
             .map_err(|_| WasmDppError::invalid_argument("Missing 'properties' field"))?;
 
-        let document_type_name = Reflect::get(&options_value, &JsValue::from_str("documentTypeName"))
-            .map_err(|_| WasmDppError::invalid_argument("Missing 'documentTypeName' field"))?
-            .as_string()
-            .ok_or_else(|| WasmDppError::invalid_argument("'documentTypeName' must be a string"))?;
+        let document_type_name =
+            Reflect::get(&options_value, &JsValue::from_str("documentTypeName"))
+                .map_err(|_| WasmDppError::invalid_argument("Missing 'documentTypeName' field"))?
+                .as_string()
+                .ok_or_else(|| {
+                    WasmDppError::invalid_argument("'documentTypeName' must be a string")
+                })?;
 
         let data_contract_id_js =
             Reflect::get(&options_value, &JsValue::from_str("dataContractId"))
                 .map_err(|_| WasmDppError::invalid_argument("Missing 'dataContractId' field"))?;
-        let data_contract_id: Identifier =
-            IdentifierWasm::try_from(&data_contract_id_js)?.into();
+        let data_contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id_js)?.into();
 
         let owner_id_js = Reflect::get(&options_value, &JsValue::from_str("ownerId"))
             .map_err(|_| WasmDppError::invalid_argument("Missing 'ownerId' field"))?;
@@ -158,8 +202,8 @@ impl DocumentWasm {
             )
         };
 
-        let id_js = Reflect::get(&options_value, &JsValue::from_str("id"))
-            .unwrap_or(JsValue::UNDEFINED);
+        let id_js =
+            Reflect::get(&options_value, &JsValue::from_str("id")).unwrap_or(JsValue::UNDEFINED);
 
         let entropy_js = Reflect::get(&options_value, &JsValue::from_str("entropy"))
             .unwrap_or(JsValue::UNDEFINED);
@@ -219,28 +263,28 @@ impl DocumentWasm {
         ))
     }
 
-    #[wasm_bindgen(getter=id)]
-    pub fn get_id(&self) -> IdentifierWasm {
+    #[wasm_bindgen(getter = id)]
+    pub fn id(&self) -> IdentifierWasm {
         self.document.id().into()
     }
 
-    #[wasm_bindgen(getter=entropy)]
-    pub fn get_entropy(&self) -> Option<Vec<u8>> {
+    #[wasm_bindgen(getter = entropy)]
+    pub fn entropy(&self) -> Option<Vec<u8>> {
         self.entropy.map(|entropy| entropy.to_vec())
     }
 
-    #[wasm_bindgen(getter=dataContractId)]
-    pub fn get_data_contract_id(&self) -> IdentifierWasm {
+    #[wasm_bindgen(getter = dataContractId)]
+    pub fn data_contract_id(&self) -> IdentifierWasm {
         self.data_contract_id
     }
 
-    #[wasm_bindgen(getter=ownerId)]
-    pub fn get_owner_id(&self) -> IdentifierWasm {
+    #[wasm_bindgen(getter = ownerId)]
+    pub fn owner_id(&self) -> IdentifierWasm {
         self.document.owner_id().into()
     }
 
-    #[wasm_bindgen(getter=properties)]
-    pub fn get_properties(&self) -> WasmDppResult<JsValue> {
+    #[wasm_bindgen(getter = properties)]
+    pub fn properties(&self) -> WasmDppResult<JsValue> {
         let properties_value = Value::Map(
             self.document
                 .properties()
@@ -251,65 +295,65 @@ impl DocumentWasm {
         serialization::platform_value_to_object(&properties_value)
     }
 
-    #[wasm_bindgen(getter=revision)]
-    pub fn get_revision(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = revision)]
+    pub fn revision(&self) -> Option<u64> {
         self.document.revision()
     }
 
-    #[wasm_bindgen(getter=createdAt)]
-    pub fn get_created_at(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = createdAt)]
+    pub fn created_at(&self) -> Option<u64> {
         self.document.created_at()
     }
 
-    #[wasm_bindgen(getter=updatedAt)]
-    pub fn get_updated_at(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = updatedAt)]
+    pub fn updated_at(&self) -> Option<u64> {
         self.document.updated_at()
     }
 
-    #[wasm_bindgen(getter=transferredAt)]
-    pub fn get_transferred_at(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = transferredAt)]
+    pub fn transferred_at(&self) -> Option<u64> {
         self.document.transferred_at()
     }
 
-    #[wasm_bindgen(getter=createdAtBlockHeight)]
-    pub fn get_created_at_block_height(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = createdAtBlockHeight)]
+    pub fn created_at_block_height(&self) -> Option<u64> {
         self.document.created_at_block_height()
     }
 
-    #[wasm_bindgen(getter=updatedAtBlockHeight)]
-    pub fn get_updated_at_block_height(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = updatedAtBlockHeight)]
+    pub fn updated_at_block_height(&self) -> Option<u64> {
         self.document.updated_at_block_height()
     }
 
-    #[wasm_bindgen(getter=transferredAtBlockHeight)]
-    pub fn get_transferred_at_block_height(&self) -> Option<u64> {
+    #[wasm_bindgen(getter = transferredAtBlockHeight)]
+    pub fn transferred_at_block_height(&self) -> Option<u64> {
         self.document.transferred_at_block_height()
     }
 
-    #[wasm_bindgen(getter=createdAtCoreBlockHeight)]
-    pub fn get_created_at_core_block_height(&self) -> Option<u32> {
+    #[wasm_bindgen(getter = createdAtCoreBlockHeight)]
+    pub fn created_at_core_block_height(&self) -> Option<u32> {
         self.document.created_at_core_block_height()
     }
 
-    #[wasm_bindgen(getter=updatedAtCoreBlockHeight)]
-    pub fn get_updated_at_core_block_height(&self) -> Option<u32> {
+    #[wasm_bindgen(getter = updatedAtCoreBlockHeight)]
+    pub fn updated_at_core_block_height(&self) -> Option<u32> {
         self.document.updated_at_core_block_height()
     }
 
-    #[wasm_bindgen(getter=transferredAtCoreBlockHeight)]
-    pub fn get_transferred_at_core_block_height(&self) -> Option<u32> {
+    #[wasm_bindgen(getter = transferredAtCoreBlockHeight)]
+    pub fn transferred_at_core_block_height(&self) -> Option<u32> {
         self.document.transferred_at_core_block_height()
     }
 
-    #[wasm_bindgen(getter=documentTypeName)]
-    pub fn get_document_type_name(&self) -> String {
+    #[wasm_bindgen(getter = documentTypeName)]
+    pub fn document_type_name(&self) -> String {
         self.document_type_name.clone()
     }
 
     #[wasm_bindgen(setter=id)]
     pub fn set_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] id: &JsValue,
     ) -> WasmDppResult<()> {
         let identifier: Identifier = IdentifierWasm::try_from(id)?.into();
         self.document.set_id(identifier);
@@ -317,30 +361,25 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=entropy)]
-    pub fn set_entropy(&mut self, entropy: JsValue) -> WasmDppResult<()> {
-        if entropy.is_undefined() {
-            self.entropy = None;
-            return Ok(());
+    pub fn set_entropy(&mut self, entropy: Option<Vec<u8>>) -> WasmDppResult<()> {
+        match entropy {
+            None => {
+                self.entropy = None;
+            }
+            Some(bytes) => {
+                let mut entropy_bytes = [0u8; 32];
+                let len = bytes.len().min(32);
+                entropy_bytes[..len].copy_from_slice(&bytes[..len]);
+                self.entropy = Some(entropy_bytes);
+            }
         }
-
-        let value = entropy.with_serde_to_platform_value()?;
-        let bytes = value.as_bytes().ok_or_else(|| {
-            WasmDppError::invalid_argument("Entropy must be provided as a byte array")
-        })?;
-
-        let mut entropy_bytes = [0u8; 32];
-        let len = bytes.len().min(32);
-        entropy_bytes[..len].copy_from_slice(&bytes[..len]);
-        self.entropy = Some(entropy_bytes);
-
         Ok(())
     }
 
     #[wasm_bindgen(setter=dataContractId)]
     pub fn set_data_contract_id_js(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] data_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.data_contract_id = IdentifierWasm::try_from(data_contract_id)?;
         Ok(())
@@ -349,7 +388,7 @@ impl DocumentWasm {
     #[wasm_bindgen(setter=ownerId)]
     pub fn set_owner_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] id: &JsValue,
     ) -> WasmDppResult<()> {
         let identifier: Identifier = IdentifierWasm::try_from(id)?.into();
         self.document.set_owner_id(identifier);
@@ -357,7 +396,10 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=properties)]
-    pub fn set_properties(&mut self, properties: JsValue) -> WasmDppResult<()> {
+    pub fn set_properties(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")] properties: JsValue,
+    ) -> WasmDppResult<()> {
         let props = properties.with_serde_to_platform_value_map()?;
         *self.document.properties_mut() = props;
         Ok(())
@@ -451,7 +493,9 @@ impl DocumentWasm {
 
     /// Create a Document from a JS object.
     #[wasm_bindgen(js_name = fromObject)]
-    pub fn from_object(value: JsValue) -> WasmDppResult<DocumentWasm> {
+    pub fn from_object(
+        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+    ) -> WasmDppResult<DocumentWasm> {
         let platform_value = serialization::js_value_to_platform_value(&value)?;
 
         let Value::Map(mut map) = platform_value else {
@@ -520,7 +564,9 @@ impl DocumentWasm {
     /// Create a Document from a JSON object.
     /// JSON format has identifiers as base58 strings.
     #[wasm_bindgen(js_name = fromJSON)]
-    pub fn from_json(value: JsValue) -> WasmDppResult<DocumentWasm> {
+    pub fn from_json(
+        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+    ) -> WasmDppResult<DocumentWasm> {
         let mut json_value = serialization::js_value_to_json(&value)?;
 
         // Deserialize wrapper fields using serde
@@ -554,7 +600,7 @@ impl DocumentWasm {
         };
 
         let document_type_ref = data_contract
-            .get_document_type_ref_by_name(self.get_document_type_name())
+            .get_document_type_ref_by_name(self.document_type_name())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         self.document
@@ -574,8 +620,7 @@ impl DocumentWasm {
         platform_version: JsValue,
     ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes(data_contract, platform_version)?
-                .as_slice(),
+            self.to_bytes(data_contract, platform_version)?.as_slice(),
             Hex,
         ))
     }
@@ -588,8 +633,7 @@ impl DocumentWasm {
         platform_version: JsValue,
     ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes(data_contract, platform_version)?
-                .as_slice(),
+            self.to_bytes(data_contract, platform_version)?.as_slice(),
             Base64,
         ))
     }
@@ -664,10 +708,8 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name=generateId)]
     pub fn generate_id(
         document_type_name: &str,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        owner_id: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] owner_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] data_contract_id: &JsValue,
         entropy: Option<Vec<u8>>,
     ) -> WasmDppResult<Vec<u8>> {
         let owner_id: Identifier = IdentifierWasm::try_from(owner_id)?.into();

@@ -187,7 +187,7 @@ impl ChangeControlRulesWasm {
     pub fn can_change_admin_action_takers(
         &self,
         admin_action_takers: &AuthorizedActionTakersWasm,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_contract_owner_id: &JsValue,
         main_group: Option<GroupContractPosition>,
         js_groups: &JsValue,

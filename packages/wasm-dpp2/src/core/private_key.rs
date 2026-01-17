@@ -94,8 +94,8 @@ impl PrivateKeyWasm {
 
 #[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWasm {
-    #[wasm_bindgen(js_name = "WIF")]
-    pub fn get_wif(&self) -> String {
+    #[wasm_bindgen(js_name = "toWIF")]
+    pub fn to_wif(&self) -> String {
         self.0.to_wif()
     }
 

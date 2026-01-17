@@ -31,7 +31,7 @@ impl TokenUnFreezeTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_frozen_identity_id: &JsValue,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenUnFreezeTransitionWasm> {
@@ -75,7 +75,7 @@ impl TokenUnFreezeTransitionWasm {
     #[wasm_bindgen(setter = "frozenIdentityId")]
     pub fn set_frozen_identity_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_frozen_identity_id: &JsValue,
     ) -> WasmDppResult<()> {
         self.0

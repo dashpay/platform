@@ -46,7 +46,7 @@ impl DocumentUpdatePriceTransitionWasm {
         let rs_document_update_price_transition = generate_update_price_transition(
             document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
+            document.document_type_name().to_string(),
             price,
             token_payment_info,
         );

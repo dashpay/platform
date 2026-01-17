@@ -27,7 +27,7 @@ struct TokenPaymentInfoOptions {
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
 export interface TokenPaymentInfoOptions {
-    paymentTokenContractId?: Identifier | Uint8Array | string | null;
+    paymentTokenContractId?: IdentifierLike | null;
     tokenContractPosition: number;
     minimumTokenCost?: bigint;
     maximumTokenCost?: bigint;
@@ -122,7 +122,7 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "paymentTokenContractId")]
     pub fn set_payment_token_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         js_payment_token_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
@@ -155,7 +155,11 @@ impl TokenPaymentInfoWasm {
     }
 
     #[wasm_bindgen(setter = "gasFeesPaidBy")]
-    pub fn set_gas_fees_paid_by(&mut self, js_gas_fees_paid_by: &JsValue) -> WasmDppResult<()> {
+    pub fn set_gas_fees_paid_by(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "GasFeesPaidBy | string | number | undefined")]
+        js_gas_fees_paid_by: &JsValue,
+    ) -> WasmDppResult<()> {
         let gas_fees_paid_by =
             match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
                 true => GasFeesPaidBy::default(),
