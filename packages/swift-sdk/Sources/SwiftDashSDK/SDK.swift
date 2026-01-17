@@ -85,6 +85,62 @@ public final class SDK: @unchecked Sendable {
         dash_sdk_enable_logging(level.rawValue)
         print("🔵 SDK: Logging enabled at level: \(level)")
     }
+
+    /// Initialize SPV logging with configurable output options
+    /// - Parameters:
+    ///   - level: Log level (defaults to .info if nil)
+    ///   - enableConsole: Whether to output logs to console/stderr
+    ///   - logDirectory: Directory for log files (nil to disable file logging)
+    ///   - maxFiles: Maximum archived log files to retain (ignored if logDirectory is nil)
+    /// - Returns: true if logging was initialized successfully
+    @discardableResult
+    public static func initializeSPVLogging(
+        level: LogLevel? = nil,
+        enableConsole: Bool = true,
+        logDirectory: String? = nil,
+        maxFiles: UInt = 5
+    ) -> Bool {
+        let levelString: String? = level.map { lvl in
+            switch lvl {
+            case .error: return "error"
+            case .warn: return "warn"
+            case .info: return "info"
+            case .debug: return "debug"
+            case .trace: return "trace"
+            }
+        }
+
+        let result: Int32
+        if let levelStr = levelString {
+            if let logDir = logDirectory {
+                result = levelStr.withCString { levelCStr in
+                    logDir.withCString { dirCStr in
+                        dash_spv_ffi_init_logging(levelCStr, enableConsole, dirCStr, maxFiles)
+                    }
+                }
+            } else {
+                result = levelStr.withCString { levelCStr in
+                    dash_spv_ffi_init_logging(levelCStr, enableConsole, nil, maxFiles)
+                }
+            }
+        } else {
+            if let logDir = logDirectory {
+                result = logDir.withCString { dirCStr in
+                    dash_spv_ffi_init_logging(nil, enableConsole, dirCStr, maxFiles)
+                }
+            } else {
+                result = dash_spv_ffi_init_logging(nil, enableConsole, nil, maxFiles)
+            }
+        }
+
+        let success = result == 0
+        if success {
+            print("🔵 SDK: SPV logging initialized (level: \(levelString ?? "default"), console: \(enableConsole))")
+        } else {
+            print("⚠️ SDK: SPV logging initialization returned code \(result)")
+        }
+        return success
+    }
     
     /// Local Platform DAPI addresses; override via UserDefaults key "platformDAPIAddresses"
     private static var platformDAPIAddresses: String {

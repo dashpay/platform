@@ -7,9 +7,7 @@ use super::PlatformWalletInfo;
 use crate::error::PlatformWalletError;
 #[allow(unused_imports)]
 use crate::ContactRequest;
-use dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::prelude::Identifier;
-use key_wallet::wallet::immature_transaction::ImmatureTransaction;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
 
@@ -33,30 +31,8 @@ impl PlatformWalletInfo {
         wallet: &key_wallet::Wallet,
         tx: &dashcore::Transaction,
     ) -> Result<Option<Identifier>, PlatformWalletError> {
-        use dashcore::hashes::Hash;
-        use key_wallet::wallet::immature_transaction::AffectedAccounts;
-
-        // Create an ImmatureTransaction wrapper
-        // Note: For asset locks detected in check_transaction, we don't have full block info yet
-        // We use placeholder values for height/block_hash since we only need the transaction
-        // for identity discovery
-        let immature_tx = ImmatureTransaction {
-            transaction: tx.clone(),
-            txid: tx.txid(),
-            height: 0, // Placeholder - not used for identity discovery
-            block_hash: dashcore::BlockHash::all_zeros(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            maturity_confirmations: 0,
-            affected_accounts: AffectedAccounts::new(),
-            total_received: 0,
-            is_coinbase: false,
-        };
-
         let result = self
-            .fetch_contact_requests_for_identities_after_asset_locks(wallet, &[immature_tx])
+            .fetch_contact_requests_for_identities_after_asset_locks(wallet, &[tx.clone()])
             .await?;
 
         Ok(result.first().copied())
@@ -71,7 +47,7 @@ impl PlatformWalletInfo {
     /// # Arguments
     ///
     /// * `wallet` - The wallet to derive authentication keys from
-    /// * `asset_lock_transactions` - List of asset lock transactions from pending_asset_locks
+    /// * `asset_lock_transactions` - List of asset lock transactions
     ///
     /// # Returns
     ///
@@ -79,7 +55,7 @@ impl PlatformWalletInfo {
     pub async fn fetch_contact_requests_for_identities_after_asset_locks(
         &mut self,
         wallet: &key_wallet::Wallet,
-        asset_lock_transactions: &[ImmatureTransaction],
+        asset_lock_transactions: &[dashcore::Transaction],
     ) -> Result<Vec<Identifier>, PlatformWalletError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;

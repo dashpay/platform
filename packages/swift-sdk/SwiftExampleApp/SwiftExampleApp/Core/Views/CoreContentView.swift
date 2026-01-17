@@ -79,95 +79,108 @@ struct CoreContentView: View {
     
 var body: some View {
     List {
-            // Section 1: Sync Status
-            Section("Sync Status") {
-                VStack(spacing: 16) {
-                    // Main sync control
-                    HStack(spacing: 12) {
+            // Section 1: Core Sync Status (compact)
+            Section {
+                VStack(spacing: 8) {
+                    // Compact progress rows
+                    CompactSyncRow(
+                        title: "Headers",
+                        progress: safeHeaderProgress,
+                        value: headerHeightsDisplay
+                    )
+
+                    CompactSyncRow(
+                        title: "Filter Headers",
+                        progress: safeFilterHeaderProgress,
+                        value: filterHeaderHeightsDisplay
+                    )
+
+                    if walletService.shouldSyncMasternodes {
+                        CompactSyncRow(
+                            title: "Masternodes",
+                            progress: walletService.masternodeProgress,
+                            value: formattedHeight(walletService.latestMasternodeListHeight)
+                        )
+                    }
+
+                    CompactSyncRow(
+                        title: "Filters",
+                        progress: safeTransactionProgress,
+                        value: filterHeightsDisplay
+                    )
+
+                    // Controls row
+                    HStack(spacing: 8) {
+                        Text("Blocks hit: \(walletService.blocksHit)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
                         Spacer()
 
                         Button(action: toggleSync) {
-                            HStack(spacing: 4) {
-                                Image(systemName: walletService.isSyncing ? "pause.fill" : "play.fill")
-                                Text(walletService.isSyncing ? "Pause" : "Start")
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(walletService.isSyncing ? Color.orange : Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
+                            Text(walletService.isSyncing ? "Pause" : "Start")
+                                .font(.caption)
+                                .fontWeight(.medium)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderedProminent)
+                        .tint(walletService.isSyncing ? .orange : .blue)
+                        .controlSize(.mini)
 
                         Button(action: clearSyncData) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "trash")
-                                Text("Clear")
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background((walletService.isSyncing || walletService.isInitializing) ? Color.gray : Color.red)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
+                            Text("Clear")
+                                .font(.caption)
+                                .fontWeight(.medium)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.mini)
                         .disabled(walletService.isSyncing || walletService.isInitializing)
                         .opacity((walletService.isSyncing || walletService.isInitializing) ? 0.5 : 1.0)
                     }
-                    
-                    // Headers sync progress
-                    SyncProgressRow(
-                        title: "Headers",
-                        progress: safeHeaderProgress,
-                        detail: "\(Int(safeHeaderProgress * 100))% complete",
-                        icon: "doc.text",
-                        trailingValue: headerHeightsDisplay,
-                        onRestart: restartHeaderSync
-                    )
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Core Sync Status")
+            }
 
-                    // Filter header sync progress (BIP157 stage 2)
-                    SyncProgressRow(
-                        title: "Filter Headers",
-                        progress: safeFilterHeaderProgress,
-                        detail: "\(Int(safeFilterHeaderProgress * 100))% complete",
-                        icon: "line.3.horizontal.decrease.circle",
-                        trailingValue: filterHeaderHeightsDisplay,
-                        onRestart: restartFilterHeaderSync
-                    )
-                    
-                    if walletService.shouldSyncMasternodes {
-                        // Masternode list sync progress
-                        // TODO: Populate with real masternode sync metrics when exposed via FFI.
-                        SyncProgressRow(
-                            title: "Masternode List",
-                            progress: walletService.masternodeProgress,
-                            detail: "\(Int(walletService.masternodeProgress * 100))% complete",
-                            icon: "server.rack",
-                            trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
-                            onRestart: restartMasternodeSync
-                        )
+            // Section 2: Platform Sync Status
+            Section {
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Last Block Height")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("—")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
                     }
 
-                    // Compact filters download progress (BIP157 stage 3)
-                    SyncProgressRow(
-                        title: "Filters",
-                        progress: safeTransactionProgress,
-                        detail: "Compact Filters: \(Int(safeTransactionProgress * 100))%",
-                        icon: "arrow.left.arrow.right",
-                        trailingValue: filterHeightsDisplay,
-                        onRestart: restartTransactionSync,
-                        navigationDestination: AnyView(
-                            FilterMatchesView(walletService: walletService)
-                                .environmentObject(walletService)
-                                .environmentObject(unifiedAppState)
-                        )
-                    )
-                    // Blocks hit counter
-                    Text("Blocks hit: \(walletService.blocksHit)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    HStack {
+                        Spacer()
+
+                        Button(action: { /* TODO: Start platform sync */ }) {
+                            Text("Start")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .controlSize(.mini)
+
+                        Button(action: { /* TODO: Clear platform sync */ }) {
+                            Text("Clear")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.mini)
+                    }
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 4)
+            } header: {
+                Text("Platform Sync Status")
             }
             
             // Section 2: Wallets
@@ -297,7 +310,49 @@ var body: some View {
     }
 }
 
-// MARK: - Sync Progress Row
+// MARK: - Compact Sync Row
+
+struct CompactSyncRow: View {
+    let title: String
+    let progress: Double
+    let value: String?
+
+    private var safeProgress: Double {
+        min(max(progress, 0.0), 1.0)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 80, alignment: .leading)
+
+            ProgressView(value: safeProgress)
+                .progressViewStyle(LinearProgressViewStyle())
+                .tint(progressColor)
+
+            if let value = value {
+                Text(value)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .frame(minWidth: 60, alignment: .trailing)
+            }
+        }
+    }
+
+    private var progressColor: Color {
+        if safeProgress >= 1.0 {
+            return .green
+        } else if safeProgress >= 0.5 {
+            return .blue
+        } else {
+            return .orange
+        }
+    }
+}
+
+// MARK: - Sync Progress Row (Legacy)
 
 struct SyncProgressRow: View {
     let title: String
@@ -382,16 +437,8 @@ struct WalletRowView: View {
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     
     private func getNetworksList() -> String {
-        var networks: [String] = []
-        
-        // TODO: This is probably not needed anymore?
-        
-        // If no networks set (shouldn't happen after migration), show the original network
-        if networks.isEmpty {
-            return wallet.dashNetwork.rawValue.capitalized
-        }
-        
-        return networks.joined(separator: ", ")
+        // Wallets are now single-network, just return the wallet's network
+        return wallet.dashNetwork.rawValue.capitalized
     }
     
     var platformBalance: UInt64 {
