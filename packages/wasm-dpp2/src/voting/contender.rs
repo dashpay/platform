@@ -28,7 +28,7 @@ impl From<ContenderWithSerializedDocumentWasm> for ContenderWithSerializedDocume
 #[wasm_bindgen(js_class = ContenderWithSerializedDocument)]
 impl ContenderWithSerializedDocumentWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: &JsValue,
         serialized_document: Option<Vec<u8>>,

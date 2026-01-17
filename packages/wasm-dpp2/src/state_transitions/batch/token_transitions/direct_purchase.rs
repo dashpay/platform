@@ -27,7 +27,7 @@ impl From<TokenDirectPurchaseTransition> for TokenDirectPurchaseTransitionWasm {
 #[wasm_bindgen(js_class = TokenDirectPurchaseTransition)]
 impl TokenDirectPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         token_count: TokenAmount,
         total_agreed_price: Credits,

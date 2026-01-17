@@ -206,7 +206,7 @@ impl Serialize for IdentifierWasm {
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identifier: &JsValue,
     ) -> WasmDppResult<IdentifierWasm> {

@@ -75,7 +75,7 @@ impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
 #[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyOptions")] options: JsValue,
     ) -> WasmDppResult<Self> {
         let object = Object::from(options.clone());

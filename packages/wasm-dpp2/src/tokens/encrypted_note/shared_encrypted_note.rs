@@ -22,7 +22,7 @@ impl From<SharedEncryptedNoteWasm> for SharedEncryptedNote {
 #[wasm_bindgen(js_class = SharedEncryptedNote)]
 impl SharedEncryptedNoteWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         sender_key_index: SenderKeyIndex,
         recipient_key_index: RecipientKeyIndex,
         value: Vec<u8>,

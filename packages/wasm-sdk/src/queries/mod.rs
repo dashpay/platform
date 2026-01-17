@@ -40,7 +40,7 @@ pub struct ResponseMetadataWasm {
 #[wasm_bindgen(js_class = ResponseMetadata)]
 impl ResponseMetadataWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         height: u64,
         #[wasm_bindgen(js_name = "coreChainLockedHeight")] core_chain_locked_height: u32,
         epoch: u32,
@@ -128,7 +128,7 @@ pub struct ProofInfoWasm {
 #[wasm_bindgen(js_class = ProofInfo)]
 impl ProofInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(js_name = "grovedbProof")] grovedb_proof: Uint8Array,
         #[wasm_bindgen(js_name = "quorumHash")] quorum_hash: Uint8Array,
         signature: Uint8Array,
@@ -253,7 +253,7 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(data: JsValue, metadata: ResponseMetadataWasm, proof: ProofInfoWasm) -> Self {
+    pub fn constructor(data: JsValue, metadata: ResponseMetadataWasm, proof: ProofInfoWasm) -> Self {
         // Store data as-is. Conversion to JSON happens in to_serde()/toJSON().
         // This allows WASM objects (like DataContractWasm) to be stored directly
         // and their toJSON() method will be called when serializing.

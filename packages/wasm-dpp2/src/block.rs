@@ -11,7 +11,7 @@ pub struct BlockInfoWasm(BlockInfo);
 #[wasm_bindgen(js_class = BlockInfo)]
 impl BlockInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         time_ms: u64,
         height: u64,
         core_height: u32,

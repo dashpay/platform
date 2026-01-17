@@ -33,7 +33,7 @@ impl From<DocumentTransferTransitionWasm> for DocumentTransferTransition {
 #[wasm_bindgen(js_class = DocumentTransferTransition)]
 impl DocumentTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]

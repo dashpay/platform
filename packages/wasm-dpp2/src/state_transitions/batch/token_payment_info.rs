@@ -54,7 +54,7 @@ impl From<TokenPaymentInfoWasm> for TokenPaymentInfo {
 #[wasm_bindgen(js_class = TokenPaymentInfo)]
 impl TokenPaymentInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "TokenPaymentInfoOptions")] options: JsValue,
     ) -> WasmDppResult<Self> {
         let object = Object::from(options.clone());

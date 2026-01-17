@@ -26,7 +26,7 @@ impl From<ContractBoundsWasm> for ContractBounds {
 #[wasm_bindgen(js_class = ContractBounds)]
 impl ContractBoundsWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: &JsValue,
         document_type_name: Option<String>,

@@ -29,7 +29,7 @@ impl From<TokenConfigurationLocalizationWasm> for TokenConfigurationLocalization
 #[wasm_bindgen(js_class = TokenConfigurationLocalization)]
 impl TokenConfigurationLocalizationWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         should_capitalize: bool,
         singular_form: String,
         plural_form: String,

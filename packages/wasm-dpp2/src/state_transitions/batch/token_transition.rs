@@ -45,7 +45,7 @@ impl From<TokenTransitionWasm> for TokenTransition {
 #[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(transition: &JsValue) -> WasmDppResult<TokenTransitionWasm> {
+    pub fn constructor(transition: &JsValue) -> WasmDppResult<TokenTransitionWasm> {
         if !transition.is_object() {
             return Err(WasmDppError::invalid_argument("Bad token transition input"));
         }

@@ -23,7 +23,7 @@ impl From<ContestedDocumentVotePollWinnerInfoWasm> for ContestedDocumentVotePoll
 #[wasm_bindgen(js_class = ContestedDocumentVotePollWinnerInfo)]
 impl ContestedDocumentVotePollWinnerInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         kind: &str,
         identity_id: Option<IdentifierWasm>,
     ) -> Result<ContestedDocumentVotePollWinnerInfoWasm, JsValue> {

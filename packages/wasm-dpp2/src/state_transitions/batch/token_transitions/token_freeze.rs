@@ -29,7 +29,7 @@ impl From<TokenFreezeTransition> for TokenFreezeTransitionWasm {
 #[wasm_bindgen(js_class = TokenFreezeTransition)]
 impl TokenFreezeTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_identity_to_freeze_id: &JsValue,

@@ -25,7 +25,7 @@ impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWasm {
 #[wasm_bindgen(js_class = GroupStateTransitionInfo)]
 impl GroupStateTransitionInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         group_contract_position: u16,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         action_id: &JsValue,

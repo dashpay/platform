@@ -1,18 +1,37 @@
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
-use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_u64};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 use dpp::state_transition::batch_transition::TokenTransferTransition;
 use dpp::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
+use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_TRANSFER_OPTIONS_TS: &'static str = r#"
+export interface TokenTransferTransitionOptions {
+    base: TokenBaseTransition;
+    recipientId: IdentifierLike;
+    amount: bigint | number;
+    publicNote?: string;
+    sharedEncryptedNote?: SharedEncryptedNote;
+    privateEncryptedNote?: PrivateEncryptedNote;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenTransferTransitionOptions")]
+    pub type TokenTransferTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenTransferTransition)]
@@ -33,17 +52,36 @@ impl From<TokenTransferTransitionWasm> for TokenTransferTransition {
 #[wasm_bindgen(js_class = TokenTransferTransition)]
 impl TokenTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient_id: &JsValue,
-        amount: u64,
-        public_note: Option<String>,
-        js_shared_encrypted_note: &JsValue,
-        js_private_encrypted_note: &JsValue,
+    pub fn constructor(
+        options: TokenTransferTransitionOptionsJs,
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
-        let recipient_id: Identifier = IdentifierWasm::try_from(js_recipient_id)?.into();
+        let options_obj = Object::from(JsValue::from(options));
 
+        let base_js = Reflect::get(&options_obj, &"base".into())
+            .map_err(|_| WasmDppError::invalid_argument("base is required"))?;
+        let base = base_js
+            .to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")?
+            .clone();
+
+        let recipient_id_js = Reflect::get(&options_obj, &"recipientId".into())
+            .map_err(|_| WasmDppError::invalid_argument("recipientId is required"))?;
+        let recipient_id: Identifier = IdentifierWasm::try_from(&recipient_id_js)?.into();
+
+        let amount = try_to_u64(
+            Reflect::get(&options_obj, &"amount".into())
+                .map_err(|_| WasmDppError::invalid_argument("amount is required"))?,
+        )?;
+
+        let public_note_js =
+            Reflect::get(&options_obj, &"publicNote".into()).unwrap_or(JsValue::UNDEFINED);
+        let public_note: Option<String> = if public_note_js.is_undefined() {
+            None
+        } else {
+            public_note_js.as_string()
+        };
+
+        let js_shared_encrypted_note =
+            Reflect::get(&options_obj, &"sharedEncryptedNote".into()).unwrap_or(JsValue::UNDEFINED);
         let shared_encrypted_note: Option<SharedEncryptedNote> =
             match js_shared_encrypted_note.is_undefined() {
                 true => None,
@@ -55,6 +93,8 @@ impl TokenTransferTransitionWasm {
                 ),
             };
 
+        let js_private_encrypted_note = Reflect::get(&options_obj, &"privateEncryptedNote".into())
+            .unwrap_or(JsValue::UNDEFINED);
         let private_encrypted_note: Option<PrivateEncryptedNote> =
             match js_private_encrypted_note.is_undefined() {
                 true => None,
@@ -68,7 +108,7 @@ impl TokenTransferTransitionWasm {
 
         Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
             TokenTransferTransitionV0 {
-                base: base.clone().into(),
+                base: base.into(),
                 recipient_id,
                 amount,
                 public_note,

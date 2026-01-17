@@ -36,7 +36,7 @@ impl fmt::Debug for PlatformAddressSignerWasm {
 impl PlatformAddressSignerWasm {
     /// Creates a new empty PlatformAddressSigner.
     #[wasm_bindgen(constructor)]
-    pub fn new() -> PlatformAddressSignerWasm {
+    pub fn constructor() -> PlatformAddressSignerWasm {
         PlatformAddressSignerWasm {
             private_keys: BTreeMap::new(),
         }

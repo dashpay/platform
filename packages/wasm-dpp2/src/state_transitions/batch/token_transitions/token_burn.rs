@@ -26,7 +26,7 @@ impl From<TokenBurnTransitionWasm> for TokenBurnTransition {
 #[wasm_bindgen(js_class = TokenBurnTransition)]
 impl TokenBurnTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         burn_amount: u64,
         public_note: Option<String>,

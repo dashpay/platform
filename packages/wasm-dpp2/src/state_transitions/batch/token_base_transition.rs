@@ -1,15 +1,33 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_u64};
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
+use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_BASE_TRANSITION_OPTIONS_TS: &'static str = r#"
+export interface TokenBaseTransitionOptions {
+    identityContractNonce: bigint | number;
+    tokenContractPosition: number;
+    dataContractId: IdentifierLike;
+    tokenId: IdentifierLike;
+    usingGroupInfo?: GroupStateTransitionInfo;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenBaseTransitionOptions")]
+    pub type TokenBaseTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenBaseTransition)]
@@ -30,32 +48,51 @@ impl From<TokenBaseTransitionWasm> for TokenBaseTransition {
 #[wasm_bindgen(js_class = TokenBaseTransition)]
 impl TokenBaseTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        identity_contract_nonce: IdentityNonce,
-        token_contract_position: u16,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: &JsValue,
-        using_group_info: &JsValue,
+    pub fn constructor(
+        options: TokenBaseTransitionOptionsJs,
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
-        let group_info: Option<GroupStateTransitionInfo> =
-            match using_group_info.is_undefined() {
-                false => Some(
-                    using_group_info
-                        .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
-                        .clone()
-                        .into(),
-                ),
-                true => None,
-            };
+        let options_obj = Object::from(JsValue::from(options));
+
+        let identity_contract_nonce = try_to_u64(
+            Reflect::get(&options_obj, &"identityContractNonce".into())
+                .map_err(|_| WasmDppError::invalid_argument("identityContractNonce is required"))?,
+        )?;
+
+        let token_contract_position =
+            Reflect::get(&options_obj, &"tokenContractPosition".into())
+                .map_err(|_| WasmDppError::invalid_argument("tokenContractPosition is required"))?
+                .as_f64()
+                .ok_or_else(|| {
+                    WasmDppError::invalid_argument("tokenContractPosition must be a number")
+                })? as u16;
+
+        let data_contract_id_js = Reflect::get(&options_obj, &"dataContractId".into())
+            .map_err(|_| WasmDppError::invalid_argument("dataContractId is required"))?;
+        let data_contract_id = IdentifierWasm::try_from(&data_contract_id_js)?.into();
+
+        let token_id_js = Reflect::get(&options_obj, &"tokenId".into())
+            .map_err(|_| WasmDppError::invalid_argument("tokenId is required"))?;
+        let token_id = IdentifierWasm::try_from(&token_id_js)?.into();
+
+        let using_group_info_js =
+            Reflect::get(&options_obj, &"usingGroupInfo".into()).unwrap_or(JsValue::UNDEFINED);
+        let group_info: Option<GroupStateTransitionInfo> = match using_group_info_js.is_undefined()
+        {
+            true => None,
+            false => Some(
+                using_group_info_js
+                    .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
+                    .clone()
+                    .into(),
+            ),
+        };
 
         Ok(TokenBaseTransitionWasm(TokenBaseTransition::V0(
             TokenBaseTransitionV0 {
                 identity_contract_nonce,
                 token_contract_position,
-                data_contract_id: IdentifierWasm::try_from(data_contract_id)?.into(),
-                token_id: IdentifierWasm::try_from(token_id)?.into(),
+                data_contract_id,
+                token_id,
                 using_group_info: group_info,
             },
         )))

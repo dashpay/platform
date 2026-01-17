@@ -27,7 +27,7 @@ impl From<ActionTakerWasm> for ActionTaker {
 #[wasm_bindgen(js_class = ActionTaker)]
 impl ActionTakerWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
+    pub fn constructor(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
         if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
             return Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
                 identifier.into(),

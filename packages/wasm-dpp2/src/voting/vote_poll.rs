@@ -46,7 +46,7 @@ impl From<VotePollWasm> for VotePoll {
 #[wasm_bindgen(js_class = VotePoll)]
 impl VotePollWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "VotePollOptions")] options: JsValue,
     ) -> WasmDppResult<VotePollWasm> {
         let object = Object::from(options.clone());

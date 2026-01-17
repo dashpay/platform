@@ -82,8 +82,8 @@ impl PrivateKeyWasm {
         Ok(PrivateKeyWasm(pk))
     }
 
-    #[wasm_bindgen(getter = "publicKey")]
-    pub fn public_key(&self) -> PublicKeyWasm {
+    #[wasm_bindgen(js_name = "getPublicKey")]
+    pub fn get_public_key(&self) -> PublicKeyWasm {
         let secp = Secp256k1::new();
 
         let public_key = self.0.public_key(&secp);
@@ -109,8 +109,8 @@ impl PrivateKeyWasm {
         self.0.to_bytes().to_hex_string(Case::Upper)
     }
 
-    #[wasm_bindgen(getter = "publicKeyHash")]
-    pub fn public_key_hash(&self) -> String {
+    #[wasm_bindgen(js_name = "getPublicKeyHash")]
+    pub fn get_public_key_hash(&self) -> String {
         let secp = Secp256k1::new();
 
         self.0.public_key(&secp).pubkey_hash().to_hex()

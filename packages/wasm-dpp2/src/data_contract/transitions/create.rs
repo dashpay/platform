@@ -27,7 +27,7 @@ pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
 #[wasm_bindgen(js_class = DataContractCreateTransition)]
 impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         data_contract: &DataContractWasm,
         identity_nonce: IdentityNonce,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]

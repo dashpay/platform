@@ -7,7 +7,7 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -23,8 +23,28 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const CREDIT_WITHDRAWAL_OPTIONS_TS: &'static str = r#"
+export interface IdentityCreditWithdrawalTransitionOptions {
+    identityId: IdentifierLike;
+    amount: bigint | number;
+    coreFeePerByte: number;
+    pooling: string;
+    outputScript?: CoreScript;
+    nonce?: bigint | number;
+    userFeeIncrease?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityCreditWithdrawalTransitionOptions")]
+    pub type IdentityCreditWithdrawalTransitionOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
 pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransition);
@@ -32,27 +52,58 @@ pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransi
 #[wasm_bindgen(js_class = IdentityCreditWithdrawalTransition)]
 impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        amount: u64,
-        core_fee_per_byte: u32,
-        pooling: JsValue,
-        output_script: &JsValue,
-        nonce: Option<IdentityNonce>,
-        user_fee_increase: Option<UserFeeIncrease>,
+    pub fn constructor(
+        options: IdentityCreditWithdrawalTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
-        let pooling = PoolingWasm::try_from(pooling)?;
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)?.into();
+        let options_obj = Object::from(JsValue::from(options));
 
-        let output_script: Option<CoreScript> = match output_script.is_undefined() {
+        let identity_id_js = Reflect::get(&options_obj, &"identityId".into())
+            .map_err(|_| WasmDppError::invalid_argument("identityId is required"))?;
+        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id_js)?.into();
+
+        let amount = try_to_u64(
+            Reflect::get(&options_obj, &"amount".into())
+                .map_err(|_| WasmDppError::invalid_argument("amount is required"))?,
+        )?;
+
+        let core_fee_per_byte = Reflect::get(&options_obj, &"coreFeePerByte".into())
+            .map_err(|_| WasmDppError::invalid_argument("coreFeePerByte is required"))?
+            .as_f64()
+            .ok_or_else(|| WasmDppError::invalid_argument("coreFeePerByte must be a number"))?
+            as u32;
+
+        let pooling_js = Reflect::get(&options_obj, &"pooling".into())
+            .map_err(|_| WasmDppError::invalid_argument("pooling is required"))?;
+        let pooling = PoolingWasm::try_from(pooling_js)?;
+
+        let output_script_js = Reflect::get(&options_obj, &"outputScript".into())
+            .unwrap_or(JsValue::UNDEFINED);
+        let output_script: Option<CoreScript> = match output_script_js.is_undefined() {
             true => None,
             false => Some(
-                output_script
+                output_script_js
                     .to_wasm::<CoreScriptWasm>("CoreScript")?
                     .clone()
                     .into(),
             ),
+        };
+
+        let nonce_js = Reflect::get(&options_obj, &"nonce".into()).unwrap_or(JsValue::UNDEFINED);
+        let nonce: IdentityNonce = if nonce_js.is_undefined() {
+            0
+        } else {
+            try_to_u64(nonce_js)?
+        };
+
+        let user_fee_increase_js = Reflect::get(&options_obj, &"userFeeIncrease".into())
+            .unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
+            0
+        } else {
+            user_fee_increase_js
+                .as_f64()
+                .ok_or_else(|| WasmDppError::invalid_argument("userFeeIncrease must be a number"))?
+                as u16
         };
 
         Ok(IdentityCreditWithdrawalTransitionWasm(
@@ -62,8 +113,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
                 output_script,
                 core_fee_per_byte,
                 pooling: pooling.into(),
-                nonce: nonce.unwrap_or(0),
-                user_fee_increase: user_fee_increase.unwrap_or(0),
+                nonce,
+                user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }),

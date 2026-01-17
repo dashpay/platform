@@ -53,7 +53,7 @@ pub struct DpnsUsernameInfo {
 #[wasm_bindgen(js_class = DpnsUsernameInfo)]
 impl DpnsUsernameInfo {
     #[wasm_bindgen(constructor)]
-    pub fn new(username: String, identity_id: IdentifierWasm, document_id: IdentifierWasm) -> Self {
+    pub fn constructor(username: String, identity_id: IdentifierWasm, document_id: IdentifierWasm) -> Self {
         Self {
             username,
             identity_id,

@@ -22,7 +22,7 @@ impl From<PrivateEncryptedNoteWasm> for PrivateEncryptedNote {
 #[wasm_bindgen(js_class = PrivateEncryptedNote)]
 impl PrivateEncryptedNoteWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         root_encryption_key_index: RootEncryptionKeyIndex,
         derivation_encryption_key_index: DerivationEncryptionKeyIndex,
         value: Vec<u8>,

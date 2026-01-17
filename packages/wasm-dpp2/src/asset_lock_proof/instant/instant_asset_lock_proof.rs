@@ -27,7 +27,7 @@ impl From<InstantAssetLockProof> for InstantAssetLockProofWasm {
 #[wasm_bindgen(js_class = InstantAssetLockProof)]
 impl InstantAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         instant_lock: Vec<u8>,
         transaction: Vec<u8>,
         output_index: u32,

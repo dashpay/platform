@@ -27,7 +27,7 @@ impl From<DocumentUpdatePriceTransition> for DocumentUpdatePriceTransitionWasm {
 #[wasm_bindgen(js_class = DocumentUpdatePriceTransition)]
 impl DocumentUpdatePriceTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         price: Credits,

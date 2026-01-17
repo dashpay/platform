@@ -81,7 +81,7 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "TokenConfigurationOptions")] options: JsValue,
     ) -> WasmDppResult<TokenConfigurationWasm> {
         let object = Object::from(options.clone());

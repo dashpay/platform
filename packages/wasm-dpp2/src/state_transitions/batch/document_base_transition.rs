@@ -51,7 +51,7 @@ impl From<DocumentBaseTransitionWasm> for DocumentBaseTransition {
 #[wasm_bindgen(js_class = DocumentBaseTransition)]
 impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "DocumentBaseTransitionOptions")] options: JsValue,
     ) -> WasmDppResult<DocumentBaseTransitionWasm> {
         let object = Object::from(options.clone());

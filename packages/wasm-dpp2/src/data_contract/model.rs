@@ -113,7 +113,7 @@ pub fn tokens_configuration_from_js_value(
 #[wasm_bindgen(js_class = DataContract)]
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "DataContractOptions")] options: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let object = Object::from(options.clone());

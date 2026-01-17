@@ -86,7 +86,7 @@ pub fn js_distributions_to_distributions(
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]
 impl TokenPreProgrammedDistributionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(js_distributions: &JsValue) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
+    pub fn constructor(js_distributions: &JsValue) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
         let distributions = js_distributions_to_distributions(js_distributions)?;
 
         Ok(TokenPreProgrammedDistributionWasm(

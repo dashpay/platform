@@ -32,7 +32,7 @@ impl From<TokenConfigurationConventionWasm> for TokenConfigurationConvention {
 #[wasm_bindgen(js_class = TokenConfigurationConvention)]
 impl TokenConfigurationConventionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         js_localizations: &JsValue,
         decimals: u8,
     ) -> WasmDppResult<TokenConfigurationConventionWasm> {

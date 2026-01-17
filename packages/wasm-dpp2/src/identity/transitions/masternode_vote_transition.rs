@@ -5,6 +5,7 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::utils::{IntoWasm, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -19,8 +20,27 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use js_sys::{Object, Reflect, Uint8Array};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const MASTERNODE_VOTE_OPTIONS_TS: &'static str = r#"
+export interface MasternodeVoteTransitionOptions {
+    proTxHash: IdentifierLike;
+    voterIdentityId: IdentifierLike;
+    vote: Vote;
+    nonce: bigint | number;
+    signaturePublicKeyId?: number;
+    signature?: Uint8Array;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionOptions")]
+    pub type MasternodeVoteTransitionOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
 #[derive(Clone)]
@@ -41,27 +61,56 @@ impl From<MasternodeVoteTransitionWasm> for MasternodeVoteTransition {
 #[wasm_bindgen(js_class = MasternodeVoteTransition)]
 impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        pro_tx_hash: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        voter_identity_id: &JsValue,
-        vote: &VoteWasm,
-        nonce: IdentityNonce,
-        signature_public_key: Option<KeyID>,
-        signature: Option<Vec<u8>>,
+    pub fn constructor(
+        options: MasternodeVoteTransitionOptionsJs,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let pro_tx_hash = IdentifierWasm::try_from(pro_tx_hash)?.into();
-        let voter_identity_id = IdentifierWasm::try_from(voter_identity_id)?.into();
+        let options_obj = Object::from(JsValue::from(options));
+
+        let pro_tx_hash_js = Reflect::get(&options_obj, &"proTxHash".into())
+            .map_err(|_| WasmDppError::invalid_argument("proTxHash is required"))?;
+        let pro_tx_hash = IdentifierWasm::try_from(&pro_tx_hash_js)?.into();
+
+        let voter_identity_id_js = Reflect::get(&options_obj, &"voterIdentityId".into())
+            .map_err(|_| WasmDppError::invalid_argument("voterIdentityId is required"))?;
+        let voter_identity_id = IdentifierWasm::try_from(&voter_identity_id_js)?.into();
+
+        let vote_js = Reflect::get(&options_obj, &"vote".into())
+            .map_err(|_| WasmDppError::invalid_argument("vote is required"))?;
+        let vote = vote_js.to_wasm::<VoteWasm>("Vote")?.clone();
+
+        let nonce = try_to_u64(
+            Reflect::get(&options_obj, &"nonce".into())
+                .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
+        )?;
+
+        let signature_public_key_js = Reflect::get(&options_obj, &"signaturePublicKeyId".into())
+            .unwrap_or(JsValue::UNDEFINED);
+        let signature_public_key_id: KeyID = if signature_public_key_js.is_undefined() {
+            0
+        } else {
+            signature_public_key_js
+                .as_f64()
+                .ok_or_else(|| {
+                    WasmDppError::invalid_argument("signaturePublicKeyId must be a number")
+                })? as KeyID
+        };
+
+        let signature_js =
+            Reflect::get(&options_obj, &"signature".into()).unwrap_or(JsValue::UNDEFINED);
+        let signature: Vec<u8> = if signature_js.is_undefined() {
+            Vec::new()
+        } else {
+            Uint8Array::from(signature_js).to_vec()
+        };
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
                 pro_tx_hash,
                 voter_identity_id,
-                vote: vote.clone().into(),
+                vote: vote.into(),
                 nonce,
-                signature_public_key_id: signature_public_key.unwrap_or(0),
-                signature: BinaryData::from(signature.unwrap_or_default()),
+                signature_public_key_id,
+                signature: BinaryData::from(signature),
             },
         )))
     }

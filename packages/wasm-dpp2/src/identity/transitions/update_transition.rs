@@ -6,6 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::utils::try_to_u64;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -20,8 +21,27 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use js_sys::{Array, Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTITY_UPDATE_OPTIONS_TS: &'static str = r#"
+export interface IdentityUpdateTransitionOptions {
+    identityId: IdentifierLike;
+    revision: bigint | number;
+    nonce: bigint | number;
+    addPublicKeys: IdentityPublicKeyInCreation[];
+    disablePublicKeys: number[];
+    userFeeIncrease?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityUpdateTransitionOptions")]
+    pub type IdentityUpdateTransitionOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "IdentityUpdateTransition")]
 #[derive(Clone)]
@@ -30,19 +50,55 @@ pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: &JsValue,
-        revision: Revision,
-        nonce: IdentityNonce,
-        add_public_keys: &js_sys::Array,
-        disable_public_keys: Vec<KeyID>,
-        user_fee_increase: Option<UserFeeIncrease>,
+    pub fn constructor(
+        options: IdentityUpdateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
-        let identity_id = IdentifierWasm::try_from(identity_id)?.into();
+        let options_obj = Object::from(JsValue::from(options));
 
+        let identity_id_js = Reflect::get(&options_obj, &"identityId".into())
+            .map_err(|_| WasmDppError::invalid_argument("identityId is required"))?;
+        let identity_id = IdentifierWasm::try_from(&identity_id_js)?.into();
+
+        let revision = try_to_u64(
+            Reflect::get(&options_obj, &"revision".into())
+                .map_err(|_| WasmDppError::invalid_argument("revision is required"))?,
+        )?;
+
+        let nonce = try_to_u64(
+            Reflect::get(&options_obj, &"nonce".into())
+                .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
+        )?;
+
+        let add_public_keys_js = Reflect::get(&options_obj, &"addPublicKeys".into())
+            .map_err(|_| WasmDppError::invalid_argument("addPublicKeys is required"))?;
+        let add_public_keys_array = Array::from(&add_public_keys_js);
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(add_public_keys)?;
+            IdentityPublicKeyInCreationWasm::vec_from_js_value(&add_public_keys_array)?;
+
+        let disable_public_keys_js = Reflect::get(&options_obj, &"disablePublicKeys".into())
+            .map_err(|_| WasmDppError::invalid_argument("disablePublicKeys is required"))?;
+        let disable_public_keys_array = Array::from(&disable_public_keys_js);
+        let disable_public_keys: Vec<KeyID> = disable_public_keys_array
+            .iter()
+            .map(|v| {
+                v.as_f64()
+                    .ok_or_else(|| {
+                        WasmDppError::invalid_argument("disablePublicKeys must be an array of numbers")
+                    })
+                    .map(|n| n as KeyID)
+            })
+            .collect::<WasmDppResult<Vec<KeyID>>>()?;
+
+        let user_fee_increase_js = Reflect::get(&options_obj, &"userFeeIncrease".into())
+            .unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
+            0
+        } else {
+            user_fee_increase_js
+                .as_f64()
+                .ok_or_else(|| WasmDppError::invalid_argument("userFeeIncrease must be a number"))?
+                as u16
+        };
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
@@ -50,12 +106,11 @@ impl IdentityUpdateTransitionWasm {
                 revision,
                 nonce,
                 add_public_keys: add_public_keys
-                    .clone()
                     .iter()
                     .map(|key| key.clone().into())
                     .collect(),
                 disable_public_keys,
-                user_fee_increase: user_fee_increase.unwrap_or(0),
+                user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             },

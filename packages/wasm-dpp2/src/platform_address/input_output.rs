@@ -36,7 +36,7 @@ impl PlatformAddressInputWasm {
     /// @param nonce - The current nonce of the address (will be incremented for the transaction)
     /// @param amount - The amount of credits to spend from this address
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
         nonce: u32,
         amount: BigInt,
@@ -99,7 +99,7 @@ impl PlatformAddressOutputWasm {
     /// @param address - The Platform address (PlatformAddress, Uint8Array, or bech32m string)
     /// @param amount - The amount of credits to send to this address (optional for asset lock funding)
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
         amount: Option<BigInt>,
     ) -> WasmDppResult<PlatformAddressOutputWasm> {

@@ -33,7 +33,7 @@ impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
 #[wasm_bindgen(js_class = DocumentReplaceTransition)]
 impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_token_payment_info: &JsValue,

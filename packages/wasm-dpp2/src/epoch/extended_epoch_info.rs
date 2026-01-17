@@ -1,8 +1,29 @@
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::try_to_u64;
 use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
-use js_sys::BigInt;
+use js_sys::{BigInt, Object, Reflect};
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const EXTENDED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
+export interface ExtendedEpochInfoOptions {
+    index: number;
+    firstBlockTime: bigint | number;
+    firstBlockHeight: bigint | number;
+    firstCoreBlockHeight: number;
+    feeMultiplierPermille: bigint | number;
+    protocolVersion: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ExtendedEpochInfoOptions")]
+    pub type ExtendedEpochInfoOptionsJs;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ExtendedEpochInfo")]
@@ -31,22 +52,52 @@ impl ExtendedEpochInfoWasm {
 #[wasm_bindgen(js_class = ExtendedEpochInfo)]
 impl ExtendedEpochInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        index: u16,
-        first_block_time: u64,
-        first_block_height: u64,
-        first_core_block_height: u32,
-        fee_multiplier_permille: u64,
-        protocol_version: u32,
-    ) -> ExtendedEpochInfoWasm {
-        ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
+    pub fn constructor(
+        options: ExtendedEpochInfoOptionsJs,
+    ) -> WasmDppResult<ExtendedEpochInfoWasm> {
+        let options_obj = Object::from(JsValue::from(options));
+
+        let index = Reflect::get(&options_obj, &"index".into())
+            .map_err(|_| WasmDppError::invalid_argument("index is required"))?
+            .as_f64()
+            .ok_or_else(|| WasmDppError::invalid_argument("index must be a number"))?
+            as u16;
+
+        let first_block_time = try_to_u64(
+            Reflect::get(&options_obj, &"firstBlockTime".into())
+                .map_err(|_| WasmDppError::invalid_argument("firstBlockTime is required"))?,
+        )?;
+
+        let first_block_height = try_to_u64(
+            Reflect::get(&options_obj, &"firstBlockHeight".into())
+                .map_err(|_| WasmDppError::invalid_argument("firstBlockHeight is required"))?,
+        )?;
+
+        let first_core_block_height = Reflect::get(&options_obj, &"firstCoreBlockHeight".into())
+            .map_err(|_| WasmDppError::invalid_argument("firstCoreBlockHeight is required"))?
+            .as_f64()
+            .ok_or_else(|| WasmDppError::invalid_argument("firstCoreBlockHeight must be a number"))?
+            as u32;
+
+        let fee_multiplier_permille = try_to_u64(
+            Reflect::get(&options_obj, &"feeMultiplierPermille".into())
+                .map_err(|_| WasmDppError::invalid_argument("feeMultiplierPermille is required"))?,
+        )?;
+
+        let protocol_version = Reflect::get(&options_obj, &"protocolVersion".into())
+            .map_err(|_| WasmDppError::invalid_argument("protocolVersion is required"))?
+            .as_f64()
+            .ok_or_else(|| WasmDppError::invalid_argument("protocolVersion must be a number"))?
+            as u32;
+
+        Ok(ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
             index,
             first_block_time,
             first_block_height,
             first_core_block_height,
             fee_multiplier_permille,
             protocol_version,
-        }))
+        })))
     }
 
     #[wasm_bindgen(getter = "index")]

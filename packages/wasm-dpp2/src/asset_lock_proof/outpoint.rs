@@ -35,7 +35,7 @@ impl TryFrom<JsValue> for OutPointWasm {
 #[wasm_bindgen(js_class = OutPoint)]
 impl OutPointWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(txid_hex: String, vout: u32) -> WasmDppResult<OutPointWasm> {
+    pub fn constructor(txid_hex: String, vout: u32) -> WasmDppResult<OutPointWasm> {
         let out_point = Txid::from_hex(&txid_hex)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
@@ -101,8 +101,8 @@ impl OutPointWasm {
 }
 
 impl OutPointWasm {
-    pub fn vec_from_js_value(js_outpoints: &js_sys::Array) -> WasmDppResult<Vec<OutPointWasm>> {
-        let outpoints: Vec<OutPointWasm> = js_outpoints
+    pub fn vec_from_js_value(outpoints: &js_sys::Array) -> WasmDppResult<Vec<OutPointWasm>> {
+        let outpoints: Vec<OutPointWasm> = outpoints
             .iter()
             .map(OutPointWasm::try_from)
             .collect::<Result<Vec<OutPointWasm>, WasmDppError>>()?;

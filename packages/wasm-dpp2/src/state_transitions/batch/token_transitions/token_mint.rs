@@ -30,7 +30,7 @@ impl From<TokenMintTransitionWasm> for TokenMintTransition {
 #[wasm_bindgen(js_class = TokenMintTransition)]
 impl TokenMintTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_issued_to_identity_id: &JsValue,

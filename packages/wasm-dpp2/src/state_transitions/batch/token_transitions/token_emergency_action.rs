@@ -26,7 +26,7 @@ impl From<TokenEmergencyActionTransition> for TokenEmergencyActionTransitionWasm
 #[wasm_bindgen(js_class = TokenEmergencyActionTransition)]
 impl TokenEmergencyActionTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         emergency_action: TokenEmergencyActionWasm,
         public_note: Option<String>,

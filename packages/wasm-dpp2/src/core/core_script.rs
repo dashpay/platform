@@ -33,8 +33,8 @@ impl CoreScriptWasm {
         CoreScriptWasm(CoreScript::from_bytes(bytes))
     }
 
-    #[wasm_bindgen(js_name = "newP2PKH")]
-    pub fn new_p2pkh(key_hash: Vec<u8>) -> Self {
+    #[wasm_bindgen(js_name = "fromP2PKH")]
+    pub fn from_p2pkh(key_hash: Vec<u8>) -> Self {
         let mut key_hash_bytes = [0u8; 20];
         let bytes = key_hash.as_slice();
         let len = bytes.len().min(key_hash_bytes.len());
@@ -43,8 +43,8 @@ impl CoreScriptWasm {
         CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes))
     }
 
-    #[wasm_bindgen(js_name = "newP2SH")]
-    pub fn new_p2sh(script_hash: Vec<u8>) -> Self {
+    #[wasm_bindgen(js_name = "fromP2SH")]
+    pub fn from_p2sh(script_hash: Vec<u8>) -> Self {
         let mut script_hash_bytes = [0u8; 20];
         let bytes = script_hash.as_slice();
         let len = bytes.len().min(script_hash_bytes.len());

@@ -92,7 +92,7 @@ impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKey {
 #[wasm_bindgen(js_class = IdentityPublicKeyInCreation)]
 impl IdentityPublicKeyInCreationWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyInCreationOptions")] options: JsValue,
     ) -> WasmDppResult<IdentityPublicKeyInCreationWasm> {
         let object = Object::from(options.clone());

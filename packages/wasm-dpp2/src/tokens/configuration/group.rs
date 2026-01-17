@@ -65,7 +65,7 @@ pub fn js_members_to_map(
 #[wasm_bindgen(js_class = Group)]
 impl GroupWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         js_members: &JsValue,
         required_power: GroupRequiredPower,
     ) -> WasmDppResult<GroupWasm> {

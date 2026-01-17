@@ -48,7 +48,7 @@ fn hash160(pubkey: &[u8]) -> [u8; 20] {
 impl IdentitySignerWasm {
     /// Creates a new empty IdentitySigner.
     #[wasm_bindgen(constructor)]
-    pub fn new() -> IdentitySignerWasm {
+    pub fn constructor() -> IdentitySignerWasm {
         IdentitySignerWasm {
             private_keys: BTreeMap::new(),
         }

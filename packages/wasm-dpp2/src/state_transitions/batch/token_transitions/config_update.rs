@@ -27,7 +27,7 @@ impl From<TokenConfigUpdateTransition> for TokenConfigUpdateTransitionWasm {
 #[wasm_bindgen(js_class = TokenConfigUpdateTransition)]
 impl TokenConfigUpdateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         update_token_configuration_item: &TokenConfigurationChangeItemWasm,
         public_note: Option<String>,

@@ -34,7 +34,7 @@ impl From<TokenSetPriceForDirectPurchaseTransitionWasm>
 #[wasm_bindgen(js_class = TokenSetPriceForDirectPurchaseTransition)]
 impl TokenSetPriceForDirectPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         js_price: &JsValue,
         public_note: Option<String>,

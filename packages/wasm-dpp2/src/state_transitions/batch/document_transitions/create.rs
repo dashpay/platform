@@ -35,7 +35,7 @@ impl From<DocumentCreateTransition> for DocumentCreateTransitionWasm {
 #[wasm_bindgen(js_class = DocumentCreateTransition)]
 impl DocumentCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_prefunded_voting_balance: &JsValue,

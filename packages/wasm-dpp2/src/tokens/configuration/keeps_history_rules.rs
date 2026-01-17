@@ -57,7 +57,7 @@ impl From<TokenKeepsHistoryRules> for TokenKeepsHistoryRulesWasm {
 #[wasm_bindgen(js_class = TokenKeepsHistoryRules)]
 impl TokenKeepsHistoryRulesWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "TokenKeepsHistoryRulesOptions")] options: JsValue,
     ) -> WasmDppResult<TokenKeepsHistoryRulesWasm> {
         let opts: TokenKeepsHistoryRulesOptions = serde_wasm_bindgen::from_value(options)

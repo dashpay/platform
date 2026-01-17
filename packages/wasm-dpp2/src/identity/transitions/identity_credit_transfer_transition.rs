@@ -3,6 +3,7 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::utils::try_to_u64;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -15,8 +16,26 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const CREDIT_TRANSFER_OPTIONS_TS: &'static str = r#"
+export interface IdentityCreditTransferOptions {
+    amount: bigint | number;
+    senderId: IdentifierLike;
+    recipientId: IdentifierLike;
+    nonce: bigint | number;
+    userFeeIncrease?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityCreditTransferOptions")]
+    pub type IdentityCreditTransferOptionsJs;
+}
 
 #[wasm_bindgen(js_name = IdentityCreditTransfer)]
 #[derive(Clone)]
@@ -25,17 +44,39 @@ pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]
 impl IdentityCreditTransferWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        amount: u64,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        sender: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        recipient: &JsValue,
-        nonce: u64,
-        user_fee_increase: Option<UserFeeIncrease>,
+    pub fn constructor(
+        options: IdentityCreditTransferOptionsJs,
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
-        let sender: Identifier = IdentifierWasm::try_from(sender)?.into();
-        let recipient: Identifier = IdentifierWasm::try_from(recipient)?.into();
+        let options_obj = Object::from(JsValue::from(options));
+
+        let amount = try_to_u64(
+            Reflect::get(&options_obj, &"amount".into())
+                .map_err(|_| WasmDppError::invalid_argument("amount is required"))?,
+        )?;
+
+        let sender_js = Reflect::get(&options_obj, &"senderId".into())
+            .map_err(|_| WasmDppError::invalid_argument("senderId is required"))?;
+        let sender: Identifier = IdentifierWasm::try_from(&sender_js)?.into();
+
+        let recipient_js = Reflect::get(&options_obj, &"recipientId".into())
+            .map_err(|_| WasmDppError::invalid_argument("recipientId is required"))?;
+        let recipient: Identifier = IdentifierWasm::try_from(&recipient_js)?.into();
+
+        let nonce = try_to_u64(
+            Reflect::get(&options_obj, &"nonce".into())
+                .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
+        )?;
+
+        let user_fee_increase_js = Reflect::get(&options_obj, &"userFeeIncrease".into())
+            .unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
+            0
+        } else {
+            user_fee_increase_js
+                .as_f64()
+                .ok_or_else(|| WasmDppError::invalid_argument("userFeeIncrease must be a number"))?
+                as u16
+        };
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
@@ -43,7 +84,7 @@ impl IdentityCreditTransferWasm {
                 recipient_id: recipient,
                 amount,
                 nonce,
-                user_fee_increase: user_fee_increase.unwrap_or(0),
+                user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }),

@@ -18,9 +18,34 @@ use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
+use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+/// TypeScript interface for Document constructor options
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for creating a new Document.
+ */
+export interface DocumentOptions {
+  /** Document properties/data */
+  properties: Record<string, unknown>;
+  /** Document type name from the data contract */
+  documentTypeName: string;
+  /** Data contract ID this document belongs to */
+  dataContractId: IdentifierLike;
+  /** Owner identity ID */
+  ownerId: IdentifierLike;
+  /** Document revision (default: 1) */
+  revision?: number;
+  /** Document ID (auto-generated if not provided) */
+  id?: IdentifierLike;
+  /** Entropy bytes (32 bytes, auto-generated if not provided) */
+  entropy?: Uint8Array;
+}
+"#;
 
 /// DocumentWasm wraps a Document and adds metadata fields that are not part of the core Document.
 #[derive(Clone, serde::Serialize, Deserialize)]
@@ -88,37 +113,85 @@ impl DocumentWasm {
     }
 }
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentOptions")]
+    pub type DocumentOptionsJs;
+}
+
 #[wasm_bindgen(js_class = Document)]
 impl DocumentWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        raw_document: JsValue,
-        document_type_name: &str,
-        revision: u64,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        owner_id: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        document_id: &JsValue,
-    ) -> WasmDppResult<DocumentWasm> {
-        let data_contract_id: Identifier = IdentifierWasm::try_from(data_contract_id)?.into();
-        let owner_id: Identifier = IdentifierWasm::try_from(owner_id)?.into();
-        let revision = Revision::from(revision);
-        let properties = raw_document.with_serde_to_platform_value_map()?;
+    pub fn constructor(options: DocumentOptionsJs) -> WasmDppResult<DocumentWasm> {
+        let options_value: JsValue = options.into();
 
-        let entropy = entropy_generator::DefaultEntropyGenerator
-            .generate()
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        // Extract required fields
+        let properties_js = Reflect::get(&options_value, &JsValue::from_str("properties"))
+            .map_err(|_| WasmDppError::invalid_argument("Missing 'properties' field"))?;
 
-        let doc_id: Identifier = match document_id.is_undefined() {
-            true => crate::utils::generate_document_id_v0(
+        let document_type_name = Reflect::get(&options_value, &JsValue::from_str("documentTypeName"))
+            .map_err(|_| WasmDppError::invalid_argument("Missing 'documentTypeName' field"))?
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("'documentTypeName' must be a string"))?;
+
+        let data_contract_id_js =
+            Reflect::get(&options_value, &JsValue::from_str("dataContractId"))
+                .map_err(|_| WasmDppError::invalid_argument("Missing 'dataContractId' field"))?;
+        let data_contract_id: Identifier =
+            IdentifierWasm::try_from(&data_contract_id_js)?.into();
+
+        let owner_id_js = Reflect::get(&options_value, &JsValue::from_str("ownerId"))
+            .map_err(|_| WasmDppError::invalid_argument("Missing 'ownerId' field"))?;
+        let owner_id: Identifier = IdentifierWasm::try_from(&owner_id_js)?.into();
+
+        // Extract optional fields
+        let revision_js = Reflect::get(&options_value, &JsValue::from_str("revision"))
+            .unwrap_or(JsValue::UNDEFINED);
+        let revision = if revision_js.is_undefined() {
+            Revision::from(1u64)
+        } else {
+            Revision::from(
+                revision_js
+                    .as_f64()
+                    .ok_or_else(|| WasmDppError::invalid_argument("'revision' must be a number"))?
+                    as u64,
+            )
+        };
+
+        let id_js = Reflect::get(&options_value, &JsValue::from_str("id"))
+            .unwrap_or(JsValue::UNDEFINED);
+
+        let entropy_js = Reflect::get(&options_value, &JsValue::from_str("entropy"))
+            .unwrap_or(JsValue::UNDEFINED);
+
+        let properties = properties_js.with_serde_to_platform_value_map()?;
+
+        let entropy: [u8; 32] = if entropy_js.is_undefined() || entropy_js.is_null() {
+            entropy_generator::DefaultEntropyGenerator
+                .generate()
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?
+        } else {
+            let entropy_array = js_sys::Uint8Array::new(&entropy_js);
+            let entropy_vec = entropy_array.to_vec();
+            if entropy_vec.len() != 32 {
+                return Err(WasmDppError::invalid_argument(
+                    "entropy must be exactly 32 bytes",
+                ));
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&entropy_vec);
+            arr
+        };
+
+        let doc_id: Identifier = if id_js.is_undefined() || id_js.is_null() {
+            crate::utils::generate_document_id_v0(
                 &data_contract_id,
                 &owner_id,
-                document_type_name,
+                &document_type_name,
                 &entropy,
-            )?,
-            false => IdentifierWasm::try_from(document_id)?.into(),
+            )?
+        } else {
+            IdentifierWasm::try_from(&id_js)?.into()
         };
 
         let document = Document::V0(DocumentV0 {
@@ -141,7 +214,7 @@ impl DocumentWasm {
         Ok(DocumentWasm::new(
             document,
             data_contract_id,
-            document_type_name.to_string(),
+            document_type_name,
             Some(entropy),
         ))
     }

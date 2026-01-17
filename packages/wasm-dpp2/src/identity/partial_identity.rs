@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
-use crate::utils::{IntoWasm, JsValueExt};
+use crate::utils::{IntoWasm, JsValueExt, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::prelude::Revision;
@@ -9,6 +9,23 @@ use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const PARTIAL_IDENTITY_OPTIONS_TS: &'static str = r#"
+export interface PartialIdentityOptions {
+    id: IdentifierLike;
+    loadedPublicKeys: Record<number, IdentityPublicKey>;
+    balance?: bigint | number;
+    revision?: bigint | number;
+    notFoundPublicKeys?: number[];
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PartialIdentityOptions")]
+    pub type PartialIdentityOptionsJs;
+}
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "PartialIdentity")]
@@ -23,18 +40,41 @@ impl From<PartialIdentity> for PartialIdentityWasm {
 #[wasm_bindgen(js_class = PartialIdentity)]
 impl PartialIdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] id: &JsValue,
-        loaded_public_keys: &JsValue,
-        balance: Option<Credits>,
-        revision: Option<Revision>,
-        not_found_public_keys: Option<Array>,
-    ) -> WasmDppResult<Self> {
-        let id = IdentifierWasm::try_from(id)?.into();
-        let loaded_public_keys = js_value_to_loaded_public_keys(loaded_public_keys)?;
+    pub fn constructor(options: PartialIdentityOptionsJs) -> WasmDppResult<Self> {
+        let options_obj = Object::from(JsValue::from(options));
 
-        let not_found_keys: BTreeSet<KeyID> =
-            option_array_to_not_found(not_found_public_keys)?;
+        let id_js = Reflect::get(&options_obj, &"id".into())
+            .map_err(|_| WasmDppError::invalid_argument("id is required"))?;
+        let id = IdentifierWasm::try_from(&id_js)?.into();
+
+        let loaded_public_keys_js = Reflect::get(&options_obj, &"loadedPublicKeys".into())
+            .map_err(|_| WasmDppError::invalid_argument("loadedPublicKeys is required"))?;
+        let loaded_public_keys = js_value_to_loaded_public_keys(&loaded_public_keys_js)?;
+
+        let balance_js =
+            Reflect::get(&options_obj, &"balance".into()).unwrap_or(JsValue::UNDEFINED);
+        let balance: Option<Credits> = if balance_js.is_undefined() {
+            None
+        } else {
+            Some(try_to_u64(balance_js)?)
+        };
+
+        let revision_js =
+            Reflect::get(&options_obj, &"revision".into()).unwrap_or(JsValue::UNDEFINED);
+        let revision: Option<Revision> = if revision_js.is_undefined() {
+            None
+        } else {
+            Some(try_to_u64(revision_js)?)
+        };
+
+        let not_found_public_keys_js =
+            Reflect::get(&options_obj, &"notFoundPublicKeys".into()).unwrap_or(JsValue::UNDEFINED);
+        let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
+            None
+        } else {
+            Some(Array::from(&not_found_public_keys_js))
+        };
+        let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
             id,

@@ -23,7 +23,7 @@ impl From<PublicKeyWasm> for PublicKey {
 #[wasm_bindgen(js_class = PublicKey)]
 impl PublicKeyWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> WasmDppResult<PublicKeyWasm> {
+    pub fn constructor(compressed: bool, public_key_bytes: Vec<u8>) -> WasmDppResult<PublicKeyWasm> {
         let inner = match compressed {
             true => {
                 if public_key_bytes.len() != constants::PUBLIC_KEY_SIZE {

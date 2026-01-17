@@ -58,7 +58,7 @@ impl From<ChangeControlRulesWasm> for ChangeControlRules {
 #[wasm_bindgen(js_class = ChangeControlRules)]
 impl ChangeControlRulesWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "ChangeControlRulesOptions")] options: JsValue,
     ) -> WasmDppResult<Self> {
         let object = Object::from(options.clone());

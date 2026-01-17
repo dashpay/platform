@@ -34,7 +34,7 @@ impl From<IdentityWasm> for Identity {
 #[wasm_bindgen(js_class = Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         id: &JsValue,
     ) -> WasmDppResult<IdentityWasm> {

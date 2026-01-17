@@ -61,7 +61,7 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 #[wasm_bindgen(js_class = IdentityCreateTransition)]
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "IdentityCreateTransitionOptions")] options: JsValue,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
         let object = Object::from(options.clone());

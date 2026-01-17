@@ -202,7 +202,7 @@ impl PlatformAddressWasm {
     /// - A Uint8Array (21 bytes: type byte + 20-byte hash)
     /// - An existing PlatformAddress object
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(unchecked_param_type = "PlatformAddress | Uint8Array | string")]
         js_address: &JsValue,
     ) -> WasmDppResult<PlatformAddressWasm> {

@@ -28,7 +28,7 @@ impl From<TokenClaimTransitionWasm> for TokenClaimTransition {
 #[wasm_bindgen(js_class = TokenClaimTransition)]
 impl TokenClaimTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         js_distribution_type: &JsValue,
         public_note: Option<String>,

@@ -29,7 +29,7 @@ impl From<TokenDestroyFrozenFundsTransitionWasm> for TokenDestroyFrozenFundsTran
 #[wasm_bindgen(js_class = TokenDestroyFrozenFundsTransition)]
 impl TokenDestroyFrozenFundsTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         base: &TokenBaseTransitionWasm,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_frozen_identity_id: &JsValue,

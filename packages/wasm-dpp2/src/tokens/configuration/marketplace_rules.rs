@@ -27,7 +27,7 @@ impl From<TokenMarketplaceRulesWasm> for TokenMarketplaceRules {
 #[wasm_bindgen(js_class = TokenMarketplaceRules)]
 impl TokenMarketplaceRulesWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         trade_mode: &TokenTradeModeWasm,
         trade_mode_change_rules: &ChangeControlRulesWasm,
     ) -> TokenMarketplaceRulesWasm {

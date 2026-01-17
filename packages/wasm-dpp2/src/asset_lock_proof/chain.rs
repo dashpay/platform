@@ -27,7 +27,7 @@ impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
 #[wasm_bindgen(js_class = ChainAssetLockProof)]
 impl ChainAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         core_chain_locked_height: u32,
         out_point: &OutPointWasm,
     ) -> WasmDppResult<ChainAssetLockProofWasm> {

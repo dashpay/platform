@@ -25,7 +25,7 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
 #[wasm_bindgen(js_class = DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_token_payment_info: &JsValue,

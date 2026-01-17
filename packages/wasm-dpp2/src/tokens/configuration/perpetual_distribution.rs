@@ -25,7 +25,7 @@ impl From<TokenPerpetualDistribution> for TokenPerpetualDistributionWasm {
 #[wasm_bindgen(js_class = TokenPerpetualDistribution)]
 impl TokenPerpetualDistributionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         distribution_type: &RewardDistributionTypeWasm,
         recipient: &TokenDistributionRecipientWasm,
     ) -> Self {

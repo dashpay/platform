@@ -33,7 +33,7 @@ impl From<DocumentPurchaseTransition> for DocumentPurchaseTransitionWasm {
 #[wasm_bindgen(js_class = DocumentPurchaseTransition)]
 impl DocumentPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         amount: Credits,

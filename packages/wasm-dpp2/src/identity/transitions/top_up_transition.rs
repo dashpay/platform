@@ -24,7 +24,7 @@ pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 #[wasm_bindgen(js_class = IdentityTopUpTransition)]
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         asset_lock_proof: &AssetLockProofWasm,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
