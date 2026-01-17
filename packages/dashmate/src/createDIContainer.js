@@ -89,6 +89,7 @@ import generateHDPrivateKeys from './util/generateHDPrivateKeys.js';
 import getOperatingSystemInfoFactory from './util/getOperatingSystemInfoFactory.js';
 
 import obtainZeroSSLCertificateTaskFactory from './listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
+import obtainLetsEncryptCertificateTaskFactory from './listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import VerificationServer from './listr/tasks/ssl/VerificationServer.js';
 import saveCertificateTaskFactory from './listr/tasks/ssl/saveCertificateTask.js';
 
@@ -102,6 +103,7 @@ import generateKeyPair from './ssl/generateKeyPair.js';
 import createSelfSignedCertificate from './ssl/selfSigned/createSelfSignedCertificate.js';
 
 import scheduleRenewZeroSslCertificateFactory from './helper/scheduleRenewZeroSslCertificateFactory.js';
+import scheduleRenewLetsEncryptCertificateFactory from './helper/scheduleRenewLetsEncryptCertificateFactory.js';
 import registerMasternodeGuideTaskFactory from './listr/tasks/setup/regular/registerMasternodeGuideTaskFactory.js';
 import configureNodeTaskFactory from './listr/tasks/setup/regular/configureNodeTaskFactory.js';
 import configureSSLCertificateTaskFactory from './listr/tasks/setup/regular/configureSSLCertificateTaskFactory.js';
@@ -127,6 +129,7 @@ import verifySystemRequirementsTaskFactory
 import collectSamplesTaskFactory from './listr/tasks/doctor/collectSamplesTaskFactory.js';
 import verifySystemRequirementsFactory from './doctor/verifySystemRequirementsFactory.js';
 import validateZeroSslCertificateFactory from './ssl/zerossl/validateZeroSslCertificateFactory.js';
+import validateLetsEncryptCertificateFactory from './ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 
 /**
  * @param {Object} [options]
@@ -305,6 +308,7 @@ export default async function createDIContainer(options = {}) {
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     cleanupZeroSSLCertificatesTask: asFunction(cleanupZeroSSLCertificatesTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
+    obtainLetsEncryptCertificateTask: asFunction(obtainLetsEncryptCertificateTaskFactory).singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
@@ -330,6 +334,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     validateZeroSslCertificate: asFunction(validateZeroSslCertificateFactory).singleton(),
+    validateLetsEncryptCertificate: asFunction(validateLetsEncryptCertificateFactory).singleton(),
     getCertificate: asValue(getCertificate),
   });
 
@@ -353,6 +358,7 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
+    scheduleRenewLetsEncryptCertificate: asFunction(scheduleRenewLetsEncryptCertificateFactory).singleton(),
     createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
   });
 

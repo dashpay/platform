@@ -3,11 +3,13 @@ import { Flags } from '@oclif/core';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import Certificate from '../../ssl/zerossl/Certificate.js';
+import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
+import { SSL_PROVIDERS } from '../../constants.js';
 
 export default class ObtainCommand extends ConfigBaseCommand {
   static description = `Obtain SSL certificate
 
-Create a new SSL certificate or download an already existing one using ZeroSSL as provider
+Create a new SSL certificate or download an already existing one using ZeroSSL or Let's Encrypt as provider
 Certificate will be renewed if it is about to expire (see 'expiration-days' flag)
 `;
 
@@ -19,7 +21,10 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     'expiration-days': Flags.integer({
       description: 'renew even if expiration period is less than'
         + ' specified number of days',
-      default: Certificate.EXPIRATION_LIMIT_DAYS,
+    }),
+    provider: Flags.string({
+      description: 'SSL provider to use (defaults to configured provider)',
+      options: [SSL_PROVIDERS.ZEROSSL, SSL_PROVIDERS.LETSENCRYPT],
     }),
   };
 
@@ -28,6 +33,7 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    * @param {Object} flags
    * @param {Config} config
    * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
+   * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -35,17 +41,38 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     {
       verbose: isVerbose,
       'no-retry': noRetry,
-      'expiration-days': expirationDays,
+      'expiration-days': expirationDaysFlag,
       force,
+      provider: providerFlag,
     },
     config,
     obtainZeroSSLCertificateTask,
+    obtainLetsEncryptCertificateTask,
   ) {
+    const provider = providerFlag || config.get('platform.gateway.ssl.provider');
+
+    let task;
+    let taskTitle;
+    let expirationDays;
+
+    if (provider === SSL_PROVIDERS.LETSENCRYPT) {
+      task = obtainLetsEncryptCertificateTask;
+      taskTitle = "Obtain Let's Encrypt certificate";
+      expirationDays = expirationDaysFlag ?? LegoCertificate.EXPIRATION_LIMIT_DAYS;
+    } else if (provider === SSL_PROVIDERS.ZEROSSL) {
+      task = obtainZeroSSLCertificateTask;
+      taskTitle = 'Obtain ZeroSSL certificate';
+      expirationDays = expirationDaysFlag ?? Certificate.EXPIRATION_LIMIT_DAYS;
+    } else {
+      throw new Error(`SSL provider '${provider}' does not support certificate obtainment via this command. `
+        + `Supported providers: ${SSL_PROVIDERS.ZEROSSL}, ${SSL_PROVIDERS.LETSENCRYPT}`);
+    }
+
     const tasks = new Listr(
       [
         {
-          title: 'Obtain ZeroSSL certificate',
-          task: () => obtainZeroSSLCertificateTask(config),
+          title: taskTitle,
+          task: () => task(config),
         },
       ],
       {

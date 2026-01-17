@@ -243,6 +243,9 @@ export default function getBaseConfigFactory() {
                 apiKey: null,
                 id: null,
               },
+              letsencrypt: {
+                email: null,
+              },
             },
           },
         },
