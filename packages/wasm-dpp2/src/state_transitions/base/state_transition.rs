@@ -1,3 +1,4 @@
+use crate::core::private_key::PrivateKeyWasm;
 use crate::enums::keys::key_type::KeyTypeWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
@@ -5,7 +6,6 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::mock_bls::MockBLS;
-use crate::private_key::PrivateKeyWasm;
 use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
 use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;

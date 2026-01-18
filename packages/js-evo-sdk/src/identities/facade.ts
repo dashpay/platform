@@ -23,12 +23,12 @@ export class IdentitiesFacade {
     return w.getIdentityUnproved(identityId);
   }
 
-  async getKeys(query: wasm.IdentityKeysQuery): Promise<wasm.IdentityKeyInfo[]> {
+  async getKeys(query: wasm.IdentityKeysQuery): Promise<wasm.IdentityPublicKey[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityKeys(query);
   }
 
-  async getKeysWithProof(query: wasm.IdentityKeysQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityKeyInfo[]>> {
+  async getKeysWithProof(query: wasm.IdentityKeysQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityPublicKey[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityKeysWithProofInfo(query);
   }

@@ -86,7 +86,7 @@ describe('PlatformAddress', () => {
 
   describe('fromHex', () => {
     it('should create address from hex string', () => {
-      const hexString = '00' + '01020304050607080910111213141516171819'.padEnd(40, '0').substring(0, 40);
+      const hexString = `00${'01020304050607080910111213141516171819'.padEnd(40, '0').substring(0, 40)}`;
       const addr = wasm.PlatformAddress.fromHex(hexString);
       expect(addr).to.exist;
       expect(addr.addressType).to.equal('P2PKH');

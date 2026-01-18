@@ -7,13 +7,13 @@ describe('WasmSdkError shape (unit)', () => {
 
   it('invalid network on generateKeyPair exposes InvalidArgument', () => {
     try {
-      sdk.WasmSdk.generateKeyPair('devnet');
+      sdk.WasmSdk.generateKeyPair('invalid_network');
       expect.fail('expected to throw');
     } catch (e) {
       // wasm-bindgen returns our WasmSdkError as an object, not necessarily instanceof Error
       expect(e).to.be.instanceOf(sdk.WasmSdkError);
       expect(e.name).to.equal('InvalidArgument');
-      expect(e.message).to.match(/Invalid network/i);
+      expect(e.message).to.match(/unsupported network name/i);
       expect(e.retriable).to.equal(false);
       expect(e.code).to.equal(-1);
     }
@@ -43,7 +43,7 @@ describe('WasmSdkError shape (unit)', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(sdk.WasmSdkError);
       expect(e.name).to.equal('InvalidArgument');
-      expect(e.message).to.match(/Invalid network/i);
+      expect(e.message).to.match(/unsupported network name/i);
     }
   });
 });
