@@ -308,7 +308,8 @@ export default async function createDIContainer(options = {}) {
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     cleanupZeroSSLCertificatesTask: asFunction(cleanupZeroSSLCertificatesTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
-    obtainLetsEncryptCertificateTask: asFunction(obtainLetsEncryptCertificateTaskFactory).singleton(),
+    obtainLetsEncryptCertificateTask: asFunction(obtainLetsEncryptCertificateTaskFactory)
+      .singleton(),
     saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
@@ -358,7 +359,8 @@ export default async function createDIContainer(options = {}) {
    */
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
-    scheduleRenewLetsEncryptCertificate: asFunction(scheduleRenewLetsEncryptCertificateFactory).singleton(),
+    scheduleRenewLetsEncryptCertificate: asFunction(scheduleRenewLetsEncryptCertificateFactory)
+      .singleton(),
     createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
   });
 

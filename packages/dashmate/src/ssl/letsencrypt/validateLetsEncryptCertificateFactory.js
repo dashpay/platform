@@ -24,7 +24,10 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
    * @param {number} expirationDays
    * @return {Promise<{ [error: String], [data: Object] }>}
    */
-  async function validateLetsEncryptCertificate(config, expirationDays = LegoCertificate.EXPIRATION_LIMIT_DAYS) {
+  async function validateLetsEncryptCertificate(
+    config,
+    expirationDays = LegoCertificate.EXPIRATION_LIMIT_DAYS,
+  ) {
     const data = {};
 
     // SSL output directory (where we copy final certs for gateway)

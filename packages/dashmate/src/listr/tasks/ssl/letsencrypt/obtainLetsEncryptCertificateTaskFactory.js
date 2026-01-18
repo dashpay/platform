@@ -6,7 +6,7 @@ import os from 'os';
 import { ERRORS } from '../../../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import LegoCertificate from '../../../../ssl/letsencrypt/LegoCertificate.js';
 
-const LEGO_IMAGE = 'goacme/lego:v4.16.1';
+const LEGO_IMAGE = 'goacme/lego:v4.31.0';
 
 /**
  * @param {Docker} docker
@@ -108,6 +108,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           const command = ctx.isRenewal ? 'renew' : 'run';
 
           // Build lego command arguments
+          // --disable-cn is needed for IP address certificates
           const legoArgs = [
             '--server=https://acme-v02.api.letsencrypt.org/directory',
             '--email', ctx.email,
