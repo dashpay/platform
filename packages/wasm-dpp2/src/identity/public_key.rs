@@ -367,7 +367,7 @@ impl IdentityPublicKeyWasm {
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyObject")] js_value: JsValue,
     ) -> WasmDppResult<IdentityPublicKeyWasm> {
         let platform_value = serialization::platform_value_from_object(js_value)?;
         let platform_version = PlatformVersion::latest();
@@ -392,7 +392,7 @@ impl IdentityPublicKeyWasm {
     /// and deserializes base64 strings to binary data.
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyJSON")] js_value: JsValue,
     ) -> WasmDppResult<IdentityPublicKeyWasm> {
         let json_value: JsonValue = serde_from_value(js_value).map_err(|err| {
             WasmDppError::serialization(format!(

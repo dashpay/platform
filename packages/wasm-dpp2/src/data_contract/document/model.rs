@@ -494,7 +494,7 @@ impl DocumentWasm {
     /// Create a Document from a JS object.
     #[wasm_bindgen(js_name = fromObject)]
     pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DocumentObject")] value: JsValue,
     ) -> WasmDppResult<DocumentWasm> {
         let platform_value = serialization::js_value_to_platform_value(&value)?;
 
@@ -565,7 +565,7 @@ impl DocumentWasm {
     /// JSON format has identifiers as base58 strings.
     #[wasm_bindgen(js_name = fromJSON)]
     pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DocumentJSON")] value: JsValue,
     ) -> WasmDppResult<DocumentWasm> {
         let mut json_value = serialization::js_value_to_json(&value)?;
 

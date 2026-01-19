@@ -177,14 +177,14 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentityJSON")] value: JsValue,
     ) -> WasmDppResult<IdentityWasm> {
         serialization::from_json(value).map(IdentityWasm)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "IdentityObject")] value: JsValue,
     ) -> WasmDppResult<IdentityWasm> {
         let platform_value = serialization::js_value_to_platform_value(&value)?;
         let identity = Identity::try_from_platform_versioned(platform_value, PlatformVersion::latest())?;

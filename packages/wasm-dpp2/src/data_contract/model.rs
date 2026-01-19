@@ -273,7 +273,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DataContractJSON")] value: JsValue,
         full_validation: bool,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
@@ -293,7 +293,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "object")] value: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DataContractObject")] value: JsValue,
         full_validation: bool,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
