@@ -260,6 +260,99 @@ public class Addresses: @unchecked Sendable {
         return try getInfos(addressesBytesList: addressesBytesList)
     }
 
+    // MARK: - Trunk State Query
+    
+    /// Fetch the trunk state of the address tree for privacy-preserving address synchronization.
+    ///
+    /// The trunk state contains:
+    /// - Elements: Addresses with balances found at the top levels of the tree
+    /// - Leaf boundaries: Subtrees that require further branch queries to explore
+    ///
+    /// This is a low-level API used for privacy-preserving address synchronization.
+    /// Most applications should use the higher-level sync methods instead.
+    ///
+    /// - Returns: PlatformTrunkState containing elements and leaf boundaries
+    /// - Throws: SDKError if the query fails
+    public func getTrunkState() throws -> PlatformTrunkState {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_address_fetch_trunk_state(handle)
+        
+        // Check for errors
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        
+        guard let dataPtr = result.data else {
+            throw SDKError.invalidState("No trunk state data returned")
+        }
+        
+        // Parse DashSDKTrunkState
+        let statePtr = dataPtr.assumingMemoryBound(to: DashSDKTrunkState.self)
+        let ffiState = statePtr.pointee
+        
+        // Convert elements
+        var elements: [TrunkStateElement] = []
+        if ffiState.elements_count > 0 && ffiState.elements != nil {
+            for i in 0..<ffiState.elements_count {
+                let ffiElement = ffiState.elements![Int(i)]
+                
+                let keyData: Data
+                if ffiElement.key != nil && ffiElement.key_len > 0 {
+                    keyData = Data(bytes: ffiElement.key!, count: Int(ffiElement.key_len))
+                } else {
+                    continue
+                }
+                
+                elements.append(TrunkStateElement(
+                    key: keyData,
+                    nonce: ffiElement.nonce,
+                    balance: ffiElement.balance
+                ))
+            }
+        }
+        
+        // Convert leaf boundaries
+        var leafBoundaries: [LeafBoundary] = []
+        if ffiState.leaf_boundaries_count > 0 && ffiState.leaf_boundaries != nil {
+            for i in 0..<ffiState.leaf_boundaries_count {
+                let ffiBoundary = ffiState.leaf_boundaries![Int(i)]
+                
+                let keyData: Data
+                if ffiBoundary.key != nil && ffiBoundary.key_len > 0 {
+                    keyData = Data(bytes: ffiBoundary.key!, count: Int(ffiBoundary.key_len))
+                } else {
+                    continue
+                }
+                
+                // Convert fixed-size array to Data
+                var hashArray = ffiBoundary.hash
+                let hashData = Data(bytes: &hashArray, count: 32)
+                
+                leafBoundaries.append(LeafBoundary(
+                    key: keyData,
+                    hash: hashData,
+                    estimatedCount: ffiBoundary.estimated_count
+                ))
+            }
+        }
+        
+        let checkpointHeight = ffiState.checkpoint_height
+        
+        // Free the FFI struct
+        dash_sdk_trunk_state_free(statePtr)
+        
+        return PlatformTrunkState(
+            elements: elements,
+            leafBoundaries: leafBoundaries,
+            checkpointHeight: checkpointHeight
+        )
+    }
+    
     // MARK: - Convenience Methods
 
     /// Get the balance for a single address

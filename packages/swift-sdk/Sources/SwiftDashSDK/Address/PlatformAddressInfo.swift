@@ -86,6 +86,65 @@ public struct PlatformAddressInfosResult: Sendable {
     }
 }
 
+// MARK: - Trunk State Types
+
+/// Element in trunk state - an address with balance/nonce found at trunk level
+public struct TrunkStateElement: Sendable, Equatable {
+    /// Address key bytes
+    public let key: Data
+    
+    /// Nonce for the address
+    public let nonce: UInt32
+    
+    /// Balance in credits
+    public let balance: UInt64
+    
+    /// Convert key to hex string
+    public var keyHex: String {
+        return key.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Leaf boundary in trunk state - subtree that needs further branch queries
+public struct LeafBoundary: Sendable, Equatable {
+    /// Leaf key bytes
+    public let key: Data
+    
+    /// Expected hash (32 bytes)
+    public let hash: Data
+    
+    /// Estimated element count in this subtree (0 if unknown)
+    public let estimatedCount: UInt64
+    
+    /// Convert key to hex string
+    public var keyHex: String {
+        return key.map { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Convert hash to hex string
+    public var hashHex: String {
+        return hash.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// Trunk state for address synchronization
+/// Contains addresses found at top levels and leaf boundaries for subtrees needing further queries
+public struct PlatformTrunkState: Sendable {
+    /// Elements (addresses with balances) found at trunk level
+    public let elements: [TrunkStateElement]
+    
+    /// Leaf boundaries (subtrees needing branch queries)
+    public let leafBoundaries: [LeafBoundary]
+    
+    /// Checkpoint height for consistency
+    public let checkpointHeight: UInt64
+    
+    /// Total balance across all elements
+    public var totalBalance: UInt64 {
+        return elements.reduce(0) { $0 + $1.balance }
+    }
+}
+
 // MARK: - Bech32m Encoding/Decoding Helper
 
 /// Bech32m encoding/decoding helper for Platform addresses

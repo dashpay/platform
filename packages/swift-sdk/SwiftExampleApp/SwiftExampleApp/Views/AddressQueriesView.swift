@@ -29,6 +29,18 @@ struct AddressQueriesView: View {
                 }
                 .padding(.vertical, 4)
             }
+            
+            NavigationLink(destination: GetTrunkStateView()) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Get Trunk State")
+                        .font(.headline)
+                    Text("Fetch address tree trunk state for privacy-preserving sync")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 4)
+            }
         }
         .navigationTitle("Address Queries")
         .navigationBarTitleDisplayMode(.inline)
@@ -470,6 +482,210 @@ struct GetAddressesInfosView: View {
                 
                 await MainActor.run {
                     result = infosResult
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Get Trunk State View
+
+struct GetTrunkStateView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    @State private var isLoading = false
+    @State private var result: PlatformTrunkState?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Get Trunk State")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Fetch the trunk state of the address tree. This returns addresses at the top levels of the tree and leaf boundaries for subtrees that need further queries.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Text("This is a low-level API used for privacy-preserving address synchronization.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Query Button
+                Button(action: fetchTrunkState) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "square.stack.3d.up")
+                        }
+                        Text(isLoading ? "Fetching..." : "Fetch Trunk State")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading ? Color.gray : Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let state = result {
+                            VStack(alignment: .leading, spacing: 16) {
+                                // Summary
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Label("Checkpoint Height", systemImage: "number.square")
+                                        Spacer()
+                                        Text("\(state.checkpointHeight)")
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    HStack {
+                                        Label("Elements", systemImage: "person.2")
+                                        Spacer()
+                                        Text("\(state.elements.count)")
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    HStack {
+                                        Label("Leaf Boundaries", systemImage: "leaf")
+                                        Spacer()
+                                        Text("\(state.leafBoundaries.count)")
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    if !state.elements.isEmpty {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Total Balance")
+                                                .font(.subheadline)
+                                            Text("\(formatCredits(state.totalBalance)) credits")
+                                                .fontWeight(.medium)
+                                            Text("\(formatDash(state.totalBalance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                                .font(.subheadline)
+                                .padding()
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(8)
+                                
+                                // Elements section
+                                if !state.elements.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Elements (\(state.elements.count))")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        
+                                        ForEach(Array(state.elements.enumerated()), id: \.offset) { index, element in
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Key: \(element.keyHex.prefix(16))...")
+                                                    .font(.caption)
+                                                    .monospaced()
+                                                HStack {
+                                                    Text("\(formatCredits(element.balance)) credits")
+                                                    Spacer()
+                                                    Text("Nonce: \(element.nonce)")
+                                                }
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            }
+                                            .padding(8)
+                                            .background(Color.green.opacity(0.05))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+                                
+                                // Leaf boundaries section
+                                if !state.leafBoundaries.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Leaf Boundaries (\(state.leafBoundaries.count))")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        
+                                        ForEach(Array(state.leafBoundaries.enumerated()), id: \.offset) { index, boundary in
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Key: \(boundary.keyHex.prefix(16))...")
+                                                    .font(.caption)
+                                                    .monospaced()
+                                                Text("Hash: \(boundary.hashHex.prefix(16))...")
+                                                    .font(.caption2)
+                                                    .monospaced()
+                                                    .foregroundColor(.secondary)
+                                                if boundary.estimatedCount > 0 {
+                                                    Text("Est. count: \(boundary.estimatedCount)")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                }
+                                            }
+                                            .padding(8)
+                                            .background(Color.orange.opacity(0.05))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Get Trunk State")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private func fetchTrunkState() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let trunkState = try sdk.addresses.getTrunkState()
+                
+                await MainActor.run {
+                    result = trunkState
                     showResult = true
                     isLoading = false
                 }
