@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 use super::VerifiedCompactedAddressBalanceChanges;
 
 /// Extract KV entries from merk proof bytes using the proper decoder.
+#[allow(clippy::type_complexity)]
 fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Error> {
     let mut entries = Vec::new();
 
