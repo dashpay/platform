@@ -53,7 +53,7 @@ FAUCET_PRIVATE_KEY=$(yq .faucet_privkey "$CONFIG")
 MASTERNODE_NAME=$(grep "$DAPI_SEED" "$INVENTORY" | awk '{print $1;}')
 
 MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep "$DAPI_SEED" "$INVENTORY" | awk -F "=" '{print $6;}')
-MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(yq .hp_masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
+MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(yq ".hp_masternodes[\"$MASTERNODE_NAME\"].owner.private_key" "$CONFIG")
 
 if [[ "$NETWORK_STRING" == "devnet"* ]]; then
   NETWORK=devnet
@@ -64,7 +64,7 @@ else
   CERT_FLAG=""
   ST_EXECUTION_INTERVAL=15000
 fi
-INSIGHT_URL="http://insight.${NETWORK_STRING#devnet-}.networks.dash.org:3001/insight-api/sync"
+INSIGHT_URL="https://insight.${NETWORK_STRING#devnet-}.networks.dash.org:443/insight-api/sync"
 SKIP_SYNC_BEFORE_HEIGHT=$(curl -s $INSIGHT_URL | jq '.height - 200')
 
 # check variables are not empty
