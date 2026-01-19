@@ -206,10 +206,11 @@ impl PartialIdentityWasm {
         let loaded_keys_obj = Object::new();
         for (k, v) in self.0.loaded_public_keys.clone() {
             let key_wasm = IdentityPublicKeyWasm::from(v);
+            let key_json: JsValue = key_wasm.to_json()?.into();
             Reflect::set(
                 &loaded_keys_obj,
                 &k.to_string().into(),
-                &key_wasm.to_json()?,
+                &key_json,
             )
             .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
         }

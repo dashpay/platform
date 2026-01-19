@@ -28,8 +28,8 @@ use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::from_value as serde_from_value;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,6 +89,15 @@ export interface IdentityPublicKeyJSON {
     disabledAt?: number;
 }
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityPublicKeyObject")]
+    pub type IdentityPublicKeyObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityPublicKeyJSON")]
+    pub type IdentityPublicKeyJSONJs;
+}
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = IdentityPublicKey)]
@@ -362,9 +371,10 @@ impl IdentityPublicKeyWasm {
     /// Uses platform_value conversion which properly handles the tagged enum
     /// and removes None fields like disabledAt.
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<IdentityPublicKeyObjectJs> {
         let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
-        serialization::platform_value_to_object(&value)
+        let js_value = serialization::platform_value_to_object(&value)?;
+        Ok(js_value.unchecked_into())
     }
 
     /// Deserialize from JS object (non-human-readable).
@@ -386,9 +396,10 @@ impl IdentityPublicKeyWasm {
     /// Uses serde_json conversion which properly handles the tagged enum
     /// and serializes binary data as base64 strings.
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+    pub fn to_json(&self) -> WasmDppResult<IdentityPublicKeyJSONJs> {
         let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
-        serialization::to_json(&json_value)
+        let js_value = serialization::to_json(&json_value)?;
+        Ok(js_value.unchecked_into())
     }
 
     /// Deserialize from JSON-compatible JS object (human-readable).

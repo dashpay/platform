@@ -12,8 +12,8 @@ use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use std::convert::TryFrom;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_TYPES_TS: &'static str = r#"
@@ -39,6 +39,15 @@ export interface IdentityJSON {
     revision: number;
 }
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityObject")]
+    pub type IdentityObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityJSON")]
+    pub type IdentityJSONJs;
+}
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "Identity")]
@@ -163,16 +172,18 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<IdentityObjectJs> {
         // Use platform_value conversion which handles BigInt for balance/revision
         // and outputs id as Uint8Array, publicKeys as plain objects
         let value = self.0.to_object()?;
-        serialization::platform_value_to_object(&value)
+        let js_value = serialization::platform_value_to_object(&value)?;
+        Ok(js_value.unchecked_into())
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serialization::to_json(&self.0)
+    pub fn to_json(&self) -> WasmDppResult<IdentityJSONJs> {
+        let js_value = serialization::to_json(&self.0)?;
+        Ok(js_value.unchecked_into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]

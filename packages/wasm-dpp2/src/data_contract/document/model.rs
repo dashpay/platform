@@ -20,8 +20,8 @@ use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
 use js_sys::Reflect;
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 /// TypeScript interface for Document constructor options
 #[wasm_bindgen(typescript_custom_section)]
@@ -159,6 +159,12 @@ impl DocumentWasm {
 extern "C" {
     #[wasm_bindgen(typescript_type = "DocumentOptions")]
     pub type DocumentOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "DocumentObject")]
+    pub type DocumentObjectJs;
+
+    #[wasm_bindgen(typescript_type = "DocumentJSON")]
+    pub type DocumentJSONJs;
 }
 
 #[wasm_bindgen(js_class = Document)]
@@ -476,7 +482,7 @@ impl DocumentWasm {
 
     /// Convert to a JS object with binary fields as Uint8Array.
     #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<DocumentObjectJs> {
         let mut map = self.document.to_map_value()?;
         // Add metadata fields not in core Document
         let data_contract_id: Identifier = self.data_contract_id.into();
@@ -491,9 +497,10 @@ impl DocumentWasm {
         if let Some(entropy) = self.entropy {
             map.insert("$entropy".to_string(), Value::Bytes(entropy.to_vec()));
         }
-        serialization::platform_value_to_object(&Value::Map(
+        let js_value = serialization::platform_value_to_object(&Value::Map(
             map.into_iter().map(|(k, v)| (Value::Text(k), v)).collect(),
-        ))
+        ))?;
+        Ok(js_value.unchecked_into())
     }
 
     /// Create a Document from a JS object.
@@ -545,7 +552,7 @@ impl DocumentWasm {
 
     /// Convert to a JSON-compatible JS object with binary fields as strings.
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+    pub fn to_json(&self) -> WasmDppResult<DocumentJSONJs> {
         // Get document fields as JSON
         let mut json_value = self.document.to_json(PlatformVersion::latest())?;
 
@@ -563,7 +570,8 @@ impl DocumentWasm {
             }
         }
 
-        serialization::json_to_js_value(&json_value)
+        let js_value = serialization::json_to_js_value(&json_value)?;
+        Ok(js_value.unchecked_into())
     }
 
     /// Create a Document from a JSON object.

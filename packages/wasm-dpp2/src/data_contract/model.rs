@@ -31,8 +31,8 @@ use dpp::version::PlatformVersion;
 use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +102,15 @@ export interface DataContractConfig {
     requiresIdentityDecryptionBoundedKey?: number;
 }
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DataContractObject")]
+    pub type DataContractObjectJs;
+
+    #[wasm_bindgen(typescript_type = "DataContractJSON")]
+    pub type DataContractJSONJs;
+}
 
 #[wasm_bindgen(js_name = "DataContract")]
 #[derive(Clone)]
@@ -401,14 +410,15 @@ impl DataContractWasm {
         &self,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
-    ) -> WasmDppResult<JsValue> {
+    ) -> WasmDppResult<DataContractObjectJs> {
         let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let value = self.0.clone().to_value(&platform_version.into())?;
-        serialization::platform_value_to_object(&value)
+        let js_value = serialization::platform_value_to_object(&value)?;
+        Ok(js_value.unchecked_into())
     }
 
     #[wasm_bindgen(getter = "schemas")]
@@ -623,14 +633,15 @@ impl DataContractWasm {
         &self,
         #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
         platform_version: JsValue,
-    ) -> WasmDppResult<JsValue> {
+    ) -> WasmDppResult<DataContractJSONJs> {
         let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(platform_version)?,
         };
 
         let json = self.0.to_json(&platform_version.into())?;
-        serialization::to_json(&json)
+        let js_value = serialization::to_json(&json)?;
+        Ok(js_value.unchecked_into())
     }
 
     #[wasm_bindgen(js_name = "generateId")]
