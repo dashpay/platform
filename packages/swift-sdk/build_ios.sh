@@ -82,10 +82,19 @@ fi
 echo "3) Verifying Swift builds (if Xcode available)"
 if command -v xcodebuild >/dev/null 2>&1; then
   set +e
+  # Try to find an available iPhone simulator
+  SIMULATOR_ID=$(xcrun simctl list devices available | grep -i "iPhone" | grep -i "Shutdown\|Booted" | head -1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
+  if [[ -z "$SIMULATOR_ID" ]]; then
+    # Fallback to generic destination
+    DESTINATION='platform=iOS Simulator,name=Any iOS Simulator Device'
+  else
+    DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
+  fi
+  
   xcodebuild -project "$SCRIPT_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj" \
              -scheme SwiftExampleApp \
              -sdk iphonesimulator \
-             -destination 'platform=iOS Simulator,name=iPhone 16' \
+             -destination "$DESTINATION" \
              -quiet build
   XC_STATUS=$?
   set -e

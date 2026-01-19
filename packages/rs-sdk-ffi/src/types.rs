@@ -88,6 +88,10 @@ pub enum DashSDKResultDataType {
     IdentityBalanceMap = 6,
     /// Public key handle
     ResultPublicKeyHandle = 7,
+    /// Address info (single address with balance and nonce)
+    AddressInfo = 8,
+    /// Map of addresses to their info
+    AddressInfoMap = 9,
 }
 
 /// Binary data container for results
@@ -113,6 +117,41 @@ pub struct DashSDKIdentityBalanceEntry {
 pub struct DashSDKIdentityBalanceMap {
     /// Array of entries
     pub entries: *mut DashSDKIdentityBalanceEntry,
+    /// Number of entries
+    pub count: usize,
+}
+
+/// Information about a Platform address including its nonce and balance
+#[repr(C)]
+pub struct DashSDKAddressInfo {
+    /// Address bytes (variable length, typically 20-32 bytes)
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Nonce associated with the address (u32::MAX means address not found)
+    pub nonce: u32,
+    /// Balance in credits (u64::MAX means address not found)
+    pub balance: u64,
+}
+
+/// Single entry in an address info map
+#[repr(C)]
+pub struct DashSDKAddressInfoEntry {
+    /// Address bytes (variable length, typically 20-32 bytes)
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Nonce associated with the address (u32::MAX means address not found)
+    pub nonce: u32,
+    /// Balance in credits (u64::MAX means address not found)
+    pub balance: u64,
+}
+
+/// Map of addresses to their info
+#[repr(C)]
+pub struct DashSDKAddressInfoMap {
+    /// Array of entries
+    pub entries: *mut DashSDKAddressInfoEntry,
     /// Number of entries
     pub count: usize,
 }
@@ -178,6 +217,24 @@ impl DashSDKResult {
     pub fn success_identity_balance_map(map: DashSDKIdentityBalanceMap) -> Self {
         DashSDKResult {
             data_type: DashSDKResultDataType::IdentityBalanceMap,
+            data: Box::into_raw(Box::new(map)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with address info
+    pub fn success_address_info(info: DashSDKAddressInfo) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::AddressInfo,
+            data: Box::into_raw(Box::new(info)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with an address info map
+    pub fn success_address_info_map(map: DashSDKAddressInfoMap) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::AddressInfoMap,
             data: Box::into_raw(Box::new(map)) as *mut c_void,
             error: std::ptr::null_mut(),
         }
@@ -423,6 +480,48 @@ pub unsafe extern "C" fn dash_sdk_identity_balance_map_free(map: *mut DashSDKIde
     let map = Box::from_raw(map);
     if !map.entries.is_null() && map.count > 0 {
         // Free the entries array
+        let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+    }
+}
+
+/// Free an address info structure
+///
+/// # Safety
+/// - `info` must be a valid pointer to `DashSDKAddressInfo` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees the address bytes and the struct.
+/// - Do not access `info` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_address_info_free(info: *mut DashSDKAddressInfo) {
+    if info.is_null() {
+        return;
+    }
+
+    let info = Box::from_raw(info);
+    if !info.address.is_null() && info.address_len > 0 {
+        let _ = Vec::from_raw_parts(info.address, info.address_len, info.address_len);
+    }
+}
+
+/// Free an address info map
+///
+/// # Safety
+/// - `map` must be a valid, non-dangling pointer returned by this SDK.
+/// - It may be null (no-op). When non-null, this frees all entries, their address bytes, and the struct.
+/// - Using `map` after this function returns is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_address_info_map_free(map: *mut DashSDKAddressInfoMap) {
+    if map.is_null() {
+        return;
+    }
+
+    let map = Box::from_raw(map);
+    if !map.entries.is_null() && map.count > 0 {
+        let entries_slice = std::slice::from_raw_parts_mut(map.entries, map.count);
+        for entry in entries_slice.iter() {
+            if !entry.address.is_null() && entry.address_len > 0 {
+                let _ = Vec::from_raw_parts(entry.address, entry.address_len, entry.address_len);
+            }
+        }
         let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
     }
 }
