@@ -3,11 +3,16 @@ import DashSDKFFI
 
 /// Platform Wallet for managing identities and DashPay contacts
 public class PlatformWallet {
-    private let handle: Handle
+    internal let handle: Handle
     private var identityManagers: [PlatformNetwork: IdentityManager] = [:]
 
     private init(handle: Handle) {
         self.handle = handle
+    }
+
+    /// Internal access to wallet handle for sync operations
+    internal var walletHandle: Handle {
+        return handle
     }
 
     deinit {
@@ -103,5 +108,60 @@ public class PlatformWallet {
         }
 
         identityManagers[network] = manager
+    }
+
+    // MARK: - Serialization
+
+    /// Serialize the wallet to binary data for persistence
+    ///
+    /// This serializes all wallet state including addresses and identity information.
+    /// The serialized data can be used with `restore(from:)` to recreate the wallet
+    /// without needing the seed/mnemonic.
+    public func serialize() throws -> Data {
+        var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
+        var len: Int = 0
+        var error = PlatformWalletFFIError()
+
+        let result = platform_wallet_info_serialize(
+            handle,
+            &bytesPtr,
+            &len,
+            &error
+        )
+
+        guard result == Success, let ptr = bytesPtr, len > 0 else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        // Copy data before freeing
+        let data = Data(bytes: ptr, count: len)
+        platform_wallet_bytes_free(ptr)
+
+        return data
+    }
+
+    /// Restore a wallet from serialized data
+    ///
+    /// This restores a wallet from binary data created by `serialize()`.
+    /// The wallet will have all its previous state including addresses
+    /// and can be used for sync operations without needing the PIN.
+    public static func restore(from data: Data) throws -> PlatformWallet {
+        var handle: Handle = NULL_HANDLE
+        var error = PlatformWalletFFIError()
+
+        let result = data.withUnsafeBytes { dataPtr in
+            platform_wallet_info_deserialize(
+                dataPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                data.count,
+                &handle,
+                &error
+            )
+        }
+
+        guard result == Success else {
+            throw PlatformWalletError(result: result, error: error)
+        }
+
+        return PlatformWallet(handle: handle)
     }
 }

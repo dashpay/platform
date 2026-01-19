@@ -60,7 +60,8 @@ pub trait AddressProvider: Send {
     ///
     /// Returns tuples of `(index, address_key)` where:
     /// - `index` is the derivation index (for HD wallets) or a unique identifier
-    /// - `address_key` is the 32-byte key used in the address funds tree
+    /// - `address_key` is the 21-byte key used in the address funds tree
+    ///   (1 type byte + 20 hash bytes, created via `PlatformAddress::to_bytes()`)
     ///
     /// This set may grow when [`on_address_found`](Self::on_address_found) triggers
     /// gap extension.

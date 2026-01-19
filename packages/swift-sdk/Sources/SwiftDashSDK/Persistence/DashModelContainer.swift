@@ -16,7 +16,8 @@ public enum DashModelContainer {
             PersistentDocumentType.self,
             PersistentIndex.self,
             PersistentProperty.self,
-            PersistentTokenHistoryEvent.self
+            PersistentTokenHistoryEvent.self,
+            PersistentPlatformSyncState.self
         ]
     }
 

@@ -10,13 +10,28 @@ mod matured_transactions;
 mod wallet_info_interface;
 mod wallet_transaction_checker;
 
+// Platform sync modules
+pub mod address_provider;
+pub mod platform_sync;
+pub mod sync_state;
+
+// Re-export sync types
+pub use address_provider::{AccountAddressProvider, PlatformSyncResult};
+pub use sync_state::PlatformSyncState;
+
 /// Platform wallet information that extends ManagedWalletInfo with identity support
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)
+)]
 pub struct PlatformWalletInfo {
     /// The underlying managed wallet info
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub wallet_info: ManagedWalletInfo,
 
-    /// Identity manager
+    /// Identity manager (uses serde for serialization due to non-serializable sdk field)
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub identity_manager: IdentityManager,
 }
 

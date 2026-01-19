@@ -11,6 +11,7 @@ struct WalletDetailView: View {
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
+    @State private var showAddAccount = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -107,6 +108,13 @@ struct WalletDetailView: View {
                     .font(.headline)
                     .padding(.horizontal)
                 Spacer()
+                Button {
+                    showAddAccount = true
+                } label: {
+                    Label("Add", systemImage: "plus.circle")
+                        .font(.subheadline)
+                }
+                .padding(.horizontal)
             }
             .padding(.top)
 
@@ -139,6 +147,10 @@ struct WalletDetailView: View {
                 dismiss()
             }
             .environmentObject(walletService)
+        }
+        .sheet(isPresented: $showAddAccount) {
+            AddAccountView(wallet: wallet)
+                .environmentObject(walletService)
         }
         .task {
             await walletService.loadWallet(wallet)

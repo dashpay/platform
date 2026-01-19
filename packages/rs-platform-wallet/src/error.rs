@@ -38,4 +38,20 @@ pub enum PlatformWalletError {
         network: Network,
         account_index: u32,
     },
+
+    // Platform sync errors
+    #[error("SDK not configured for platform sync")]
+    SdkNotConfigured,
+
+    #[error("No platform payment account found")]
+    NoPlatformPaymentAccount,
+
+    #[error("Platform sync error: {0}")]
+    SyncError(String),
+
+    #[error("Address derivation error: {0}")]
+    AddressDerivationError(String),
+
+    #[error("Invalid platform address: {0}")]
+    InvalidPlatformAddress(String),
 }

@@ -26,8 +26,10 @@ pub struct DashSDKConfigExtended {
     pub core_sdk_handle: *mut CoreSDKHandle,
 }
 
-/// Internal SDK wrapper
-pub(crate) struct SDKWrapper {
+/// SDK wrapper containing the SDK and async runtime
+///
+/// This is exposed publicly so other FFI crates can use the SDK handle.
+pub struct SDKWrapper {
     pub sdk: Sdk,
     pub runtime: Arc<Runtime>,
     pub trusted_provider: Option<Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>>,

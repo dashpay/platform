@@ -26,6 +26,10 @@ async-trait = "0.1"
 # Collections
 indexmap = "2.0"
 
+# Serialization
+bincode = { version = "=2.0.0-rc.3", optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
+
 [dev-dependencies]
 rand = "0.8"
 
@@ -35,3 +39,4 @@ default = ["bls", "eddsa", "manager"]
 bls = ["key-wallet/bls"]
 eddsa = ["key-wallet/eddsa"]
 manager = ["key-wallet-manager"]
+bincode = ["dep:bincode", "dep:serde", "key-wallet/bincode", "key-wallet/serde", "dpp/core_bincode", "dpp/identity-serialization", "dpp/identity-serde-conversion", "indexmap/serde"]

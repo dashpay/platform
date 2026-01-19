@@ -17,7 +17,7 @@ documentation_style = "c99"
 [defines]
 
 [export]
-include = ["platform_wallet_*", "identity_manager_*", "managed_identity_*", "contact_request_*", "established_contact_*"]
+include = ["platform_wallet_*", "platform_sync_*", "identity_manager_*", "managed_identity_*", "contact_request_*", "established_contact_*", "PlatformSyncStateFFI", "PlatformSyncResultFFI"]
 exclude = []
 prefix = ""
 item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]

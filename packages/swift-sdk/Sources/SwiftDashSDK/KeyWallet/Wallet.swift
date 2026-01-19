@@ -364,7 +364,35 @@ public class Wallet {
         
         return Account(handle: accountHandle, wallet: self)
     }
-    
+
+    /// Add a Platform Payment account to the wallet
+    /// Platform Payment accounts (DIP-17) use the path: m/9'/coinType/17'/account'/key_class'/index
+    /// - Parameters:
+    ///   - accountIndex: The account index (hardened) in the derivation path
+    ///   - keyClass: The key class (hardened) - typically 0 for main addresses
+    /// - Returns: The newly added account
+    public func addPlatformPaymentAccount(accountIndex: UInt32, keyClass: UInt32 = 0) throws -> Account {
+        let result = wallet_add_platform_payment_account(handle, accountIndex, keyClass)
+
+        defer {
+            if result.error_message != nil {
+                var mutableResult = result
+                account_result_free_error(&mutableResult)
+            }
+        }
+
+        guard let accountHandle = result.account else {
+            var error = FFIError()
+            error.code = FFIErrorCode(rawValue: UInt32(result.error_code))
+            if let msg = result.error_message {
+                error.message = msg
+            }
+            throw KeyWalletError(ffiError: error)
+        }
+
+        return Account(handle: accountHandle, wallet: self)
+    }
+
     /// Get the number of accounts in the wallet
     public var accountCount: UInt32 {
         var error = FFIError()

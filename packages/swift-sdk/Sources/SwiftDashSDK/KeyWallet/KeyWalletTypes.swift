@@ -45,11 +45,14 @@ public enum AccountType: UInt32 {
     case providerOwnerKeys = 8
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
-    
+    case dashPayReceivingFunds = 11
+    case dashPayExternalAccount = 12
+    case platformPayment = 13
+
     var ffiValue: FFIAccountType {
         FFIAccountType(rawValue: self.rawValue)
     }
-    
+
     init(ffiType: FFIAccountType) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }

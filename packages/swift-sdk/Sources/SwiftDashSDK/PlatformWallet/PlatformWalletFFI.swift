@@ -40,6 +40,22 @@ func platform_wallet_info_set_identity_manager(
 @_silgen_name("platform_wallet_info_destroy")
 func platform_wallet_info_destroy(_ handle: Handle)
 
+@_silgen_name("platform_wallet_info_serialize")
+func platform_wallet_info_serialize(
+    _ wallet_handle: Handle,
+    _ out_bytes: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>,
+    _ out_len: UnsafeMutablePointer<Int>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_wallet_info_deserialize")
+func platform_wallet_info_deserialize(
+    _ bytes: UnsafePointer<UInt8>?,
+    _ len: Int,
+    _ out_handle: UnsafeMutablePointer<Handle>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult
+
 // MARK: - IdentityManager Functions
 
 @_silgen_name("identity_manager_create")
@@ -401,3 +417,42 @@ func platform_wallet_bytes_free(_ bytes: UnsafeMutablePointer<UInt8>)
 
 @_silgen_name("platform_wallet_ffi_error_free")
 func platform_wallet_ffi_error_free(_ error: PlatformWalletFFIError)
+
+// MARK: - Platform Sync State Functions
+
+@_silgen_name("platform_sync_state_create")
+func platform_sync_state_create(
+    _ out_handle: UnsafeMutablePointer<Handle>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_sync_state_create_from_ffi")
+func platform_sync_state_create_from_ffi(
+    _ state: PlatformSyncStateFFI,
+    _ out_handle: UnsafeMutablePointer<Handle>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_sync_state_get")
+func platform_sync_state_get(
+    _ state_handle: Handle,
+    _ out_state: UnsafeMutablePointer<PlatformSyncStateFFI>
+) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_sync_state_destroy")
+func platform_sync_state_destroy(_ state_handle: Handle) -> PlatformWalletFFIResult
+
+@_silgen_name("platform_sync_state_needs_full_sync")
+func platform_sync_state_needs_full_sync(
+    _ state_handle: Handle,
+    _ out_needs_sync: UnsafeMutablePointer<Bool>
+) -> PlatformWalletFFIResult
+
+// MARK: - Platform Wallet Sync Functions
+
+@_silgen_name("platform_wallet_sync_addresses")
+func platform_wallet_sync_addresses(
+    _ wallet_handle: Handle,
+    _ sdk_handle: UnsafeMutableRawPointer?,
+    _ state_handle: Handle,
+    _ out_result: UnsafeMutablePointer<PlatformSyncResultFFI>,
+    _ out_error: UnsafeMutablePointer<PlatformWalletFFIError>
+) -> PlatformWalletFFIResult

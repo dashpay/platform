@@ -17,8 +17,13 @@ mod sync;
 
 /// A managed identity that combines an Identity with wallet-specific metadata
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)
+)]
 pub struct ManagedIdentity {
     /// The Platform identity
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub identity: Identity,
 
     /// Last block time when balance was updated for this identity
@@ -31,12 +36,15 @@ pub struct ManagedIdentity {
     pub label: Option<String>,
 
     /// Map of established contacts (bidirectional relationships) keyed by contact identity ID
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub established_contacts: BTreeMap<Identifier, EstablishedContact>,
 
     /// Map of sent contact requests (outgoing, not yet reciprocated) keyed by recipient ID
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub sent_contact_requests: BTreeMap<Identifier, ContactRequest>,
 
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
+    #[cfg_attr(feature = "bincode", bincode(with_serde))]
     pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
 }
 

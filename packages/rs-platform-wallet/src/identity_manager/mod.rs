@@ -15,6 +15,7 @@ mod initializers;
 
 /// Manages identities for a platform wallet
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "bincode", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityManager {
     /// All managed identities owned by this wallet, indexed by identity ID
     pub identities: IndexMap<Identifier, ManagedIdentity>,
@@ -23,6 +24,8 @@ pub struct IdentityManager {
     pub primary_identity_id: Option<Identifier>,
 
     /// SDK instance for platform operations (optional, available with 'sdk' feature)
+    /// This field is not serialized - it's a runtime connection that must be set after deserialization
+    #[cfg_attr(feature = "bincode", serde(skip))]
     pub sdk: Option<Arc<dash_sdk::Sdk>>,
 }
 

@@ -4365,6 +4365,7 @@ name = "platform-wallet"
 version = "3.0.0-rc.2"
 dependencies = [
  "async-trait",
+ "bincode 2.0.0-rc.3",
  "dash-sdk",
  "dashcore",
  "dpp",
@@ -4373,6 +4374,7 @@ dependencies = [
  "key-wallet-manager",
  "platform-encryption",
  "rand 0.8.5",
+ "serde",
  "thiserror 1.0.69",
 ]
 
@@ -4380,6 +4382,8 @@ dependencies = [
 name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
+ "bincode 2.0.0-rc.3",
+ "dash-sdk",
  "dashcore",
  "dpp",
  "key-wallet",
@@ -4387,10 +4391,12 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "platform-wallet",
+ "rs-sdk-ffi",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -5246,7 +5252,6 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
- "platform-wallet-ffi",
  "reqwest",
  "rs-sdk-trusted-context-provider",
  "serde",

@@ -33,6 +33,24 @@ struct FFIBlockTime {
     var timestamp: UInt64
 }
 
+/// FFI-compatible platform sync state
+struct PlatformSyncStateFFI {
+    var last_full_sync_timestamp: UInt64
+    var checkpoint_height: UInt64
+    var last_terminal_block: UInt64
+    var highest_found_index: UInt32
+}
+
+/// FFI-compatible platform sync result
+struct PlatformSyncResultFFI {
+    var full_sync_performed: Bool
+    var checkpoint_height: UInt64
+    var highest_terminal_block: UInt64
+    var total_balance: UInt64
+    var funded_address_count: UInt32
+    var highest_found_index: UInt32
+}
+
 // Error result codes (must match Rust enum values)
 let Success: PlatformWalletFFIResult = 0
 let ErrorNullPointer: PlatformWalletFFIResult = 1
@@ -182,5 +200,72 @@ extension Data {
             index = nextIndex
         }
         self = data
+    }
+}
+
+// MARK: - Platform Sync Types
+
+/// Platform sync state for tracking address balance synchronization
+public struct PlatformSyncState {
+    /// Timestamp of the last full sync (seconds since Unix epoch)
+    public let lastFullSyncTimestamp: UInt64
+    /// Platform block height at last checkpoint
+    public let checkpointHeight: UInt64
+    /// Last terminal block processed
+    public let lastTerminalBlock: UInt64
+    /// Highest address index found with a balance (nil if none)
+    public let highestFoundIndex: UInt32?
+
+    public init(
+        lastFullSyncTimestamp: UInt64 = 0,
+        checkpointHeight: UInt64 = 0,
+        lastTerminalBlock: UInt64 = 0,
+        highestFoundIndex: UInt32? = nil
+    ) {
+        self.lastFullSyncTimestamp = lastFullSyncTimestamp
+        self.checkpointHeight = checkpointHeight
+        self.lastTerminalBlock = lastTerminalBlock
+        self.highestFoundIndex = highestFoundIndex
+    }
+
+    init(ffiState: PlatformSyncStateFFI) {
+        self.lastFullSyncTimestamp = ffiState.last_full_sync_timestamp
+        self.checkpointHeight = ffiState.checkpoint_height
+        self.lastTerminalBlock = ffiState.last_terminal_block
+        self.highestFoundIndex = ffiState.highest_found_index == UInt32.max ? nil : ffiState.highest_found_index
+    }
+
+    var ffiValue: PlatformSyncStateFFI {
+        PlatformSyncStateFFI(
+            last_full_sync_timestamp: self.lastFullSyncTimestamp,
+            checkpoint_height: self.checkpointHeight,
+            last_terminal_block: self.lastTerminalBlock,
+            highest_found_index: self.highestFoundIndex ?? UInt32.max
+        )
+    }
+}
+
+/// Result from a platform address sync operation
+public struct PlatformSyncResult {
+    /// Whether a full sync was performed
+    public let fullSyncPerformed: Bool
+    /// Checkpoint height from full sync (Platform block height)
+    public let checkpointHeight: UInt64
+    /// Highest terminal block processed
+    public let highestTerminalBlock: UInt64
+    /// Total credits found across all addresses
+    public let totalBalance: UInt64
+    /// Number of addresses with non-zero balance
+    public let fundedAddressCount: UInt32
+    /// Highest address index found with a balance (nil if none)
+    public let highestFoundIndex: UInt32?
+
+    init(ffiResult: PlatformSyncResultFFI) {
+        self.fullSyncPerformed = ffiResult.full_sync_performed
+        self.checkpointHeight = ffiResult.checkpoint_height
+        self.highestTerminalBlock = ffiResult.highest_terminal_block
+        self.totalBalance = ffiResult.total_balance
+        self.fundedAddressCount = ffiResult.funded_address_count
+        self.highestFoundIndex = ffiResult.highest_found_index == UInt32.max ? nil : ffiResult.highest_found_index
     }
 }

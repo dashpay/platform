@@ -44,7 +44,7 @@ struct AccountDetailView: View {
                     if let xpub = info.xpub {
                         xpubCard(xpub: xpub)
                     }
-                    
+
                     // Balance Card (only for BIP44/BIP32/CoinJoin)
                     if shouldShowBalanceInDetail {
                         balanceCard()
@@ -512,7 +512,7 @@ struct AccountDetailView: View {
             return false
         }
     }
-    
+
     private var accountTypeName: String {
         guard let info = detailInfo else { return "Unknown Account" }
         switch info.accountType {

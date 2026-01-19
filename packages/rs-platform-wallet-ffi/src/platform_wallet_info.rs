@@ -283,15 +283,27 @@ pub extern "C" fn platform_wallet_info_set_identity_manager(
         })
 }
 
-/// Serialize PlatformWalletInfo to JSON
-/// TODO: Requires serde support on PlatformWalletInfo
-#[allow(dead_code)]
-fn platform_wallet_info_to_json(
+/// Serialize PlatformWalletInfo to bincode bytes
+///
+/// The caller is responsible for freeing the returned bytes using `platform_wallet_bytes_free`.
+///
+/// # Arguments
+/// - `wallet_handle`: Handle to the PlatformWalletInfo
+/// - `out_bytes`: Output pointer for the serialized bytes
+/// - `out_len`: Output pointer for the length of the serialized bytes
+/// - `out_error`: Output pointer for error details
+///
+/// # Returns
+/// - `Success` on successful serialization
+/// - Error code on failure
+#[no_mangle]
+pub extern "C" fn platform_wallet_info_serialize(
     wallet_handle: Handle,
-    out_json: *mut *mut c_char,
+    out_bytes: *mut *mut c_uchar,
+    out_len: *mut usize,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_json.is_null() {
+    if out_bytes.is_null() || out_len.is_null() {
         if !out_error.is_null() {
             unsafe {
                 *out_error = PlatformWalletFFIError::new(
@@ -303,16 +315,98 @@ fn platform_wallet_info_to_json(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    // TODO: Implement once PlatformWalletInfo has Serialize derived
-    if !out_error.is_null() {
-        unsafe {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorSerialization,
-                "Serialization not yet implemented",
-            );
+    WALLET_INFO_STORAGE
+        .with_item(wallet_handle, |wallet_info| {
+            match bincode::encode_to_vec(wallet_info, bincode::config::standard()) {
+                Ok(bytes) => {
+                    let len = bytes.len();
+                    let ptr = bytes.as_ptr() as *mut c_uchar;
+                    std::mem::forget(bytes);
+
+                    unsafe {
+                        *out_bytes = ptr;
+                        *out_len = len;
+                    }
+                    PlatformWalletFFIResult::Success
+                }
+                Err(e) => {
+                    if !out_error.is_null() {
+                        unsafe {
+                            *out_error = PlatformWalletFFIError::new(
+                                PlatformWalletFFIResult::ErrorSerialization,
+                                format!("Serialization failed: {}", e),
+                            );
+                        }
+                    }
+                    PlatformWalletFFIResult::ErrorSerialization
+                }
+            }
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid wallet handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Deserialize PlatformWalletInfo from bincode bytes
+///
+/// Creates a new PlatformWalletInfo from serialized bytes and returns a handle.
+///
+/// # Arguments
+/// - `bytes`: Pointer to the serialized bytes
+/// - `len`: Length of the serialized bytes
+/// - `out_handle`: Output pointer for the new wallet handle
+/// - `out_error`: Output pointer for error details
+///
+/// # Returns
+/// - `Success` on successful deserialization
+/// - Error code on failure
+#[no_mangle]
+pub extern "C" fn platform_wallet_info_deserialize(
+    bytes: *const c_uchar,
+    len: usize,
+    out_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if bytes.is_null() || out_handle.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "Null pointer provided",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let data = unsafe { std::slice::from_raw_parts(bytes, len) };
+
+    match bincode::decode_from_slice::<PlatformWalletInfo, _>(data, bincode::config::standard()) {
+        Ok((wallet_info, _)) => {
+            let handle = WALLET_INFO_STORAGE.insert(wallet_info);
+            unsafe { *out_handle = handle };
+            PlatformWalletFFIResult::Success
+        }
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorDeserialization,
+                        format!("Deserialization failed: {}", e),
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorDeserialization
         }
     }
-    PlatformWalletFFIResult::ErrorSerialization
 }
 
 /// Destroy PlatformWalletInfo and free resources

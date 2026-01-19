@@ -246,7 +246,25 @@ public class CoreWalletManager: ObservableObject {
     
     /// Get wallet balance via SDK wrapper
     func getWalletBalance(walletId: Data) throws -> (confirmed: UInt64, unconfirmed: UInt64) { try sdkWalletManager.getWalletBalance(walletId: walletId) }
-    
+
+    /// Add an account to a wallet
+    /// - Parameters:
+    ///   - wallet: The HDWallet to add the account to
+    ///   - type: The account type to add
+    ///   - index: The account index
+    ///   - keyClass: The key class for platform payment accounts (default 0)
+    public func addAccount(to wallet: HDWallet, type: AccountType, index: UInt32, keyClass: UInt32 = 0) async throws {
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
+
+        // Add account via SDK (SDK routes platform payment accounts automatically)
+        _ = try sdkWalletManager.addAccount(walletId: walletId, type: type, index: index, keyClass: keyClass)
+
+        // Refresh accounts for the wallet
+        try await syncWalletFromManagedInfo(for: wallet)
+    }
+
     public func changeWalletPIN(currentPIN: String, newPIN: String) async throws {
         // Retrieve seed with current PIN
         let seed = try storage.retrieveSeed(pin: currentPIN)
@@ -371,6 +389,12 @@ public class CoreWalletManager: ObservableObject {
             managed = collection.getProviderOperatorKeysAccount()
         case .providerPlatformKeys:
             managed = collection.getProviderPlatformKeysAccount()
+        case .dashPayReceivingFunds, .dashPayExternalAccount:
+            // DashPay accounts - not yet implemented in collection
+            managed = nil
+        case .platformPayment:
+            // Platform payment accounts - not yet implemented in FFI collection
+            managed = nil
         }
         
         let appNetwork = AppNetwork(network: sdkWalletManager.network)
@@ -444,7 +468,12 @@ public class CoreWalletManager: ObservableObject {
             case .coinjoin:
                 let idx = (accountInfo.index ?? 1000) - 1000
                 return (.coinJoin, UInt32(idx), "m/9'/\(coinType)/4'/\(idx)'")
+            case .platformPayment:
+                let idx = accountInfo.index ?? 0
+                return (.platformPayment, idx, "m/9'/\(coinType)/17'/\(idx)'")
             case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup:
+                return nil
+            case .dashPayReceivingFunds, .dashPayExternalAccount:
                 return nil
             }
         }()
@@ -488,6 +517,13 @@ public class CoreWalletManager: ObservableObject {
             return "m/9'/\(coinType)/3'/3'/x"
         case .providerPlatformKeys:
             return "m/9'/\(coinType)/3'/4'/x"
+        case .dashPayReceivingFunds:
+            return "m/9'/\(coinType)/15'/x"
+        case .dashPayExternalAccount:
+            return "m/9'/\(coinType)/15'/x"
+        case .platformPayment:
+            // DIP-17: m/9'/coinType/17'/account'/key_class'/index
+            return "m/9'/\(coinType)/17'/\(index ?? 0)'/x/x"
         }
     }
     
@@ -587,6 +623,18 @@ public class CoreWalletManager: ObservableObject {
         if let m = collection.getProviderPlatformKeysAccount() {
             let b = try? m.getBalance()
             list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+        }
+
+        // Platform Payment accounts (DIP-17)
+        for key in collection.getPlatformPaymentKeys() {
+            if let m = collection.getPlatformPaymentAccount(accountIndex: key.accountIndex, keyClass: key.keyClass) {
+                // Platform payment accounts track balance in credits (1000 credits = 1 duff)
+                // Convert to duffs for display consistency
+                let duffBalance = m.duffBalance
+                let addressCount = Int(m.totalAddressCount)
+                let label = key.keyClass == 0 ? "Platform Payment \(key.accountIndex)" : "Platform Payment \(key.accountIndex)/\(key.keyClass)"
+                list.append(AccountInfo(category: .platformPayment, index: key.accountIndex, label: label, balance: (duffBalance, 0), addressCount: (addressCount, 0), nextReceiveAddress: nil))
+            }
         }
 
         // Sort BIP44 by index first, then other types below

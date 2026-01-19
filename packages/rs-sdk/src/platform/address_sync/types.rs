@@ -5,8 +5,13 @@ use dpp::prelude::AddressNonce;
 use rs_dapi_client::RequestSettings;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// A 32-byte address key that we're searching for in the address funds tree.
-/// This is derived from an address (e.g., hash of public key).
+/// A 21-byte address key used in the address funds tree.
+///
+/// This is the serialized form of a `PlatformAddress`:
+/// - 1 byte: type (0x00 for P2PKH, 0x01 for P2SH)
+/// - 20 bytes: hash (P2PKH pubkey hash or P2SH script hash)
+///
+/// Created via `PlatformAddress::to_bytes()`.
 pub type AddressKey = Vec<u8>;
 
 /// The derivation index for an address (for HD wallets).

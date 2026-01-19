@@ -21,6 +21,9 @@ public enum AccountCategory: Equatable, Hashable, Sendable {
     case providerOwnerKeys
     case providerOperatorKeys
     case providerPlatformKeys
+    case dashPayReceivingFunds
+    case dashPayExternalAccount
+    case platformPayment
 }
 
 // MARK: - Account Info

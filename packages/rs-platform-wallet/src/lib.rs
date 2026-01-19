@@ -20,3 +20,7 @@ pub use established_contact::EstablishedContact;
 pub use identity_manager::IdentityManager;
 pub use managed_identity::ManagedIdentity;
 pub use platform_wallet_info::PlatformWalletInfo;
+
+// Re-export sync types
+pub use platform_wallet_info::address_provider::{AccountAddressProvider, PlatformSyncResult};
+pub use platform_wallet_info::sync_state::PlatformSyncState;

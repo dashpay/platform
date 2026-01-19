@@ -3,7 +3,6 @@
 //! This module provides the `EstablishedContact` struct representing a bidirectional
 //! relationship (friendship) between two identities where both have sent contact requests.
 
-#[allow(unused_imports)]
 use crate::ContactRequest;
 use dpp::prelude::Identifier;
 
@@ -11,6 +10,10 @@ use dpp::prelude::Identifier;
 ///
 /// This is formed when both identities have sent contact requests to each other.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "bincode",
+    derive(bincode::Encode, bincode::Decode, serde::Serialize, serde::Deserialize)
+)]
 pub struct EstablishedContact {
     /// The contact's identity unique identifier
     pub contact_identity_id: Identifier,

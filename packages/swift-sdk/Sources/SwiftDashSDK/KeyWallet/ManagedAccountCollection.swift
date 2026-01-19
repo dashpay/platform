@@ -233,7 +233,58 @@ public class ManagedAccountCollection {
     public var hasProviderPlatformKeys: Bool {
         return managed_account_collection_has_provider_platform_keys(handle)
     }
-    
+
+    // MARK: - Platform Payment Accounts
+
+    /// Get a Platform Payment account by account index and key class
+    /// - Parameters:
+    ///   - accountIndex: The account index (hardened)
+    ///   - keyClass: The key class (hardened), typically 0
+    /// - Returns: The managed platform account if it exists
+    public func getPlatformPaymentAccount(accountIndex: UInt32, keyClass: UInt32) -> ManagedPlatformAccount? {
+        guard let accountHandle = managed_account_collection_get_platform_payment_account(handle, accountIndex, keyClass) else {
+            return nil
+        }
+        return ManagedPlatformAccount(handle: accountHandle)
+    }
+
+    /// Get all Platform Payment account keys
+    /// - Returns: Array of (accountIndex, keyClass) tuples
+    public func getPlatformPaymentKeys() -> [(accountIndex: UInt32, keyClass: UInt32)] {
+        var keys: UnsafeMutablePointer<FFIPlatformPaymentAccountKey>?
+        var count: Int = 0
+
+        let success = managed_account_collection_get_platform_payment_keys(handle, &keys, &count)
+
+        guard success, let keysPtr = keys, count > 0 else {
+            return []
+        }
+
+        defer {
+            managed_account_collection_free_platform_payment_keys(keysPtr, count)
+        }
+
+        var result: [(accountIndex: UInt32, keyClass: UInt32)] = []
+        result.reserveCapacity(count)
+
+        for i in 0..<count {
+            let key = keysPtr.advanced(by: i).pointee
+            result.append((accountIndex: key.account, keyClass: key.key_class))
+        }
+
+        return result
+    }
+
+    /// Check if there are any Platform Payment accounts
+    public var hasPlatformPaymentAccounts: Bool {
+        return managed_account_collection_has_platform_payment_accounts(handle)
+    }
+
+    /// Get the number of Platform Payment accounts
+    public var platformPaymentCount: UInt32 {
+        return managed_account_collection_platform_payment_count(handle)
+    }
+
     // MARK: - Summary
     
     /// Get a summary of all accounts in this collection

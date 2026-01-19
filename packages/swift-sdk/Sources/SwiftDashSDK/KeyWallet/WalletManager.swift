@@ -196,7 +196,44 @@ public class WalletManager {
         let wallet = Wallet(nonOwningHandle: UnsafeRawPointer(ptr))
         return wallet
     }
-    
+
+    /// Add an account to a wallet
+    /// - Parameters:
+    ///   - walletId: The wallet ID (32 bytes)
+    ///   - type: The account type to add
+    ///   - index: The account index
+    ///   - keyClass: The key class for platform payment accounts (default 0)
+    /// - Returns: The newly created account
+    /// - Note: For platform payment accounts, use `addPlatformPaymentAccount` instead
+    @discardableResult
+    public func addAccount(walletId: Data, type: AccountType, index: UInt32, keyClass: UInt32 = 0) throws -> Account {
+        guard let wallet = try getWallet(id: walletId) else {
+            throw KeyWalletError.notFound("Wallet not found")
+        }
+
+        // Platform payment accounts need special handling
+        if type == .platformPayment {
+            return try wallet.addPlatformPaymentAccount(accountIndex: index, keyClass: keyClass)
+        }
+
+        return try wallet.addAccount(type: type, index: index)
+    }
+
+    /// Add a Platform Payment account to a wallet
+    /// Platform Payment accounts (DIP-17) use the path: m/9'/coinType/17'/account'/key_class'/index
+    /// - Parameters:
+    ///   - walletId: The wallet ID (32 bytes)
+    ///   - accountIndex: The account index (hardened) in the derivation path
+    ///   - keyClass: The key class (hardened) - typically 0 for main addresses
+    /// - Returns: The newly created account
+    @discardableResult
+    public func addPlatformPaymentAccount(walletId: Data, accountIndex: UInt32, keyClass: UInt32 = 0) throws -> Account {
+        guard let wallet = try getWallet(id: walletId) else {
+            throw KeyWalletError.notFound("Wallet not found")
+        }
+        return try wallet.addPlatformPaymentAccount(accountIndex: accountIndex, keyClass: keyClass)
+    }
+
     /// Get the number of wallets
     public var walletCount: Int {
         get throws {

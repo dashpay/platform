@@ -7,7 +7,19 @@ struct CoreContentView: View {
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
+    @Query private var platformSyncStates: [PersistentPlatformSyncState]
     @State private var showingCreateWallet = false
+
+    // Platform sync state
+    @State private var isPlatformSyncing = false
+    @State private var platformSyncError: String?
+
+    // Check if we have a stored platform wallet
+    private var hasStoredPlatformWallet: Bool {
+        guard let wallet = walletsForCurrentNetwork.first else { return false }
+        let key = "platform_wallet_\(wallet.id.uuidString)"
+        return KeychainManager.shared.retrieveKeyData(identifier: key) != nil
+    }
     
     // Filter wallets by current network - show wallets that support the current network
     private var walletsForCurrentNetwork: [HDWallet] {
@@ -146,29 +158,78 @@ var body: some View {
             // Section 2: Platform Sync Status
             Section {
                 VStack(spacing: 8) {
-                    HStack {
-                        Text("Last Block Height")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("—")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
+                    // Show aggregated platform sync info
+                    if let latestSync = latestPlatformSyncState {
+                        HStack {
+                            Text("Last Sync")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(latestSync.formattedLastSync)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundColor(latestSync.needsFullSync ? .orange : .green)
+                        }
+
+                        HStack {
+                            Text("Platform Balance")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(latestSync.formattedBalance)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+
+                        HStack {
+                            Text("Checkpoint Height")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(latestSync.checkpointHeight > 0 ? "\(latestSync.checkpointHeight)" : "—")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                    } else {
+                        HStack {
+                            Text("Status")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("Not synced")
+                                .font(.subheadline)
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    // Error display
+                    if let error = platformSyncError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     HStack {
                         Spacer()
 
-                        Button(action: { /* TODO: Start platform sync */ }) {
-                            Text("Start")
-                                .font(.caption)
-                                .fontWeight(.medium)
+                        Button(action: startPlatformSync) {
+                            if isPlatformSyncing {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                    .scaleEffect(0.7)
+                            } else {
+                                Text("Start")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.mini)
+                        .disabled(isPlatformSyncing || walletsForCurrentNetwork.isEmpty)
 
-                        Button(action: { /* TODO: Clear platform sync */ }) {
+                        Button(action: clearPlatformSyncData) {
                             Text("Clear")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -176,13 +237,21 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
+                        .disabled(isPlatformSyncing)
                     }
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Platform Sync Status")
+                HStack {
+                    Text("Platform Sync Status")
+                    Spacer()
+                    NavigationLink(destination: PlatformAddressSyncView()) {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.blue)
+                    }
+                }
             }
-            
+
             // Section 2: Wallets
             Section("Wallets (\(unifiedAppState.platformState.currentNetwork.displayName))") {
                 if walletsForCurrentNetwork.isEmpty {
@@ -307,6 +376,137 @@ var body: some View {
         }
 
         walletService.clearSpvStorage(fullReset: true)
+    }
+
+    // MARK: - Platform Sync
+
+    /// Get the latest platform sync state for display
+    private var latestPlatformSyncState: PersistentPlatformSyncState? {
+        // Return the most recently updated sync state
+        platformSyncStates.max(by: { $0.lastUpdated < $1.lastUpdated })
+    }
+
+    private func startPlatformSync() {
+        platformSyncError = nil
+        if hasStoredPlatformWallet {
+            Swift.print("DEBUG: Starting platform sync using stored wallet")
+            Task {
+                await performPlatformSync()
+            }
+        } else {
+            Swift.print("DEBUG: No platform wallet available")
+            platformSyncError = "No platform wallet available. Please set up a platform payment account first."
+        }
+    }
+
+    private func clearPlatformSyncData() {
+        // Clear persistent sync states
+        for state in platformSyncStates {
+            modelContext.delete(state)
+        }
+        try? modelContext.save()
+
+        // Also clear cached platform wallet data
+        for wallet in walletsForCurrentNetwork {
+            let key = "platform_wallet_\(wallet.id.uuidString)"
+            KeychainManager.shared.deleteKeyData(identifier: key)
+        }
+        Swift.print("DEBUG: Cleared platform sync data and cached wallets")
+    }
+
+    /// Perform platform sync using stored wallet data
+    private func performPlatformSync() async {
+        Swift.print("DEBUG: performPlatformSync started")
+        await MainActor.run { isPlatformSyncing = true; platformSyncError = nil }
+
+        defer {
+            Task { @MainActor in
+                isPlatformSyncing = false
+            }
+        }
+
+        do {
+            // 1. Get first available wallet
+            guard let wallet = walletsForCurrentNetwork.first else {
+                throw PlatformSyncError.noWalletAvailable
+            }
+            Swift.print("DEBUG: Using wallet: \(wallet.label)")
+
+            // 2. Get SDK
+            guard let sdk = unifiedAppState.sdk else {
+                throw PlatformSyncError.sdkNotInitialized
+            }
+
+            // 3. Restore PlatformWallet from cached data
+            Swift.print("DEBUG: Restoring platform wallet from cache...")
+            let walletKey = "platform_wallet_\(wallet.id.uuidString)"
+            guard let cachedData = KeychainManager.shared.retrieveKeyData(identifier: walletKey) else {
+                throw PlatformSyncError.noPlatformWallet
+            }
+            Swift.print("DEBUG: Found cached data (\(cachedData.count) bytes)")
+
+            let platformWallet = try PlatformWallet.restore(from: cachedData)
+            Swift.print("DEBUG: Platform wallet restored from cache")
+
+            // 4. Create or restore sync state
+            let existingState = platformSyncStates.first { $0.walletId == wallet.id.uuidString && $0.accountCategory == "bip44" }
+            let syncManager: PlatformSyncStateManager
+            if let existing = existingState {
+                syncManager = try PlatformSyncStateManager.create(from: existing.toPlatformSyncState())
+            } else {
+                syncManager = try PlatformSyncStateManager.create()
+            }
+
+            // 5. Perform sync
+            Swift.print("DEBUG: Starting sync...")
+            let result = try syncManager.syncAddresses(
+                wallet: platformWallet,
+                sdk: sdk
+            )
+            Swift.print("DEBUG: Sync completed! Balance: \(result.totalBalance)")
+
+            // 6. Save state
+            await MainActor.run {
+                if let existing = existingState {
+                    existing.update(from: result)
+                } else {
+                    let newState = PersistentPlatformSyncState(
+                        walletId: wallet.id.uuidString,
+                        accountCategory: "bip44",
+                        accountIndex: 0,
+                        network: wallet.dashNetwork.rawValue
+                    )
+                    newState.update(from: result)
+                    modelContext.insert(newState)
+                }
+                try? modelContext.save()
+            }
+
+        } catch {
+            Swift.print("DEBUG: Platform sync error: \(error)")
+            await MainActor.run {
+                platformSyncError = error.localizedDescription
+            }
+        }
+    }
+}
+
+// MARK: - Platform Sync Errors
+
+enum PlatformSyncError: LocalizedError {
+    case noWalletAvailable
+    case noPlatformWallet
+    case sdkNotInitialized
+
+    var errorDescription: String? {
+        switch self {
+        case .noWalletAvailable:
+            return "No wallet available. Create a wallet first."
+        case .noPlatformWallet:
+            return "No platform wallet available. Please set up a platform payment account first."
+        case .sdkNotInitialized:
+            return "Platform SDK not initialized."
+        }
     }
 }
 

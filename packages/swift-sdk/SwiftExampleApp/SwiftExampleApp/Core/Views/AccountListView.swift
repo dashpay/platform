@@ -73,13 +73,13 @@ struct AccountRowView: View {
     /// Determines if this account type should show balance in UI
     var shouldShowBalance: Bool {
         switch account.category {
-        case .bip44, .bip32, .coinjoin:
+        case .bip44, .bip32, .coinjoin, .platformPayment:
             return true
         default:
             return false
         }
     }
-    
+
     var accountTypeBadge: String {
         switch account.category {
         case .bip44: return (account.index == 0) ? "Main" : (account.index.map { "#\($0)" } ?? "BIP44")
@@ -92,10 +92,13 @@ struct AccountRowView: View {
         case .providerVotingKeys: return "Voting"
         case .providerOwnerKeys: return "Owner"
         case .providerOperatorKeys: return "Operator"
-        case .providerPlatformKeys: return "Platform"
+        case .providerPlatformKeys: return "Platform Keys"
+        case .dashPayReceivingFunds: return "DashPay"
+        case .dashPayExternalAccount: return "DashPay Ext"
+        case .platformPayment: return account.index.map { "Payment #\($0)" } ?? "Payment"
         }
     }
-    
+
     var accountTypeIcon: String {
         switch account.category {
         case .bip44: return account.index == 0 ? "star.circle.fill" : "folder"
@@ -108,9 +111,12 @@ struct AccountRowView: View {
         case .providerOwnerKeys: return "key.horizontal"
         case .providerOperatorKeys: return "wrench.and.screwdriver"
         case .providerPlatformKeys: return "network"
+        case .dashPayReceivingFunds: return "person.2.circle"
+        case .dashPayExternalAccount: return "person.crop.circle.badge.questionmark"
+        case .platformPayment: return "creditcard.fill"
         }
     }
-    
+
     var accountTypeColor: Color {
         switch account.category {
         case .bip44: return (account.index == 0) ? .green : .blue
@@ -121,6 +127,8 @@ struct AccountRowView: View {
         case .providerOwnerKeys: return .pink
         case .providerOperatorKeys: return .indigo
         case .providerPlatformKeys: return .teal
+        case .dashPayReceivingFunds, .dashPayExternalAccount: return .cyan
+        case .platformPayment: return .green
         }
     }
     
