@@ -171,9 +171,14 @@ impl IdentityPublicKeyWasm {
         private_key_bytes_input: Vec<u8>,
         #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
     ) -> WasmDppResult<bool> {
+        if private_key_bytes_input.len() != 32 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "Private key must be exactly 32 bytes, got {}",
+                private_key_bytes_input.len()
+            )));
+        }
         let mut private_key_bytes = [0u8; 32];
-        let len = private_key_bytes_input.len().min(32);
-        private_key_bytes[..len].copy_from_slice(&private_key_bytes_input[..len]);
+        private_key_bytes.copy_from_slice(&private_key_bytes_input);
 
         let network = Network::from(NetworkWasm::try_from(network)?);
 

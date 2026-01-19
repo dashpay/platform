@@ -5,7 +5,7 @@ use crate::state_transitions::batch::generators::generate_create_transition;
 use crate::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::data_contract::document::DocumentWasm;
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::serialization;
 use crate::utils::{IntoWasm, ToSerdeJSONExt};
 use dpp::prelude::IdentityNonce;
@@ -107,10 +107,14 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(setter = "entropy")]
     pub fn set_entropy(&mut self, js_entropy: Vec<u8>) -> WasmDppResult<()> {
+        if js_entropy.len() != 32 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "Entropy must be exactly 32 bytes, got {}",
+                js_entropy.len()
+            )));
+        }
         let mut entropy = [0u8; 32];
-        let bytes = js_entropy.as_slice();
-        let len = bytes.len().min(32);
-        entropy[..len].copy_from_slice(&bytes[..len]);
+        entropy.copy_from_slice(&js_entropy);
 
         self.0.set_entropy(entropy);
         Ok(())

@@ -367,9 +367,14 @@ impl DocumentWasm {
                 self.entropy = None;
             }
             Some(bytes) => {
+                if bytes.len() != 32 {
+                    return Err(WasmDppError::invalid_argument(format!(
+                        "Entropy must be exactly 32 bytes, got {}",
+                        bytes.len()
+                    )));
+                }
                 let mut entropy_bytes = [0u8; 32];
-                let len = bytes.len().min(32);
-                entropy_bytes[..len].copy_from_slice(&bytes[..len]);
+                entropy_bytes.copy_from_slice(&bytes);
                 self.entropy = Some(entropy_bytes);
             }
         }
@@ -717,10 +722,14 @@ impl DocumentWasm {
 
         let entropy_bytes: [u8; 32] = match entropy {
             Some(entropy_vec) => {
+                if entropy_vec.len() != 32 {
+                    return Err(WasmDppError::invalid_argument(format!(
+                        "Entropy must be exactly 32 bytes, got {}",
+                        entropy_vec.len()
+                    )));
+                }
                 let mut arr = [0u8; 32];
-                let bytes = entropy_vec.as_slice();
-                let len = bytes.len().min(32);
-                arr[..len].copy_from_slice(&bytes[..len]);
+                arr.copy_from_slice(&entropy_vec);
                 arr
             }
             None => entropy_generator::DefaultEntropyGenerator
