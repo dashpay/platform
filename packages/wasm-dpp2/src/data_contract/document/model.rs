@@ -1,5 +1,5 @@
 use crate::data_contract::DataContractWasm;
-use crate::enums::platform::PlatformVersionWasm;
+use crate::version::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_options;
@@ -604,7 +604,7 @@ impl DocumentWasm {
     pub fn to_bytes(
         &self,
         data_contract: &DataContractWasm,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<Vec<u8>> {
         let platform_version = match platform_version.is_undefined() {
@@ -629,7 +629,7 @@ impl DocumentWasm {
     pub fn to_hex(
         &self,
         data_contract: &DataContractWasm,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<String> {
         Ok(encode(
@@ -642,7 +642,7 @@ impl DocumentWasm {
     pub fn to_base64(
         &self,
         data_contract: &DataContractWasm,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<String> {
         Ok(encode(
@@ -656,7 +656,7 @@ impl DocumentWasm {
         bytes: Vec<u8>,
         data_contract: &DataContractWasm,
         type_name: String,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DocumentWasm> {
         let platform_version = match platform_version.is_undefined() {
@@ -687,7 +687,7 @@ impl DocumentWasm {
         hex: String,
         data_contract: &DataContractWasm,
         type_name: String,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DocumentWasm> {
         use dpp::platform_value::string_encoding::decode;
@@ -705,7 +705,7 @@ impl DocumentWasm {
         base64: String,
         data_contract: &DataContractWasm,
         type_name: String,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DocumentWasm> {
         use dpp::platform_value::string_encoding::decode;

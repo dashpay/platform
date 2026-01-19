@@ -27,6 +27,7 @@ pub mod serialization;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
+pub mod version;
 pub mod voting;
 
 pub use core::core_script::CoreScriptWasm;

@@ -13,6 +13,11 @@ use dpp::version::v10::PLATFORM_V10;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const PLATFORM_VERSION_LIKE_TS: &'static str = r#"
+export type PlatformVersionLike = PlatformVersion | string | number;
+"#;
+
 #[wasm_bindgen(js_name = "PlatformVersion")]
 #[derive(Default)]
 #[allow(non_camel_case_types)]

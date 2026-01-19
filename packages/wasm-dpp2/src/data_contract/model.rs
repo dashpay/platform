@@ -1,4 +1,4 @@
-use crate::enums::platform::PlatformVersionWasm;
+use crate::version::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_options;
@@ -284,7 +284,7 @@ impl DataContractWasm {
     pub fn from_json(
         #[wasm_bindgen(unchecked_param_type = "DataContractJSON")] value: JsValue,
         full_validation: bool,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = match platform_version.is_undefined() {
@@ -304,7 +304,7 @@ impl DataContractWasm {
     pub fn from_object(
         #[wasm_bindgen(unchecked_param_type = "DataContractObject")] value: JsValue,
         full_validation: bool,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = match platform_version.is_undefined() {
@@ -325,7 +325,7 @@ impl DataContractWasm {
     pub fn from_bytes(
         bytes: Vec<u8>,
         full_validation: bool,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = match platform_version.is_undefined() {
@@ -346,7 +346,7 @@ impl DataContractWasm {
     pub fn from_hex(
         hex: String,
         full_validation: bool,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let bytes =
@@ -359,7 +359,7 @@ impl DataContractWasm {
     pub fn from_base64(
         base64: String,
         full_validation: bool,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let bytes = decode(base64.as_str(), Base64)
@@ -371,7 +371,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<Vec<u8>> {
         let platform_version = match platform_version.is_undefined() {
@@ -387,7 +387,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<String> {
         Ok(encode(self.to_bytes(platform_version)?.as_slice(), Hex))
@@ -396,7 +396,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<String> {
         Ok(encode(
@@ -408,7 +408,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractObjectJs> {
         let platform_version = match platform_version.is_undefined() {
@@ -521,7 +521,7 @@ impl DataContractWasm {
     pub fn set_config(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "DataContractConfig")] config: JsValue,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<()> {
         let platform_version = match platform_version.is_undefined() {
@@ -545,7 +545,7 @@ impl DataContractWasm {
         #[wasm_bindgen(unchecked_param_type = "Record<string, object>")] schemas: JsValue,
         definitions: Option<js_sys::Object>,
         full_validation: bool,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<()> {
         let platform_version = match platform_version.is_undefined() {
@@ -631,7 +631,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractJSONJs> {
         let platform_version = match platform_version.is_undefined() {

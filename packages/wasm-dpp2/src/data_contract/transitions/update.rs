@@ -1,5 +1,5 @@
 use crate::data_contract::DataContractWasm;
-use crate::enums::platform::PlatformVersionWasm;
+use crate::version::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
@@ -26,7 +26,7 @@ impl DataContractUpdateTransitionWasm {
     pub fn constructor(
         data_contract: &DataContractWasm,
         identity_nonce: IdentityNonce,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
         let platform_version = match platform_version.is_undefined() {
@@ -105,7 +105,7 @@ impl DataContractUpdateTransitionWasm {
     pub fn set_data_contract(
         &mut self,
         data_contract: &DataContractWasm,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<()> {
         let platform_version = match platform_version.is_undefined() {
@@ -133,7 +133,7 @@ impl DataContractUpdateTransitionWasm {
     pub fn get_data_contract(
         &self,
         full_validation: Option<bool>,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersion | string | number")]
+        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
         platform_version: JsValue,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version = match platform_version.is_undefined() {
