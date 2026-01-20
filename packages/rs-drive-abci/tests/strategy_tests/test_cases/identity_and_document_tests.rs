@@ -757,6 +757,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
