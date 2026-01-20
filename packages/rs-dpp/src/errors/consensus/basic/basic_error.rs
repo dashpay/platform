@@ -1,3 +1,4 @@
+use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -272,6 +273,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     MaxDocumentsTransitionsExceededError(MaxDocumentsTransitionsExceededError),
+
+    #[error(transparent)]
+    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
 
     // Identity
     #[error(transparent)]

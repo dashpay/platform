@@ -3,8 +3,8 @@ use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
 
-use bincode::{Decode, Encode};
 use crate::data_contract::errors::DataContractError;
+use bincode::{Decode, Encode};
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;

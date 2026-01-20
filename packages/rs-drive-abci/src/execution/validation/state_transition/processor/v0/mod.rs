@@ -269,7 +269,6 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
         let action = state_transition_action_result.into_data()?;
 
-        // Validating structure
         let result = state_transition.validate_advanced_structure_from_state(
             block_info,
             platform.config.network,

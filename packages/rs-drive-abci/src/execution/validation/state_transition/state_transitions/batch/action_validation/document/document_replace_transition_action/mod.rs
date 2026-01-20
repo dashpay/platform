@@ -9,11 +9,15 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v0::DocumentReplaceTransitionActionStateValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v1::DocumentReplaceTransitionActionStateValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v2::DocumentReplaceTransitionActionStateValidationV2;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::advanced_structure_v0::DocumentReplaceTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
 mod state_v0;
+mod state_v1;
+mod state_v2;
 
 pub trait DocumentReplaceTransitionActionValidation {
     fn validate_structure(
@@ -77,9 +81,25 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
                 transaction,
                 platform_version,
             ),
+            1 => self.validate_state_v1(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
+            2 => self.validate_state_v2(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentReplaceTransitionAction::validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

@@ -41,12 +41,13 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
+    #[allow(clippy::too_many_arguments)]
     fn validate_advanced_structure_from_state_v0(
         &self,
         block_info: &BlockInfo,
-        network: Network,
         action: &BatchTransitionAction,
         identity: &PartialIdentity,
+        network: Network,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -56,9 +57,9 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for BatchTransition {
     fn validate_advanced_structure_from_state_v0(
         &self,
         block_info: &BlockInfo,
-        network: Network,
         action: &BatchTransitionAction,
         identity: &PartialIdentity,
+        network: Network,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

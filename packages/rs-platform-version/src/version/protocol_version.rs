@@ -27,6 +27,7 @@ use crate::version::v8::PLATFORM_V8;
 use crate::version::v9::PLATFORM_V9;
 
 use crate::version::v11::PLATFORM_V11;
+use crate::version::v12::PLATFORM_V12;
 use crate::version::ProtocolVersion;
 pub use versioned_feature_core::*;
 
@@ -54,6 +55,7 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V9,
     PLATFORM_V10,
     PLATFORM_V11,
+    PLATFORM_V12,
 ];
 
 #[cfg(feature = "mock-versions")]
@@ -62,7 +64,7 @@ pub static PLATFORM_TEST_VERSIONS: OnceLock<Vec<PlatformVersion>> = OnceLock::ne
 #[cfg(feature = "mock-versions")]
 const DEFAULT_PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V11;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V12;
 
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 

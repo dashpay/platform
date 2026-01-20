@@ -241,7 +241,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
-                // Validating structure
                 let result = state_transition.validate_advanced_structure_from_state(
                     platform.state.last_block_info(),
                     platform.config.network,

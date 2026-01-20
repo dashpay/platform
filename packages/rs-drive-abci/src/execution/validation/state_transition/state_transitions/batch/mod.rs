@@ -173,9 +173,9 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                 };
                 self.validate_advanced_structure_from_state_v0(
                     block_info,
-                    network,
                     documents_batch_transition_action,
                     identity,
+                    network,
                     execution_context,
                     platform_version,
                 )

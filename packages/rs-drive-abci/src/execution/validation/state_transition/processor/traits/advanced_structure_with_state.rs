@@ -25,6 +25,7 @@ pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {
     /// # Returns
     ///
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
+    #[allow(clippy::too_many_arguments)]
     fn validate_advanced_structure_from_state(
         &self,
         block_info: &BlockInfo,
