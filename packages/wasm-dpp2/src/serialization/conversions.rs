@@ -489,16 +489,18 @@ pub fn test_js_value_to_json(value: &JsValue) -> Result<JsValue, WasmDppError> {
 /// # Usage
 ///
 /// ```ignore
-/// // For newtype wrappers: WrapperType(InnerType)
-/// // JS class name defaults to Rust type name without "Wasm" suffix
+/// // Basic form: returns JsValue for all methods
 /// impl_wasm_conversions!(MyTypeWasm, MyType);
+///
+/// // With typed return types for better TypeScript support:
+/// impl_wasm_conversions!(MyTypeWasm, MyType, MyTypeObjectJs, MyTypeJSONJs);
 /// ```
 ///
 /// The inner type must implement `Serialize` and `DeserializeOwned`.
 /// The wrapper type must implement `From<InnerType>` and have a `.0` field.
 #[macro_export]
 macro_rules! impl_wasm_conversions {
-    // Two-argument form: wrapper type and JS class name
+    // Two-argument form: wrapper type and JS class name (returns JsValue)
     ($wrapper:ty, $js_class:ident) => {
         #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
         impl $wrapper {
@@ -524,6 +526,38 @@ macro_rules! impl_wasm_conversions {
                 js: wasm_bindgen::JsValue,
             ) -> Result<$wrapper, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::from_json(js).map(Self)
+            }
+        }
+    };
+
+    // Four-argument form: with typed Object and JSON return types
+    ($wrapper:ty, $js_class:ident, $object_type:ty, $json_type:ty) => {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
+        impl $wrapper {
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = toObject)]
+            pub fn to_object(&self) -> Result<$object_type, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::to_object(&self.0)
+                    .map(wasm_bindgen::JsCast::unchecked_into)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
+            pub fn from_object(
+                obj: $object_type,
+            ) -> Result<$wrapper, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::from_object(obj.into()).map(Self)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
+            pub fn to_json(&self) -> Result<$json_type, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::to_json(&self.0)
+                    .map(wasm_bindgen::JsCast::unchecked_into)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
+            pub fn from_json(
+                js: $json_type,
+            ) -> Result<$wrapper, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::from_json(js.into()).map(Self)
             }
         }
     };

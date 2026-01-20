@@ -17,12 +17,42 @@ export interface ExtendedEpochInfoOptions {
     feeMultiplierPermille: bigint | number;
     protocolVersion: number;
 }
+
+/**
+ * ExtendedEpochInfo serialized as a plain object.
+ */
+export interface ExtendedEpochInfoObject {
+    index: number;
+    firstBlockTime: bigint;
+    firstBlockHeight: bigint;
+    firstCoreBlockHeight: number;
+    feeMultiplierPermille: bigint;
+    protocolVersion: number;
+}
+
+/**
+ * ExtendedEpochInfo serialized as JSON.
+ */
+export interface ExtendedEpochInfoJSON {
+    index: number;
+    firstBlockTime: string;
+    firstBlockHeight: string;
+    firstCoreBlockHeight: number;
+    feeMultiplierPermille: string;
+    protocolVersion: number;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "ExtendedEpochInfoOptions")]
     pub type ExtendedEpochInfoOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "ExtendedEpochInfoObject")]
+    pub type ExtendedEpochInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ExtendedEpochInfoJSON")]
+    pub type ExtendedEpochInfoJSONJs;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,5 +196,5 @@ impl ExtendedEpochInfoWasm {
     }
 }
 
-impl_wasm_conversions!(ExtendedEpochInfoWasm, ExtendedEpochInfo);
+impl_wasm_conversions!(ExtendedEpochInfoWasm, ExtendedEpochInfo, ExtendedEpochInfoObjectJs, ExtendedEpochInfoJSONJs);
 impl_wasm_type_info!(ExtendedEpochInfoWasm, ExtendedEpochInfo);

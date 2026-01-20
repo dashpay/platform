@@ -6,6 +6,38 @@ use dpp::data_contract::TokenContractPosition;
 use dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * GroupAction serialized as a plain object.
+ */
+export interface GroupActionObject {
+    contractId: Uint8Array;
+    proposerId: Uint8Array;
+    tokenContractPosition: number;
+    event: GroupActionEventObject;
+}
+
+/**
+ * GroupAction serialized as JSON.
+ */
+export interface GroupActionJSON {
+    contractId: string;
+    proposerId: string;
+    tokenContractPosition: number;
+    event: GroupActionEventJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionObject")]
+    pub type GroupActionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "GroupActionJSON")]
+    pub type GroupActionJSONJs;
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "GroupAction")]
 pub struct GroupActionWasm(GroupAction);
@@ -45,5 +77,5 @@ impl GroupActionWasm {
     }
 }
 
-impl_wasm_conversions!(GroupActionWasm, GroupAction);
+impl_wasm_conversions!(GroupActionWasm, GroupAction, GroupActionObjectJs, GroupActionJSONJs);
 impl_wasm_type_info!(GroupActionWasm, GroupAction);

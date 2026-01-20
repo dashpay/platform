@@ -120,5 +120,10 @@ impl InstantAssetLockProofWasm {
     }
 }
 
-impl_wasm_conversions!(InstantAssetLockProofWasm, InstantAssetLockProof);
+impl_wasm_conversions!(
+    InstantAssetLockProofWasm,
+    InstantAssetLockProof,
+    InstantAssetLockProofObjectJs,
+    InstantAssetLockProofJSONJs
+);
 impl_wasm_type_info!(InstantAssetLockProofWasm, InstantAssetLockProof);

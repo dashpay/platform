@@ -34,12 +34,42 @@ export interface MasternodeVoteTransitionOptions {
     signaturePublicKeyId?: number;
     signature?: Uint8Array;
 }
+
+/**
+ * MasternodeVoteTransition serialized as a plain object.
+ */
+export interface MasternodeVoteTransitionObject {
+    proTxHash: Uint8Array;
+    voterIdentityId: Uint8Array;
+    vote: VoteObject;
+    nonce: bigint;
+    signaturePublicKeyId?: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * MasternodeVoteTransition serialized as JSON.
+ */
+export interface MasternodeVoteTransitionJSON {
+    proTxHash: string;
+    voterIdentityId: string;
+    vote: VoteJSON;
+    nonce: string;
+    signaturePublicKeyId?: number;
+    signature?: string;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionOptions")]
     pub type MasternodeVoteTransitionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionObject")]
+    pub type MasternodeVoteTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionJSON")]
+    pub type MasternodeVoteTransitionJSONJs;
 }
 
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
@@ -274,6 +304,6 @@ impl MasternodeVoteTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);
+impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition, MasternodeVoteTransitionObjectJs, MasternodeVoteTransitionJSONJs);
 
 impl_wasm_type_info!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);

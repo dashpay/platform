@@ -25,12 +25,38 @@ export interface VotePollOptions {
     indexName: string;
     indexValues: any[];
 }
+
+/**
+ * VotePoll serialized as a plain object.
+ */
+export interface VotePollObject {
+    contractId: Uint8Array;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
+}
+
+/**
+ * VotePoll serialized as JSON.
+ */
+export interface VotePollJSON {
+    contractId: string;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "VotePollOptions")]
     pub type VotePollOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "VotePollObject")]
+    pub type VotePollObjectJs;
+
+    #[wasm_bindgen(typescript_type = "VotePollJSON")]
+    pub type VotePollJSONJs;
 }
 
 #[derive(Clone)]
@@ -197,5 +223,5 @@ impl VotePollWasm {
 }
 
 impl_try_from_options!(VotePollWasm, "VotePoll");
-impl_wasm_conversions!(VotePollWasm, VotePoll);
+impl_wasm_conversions!(VotePollWasm, VotePoll, VotePollObjectJs, VotePollJSONJs);
 impl_wasm_type_info!(VotePollWasm, VotePoll);

@@ -40,12 +40,38 @@ export interface IdentityCreateTransitionOptions {
     signature?: Uint8Array;
     userFeeIncrease?: number;
 }
+
+/**
+ * IdentityCreateTransition serialized as a plain object.
+ */
+export interface IdentityCreateTransitionObject {
+    publicKeys: IdentityPublicKeyInCreationObject[];
+    assetLockProof: AssetLockProofObject;
+    signature?: Uint8Array;
+    userFeeIncrease: number;
+}
+
+/**
+ * IdentityCreateTransition serialized as JSON.
+ */
+export interface IdentityCreateTransitionJSON {
+    publicKeys: IdentityPublicKeyInCreationJSON[];
+    assetLockProof: AssetLockProofJSON;
+    signature?: string;
+    userFeeIncrease: number;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentityCreateTransitionOptions")]
     pub type IdentityCreateTransitionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreateTransitionObject")]
+    pub type IdentityCreateTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreateTransitionJSON")]
+    pub type IdentityCreateTransitionJSONJs;
 }
 
 #[wasm_bindgen(js_name = "IdentityCreateTransition")]
@@ -237,5 +263,5 @@ impl IdentityCreateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityCreateTransitionWasm, IdentityCreateTransition);
+impl_wasm_conversions!(IdentityCreateTransitionWasm, IdentityCreateTransition, IdentityCreateTransitionObjectJs, IdentityCreateTransitionJSONJs);
 impl_wasm_type_info!(IdentityCreateTransitionWasm, IdentityCreateTransition);

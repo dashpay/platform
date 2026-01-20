@@ -5,6 +5,34 @@ use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * ResourceVoteChoice serialized as a plain object.
+ */
+export interface ResourceVoteChoiceObject {
+    voteType: "TowardsIdentity" | "Abstain" | "Lock";
+    value?: Uint8Array;
+}
+
+/**
+ * ResourceVoteChoice serialized as JSON.
+ */
+export interface ResourceVoteChoiceJSON {
+    voteType: "TowardsIdentity" | "Abstain" | "Lock";
+    value?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ResourceVoteChoiceObject")]
+    pub type ResourceVoteChoiceObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ResourceVoteChoiceJSON")]
+    pub type ResourceVoteChoiceJSONJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = ResourceVoteChoice)]
 pub struct ResourceVoteChoiceWasm(ResourceVoteChoice);
@@ -60,5 +88,5 @@ impl ResourceVoteChoiceWasm {
 }
 
 impl_try_from_options!(ResourceVoteChoiceWasm, "ResourceVoteChoice");
-impl_wasm_conversions!(ResourceVoteChoiceWasm, ResourceVoteChoice);
+impl_wasm_conversions!(ResourceVoteChoiceWasm, ResourceVoteChoice, ResourceVoteChoiceObjectJs, ResourceVoteChoiceJSONJs);
 impl_wasm_type_info!(ResourceVoteChoiceWasm, ResourceVoteChoice);

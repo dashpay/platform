@@ -44,12 +44,46 @@ export interface IdentityPublicKeyInCreationOptions {
     signature?: Uint8Array;
     contractBounds?: ContractBounds;
 }
+
+/**
+ * IdentityPublicKeyInCreation serialized as a plain object.
+ */
+export interface IdentityPublicKeyInCreationObject {
+    keyId: number;
+    purpose: Purpose;
+    securityLevel: SecurityLevel;
+    keyType: KeyType;
+    isReadOnly: boolean;
+    data: Uint8Array;
+    signature?: Uint8Array;
+    contractBounds?: ContractBoundsObject;
+}
+
+/**
+ * IdentityPublicKeyInCreation serialized as JSON.
+ */
+export interface IdentityPublicKeyInCreationJSON {
+    keyId: number;
+    purpose: string;
+    securityLevel: string;
+    keyType: string;
+    isReadOnly: boolean;
+    data: string;
+    signature?: string;
+    contractBounds?: ContractBoundsJSON;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentityPublicKeyInCreationOptions")]
     pub type IdentityPublicKeyInCreationOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityPublicKeyInCreationObject")]
+    pub type IdentityPublicKeyInCreationObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityPublicKeyInCreationJSON")]
+    pub type IdentityPublicKeyInCreationJSONJs;
 }
 
 #[derive(Clone)]
@@ -299,6 +333,6 @@ impl IdentityPublicKeyInCreationWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);
+impl_wasm_conversions!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation, IdentityPublicKeyInCreationObjectJs, IdentityPublicKeyInCreationJSONJs);
 
 impl_wasm_type_info!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);

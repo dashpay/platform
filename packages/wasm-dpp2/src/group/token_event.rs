@@ -3,6 +3,34 @@ use crate::impl_wasm_type_info;
 use dpp::tokens::token_event::TokenEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * TokenEvent serialized as a plain object.
+ */
+export interface TokenEventObject {
+    variant: TokenEventVariant;
+    [key: string]: unknown;
+}
+
+/**
+ * TokenEvent serialized as JSON.
+ */
+export interface TokenEventJSON {
+    variant: TokenEventVariant;
+    [key: string]: unknown;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenEventObject")]
+    pub type TokenEventObjectJs;
+
+    #[wasm_bindgen(typescript_type = "TokenEventJSON")]
+    pub type TokenEventJSONJs;
+}
+
 /// TypeScript enum for TokenEvent variants
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,5 +86,5 @@ impl TokenEventWasm {
     }
 }
 
-impl_wasm_conversions!(TokenEventWasm, TokenEvent);
+impl_wasm_conversions!(TokenEventWasm, TokenEvent, TokenEventObjectJs, TokenEventJSONJs);
 impl_wasm_type_info!(TokenEventWasm, TokenEvent);

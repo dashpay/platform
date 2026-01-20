@@ -8,6 +8,34 @@ use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * Vote serialized as a plain object.
+ */
+export interface VoteObject {
+    votePoll: VotePollObject;
+    resourceVoteChoice: ResourceVoteChoiceObject;
+}
+
+/**
+ * Vote serialized as JSON.
+ */
+export interface VoteJSON {
+    votePoll: VotePollJSON;
+    resourceVoteChoice: ResourceVoteChoiceJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "VoteObject")]
+    pub type VoteObjectJs;
+
+    #[wasm_bindgen(typescript_type = "VoteJSON")]
+    pub type VoteJSONJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name=Vote)]
 pub struct VoteWasm(Vote);
@@ -69,5 +97,5 @@ impl VoteWasm {
     }
 }
 
-impl_wasm_conversions!(VoteWasm, Vote);
+impl_wasm_conversions!(VoteWasm, Vote, VoteObjectJs, VoteJSONJs);
 impl_wasm_type_info!(VoteWasm, Vote);

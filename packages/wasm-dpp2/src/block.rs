@@ -4,6 +4,38 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * BlockInfo serialized as a plain object.
+ */
+export interface BlockInfoObject {
+    timeMs: bigint;
+    height: bigint;
+    coreHeight: number;
+    epochIndex: number;
+}
+
+/**
+ * BlockInfo serialized as JSON.
+ */
+export interface BlockInfoJSON {
+    timeMs: string;
+    height: string;
+    coreHeight: number;
+    epochIndex: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "BlockInfoObject")]
+    pub type BlockInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "BlockInfoJSON")]
+    pub type BlockInfoJSONJs;
+}
+
 #[wasm_bindgen(js_name = "BlockInfo")]
 #[derive(Clone)]
 pub struct BlockInfoWasm(BlockInfo);
@@ -67,4 +99,4 @@ impl From<&BlockInfoWasm> for BlockInfo {
     }
 }
 
-impl_wasm_conversions!(BlockInfoWasm, BlockInfo);
+impl_wasm_conversions!(BlockInfoWasm, BlockInfo, BlockInfoObjectJs, BlockInfoJSONJs);

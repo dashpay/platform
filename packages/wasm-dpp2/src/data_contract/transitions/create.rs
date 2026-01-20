@@ -21,6 +21,40 @@ use dpp::version::{
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * DataContractCreateTransition serialized as a plain object.
+ */
+export interface DataContractCreateTransitionObject {
+    dataContract: DataContractObject;
+    identityNonce: bigint;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * DataContractCreateTransition serialized as JSON.
+ */
+export interface DataContractCreateTransitionJSON {
+    dataContract: DataContractJSON;
+    identityNonce: string;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DataContractCreateTransitionObject")]
+    pub type DataContractCreateTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "DataContractCreateTransitionJSON")]
+    pub type DataContractCreateTransitionJSONJs;
+}
+
 #[wasm_bindgen(js_name = "DataContractCreateTransition")]
 pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
 
@@ -192,6 +226,8 @@ impl DataContractCreateTransitionWasm {
 
 impl_wasm_conversions!(
     DataContractCreateTransitionWasm,
-    DataContractCreateTransition
+    DataContractCreateTransition,
+    DataContractCreateTransitionObjectJs,
+    DataContractCreateTransitionJSONJs
 );
 impl_wasm_type_info!(DataContractCreateTransitionWasm, DataContractCreateTransition);

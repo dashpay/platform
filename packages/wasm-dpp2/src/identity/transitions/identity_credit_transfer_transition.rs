@@ -29,12 +29,44 @@ export interface IdentityCreditTransferOptions {
     nonce: bigint | number;
     userFeeIncrease?: number;
 }
+
+/**
+ * IdentityCreditTransfer serialized as a plain object.
+ */
+export interface IdentityCreditTransferObject {
+    amount: bigint;
+    senderId: Uint8Array;
+    recipientId: Uint8Array;
+    nonce: bigint;
+    userFeeIncrease: number;
+    signature?: Uint8Array;
+    signaturePublicKeyId?: number;
+}
+
+/**
+ * IdentityCreditTransfer serialized as JSON.
+ */
+export interface IdentityCreditTransferJSON {
+    amount: string;
+    senderId: string;
+    recipientId: string;
+    nonce: string;
+    userFeeIncrease: number;
+    signature?: string;
+    signaturePublicKeyId?: number;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentityCreditTransferOptions")]
     pub type IdentityCreditTransferOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreditTransferObject")]
+    pub type IdentityCreditTransferObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreditTransferJSON")]
+    pub type IdentityCreditTransferJSONJs;
 }
 
 #[wasm_bindgen(js_name = IdentityCreditTransfer)]
@@ -233,6 +265,6 @@ impl IdentityCreditTransferWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityCreditTransferWasm, IdentityCreditTransferTransition);
+impl_wasm_conversions!(IdentityCreditTransferWasm, IdentityCreditTransferTransition, IdentityCreditTransferObjectJs, IdentityCreditTransferJSONJs);
 
 impl_wasm_type_info!(IdentityCreditTransferWasm, IdentityCreditTransfer);

@@ -9,6 +9,36 @@ use js_sys::Uint8Array;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * ContenderWithSerializedDocument serialized as a plain object.
+ */
+export interface ContenderWithSerializedDocumentObject {
+    identityId: Uint8Array;
+    serializedDocument: Uint8Array | null;
+    voteTally: number | null;
+}
+
+/**
+ * ContenderWithSerializedDocument serialized as JSON.
+ */
+export interface ContenderWithSerializedDocumentJSON {
+    identityId: string;
+    serializedDocument: string | null;
+    voteTally: number | null;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContenderWithSerializedDocumentObject")]
+    pub type ContenderWithSerializedDocumentObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ContenderWithSerializedDocumentJSON")]
+    pub type ContenderWithSerializedDocumentJSONJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "ContenderWithSerializedDocument")]
 pub struct ContenderWithSerializedDocumentWasm(ContenderWithSerializedDocument);
@@ -75,5 +105,7 @@ impl ContenderWithSerializedDocumentWasm {
 
 impl_wasm_conversions!(
     ContenderWithSerializedDocumentWasm,
-    ContenderWithSerializedDocument
+    ContenderWithSerializedDocument,
+    ContenderWithSerializedDocumentObjectJs,
+    ContenderWithSerializedDocumentJSONJs
 );

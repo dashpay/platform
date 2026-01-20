@@ -17,6 +17,40 @@ use dpp::version::{FeatureVersion, ProtocolVersion, TryFromPlatformVersioned};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * DataContractUpdateTransition serialized as a plain object.
+ */
+export interface DataContractUpdateTransitionObject {
+    dataContract: DataContractObject;
+    identityNonce: bigint;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * DataContractUpdateTransition serialized as JSON.
+ */
+export interface DataContractUpdateTransitionJSON {
+    dataContract: DataContractJSON;
+    identityNonce: string;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DataContractUpdateTransitionObject")]
+    pub type DataContractUpdateTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "DataContractUpdateTransitionJSON")]
+    pub type DataContractUpdateTransitionJSONJs;
+}
+
 #[wasm_bindgen(js_name = "DataContractUpdateTransition")]
 pub struct DataContractUpdateTransitionWasm(DataContractUpdateTransition);
 
@@ -179,6 +213,8 @@ impl DataContractUpdateTransitionWasm {
 
 impl_wasm_conversions!(
     DataContractUpdateTransitionWasm,
-    DataContractUpdateTransition
+    DataContractUpdateTransition,
+    DataContractUpdateTransitionObjectJs,
+    DataContractUpdateTransitionJSONJs
 );
 impl_wasm_type_info!(DataContractUpdateTransitionWasm, DataContractUpdateTransition);

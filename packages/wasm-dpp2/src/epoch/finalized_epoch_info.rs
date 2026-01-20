@@ -32,6 +32,42 @@ export interface FinalizedEpochInfoOptions {
     feeMultiplierPermille: bigint | number;
     protocolVersion: number;
 }
+
+/**
+ * FinalizedEpochInfo serialized as a plain object.
+ */
+export interface FinalizedEpochInfoObject {
+    firstBlockTime: bigint;
+    firstBlockHeight: bigint;
+    totalBlocksInEpoch: bigint;
+    firstCoreBlockHeight: number;
+    nextEpochStartCoreBlockHeight: number;
+    totalProcessingFees: bigint;
+    totalDistributedStorageFees: bigint;
+    totalCreatedStorageFees: bigint;
+    coreBlockRewards: bigint;
+    blockProposers: BlockProposersMap;
+    feeMultiplierPermille: bigint;
+    protocolVersion: number;
+}
+
+/**
+ * FinalizedEpochInfo serialized as JSON.
+ */
+export interface FinalizedEpochInfoJSON {
+    firstBlockTime: string;
+    firstBlockHeight: string;
+    totalBlocksInEpoch: string;
+    firstCoreBlockHeight: number;
+    nextEpochStartCoreBlockHeight: number;
+    totalProcessingFees: string;
+    totalDistributedStorageFees: string;
+    totalCreatedStorageFees: string;
+    coreBlockRewards: string;
+    blockProposers: Record<string, string>;
+    feeMultiplierPermille: string;
+    protocolVersion: number;
+}
 "#;
 
 #[wasm_bindgen]
@@ -41,6 +77,12 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "BlockProposersMap")]
     pub type BlockProposersMapJs;
+
+    #[wasm_bindgen(typescript_type = "FinalizedEpochInfoObject")]
+    pub type FinalizedEpochInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "FinalizedEpochInfoJSON")]
+    pub type FinalizedEpochInfoJSONJs;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -357,5 +399,5 @@ impl FinalizedEpochInfoWasm {
     }
 }
 
-crate::impl_wasm_conversions!(FinalizedEpochInfoWasm, FinalizedEpochInfo);
+crate::impl_wasm_conversions!(FinalizedEpochInfoWasm, FinalizedEpochInfo, FinalizedEpochInfoObjectJs, FinalizedEpochInfoJSONJs);
 impl_wasm_type_info!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

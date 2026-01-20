@@ -6,6 +6,36 @@ use dpp::identity::contract_bounds::ContractBounds;
 use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * ContractBounds serialized as a plain object.
+ */
+export interface ContractBoundsObject {
+    identifier: Uint8Array;
+    documentTypeName?: string;
+    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
+}
+
+/**
+ * ContractBounds serialized as JSON.
+ */
+export interface ContractBoundsJSON {
+    identifier: string;
+    documentTypeName?: string;
+    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContractBoundsObject")]
+    pub type ContractBoundsObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ContractBoundsJSON")]
+    pub type ContractBoundsJSONJs;
+}
+
 #[wasm_bindgen(js_name = "ContractBounds")]
 #[derive(Clone)]
 pub struct ContractBoundsWasm(ContractBounds);
@@ -117,5 +147,5 @@ impl ContractBoundsWasm {
     }
 }
 
-impl_wasm_conversions!(ContractBoundsWasm, ContractBounds);
+impl_wasm_conversions!(ContractBoundsWasm, ContractBounds, ContractBoundsObjectJs, ContractBoundsJSONJs);
 impl_wasm_type_info!(ContractBoundsWasm, ContractBounds);

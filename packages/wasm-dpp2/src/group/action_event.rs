@@ -4,6 +4,34 @@ use crate::impl_wasm_type_info;
 use dpp::group::action_event::GroupActionEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * GroupActionEvent serialized as a plain object.
+ */
+export interface GroupActionEventObject {
+    variant: GroupActionEventVariant;
+    tokenEvent?: TokenEventObject;
+}
+
+/**
+ * GroupActionEvent serialized as JSON.
+ */
+export interface GroupActionEventJSON {
+    variant: GroupActionEventVariant;
+    tokenEvent?: TokenEventJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionEventObject")]
+    pub type GroupActionEventObjectJs;
+
+    #[wasm_bindgen(typescript_type = "GroupActionEventJSON")]
+    pub type GroupActionEventJSONJs;
+}
+
 /// TypeScript enum for GroupActionEvent variants
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,5 +82,5 @@ impl GroupActionEventWasm {
     }
 }
 
-impl_wasm_conversions!(GroupActionEventWasm, GroupActionEvent);
+impl_wasm_conversions!(GroupActionEventWasm, GroupActionEvent, GroupActionEventObjectJs, GroupActionEventJSONJs);
 impl_wasm_type_info!(GroupActionEventWasm, GroupActionEvent);

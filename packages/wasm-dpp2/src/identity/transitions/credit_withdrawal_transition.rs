@@ -40,12 +40,48 @@ export interface IdentityCreditWithdrawalTransitionOptions {
     nonce?: bigint | number;
     userFeeIncrease?: number;
 }
+
+/**
+ * IdentityCreditWithdrawalTransition serialized as a plain object.
+ */
+export interface IdentityCreditWithdrawalTransitionObject {
+    identityId: Uint8Array;
+    amount: bigint;
+    coreFeePerByte: number;
+    pooling: CreditWithdrawalTransitionPooling;
+    outputScript?: Uint8Array;
+    nonce: bigint;
+    userFeeIncrease: number;
+    signature?: Uint8Array;
+    signaturePublicKeyId?: number;
+}
+
+/**
+ * IdentityCreditWithdrawalTransition serialized as JSON.
+ */
+export interface IdentityCreditWithdrawalTransitionJSON {
+    identityId: string;
+    amount: string;
+    coreFeePerByte: number;
+    pooling: string;
+    outputScript?: string;
+    nonce: string;
+    userFeeIncrease: number;
+    signature?: string;
+    signaturePublicKeyId?: number;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentityCreditWithdrawalTransitionOptions")]
     pub type IdentityCreditWithdrawalTransitionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreditWithdrawalTransitionObject")]
+    pub type IdentityCreditWithdrawalTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreditWithdrawalTransitionJSON")]
+    pub type IdentityCreditWithdrawalTransitionJSONJs;
 }
 
 #[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
@@ -322,7 +358,9 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
 impl_wasm_conversions!(
     IdentityCreditWithdrawalTransitionWasm,
-    IdentityCreditWithdrawalTransition
+    IdentityCreditWithdrawalTransition,
+    IdentityCreditWithdrawalTransitionObjectJs,
+    IdentityCreditWithdrawalTransitionJSONJs
 );
 
 impl_wasm_type_info!(IdentityCreditWithdrawalTransitionWasm, IdentityCreditWithdrawalTransition);

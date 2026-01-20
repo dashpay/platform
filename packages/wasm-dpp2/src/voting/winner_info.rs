@@ -4,6 +4,34 @@ use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::Co
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * ContestedDocumentVotePollWinnerInfo serialized as a plain object.
+ */
+export interface ContestedDocumentVotePollWinnerInfoObject {
+    kind: "NoWinner" | "WonByIdentity" | "Locked";
+    identityId?: Uint8Array;
+}
+
+/**
+ * ContestedDocumentVotePollWinnerInfo serialized as JSON.
+ */
+export interface ContestedDocumentVotePollWinnerInfoJSON {
+    kind: "NoWinner" | "WonByIdentity" | "Locked";
+    identityId?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContestedDocumentVotePollWinnerInfoObject")]
+    pub type ContestedDocumentVotePollWinnerInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ContestedDocumentVotePollWinnerInfoJSON")]
+    pub type ContestedDocumentVotePollWinnerInfoJSONJs;
+}
+
 #[derive(Clone, Copy)]
 #[wasm_bindgen(js_name = "ContestedDocumentVotePollWinnerInfo")]
 pub struct ContestedDocumentVotePollWinnerInfoWasm(ContestedDocumentVotePollWinnerInfo);
@@ -89,7 +117,9 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
 
 impl_wasm_conversions!(
     ContestedDocumentVotePollWinnerInfoWasm,
-    ContestedDocumentVotePollWinnerInfo
+    ContestedDocumentVotePollWinnerInfo,
+    ContestedDocumentVotePollWinnerInfoObjectJs,
+    ContestedDocumentVotePollWinnerInfoJSONJs
 );
 
 impl ContestedDocumentVotePollWinnerInfoWasm {

@@ -17,6 +17,38 @@ use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitio
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * IdentityTopUpTransition serialized as a plain object.
+ */
+export interface IdentityTopUpTransitionObject {
+    identityId: Uint8Array;
+    assetLockProof: AssetLockProofObject;
+    userFeeIncrease: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * IdentityTopUpTransition serialized as JSON.
+ */
+export interface IdentityTopUpTransitionJSON {
+    identityId: string;
+    assetLockProof: AssetLockProofJSON;
+    userFeeIncrease: number;
+    signature?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityTopUpTransitionObject")]
+    pub type IdentityTopUpTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityTopUpTransitionJSON")]
+    pub type IdentityTopUpTransitionJSONJs;
+}
+
 #[wasm_bindgen(js_name = "IdentityTopUpTransition")]
 #[derive(Clone)]
 pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
@@ -167,5 +199,5 @@ impl IdentityTopUpTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);
+impl_wasm_conversions!(IdentityTopUpTransitionWasm, IdentityTopUpTransition, IdentityTopUpTransitionObjectJs, IdentityTopUpTransitionJSONJs);
 impl_wasm_type_info!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);

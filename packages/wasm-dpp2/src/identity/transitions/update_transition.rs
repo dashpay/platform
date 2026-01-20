@@ -35,12 +35,46 @@ export interface IdentityUpdateTransitionOptions {
     disablePublicKeys: number[];
     userFeeIncrease?: number;
 }
+
+/**
+ * IdentityUpdateTransition serialized as a plain object.
+ */
+export interface IdentityUpdateTransitionObject {
+    identityId: Uint8Array;
+    revision: bigint;
+    nonce: bigint;
+    addPublicKeys: IdentityPublicKeyInCreationObject[];
+    disablePublicKeys: number[];
+    userFeeIncrease: number;
+    signature?: Uint8Array;
+    signaturePublicKeyId?: number;
+}
+
+/**
+ * IdentityUpdateTransition serialized as JSON.
+ */
+export interface IdentityUpdateTransitionJSON {
+    identityId: string;
+    revision: string;
+    nonce: string;
+    addPublicKeys: IdentityPublicKeyInCreationJSON[];
+    disablePublicKeys: number[];
+    userFeeIncrease: number;
+    signature?: string;
+    signaturePublicKeyId?: number;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentityUpdateTransitionOptions")]
     pub type IdentityUpdateTransitionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityUpdateTransitionObject")]
+    pub type IdentityUpdateTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityUpdateTransitionJSON")]
+    pub type IdentityUpdateTransitionJSONJs;
 }
 
 #[wasm_bindgen(js_name = "IdentityUpdateTransition")]
@@ -306,5 +340,5 @@ impl IdentityUpdateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);
+impl_wasm_conversions!(IdentityUpdateTransitionWasm, IdentityUpdateTransition, IdentityUpdateTransitionObjectJs, IdentityUpdateTransitionJSONJs);
 impl_wasm_type_info!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);
