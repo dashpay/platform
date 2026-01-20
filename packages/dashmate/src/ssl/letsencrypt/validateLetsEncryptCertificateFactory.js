@@ -96,7 +96,14 @@ export default function validateLetsEncryptCertificateFactory(homeDir) {
     data.expirationDays = expirationDays;
 
     // Check if certificate IP matches external IP
-    if (data.certificate.commonName && data.certificate.commonName !== data.externalIp) {
+    // First check SANs (preferred for IP certificates with --disable-cn)
+    // Fall back to commonName if no IP SANs present
+    const certIpAddresses = data.certificate.ipAddresses;
+    const hasMatchingIp = certIpAddresses.length > 0
+      ? certIpAddresses.includes(data.externalIp)
+      : data.certificate.commonName === data.externalIp;
+
+    if (!hasMatchingIp) {
       return {
         error: ERRORS.CERTIFICATE_IP_MISMATCH,
         data,

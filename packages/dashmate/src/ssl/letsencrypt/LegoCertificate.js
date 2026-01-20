@@ -13,9 +13,14 @@ export default class LegoCertificate {
   created;
 
   /**
-   * @type {string}
+   * @type {string|null}
    */
   commonName;
+
+  /**
+   * @type {string[]}
+   */
+  ipAddresses;
 
   static EXPIRATION_LIMIT_DAYS = 2;
 
@@ -23,12 +28,14 @@ export default class LegoCertificate {
    * @param {Object} data
    * @param {Date} data.expires
    * @param {Date} data.created
-   * @param {string} data.commonName
+   * @param {string|null} data.commonName
+   * @param {string[]} data.ipAddresses
    */
   constructor(data) {
     this.expires = data.expires;
     this.created = data.created;
     this.commonName = data.commonName;
+    this.ipAddresses = data.ipAddresses || [];
   }
 
   /**
@@ -55,10 +62,23 @@ export default class LegoCertificate {
       (attr) => attr.shortName === 'CN',
     );
 
+    // Extract IP addresses from Subject Alternative Name extension
+    const ipAddresses = [];
+    const sanExtension = cert.getExtension('subjectAltName');
+    if (sanExtension && sanExtension.altNames) {
+      for (const altName of sanExtension.altNames) {
+        // Type 7 is IP address in SAN
+        if (altName.type === 7 && altName.ip) {
+          ipAddresses.push(altName.ip);
+        }
+      }
+    }
+
     return new LegoCertificate({
       expires: cert.validity.notAfter,
       created: cert.validity.notBefore,
       commonName: commonNameAttr ? commonNameAttr.value : null,
+      ipAddresses,
     });
   }
 
