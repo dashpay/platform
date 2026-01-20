@@ -41,6 +41,18 @@ struct AddressQueriesView: View {
                 }
                 .padding(.vertical, 4)
             }
+            
+            NavigationLink(destination: GetBranchStateView()) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Get Branch State")
+                        .font(.headline)
+                    Text("Query a specific branch of the address tree")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 4)
+            }
         }
         .navigationTitle("Address Queries")
         .navigationBarTitleDisplayMode(.inline)
@@ -634,19 +646,67 @@ struct GetTrunkStateView: View {
                                 // Leaf boundaries section
                                 if !state.leafBoundaries.isEmpty {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("Leaf Boundaries (\(state.leafBoundaries.count))")
+                                        Text("Leaf Boundaries (\(state.leafBoundaries.count)) - Tap to copy")
                                             .font(.subheadline)
                                             .fontWeight(.semibold)
                                         
-                                        ForEach(Array(state.leafBoundaries.enumerated()), id: \.offset) { index, boundary in
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text("Key: \(boundary.keyHex.prefix(16))...")
+                                        Button(action: {
+                                            UIPasteboard.general.string = "\(state.checkpointHeight)"
+                                        }) {
+                                            HStack {
+                                                Text("Checkpoint Height: \(state.checkpointHeight)")
                                                     .font(.caption)
-                                                    .monospaced()
-                                                Text("Hash: \(boundary.hashHex.prefix(16))...")
+                                                Image(systemName: "doc.on.doc")
                                                     .font(.caption2)
-                                                    .monospaced()
-                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .foregroundColor(.blue)
+                                        
+                                        ForEach(Array(state.leafBoundaries.enumerated()), id: \.offset) { index, boundary in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HStack {
+                                                    Text("Key:")
+                                                        .font(.caption)
+                                                        .frame(width: 40, alignment: .leading)
+                                                    Button(action: {
+                                                        UIPasteboard.general.string = boundary.keyHex
+                                                    }) {
+                                                        HStack(spacing: 4) {
+                                                            Text(boundary.keyHex)
+                                                                .font(.caption2)
+                                                                .monospaced()
+                                                                .lineLimit(1)
+                                                                .truncationMode(.middle)
+                                                            Image(systemName: "doc.on.doc")
+                                                                .font(.caption2)
+                                                        }
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .foregroundColor(.blue)
+                                                }
+                                                
+                                                HStack {
+                                                    Text("Hash:")
+                                                        .font(.caption)
+                                                        .frame(width: 40, alignment: .leading)
+                                                    Button(action: {
+                                                        UIPasteboard.general.string = boundary.hashHex
+                                                    }) {
+                                                        HStack(spacing: 4) {
+                                                            Text(boundary.hashHex)
+                                                                .font(.caption2)
+                                                                .monospaced()
+                                                                .lineLimit(1)
+                                                                .truncationMode(.middle)
+                                                            Image(systemName: "doc.on.doc")
+                                                                .font(.caption2)
+                                                        }
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .foregroundColor(.blue)
+                                                }
+                                                
                                                 if boundary.estimatedCount > 0 {
                                                     Text("Est. count: \(boundary.estimatedCount)")
                                                         .font(.caption)
@@ -654,6 +714,7 @@ struct GetTrunkStateView: View {
                                                 }
                                             }
                                             .padding(8)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
                                             .background(Color.orange.opacity(0.05))
                                             .cornerRadius(6)
                                         }
@@ -686,6 +747,324 @@ struct GetTrunkStateView: View {
                 
                 await MainActor.run {
                     result = trunkState
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Get Branch State View
+
+struct GetBranchStateView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    @State private var keyHex: String = ""
+    @State private var depth: String = "6"  // Valid range: 6-9
+    @State private var expectedHashHex: String = ""
+    @State private var checkpointHeight: String = ""
+    @State private var isLoading = false
+    @State private var result: PlatformBranchState?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Get Branch State")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Query a specific branch of the address tree. Use leaf boundary info from a trunk state query.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Text("This is a low-level API. Parameters come from trunk state leaf boundaries.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Inputs
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Key (hex)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("Leaf boundary key from trunk state", text: $keyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Depth (6-9)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("Query depth (6-9)", text: $depth)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Expected Hash (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("Hash from leaf boundary info", text: $expectedHashHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Checkpoint Height")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("Height from trunk state", text: $checkpointHeight)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                    }
+                }
+                .padding(.horizontal)
+                
+                // Query Button
+                Button(action: fetchBranchState) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.branch")
+                        }
+                        Text(isLoading ? "Fetching..." : "Fetch Branch State")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let state = result {
+                            VStack(alignment: .leading, spacing: 16) {
+                                // Summary
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Label("Elements", systemImage: "person.2")
+                                        Spacer()
+                                        Text("\(state.elements.count)")
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    HStack {
+                                        Label("Leaf Boundaries", systemImage: "leaf")
+                                        Spacer()
+                                        Text("\(state.leafBoundaries.count)")
+                                            .fontWeight(.medium)
+                                    }
+                                    
+                                    if !state.elements.isEmpty {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Total Balance")
+                                                .font(.subheadline)
+                                            Text("\(formatCredits(state.totalBalance)) credits")
+                                                .fontWeight(.medium)
+                                            Text("\(formatDash(state.totalBalance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                }
+                                .font(.subheadline)
+                                .padding()
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(8)
+                                
+                                // Elements section
+                                if !state.elements.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Elements (\(state.elements.count))")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        
+                                        ForEach(Array(state.elements.enumerated()), id: \.offset) { _, element in
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Key: \(element.keyHex.prefix(16))...")
+                                                    .font(.caption)
+                                                    .monospaced()
+                                                HStack {
+                                                    Text("\(formatCredits(element.balance)) credits")
+                                                    Spacer()
+                                                    Text("Nonce: \(element.nonce)")
+                                                }
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            }
+                                            .padding(8)
+                                            .background(Color.green.opacity(0.05))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+                                
+                                // Leaf boundaries section
+                                if !state.leafBoundaries.isEmpty {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Leaf Boundaries (\(state.leafBoundaries.count)) - Tap to copy")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        
+                                        ForEach(Array(state.leafBoundaries.enumerated()), id: \.offset) { _, boundary in
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                HStack {
+                                                    Text("Key:")
+                                                        .font(.caption)
+                                                        .frame(width: 40, alignment: .leading)
+                                                    Button(action: {
+                                                        UIPasteboard.general.string = boundary.keyHex
+                                                    }) {
+                                                        HStack(spacing: 4) {
+                                                            Text(boundary.keyHex)
+                                                                .font(.caption2)
+                                                                .monospaced()
+                                                                .lineLimit(1)
+                                                                .truncationMode(.middle)
+                                                            Image(systemName: "doc.on.doc")
+                                                                .font(.caption2)
+                                                        }
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .foregroundColor(.blue)
+                                                }
+                                                
+                                                HStack {
+                                                    Text("Hash:")
+                                                        .font(.caption)
+                                                        .frame(width: 40, alignment: .leading)
+                                                    Button(action: {
+                                                        UIPasteboard.general.string = boundary.hashHex
+                                                    }) {
+                                                        HStack(spacing: 4) {
+                                                            Text(boundary.hashHex)
+                                                                .font(.caption2)
+                                                                .monospaced()
+                                                                .lineLimit(1)
+                                                                .truncationMode(.middle)
+                                                            Image(systemName: "doc.on.doc")
+                                                                .font(.caption2)
+                                                        }
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                    .foregroundColor(.blue)
+                                                }
+                                                
+                                                if boundary.estimatedCount > 0 {
+                                                    Text("Est. count: \(boundary.estimatedCount)")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondary)
+                                                }
+                                            }
+                                            .padding(8)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .background(Color.orange.opacity(0.05))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Get Branch State")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard let depthValue = UInt32(depth) else { return false }
+        return !keyHex.isEmpty && 
+            !expectedHashHex.isEmpty && 
+            expectedHashHex.count == 64 &&
+            !checkpointHeight.isEmpty &&
+            depthValue >= 6 && depthValue <= 9 &&
+            UInt64(checkpointHeight) != nil
+    }
+    
+    private func fetchBranchState() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let keyData = Data(hexString: keyHex) else {
+            errorMessage = "Invalid key hex"
+            showResult = true
+            return
+        }
+        
+        guard let hashData = Data(hexString: expectedHashHex), hashData.count == 32 else {
+            errorMessage = "Invalid expected hash hex (must be 64 hex characters = 32 bytes)"
+            showResult = true
+            return
+        }
+        
+        guard let depthValue = UInt32(depth), depthValue >= 6 && depthValue <= 9 else {
+            errorMessage = "Depth must be between 6 and 9"
+            showResult = true
+            return
+        }
+        
+        guard let heightValue = UInt64(checkpointHeight) else {
+            errorMessage = "Invalid checkpoint height"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let branchState = try sdk.addresses.getBranchState(
+                    key: keyData,
+                    depth: depthValue,
+                    expectedHash: hashData,
+                    checkpointHeight: heightValue
+                )
+                
+                await MainActor.run {
+                    result = branchState
                     showResult = true
                     isLoading = false
                 }

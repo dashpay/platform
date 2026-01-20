@@ -353,6 +353,119 @@ public class Addresses: @unchecked Sendable {
         )
     }
     
+    // MARK: - Branch State Query
+    
+    /// Fetch the branch state of a subtree in the address tree.
+    ///
+    /// This is used after a trunk state query to explore subtrees indicated by leaf boundaries.
+    /// The result contains elements (addresses with balances) and deeper leaf boundaries.
+    ///
+    /// - Parameters:
+    ///   - key: Leaf boundary key bytes from trunk state
+    ///   - depth: Query depth (how deep to explore)
+    ///   - expectedHash: Expected hash of the subtree root (32 bytes, for proof verification)
+    ///   - checkpointHeight: Block height from trunk state response for consistency
+    /// - Returns: PlatformBranchState containing elements and leaf boundaries
+    /// - Throws: SDKError if the query fails
+    public func getBranchState(
+        key: Data,
+        depth: UInt32,
+        expectedHash: Data,
+        checkpointHeight: UInt64
+    ) throws -> PlatformBranchState {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        guard expectedHash.count == 32 else {
+            throw SDKError.invalidParameter("Expected hash must be exactly 32 bytes, got \(expectedHash.count)")
+        }
+        
+        let result = key.withUnsafeBytes { (keyBuffer: UnsafeRawBufferPointer) -> DashSDKResult in
+            expectedHash.withUnsafeBytes { (hashBuffer: UnsafeRawBufferPointer) -> DashSDKResult in
+                let keyPtr = keyBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                let hashPtr = hashBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                return dash_sdk_address_fetch_branch_state(
+                    handle,
+                    keyPtr,
+                    UInt(key.count),
+                    depth,
+                    hashPtr,
+                    checkpointHeight
+                )
+            }
+        }
+        
+        // Check for errors
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        
+        guard let dataPtr = result.data else {
+            throw SDKError.invalidState("No branch state data returned")
+        }
+        
+        // Parse DashSDKBranchState
+        let statePtr = dataPtr.assumingMemoryBound(to: DashSDKBranchState.self)
+        let ffiState = statePtr.pointee
+        
+        // Convert elements (same structure as trunk state)
+        var elements: [TrunkStateElement] = []
+        if ffiState.elements_count > 0 && ffiState.elements != nil {
+            for i in 0..<ffiState.elements_count {
+                let ffiElement = ffiState.elements![Int(i)]
+                
+                let keyData: Data
+                if ffiElement.key != nil && ffiElement.key_len > 0 {
+                    keyData = Data(bytes: ffiElement.key!, count: Int(ffiElement.key_len))
+                } else {
+                    continue
+                }
+                
+                elements.append(TrunkStateElement(
+                    key: keyData,
+                    nonce: ffiElement.nonce,
+                    balance: ffiElement.balance
+                ))
+            }
+        }
+        
+        // Convert leaf boundaries
+        var leafBoundaries: [LeafBoundary] = []
+        if ffiState.leaf_boundaries_count > 0 && ffiState.leaf_boundaries != nil {
+            for i in 0..<ffiState.leaf_boundaries_count {
+                let ffiBoundary = ffiState.leaf_boundaries![Int(i)]
+                
+                let boundaryKeyData: Data
+                if ffiBoundary.key != nil && ffiBoundary.key_len > 0 {
+                    boundaryKeyData = Data(bytes: ffiBoundary.key!, count: Int(ffiBoundary.key_len))
+                } else {
+                    continue
+                }
+                
+                // Convert fixed-size array to Data
+                var hashArray = ffiBoundary.hash
+                let hashData = Data(bytes: &hashArray, count: 32)
+                
+                leafBoundaries.append(LeafBoundary(
+                    key: boundaryKeyData,
+                    hash: hashData,
+                    estimatedCount: ffiBoundary.estimated_count
+                ))
+            }
+        }
+        
+        // Free the FFI struct
+        dash_sdk_branch_state_free(statePtr)
+        
+        return PlatformBranchState(
+            elements: elements,
+            leafBoundaries: leafBoundaries
+        )
+    }
+    
     // MARK: - Convenience Methods
 
     /// Get the balance for a single address

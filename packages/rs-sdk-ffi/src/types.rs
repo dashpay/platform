@@ -94,6 +94,8 @@ pub enum DashSDKResultDataType {
     AddressInfoMap = 9,
     /// Trunk state for address synchronization
     TrunkState = 10,
+    /// Branch state for address synchronization
+    BranchState = 11,
 }
 
 /// Binary data container for results
@@ -199,6 +201,19 @@ pub struct DashSDKTrunkState {
     pub checkpoint_height: u64,
 }
 
+/// Branch state for address synchronization (result of branch query)
+#[repr(C)]
+pub struct DashSDKBranchState {
+    /// Array of elements (addresses with balances found in this branch)
+    pub elements: *mut DashSDKTrunkStateElement,
+    /// Number of elements
+    pub elements_count: usize,
+    /// Array of leaf boundaries (deeper subtrees needing further queries)
+    pub leaf_boundaries: *mut DashSDKLeafBoundary,
+    /// Number of leaf boundaries
+    pub leaf_boundaries_count: usize,
+}
+
 /// Result type for FFI functions that return data
 #[repr(C)]
 pub struct DashSDKResult {
@@ -287,6 +302,15 @@ impl DashSDKResult {
     pub fn success_trunk_state(state: DashSDKTrunkState) -> Self {
         DashSDKResult {
             data_type: DashSDKResultDataType::TrunkState,
+            data: Box::into_raw(Box::new(state)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with branch state
+    pub fn success_branch_state(state: DashSDKBranchState) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::BranchState,
             data: Box::into_raw(Box::new(state)) as *mut c_void,
             error: std::ptr::null_mut(),
         }
@@ -586,6 +610,43 @@ pub unsafe extern "C" fn dash_sdk_address_info_map_free(map: *mut DashSDKAddress
 /// - Do not access `state` after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_trunk_state_free(state: *mut DashSDKTrunkState) {
+    if state.is_null() {
+        return;
+    }
+
+    let state = Box::from_raw(state);
+    
+    // Free elements
+    if !state.elements.is_null() && state.elements_count > 0 {
+        let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
+        for element in elements_slice.iter() {
+            if !element.key.is_null() && element.key_len > 0 {
+                let _ = Vec::from_raw_parts(element.key, element.key_len, element.key_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
+    }
+    
+    // Free leaf boundaries
+    if !state.leaf_boundaries.is_null() && state.leaf_boundaries_count > 0 {
+        let boundaries_slice = std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
+        for boundary in boundaries_slice.iter() {
+            if !boundary.key.is_null() && boundary.key_len > 0 {
+                let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(state.leaf_boundaries, state.leaf_boundaries_count, state.leaf_boundaries_count);
+    }
+}
+
+/// Free a branch state structure
+///
+/// # Safety
+/// - `state` must be a valid pointer to `DashSDKBranchState` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all elements, leaf boundaries, and the struct.
+/// - Do not access `state` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchState) {
     if state.is_null() {
         return;
     }

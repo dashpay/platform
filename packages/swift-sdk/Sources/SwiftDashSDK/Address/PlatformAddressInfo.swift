@@ -145,6 +145,21 @@ public struct PlatformTrunkState: Sendable {
     }
 }
 
+/// Branch state for address synchronization
+/// Contains addresses found in a specific branch and deeper leaf boundaries
+public struct PlatformBranchState: Sendable {
+    /// Elements (addresses with balances) found in this branch
+    public let elements: [TrunkStateElement]
+    
+    /// Leaf boundaries (deeper subtrees needing further queries)
+    public let leafBoundaries: [LeafBoundary]
+    
+    /// Total balance across all elements in this branch
+    public var totalBalance: UInt64 {
+        return elements.reduce(0) { $0 + $1.balance }
+    }
+}
+
 // MARK: - Bech32m Encoding/Decoding Helper
 
 /// Bech32m encoding/decoding helper for Platform addresses
