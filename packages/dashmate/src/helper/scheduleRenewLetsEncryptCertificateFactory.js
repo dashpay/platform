@@ -64,6 +64,8 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
       console.log(`Let's Encrypt certificate will expire at ${certificate.expires}. Schedule to obtain at ${renewAt}.`);
     }
 
+    let renewalSucceeded = false;
+
     const job = new CronJob(renewAt, async () => {
       try {
         const tasks = obtainLetsEncryptCertificateTask(config);
@@ -82,15 +84,30 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
 
         // eslint-disable-next-line no-console
         console.log("Let's Encrypt certificate renewed successfully");
+
+        renewalSucceeded = true;
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error(`Failed to renew Let's Encrypt certificate: ${e.message}`);
+
+        renewalSucceeded = false;
       }
 
       job.stop();
     }, async () => {
       // Schedule new cron task after completion
-      process.nextTick(() => scheduleRenewLetsEncryptCertificate(config));
+      if (renewalSucceeded) {
+        // Success: reschedule immediately to read new cert expiry
+        process.nextTick(() => scheduleRenewLetsEncryptCertificate(config));
+      } else {
+        // Failure: wait 1 hour before retrying to avoid tight loop
+        // eslint-disable-next-line no-console
+        console.log("Scheduling Let's Encrypt renewal retry in 1 hour");
+
+        setTimeout(() => {
+          scheduleRenewLetsEncryptCertificate(config);
+        }, 60 * 60 * 1000);
+      }
     });
 
     job.start();

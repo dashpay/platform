@@ -135,6 +135,15 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           try {
             const existingContainer = await docker.getContainer(containerName);
             await existingContainer.remove({ force: true });
+
+            try {
+              await existingContainer.wait();
+            } catch (waitError) {
+              // Skip error if container is already removed
+              if (waitError.statusCode !== 404) {
+                throw waitError;
+              }
+            }
           } catch (e) {
             // Container doesn't exist, that's fine
             if (e.statusCode !== 404) {
