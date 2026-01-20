@@ -466,6 +466,86 @@ public class Addresses: @unchecked Sendable {
         )
     }
     
+    // MARK: - Recent Balance Changes Query
+    
+    /// Fetch recent address balance changes starting from a specific block height.
+    ///
+    /// This returns all address balance changes that occurred since the specified start height.
+    /// Useful for syncing wallet balances after the initial sync.
+    ///
+    /// - Parameter startHeight: Block height to start fetching changes from
+    /// - Returns: RecentBalanceChanges containing block-by-block changes
+    /// - Throws: SDKError if the query fails
+    public func getRecentBalanceChanges(startHeight: UInt64) throws -> RecentBalanceChanges {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_address_fetch_recent_balance_changes(handle, startHeight)
+        
+        // Check for errors
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        
+        guard let dataPtr = result.data else {
+            // No changes found - return empty result
+            return RecentBalanceChanges(blocks: [])
+        }
+        
+        // Parse DashSDKRecentBalanceChanges
+        let changesPtr = dataPtr.assumingMemoryBound(to: DashSDKRecentBalanceChanges.self)
+        let ffiChanges = changesPtr.pointee
+        
+        // Convert blocks
+        var blocks: [BlockBalanceChanges] = []
+        if ffiChanges.blocks_count > 0 && ffiChanges.blocks != nil {
+            for i in 0..<ffiChanges.blocks_count {
+                let ffiBlock = ffiChanges.blocks![Int(i)]
+                
+                // Convert address changes within this block
+                var addressChanges: [AddressBalanceChange] = []
+                if ffiBlock.changes_count > 0 && ffiBlock.changes != nil {
+                    for j in 0..<ffiBlock.changes_count {
+                        let ffiChange = ffiBlock.changes![Int(j)]
+                        
+                        let addressData: Data
+                        if ffiChange.address != nil && ffiChange.address_len > 0 {
+                            addressData = Data(bytes: ffiChange.address!, count: Int(ffiChange.address_len))
+                        } else {
+                            continue
+                        }
+                        
+                        // Map operation type: 0 = SetCredits, 1 = AddToCredits
+                        let operation: CreditOperationType
+                        if ffiChange.operation_type.rawValue == 0 {
+                            operation = .setCredits(credits: ffiChange.credits)
+                        } else {
+                            operation = .addToCredits(credits: ffiChange.credits)
+                        }
+                        
+                        addressChanges.append(AddressBalanceChange(
+                            addressBytes: addressData,
+                            operation: operation
+                        ))
+                    }
+                }
+                
+                blocks.append(BlockBalanceChanges(
+                    blockHeight: ffiBlock.block_height,
+                    changes: addressChanges
+                ))
+            }
+        }
+        
+        // Free the FFI struct
+        dash_sdk_recent_balance_changes_free(changesPtr)
+        
+        return RecentBalanceChanges(blocks: blocks)
+    }
+    
     // MARK: - Convenience Methods
 
     /// Get the balance for a single address

@@ -160,6 +160,73 @@ public struct PlatformBranchState: Sendable {
     }
 }
 
+// MARK: - Recent Balance Changes Types
+
+/// Credit operation type
+public enum CreditOperationType: Sendable, Equatable, Codable {
+    case setCredits(credits: UInt64)
+    case addToCredits(credits: UInt64)
+    
+    public var credits: UInt64 {
+        switch self {
+        case .setCredits(let credits), .addToCredits(let credits):
+            return credits
+        }
+    }
+}
+
+/// A single balance change for an address
+public struct AddressBalanceChange: Sendable, Equatable {
+    /// Address bytes
+    public let addressBytes: Data
+    
+    /// Credit operation type and amount
+    public let operation: CreditOperationType
+    
+    /// Convert address bytes to hex string
+    public var addressHex: String {
+        return addressBytes.map { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Convert address bytes to bech32m string
+    public func toBech32m(network: DashSDKNetwork) -> String? {
+        guard addressBytes.count == 21 else { return nil }
+        let hrp: String
+        if network.rawValue == 0 {
+            hrp = "dashevo"
+        } else {
+            hrp = "tdashevo"
+        }
+        return Bech32m.encode(hrp: hrp, data: addressBytes)
+    }
+}
+
+/// Balance changes for a single block
+public struct BlockBalanceChanges: Sendable, Equatable {
+    /// Block height
+    public let blockHeight: UInt64
+    
+    /// Balance changes in this block
+    public let changes: [AddressBalanceChange]
+}
+
+/// Recent balance changes across multiple blocks
+public struct RecentBalanceChanges: Sendable {
+    /// Block-by-block balance changes
+    public let blocks: [BlockBalanceChanges]
+    
+    /// Total number of balance changes across all blocks
+    public var totalChangesCount: Int {
+        return blocks.reduce(0) { $0 + $1.changes.count }
+    }
+    
+    /// Height range (if any blocks present)
+    public var heightRange: ClosedRange<UInt64>? {
+        guard let first = blocks.first, let last = blocks.last else { return nil }
+        return first.blockHeight...last.blockHeight
+    }
+}
+
 // MARK: - Bech32m Encoding/Decoding Helper
 
 /// Bech32m encoding/decoding helper for Platform addresses

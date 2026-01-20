@@ -53,6 +53,18 @@ struct AddressQueriesView: View {
                 }
                 .padding(.vertical, 4)
             }
+            
+            NavigationLink(destination: GetRecentBalanceChangesView()) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Get Recent Balance Changes")
+                        .font(.headline)
+                    Text("Fetch address balance changes since a block height")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 4)
+            }
         }
         .navigationTitle("Address Queries")
         .navigationBarTitleDisplayMode(.inline)
@@ -1076,6 +1088,288 @@ struct GetBranchStateView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Get Recent Balance Changes View
+
+struct GetRecentBalanceChangesView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    @State private var startHeightInput: String = "0"
+    @State private var isLoading = false
+    @State private var result: RecentBalanceChanges?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Get Recent Balance Changes")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Fetch all address balance changes that occurred since the specified block height. Useful for syncing wallet balances after initial sync.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Input
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Start Block Height")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    TextField("Enter start block height", text: $startHeightInput)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .keyboardType(.numberPad)
+                    
+                    Text("Enter 0 to get all recent balance changes")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+                
+                // Fetch Button
+                Button(action: fetchRecentChanges) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        Text(isLoading ? "Fetching..." : "Fetch Recent Changes")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid)
+                .opacity((isLoading || !isFormValid) ? 0.6 : 1.0)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    if let error = errorMessage {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Error", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                                .font(.headline)
+                            Text(error)
+                                .font(.body)
+                                .foregroundColor(.red)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(10)
+                        .padding(.horizontal)
+                    } else if let changes = result {
+                        // Get network from SDK (0 = mainnet, 1 = testnet)
+                        let network = appState.platformState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+                        RecentBalanceChangesResultView(changes: changes, network: network)
+                            .padding(.horizontal)
+                    }
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Recent Balance Changes")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        return UInt64(startHeightInput) != nil
+    }
+    
+    private func fetchRecentChanges() {
+        guard let sdk = appState.platformState.sdk else { return }
+        guard let startHeight = UInt64(startHeightInput) else {
+            errorMessage = "Invalid start height"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let changes = try sdk.addresses.getRecentBalanceChanges(startHeight: startHeight)
+                
+                await MainActor.run {
+                    result = changes
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Recent Balance Changes Result View
+
+struct RecentBalanceChangesResultView: View {
+    let changes: RecentBalanceChanges
+    let network: DashSDKNetwork
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Summary
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Summary", systemImage: "list.bullet.rectangle")
+                    .font(.headline)
+                
+                ResultRow(label: "Blocks", value: "\(changes.blocks.count)")
+                ResultRow(label: "Total Changes", value: "\(changes.totalChangesCount)")
+                
+                if let range = changes.heightRange {
+                    ResultRow(label: "Height Range", value: "\(range.lowerBound) - \(range.upperBound)")
+                }
+            }
+            .padding()
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(10)
+            
+            // Block-by-block details
+            if !changes.blocks.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Balance Changes by Block", systemImage: "cube.fill")
+                        .font(.headline)
+                    
+                    ForEach(Array(changes.blocks.enumerated()), id: \.offset) { _, block in
+                        BlockBalanceChangesView(block: block, network: network)
+                    }
+                }
+            } else {
+                Text("No balance changes found from the specified block height.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .padding()
+            }
+        }
+    }
+}
+
+struct BlockBalanceChangesView: View {
+    let block: BlockBalanceChanges
+    let network: DashSDKNetwork
+    
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: { isExpanded.toggle() }) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Block \(block.blockHeight)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("\(block.changes.count) change(s)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(8)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isExpanded {
+                ForEach(Array(block.changes.enumerated()), id: \.offset) { _, change in
+                    AddressBalanceChangeView(change: change, network: network)
+                }
+            }
+        }
+    }
+}
+
+struct AddressBalanceChangeView: View {
+    let change: AddressBalanceChange
+    let network: DashSDKNetwork
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Address
+            if let bech32m = change.toBech32m(network: network) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Address")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(bech32m)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Address (hex)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(change.addressHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            
+            // Operation
+            HStack {
+                Text("Operation")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                switch change.operation {
+                case .setCredits(let credits):
+                    HStack(spacing: 4) {
+                        Image(systemName: "equal")
+                            .foregroundColor(.orange)
+                        Text("Set to \(formatCredits(credits))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                case .addToCredits(let credits):
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .foregroundColor(.green)
+                        Text("Add \(formatCredits(credits))")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            
+            // Dash equivalent
+            HStack {
+                Spacer()
+                Text("(\(formatDash(change.operation.credits)) DASH)")
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(8)
+        .padding(.leading, 16)
     }
 }
 

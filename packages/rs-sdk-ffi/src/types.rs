@@ -96,6 +96,8 @@ pub enum DashSDKResultDataType {
     TrunkState = 10,
     /// Branch state for address synchronization
     BranchState = 11,
+    /// Recent address balance changes
+    RecentBalanceChanges = 12,
 }
 
 /// Binary data container for results
@@ -214,6 +216,49 @@ pub struct DashSDKBranchState {
     pub leaf_boundaries_count: usize,
 }
 
+/// Credit operation type
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum DashSDKCreditOperationType {
+    /// Setting credits to a value
+    SetCredits = 0,
+    /// Adding to credits
+    AddToCredits = 1,
+}
+
+/// A single balance change for an address
+#[repr(C)]
+pub struct DashSDKAddressBalanceChange {
+    /// Address bytes
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Operation type
+    pub operation_type: DashSDKCreditOperationType,
+    /// Credit amount
+    pub credits: u64,
+}
+
+/// Balance changes for a single block
+#[repr(C)]
+pub struct DashSDKBlockBalanceChanges {
+    /// Block height
+    pub block_height: u64,
+    /// Array of balance changes
+    pub changes: *mut DashSDKAddressBalanceChange,
+    /// Number of changes
+    pub changes_count: usize,
+}
+
+/// Recent address balance changes across multiple blocks
+#[repr(C)]
+pub struct DashSDKRecentBalanceChanges {
+    /// Array of block balance changes
+    pub blocks: *mut DashSDKBlockBalanceChanges,
+    /// Number of blocks
+    pub blocks_count: usize,
+}
+
 /// Result type for FFI functions that return data
 #[repr(C)]
 pub struct DashSDKResult {
@@ -312,6 +357,15 @@ impl DashSDKResult {
         DashSDKResult {
             data_type: DashSDKResultDataType::BranchState,
             data: Box::into_raw(Box::new(state)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with recent balance changes
+    pub fn success_recent_balance_changes(changes: DashSDKRecentBalanceChanges) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::RecentBalanceChanges,
+            data: Box::into_raw(Box::new(changes)) as *mut c_void,
             error: std::ptr::null_mut(),
         }
     }
@@ -673,6 +727,39 @@ pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchSta
             }
         }
         let _ = Vec::from_raw_parts(state.leaf_boundaries, state.leaf_boundaries_count, state.leaf_boundaries_count);
+    }
+}
+
+/// Free a recent balance changes structure
+///
+/// # Safety
+/// - `changes` must be a valid pointer to `DashSDKRecentBalanceChanges` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all blocks, changes, addresses, and the struct.
+/// - Do not access `changes` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(changes: *mut DashSDKRecentBalanceChanges) {
+    if changes.is_null() {
+        return;
+    }
+
+    let changes = Box::from_raw(changes);
+    
+    // Free blocks
+    if !changes.blocks.is_null() && changes.blocks_count > 0 {
+        let blocks_slice = std::slice::from_raw_parts_mut(changes.blocks, changes.blocks_count);
+        for block in blocks_slice.iter() {
+            // Free changes within each block
+            if !block.changes.is_null() && block.changes_count > 0 {
+                let changes_slice = std::slice::from_raw_parts_mut(block.changes, block.changes_count);
+                for change in changes_slice.iter() {
+                    if !change.address.is_null() && change.address_len > 0 {
+                        let _ = Vec::from_raw_parts(change.address, change.address_len, change.address_len);
+                    }
+                }
+                let _ = Vec::from_raw_parts(block.changes, block.changes_count, block.changes_count);
+            }
+        }
+        let _ = Vec::from_raw_parts(changes.blocks, changes.blocks_count, changes.blocks_count);
     }
 }
 
