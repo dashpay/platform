@@ -1,19 +1,23 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
-use crate::utils::{JsValueExt, try_to_u64};
-use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
-use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use crate::impl_wasm_type_info;
+use crate::utils::try_to_u64;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
-use dpp::platform_value::string_encoding::Encoding;
+use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::prelude::Identifier;
-use js_sys::{BigInt, Object, Reflect};
+use js_sys::{BigInt, Map, Object, Reflect};
 use std::collections::BTreeMap;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 #[wasm_bindgen(typescript_custom_section)]
 const FINALIZED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
+/**
+ * Block proposers mapping: Identifier -> block count (bigint).
+ */
+export type BlockProposersMap = Map<Identifier, bigint>;
+
 export interface FinalizedEpochInfoOptions {
     firstBlockTime: bigint | number;
     firstBlockHeight: bigint | number;
@@ -24,7 +28,7 @@ export interface FinalizedEpochInfoOptions {
     totalDistributedStorageFees: bigint | number;
     totalCreatedStorageFees: bigint | number;
     coreBlockRewards: bigint | number;
-    blockProposers: Record<string, bigint | number>;
+    blockProposers: BlockProposersMap;
     feeMultiplierPermille: bigint | number;
     protocolVersion: number;
 }
@@ -34,6 +38,9 @@ export interface FinalizedEpochInfoOptions {
 extern "C" {
     #[wasm_bindgen(typescript_type = "FinalizedEpochInfoOptions")]
     pub type FinalizedEpochInfoOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "BlockProposersMap")]
+    pub type BlockProposersMapJs;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,43 +73,41 @@ impl FinalizedEpochInfoWasm {
     }
 }
 
-fn block_proposers_from_js(js_value: &JsValue) -> WasmDppResult<BTreeMap<Identifier, u64>> {
-    if js_value.is_undefined() || js_value.is_null() {
-        return Ok(BTreeMap::new());
-    }
-
-    if !js_value.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "blockProposers must be an object",
-        ));
-    }
-
-    let object = Object::from(js_value.clone());
-    let keys = Object::keys(&object);
+fn block_proposers_from_map(js_map: &Map) -> WasmDppResult<BTreeMap<Identifier, u64>> {
     let mut map = BTreeMap::new();
 
-    for key in keys.iter() {
-        let identifier =
-            Identifier::from(IdentifierWasm::try_from(key.clone()).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "invalid block proposer identifier: {}",
-                    err
-                ))
-            })?);
-
-        let value = Reflect::get(&object, &key).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to read block proposer '{}': {}",
-                identifier.to_string(Encoding::Base58),
-                message
-            ))
+    // Iterate using entries()
+    let entries = js_map.entries();
+    loop {
+        let next = entries.next().map_err(|e| {
+            WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let credits = try_to_u64(value.clone()).map_err(|err| {
+        let done = Reflect::get(&next, &JsValue::from_str("done"))
+            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'done' property"))?
+            .as_bool()
+            .unwrap_or(true);
+
+        if done {
+            break;
+        }
+
+        let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
+            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
+
+        let entry_array = js_sys::Array::from(&entry_value);
+        let key = entry_array.get(0);
+        let value = entry_array.get(1);
+
+        let identifier: Identifier = IdentifierWasm::try_from(key)
+            .map_err(|e| {
+                WasmDppError::invalid_argument(format!("Invalid block proposer identifier: {}", e))
+            })?
+            .into();
+
+        let credits = try_to_u64(value).map_err(|err| {
             WasmDppError::invalid_argument(format!(
-                "block proposer value for '{}' is not a valid u64: {:#}",
-                identifier.to_string(Encoding::Base58),
+                "block proposer value is not a valid u64: {:#}",
                 err
             ))
         })?;
@@ -113,26 +118,15 @@ fn block_proposers_from_js(js_value: &JsValue) -> WasmDppResult<BTreeMap<Identif
     Ok(map)
 }
 
-fn block_proposers_to_js(map: &BTreeMap<Identifier, u64>) -> WasmDppResult<JsValue> {
-    let object = Object::new();
+fn block_proposers_to_map(map: &BTreeMap<Identifier, u64>) -> BlockProposersMapJs {
+    let js_map = Map::new();
 
     for (identifier, value) in map {
-        Reflect::set(
-            &object,
-            &JsValue::from(identifier.to_string(Encoding::Base58)),
-            &BigInt::from(*value).into(),
-        )
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to serialize block proposer '{}': {}",
-                identifier.to_string(Encoding::Base58),
-                message
-            ))
-        })?;
+        let identifier_wasm = IdentifierWasm::from(*identifier);
+        js_map.set(&identifier_wasm.into(), &BigInt::from(*value).into());
     }
 
-    Ok(object.into())
+    js_map.unchecked_into()
 }
 
 #[wasm_bindgen(js_class = FinalizedEpochInfo)]
@@ -198,7 +192,7 @@ impl FinalizedEpochInfoWasm {
 
         let block_proposers_js = Reflect::get(&options_obj, &"blockProposers".into())
             .map_err(|_| WasmDppError::invalid_argument("blockProposers is required"))?;
-        let block_proposers = block_proposers_from_js(&block_proposers_js)?;
+        let block_proposers = block_proposers_from_map(&Map::from(block_proposers_js))?;
 
         let fee_multiplier_permille = try_to_u64(
             Reflect::get(&options_obj, &"feeMultiplierPermille".into())
@@ -275,8 +269,8 @@ impl FinalizedEpochInfoWasm {
     }
 
     #[wasm_bindgen(getter = "blockProposers")]
-    pub fn block_proposers(&self) -> WasmDppResult<JsValue> {
-        block_proposers_to_js(self.v0().block_proposers())
+    pub fn block_proposers(&self) -> BlockProposersMapJs {
+        block_proposers_to_map(self.v0().block_proposers())
     }
 
     #[wasm_bindgen(getter = "feeMultiplierPermille")]
@@ -345,9 +339,9 @@ impl FinalizedEpochInfoWasm {
     #[wasm_bindgen(setter = "blockProposers")]
     pub fn set_block_proposers(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Record<string, number>")] block_proposers: &JsValue,
+        block_proposers: BlockProposersMapJs,
     ) -> WasmDppResult<()> {
-        let block_proposers_map = block_proposers_from_js(block_proposers)?;
+        let block_proposers_map = block_proposers_from_map(&Map::from(JsValue::from(block_proposers)))?;
         self.v0_mut().block_proposers = block_proposers_map;
         Ok(())
     }

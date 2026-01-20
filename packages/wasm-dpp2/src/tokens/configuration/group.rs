@@ -2,13 +2,11 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::JsValueExt;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
-use js_sys::{Object, Reflect};
+use js_sys::{Map, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
@@ -16,18 +14,16 @@ use wasm_bindgen::{JsCast, JsValue};
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
 /**
- * Group members mapping: identifier (base58) -> power.
+ * Group members mapping: Identifier -> power.
  */
-export interface GroupMembers {
-    [identifierBase58: string]: number;
-}
+export type GroupMembersMap = Map<Identifier, number>;
 
 /**
  * Group serialized as a plain object.
  */
 export interface GroupObject {
     $formatVersion: string;
-    members: GroupMembers;
+    members: Record<string, number>;
     requiredPower: number;
 }
 
@@ -36,15 +32,15 @@ export interface GroupObject {
  */
 export interface GroupJSON {
     $formatVersion: string;
-    members: GroupMembers;
+    members: Record<string, number>;
     requiredPower: number;
 }
 "#;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "GroupMembers")]
-    pub type GroupMembersJs;
+    #[wasm_bindgen(typescript_type = "GroupMembersMap")]
+    pub type GroupMembersMapJs;
 
     #[wasm_bindgen(typescript_type = "GroupObject")]
     pub type GroupObjectJs;
@@ -69,29 +65,39 @@ impl From<GroupWasm> for Group {
     }
 }
 
-pub fn members_to_map(
-    members_object: &Object,
+pub fn members_map_to_btree(
+    members_map: &Map,
 ) -> WasmDppResult<BTreeMap<Identifier, GroupMemberPower>> {
-    let members_keys = Object::keys(&members_object);
-
     let mut members = BTreeMap::new();
 
-    for key in members_keys.iter() {
-        let key_str = key
-            .as_string()
-            .ok_or_else(|| WasmDppError::invalid_argument("cannot convert key to string"))?;
-
-        let identifier: Identifier = IdentifierWasm::try_from(key.clone())
-            .map_err(|_| {
-                WasmDppError::invalid_argument(format!("Invalid identifier: {}", key_str))
-            })?
-            .into();
-
-        let val = Reflect::get(members_object, &key).map_err(|_| {
-            WasmDppError::invalid_argument(format!("Invalid value at key '{}'", key_str))
+    // Iterate using entries()
+    let entries = members_map.entries();
+    loop {
+        let next = entries.next().map_err(|e| {
+            WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let power: GroupMemberPower = serde_wasm_bindgen::from_value(val)
+        let done = Reflect::get(&next, &JsValue::from_str("done"))
+            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'done' property"))?
+            .as_bool()
+            .unwrap_or(true);
+
+        if done {
+            break;
+        }
+
+        let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
+            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
+
+        let entry_array = js_sys::Array::from(&entry_value);
+        let key = entry_array.get(0);
+        let value = entry_array.get(1);
+
+        let identifier: Identifier = IdentifierWasm::try_from(key)
+            .map_err(|e| WasmDppError::invalid_argument(format!("Invalid identifier key: {}", e)))?
+            .into();
+
+        let power: GroupMemberPower = serde_wasm_bindgen::from_value(value)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         members.insert(identifier, power);
@@ -104,10 +110,10 @@ pub fn members_to_map(
 impl GroupWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        members: &Object,
+        members: GroupMembersMapJs,
         required_power: GroupRequiredPower,
     ) -> WasmDppResult<GroupWasm> {
-        let members = members_to_map(members)?;
+        let members = members_map_to_btree(&Map::from(JsValue::from(members)))?;
 
         Ok(GroupWasm(Group::V0(GroupV0 {
             members,
@@ -116,28 +122,17 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(getter = "members")]
-    pub fn get_members(&self) -> WasmDppResult<GroupMembersJs> {
+    pub fn get_members(&self) -> WasmDppResult<GroupMembersMapJs> {
         let members = self.0.members();
 
-        let js_members = Object::new();
+        let js_map = Map::new();
 
         for (k, v) in members {
-            Reflect::set(
-                &js_members,
-                &JsValue::from(k.to_string(Encoding::Base58)),
-                &JsValue::from(*v),
-            )
-            .map_err(|err| {
-                let message = err.error_message();
-                WasmDppError::generic(format!(
-                    "unable to write group member '{}' into JS object: {}",
-                    k.to_string(Encoding::Base58),
-                    message
-                ))
-            })?;
+            let identifier_wasm = IdentifierWasm::from(*k);
+            js_map.set(&identifier_wasm.into(), &JsValue::from(*v));
         }
 
-        Ok(js_members.unchecked_into())
+        Ok(js_map.unchecked_into())
     }
 
     #[wasm_bindgen(getter = "requiredPower")]
@@ -146,8 +141,8 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(setter = "members")]
-    pub fn set_members(&mut self, members: &Object) -> WasmDppResult<()> {
-        let members = members_to_map(members)?;
+    pub fn set_members(&mut self, members: GroupMembersMapJs) -> WasmDppResult<()> {
+        let members = members_map_to_btree(&Map::from(JsValue::from(members)))?;
 
         self.0.set_members(members);
 
