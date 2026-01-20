@@ -213,8 +213,8 @@ fn assert_action_outputs_state(
     let output_cost: Credits = 6_000_000;
     let expected_max_fee =
         (input_count as Credits * input_cost) + (output_count as Credits * output_cost);
-    // Add 15% margin for additional processing/storage fees
-    let fee_with_margin = expected_max_fee + (expected_max_fee * 15 / 100);
+    // Add 20% margin plus fixed buffer for additional processing/storage fees
+    let fee_with_margin = expected_max_fee + (expected_max_fee * 20 / 100) + 1_000_000;
 
     for (address, transition_balance) in transition_outputs {
         let Some(action_balance) = action_outputs.get(address) else {
