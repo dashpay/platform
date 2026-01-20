@@ -3508,4 +3508,208 @@ mod tests {
             }
         }
     }
+
+    /// Test for high-throughput address operations with many output addresses.
+    ///
+    /// This test verifies that:
+    /// 1. Funding operations correctly create addresses
+    /// 2. Transfer operations can use funded addresses and create many outputs
+    /// 3. The operation ordering (funding before transfers) works correctly
+    ///
+    /// Key insight: Each address can only be used ONCE per block (to avoid nonce conflicts).
+    /// Funding operations create new addresses in "staged" state. After block commit,
+    /// they become "committed" and available for transfers in subsequent blocks.
+    #[test]
+    fn run_chain_high_throughput_address_operations() {
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    // IMPORTANT: Funding MUST come before transfers in the operations list!
+                    // Block N: funding creates addresses in staged -> committed at block end
+                    // Block N+1: transfers can use those committed addresses
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(100)..=dash_to_credits!(100), // 100 DASH to support 128 outputs
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 19..20, // Fund 19 addresses per block
+                            chance_per_block: None,
+                        },
+                    },
+                    // Transfers with 128 outputs to generate many addresses
+                    // Transfer amount is TOTAL taken from input, divided among outputs
+                    // Need ~13 DASH to give each of 128 outputs ~0.1 DASH plus cover fees
+                    Operation {
+                        op_type: OperationType::AddressTransfer(
+                            dash_to_credits!(15)..=dash_to_credits!(15), // 15 DASH total for 128 outputs
+                            128..=128, // 128 output addresses per transfer
+                            None,      // Don't reuse existing addresses as outputs
+                            None,      // Use default fee strategy
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 15..20, // 15-19 transfers per block
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 5..10,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+            sign_instant_locks: false,
+            max_tx_bytes_per_block: 500000, // Increase to allow large transfers
+            ..Default::default()
+        };
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 1000,
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let blocks_to_run = 5;
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            blocks_to_run,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Count executed operations by type
+        let mut funding_ops = 0;
+        let mut transfer_ops = 0;
+        let mut total_outputs = 0;
+        let mut total_failed = 0;
+
+        for (_block_height, results) in &outcome.state_transition_results_per_block {
+            for (state_transition, result) in results {
+                if result.code != 0 {
+                    total_failed += 1;
+                    continue;
+                }
+
+                match state_transition {
+                    StateTransition::AddressFundingFromAssetLock(_) => {
+                        funding_ops += 1;
+                    }
+                    StateTransition::AddressFundsTransfer(transfer) => {
+                        transfer_ops += 1;
+                        total_outputs += transfer.outputs().len();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Verify exact counts (deterministic with fixed seed)
+        assert_eq!(funding_ops, 76, "expected 76 funding operations");
+        assert_eq!(transfer_ops, 47, "expected 47 transfer operations");
+        assert_eq!(total_outputs, 6016, "expected 6016 output addresses");
+        assert_eq!(total_failed, 0, "expected no failed operations");
+
+        // Verify final address state
+        assert_eq!(
+            outcome.addresses_with_balance.staged_count(),
+            0,
+            "expected no staged addresses at end"
+        );
+        assert_eq!(
+            outcome.addresses_with_balance.committed_count(),
+            6092,
+            "expected 6092 committed addresses"
+        );
+
+        // All committed addresses should have positive balance
+        let zero_balance_count = outcome
+            .addresses_with_balance
+            .addresses_with_balance
+            .iter()
+            .filter(|(_, (_, balance))| *balance == 0)
+            .count();
+        assert_eq!(zero_balance_count, 0, "expected no zero-balance addresses");
+
+        // Drop outcome to release platform references before querying
+        drop(outcome);
+
+        // Query for compacted address balance blobs
+        let platform_version = PlatformVersion::latest();
+        let platform_state = platform.platform.state.load();
+
+        let request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: 0,
+                    prove: false,
+                },
+            )),
+        };
+
+        let result = platform
+            .platform
+            .query_recent_compacted_address_balance_changes(
+                request,
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to query compacted blobs");
+
+        assert!(
+            result.errors.is_empty(),
+            "query errors: {:?}",
+            result.errors
+        );
+
+        let response = result.into_data().expect("expected response data");
+
+        let compacted_entries =
+            match response.version.expect("expected version") {
+                CompactedChangesResponseVersion::V0(v0) => {
+                    match v0.result.expect("expected result") {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        entries.compacted_block_changes.len()
+                    }
+                    _ => panic!("expected entries, not proof"),
+                }
+                }
+            };
+
+        // With 6000+ addresses across 5 blocks, compaction triggers at 2048 addresses threshold
+        assert_eq!(compacted_entries, 2, "expected 2 compacted blobs");
+    }
 }

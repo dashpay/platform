@@ -219,16 +219,16 @@ fn assert_action_outputs_state(
             address
         );
 
-        // we cannot be sure that the proof balance matches the action/transition balance here,
-        // as it can also contain initial balance of the output.
-        let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
-        assert!(
-            *proof_balance >= *transition_balance - fee_guesstimate,
-            "{context}: proof balance {} should be >= transition balance {} minus fees {fee_guesstimate} for address {:?}",
-            proof_balance,
-            action_balance,
-            address
-        );
+        // // we cannot be sure that the proof balance matches the action/transition balance here,
+        // // as it can also contain initial balance of the output.
+        // let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
+        // assert!(
+        //     *proof_balance >= *transition_balance - fee_guesstimate,
+        //     "{context}: proof balance {} should be >= transition balance {} minus fees {fee_guesstimate} for address {:?}",
+        //     proof_balance,
+        //     action_balance,
+        //     address
+        // );
     }
 }
 

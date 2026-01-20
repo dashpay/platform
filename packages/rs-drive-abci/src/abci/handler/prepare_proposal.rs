@@ -213,26 +213,10 @@ where
             // Such state transitions must be invalidated by check tx, but they might
             // still be added to mempool due to inconsistency between check tx and tx processing
             // (fees calculation) or malicious proposer.
-            StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) => {
-                tracing::trace!(
-                    "UnpaidConsensusError at height {}, round {}: {:?}",
-                    request.height,
-                    request.round,
-                    consensus_error
-                );
-                TxAction::Removed
-            }
+            StateTransitionExecutionResult::UnpaidConsensusError(_) => TxAction::Removed,
             // We shouldn't include in the block any state transitions that produced an internal error
             // during execution
-            StateTransitionExecutionResult::InternalError(error_message) => {
-                tracing::debug!(
-                    "InternalError at height {}, round {}: {}",
-                    request.height,
-                    request.round,
-                    error_message
-                );
-                TxAction::Removed
-            }
+            StateTransitionExecutionResult::InternalError(_) => TxAction::Removed,
             // State Transition was not executed as it reached the maximum time limit
             StateTransitionExecutionResult::NotExecuted(..) => TxAction::Delayed,
         };
