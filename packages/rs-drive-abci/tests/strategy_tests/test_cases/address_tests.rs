@@ -3576,7 +3576,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: false,
+            verify_state_transition_results: true,
             sign_instant_locks: false,
             max_tx_bytes_per_block: 500000, // Increase to allow large transfers
             ..Default::default()

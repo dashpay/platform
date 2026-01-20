@@ -196,6 +196,7 @@ fn assert_action_outputs_state(
     transition_outputs: &BTreeMap<PlatformAddress, Credits>,
     action_outputs: &BTreeMap<PlatformAddress, Credits>,
     proof_address_infos: &BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+    input_count: usize,
     context: &str,
 ) {
     assert_eq!(
@@ -203,6 +204,17 @@ fn assert_action_outputs_state(
         transition_outputs.len(),
         "{context}: action outputs length mismatch"
     );
+
+    let output_count = transition_outputs.len();
+
+    // Calculate expected max fee based on input/output counts
+    // From rs-platform-version: input_cost=500_000, output_cost=6_000_000
+    let input_cost: Credits = 500_000;
+    let output_cost: Credits = 6_000_000;
+    let expected_max_fee =
+        (input_count as Credits * input_cost) + (output_count as Credits * output_cost);
+    // Add 15% margin for additional processing/storage fees
+    let fee_with_margin = expected_max_fee + (expected_max_fee * 15 / 100);
 
     for (address, transition_balance) in transition_outputs {
         let Some(action_balance) = action_outputs.get(address) else {
@@ -219,16 +231,16 @@ fn assert_action_outputs_state(
             address
         );
 
-        // // we cannot be sure that the proof balance matches the action/transition balance here,
-        // // as it can also contain initial balance of the output.
-        // let fee_guesstimate = 100_000_000; // allow for some fee margin; TODO: confirm with Sam
-        // assert!(
-        //     *proof_balance >= *transition_balance - fee_guesstimate,
-        //     "{context}: proof balance {} should be >= transition balance {} minus fees {fee_guesstimate} for address {:?}",
-        //     proof_balance,
-        //     action_balance,
-        //     address
-        // );
+        // The proof balance may be lower than transition balance if fees were
+        // deducted from this output via ReduceOutput fee strategy
+        assert!(
+            *proof_balance >= transition_balance.saturating_sub(fee_with_margin),
+            "{context}: proof balance {} should be >= transition balance {} minus max fees {} for address {:?}",
+            proof_balance,
+            transition_balance,
+            fee_with_margin,
+            address
+        );
     }
 }
 
@@ -1274,6 +1286,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             address_funds_transfer_transition.outputs(),
                             address_funds_transfer_action.outputs(),
                             &proof_address_infos_map,
+                            address_funds_transfer_transition.inputs().len(),
                             "address funds transfer outputs",
                         );
                     } else {
