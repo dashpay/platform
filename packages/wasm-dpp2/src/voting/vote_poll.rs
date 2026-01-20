@@ -177,8 +177,9 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexValues")]
-    pub fn set_index_values(&mut self, index_values: JsValue) -> WasmDppResult<()> {
-        let values = index_values
+    pub fn set_index_values(&mut self, index_values: js_sys::Array) -> WasmDppResult<()> {
+        let js_value: JsValue = index_values.into();
+        let values = js_value
             .with_serde_to_platform_value()?
             .into_array()
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;

@@ -7,8 +7,8 @@ use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::prelude::Revision;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 
 #[wasm_bindgen(typescript_custom_section)]
 const PARTIAL_IDENTITY_OPTIONS_TS: &'static str = r#"
@@ -47,6 +47,12 @@ export interface PartialIdentityJSON {
 extern "C" {
     #[wasm_bindgen(typescript_type = "PartialIdentityOptions")]
     pub type PartialIdentityOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "PartialIdentityObject")]
+    pub type PartialIdentityObjectJs;
+
+    #[wasm_bindgen(typescript_type = "PartialIdentityJSON")]
+    pub type PartialIdentityJSONJs;
 }
 
 #[derive(Clone)]
@@ -190,7 +196,7 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+    pub fn to_json(&self) -> WasmDppResult<PartialIdentityJSONJs> {
         let obj = Object::new();
 
         Reflect::set(&obj, &"id".into(), &self.id().to_base58().into())
@@ -201,12 +207,8 @@ impl PartialIdentityWasm {
         for (k, v) in self.0.loaded_public_keys.clone() {
             let key_wasm = IdentityPublicKeyWasm::from(v);
             let key_json: JsValue = key_wasm.to_json()?.into();
-            Reflect::set(
-                &loaded_keys_obj,
-                &k.to_string().into(),
-                &key_json,
-            )
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+            Reflect::set(&loaded_keys_obj, &k.to_string().into(), &key_json)
+                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
         }
         Reflect::set(&obj, &"loadedPublicKeys".into(), &loaded_keys_obj.into())
             .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
@@ -232,11 +234,11 @@ impl PartialIdentityWasm {
         Reflect::set(&obj, &"notFoundPublicKeys".into(), &not_found_arr.into())
             .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(obj.into())
+        Ok(obj.unchecked_into())
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<PartialIdentityObjectJs> {
         let obj = Object::new();
 
         Reflect::set(&obj, &"id".into(), &JsValue::from(self.id()))
@@ -270,7 +272,7 @@ impl PartialIdentityWasm {
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(obj.into())
+        Ok(obj.unchecked_into())
     }
 }
 

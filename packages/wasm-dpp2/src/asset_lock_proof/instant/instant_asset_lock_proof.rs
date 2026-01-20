@@ -8,6 +8,36 @@ use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * InstantAssetLockProof serialized as a plain object.
+ */
+export interface InstantAssetLockProofObject {
+    instantLock: Uint8Array;
+    transaction: Uint8Array;
+    outputIndex: number;
+}
+
+/**
+ * InstantAssetLockProof serialized as JSON.
+ */
+export interface InstantAssetLockProofJSON {
+    instantLock: string;
+    transaction: string;
+    outputIndex: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "InstantAssetLockProofObject")]
+    pub type InstantAssetLockProofObjectJs;
+
+    #[wasm_bindgen(typescript_type = "InstantAssetLockProofJSON")]
+    pub type InstantAssetLockProofJSONJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "InstantAssetLockProof")]
 pub struct InstantAssetLockProofWasm(InstantAssetLockProof);

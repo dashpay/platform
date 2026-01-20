@@ -1,11 +1,10 @@
+use crate::data_contract::document::DocumentWasm;
+use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_purchase_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::data_contract::document::DocumentWasm;
-use crate::error::WasmDppResult;
-use crate::utils::IntoWasm;
 use dpp::fee::Credits;
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
@@ -13,7 +12,6 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::DocumentPurchaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "DocumentPurchaseTransition")]
 pub struct DocumentPurchaseTransitionWasm(DocumentPurchaseTransition);
@@ -37,18 +35,8 @@ impl DocumentPurchaseTransitionWasm {
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         amount: Credits,
-        token_payment_info: &JsValue,
+        token_payment_info: Option<TokenPaymentInfoWasm>,
     ) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
-        let token_payment_info =
-            match token_payment_info.is_null() | token_payment_info.is_undefined() {
-                true => None,
-                false => Some(
-                    token_payment_info
-                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
-                        .clone(),
-                ),
-            };
-
         let rs_purchase_transition = generate_purchase_transition(
             document,
             identity_contract_nonce,

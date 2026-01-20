@@ -8,6 +8,34 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * ChainAssetLockProof serialized as a plain object.
+ */
+export interface ChainAssetLockProofObject {
+    coreChainLockedHeight: number;
+    outPoint: OutPointObject;
+}
+
+/**
+ * ChainAssetLockProof serialized as JSON.
+ */
+export interface ChainAssetLockProofJSON {
+    coreChainLockedHeight: number;
+    outPoint: OutPointJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ChainAssetLockProofObject")]
+    pub type ChainAssetLockProofObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ChainAssetLockProofJSON")]
+    pub type ChainAssetLockProofJSONJs;
+}
+
 #[wasm_bindgen(js_name = "ChainAssetLockProof")]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ChainAssetLockProofWasm(ChainAssetLockProof);

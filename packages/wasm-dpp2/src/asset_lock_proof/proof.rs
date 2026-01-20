@@ -13,6 +13,34 @@ use dpp::prelude::AssetLockProof;
 use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * AssetLockProof serialized as a plain object.
+ * Type 0 = Instant, Type 1 = Chain.
+ */
+export type AssetLockProofObject =
+    | ({ type: 0 } & InstantAssetLockProofObject)
+    | ({ type: 1 } & ChainAssetLockProofObject);
+
+/**
+ * AssetLockProof serialized as JSON.
+ * Type 0 = Instant, Type 1 = Chain.
+ */
+export type AssetLockProofJSON =
+    | ({ type: 0 } & InstantAssetLockProofJSON)
+    | ({ type: 1 } & ChainAssetLockProofJSON);
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "AssetLockProofObject")]
+    pub type AssetLockProofObjectJs;
+
+    #[wasm_bindgen(typescript_type = "AssetLockProofJSON")]
+    pub type AssetLockProofJSONJs;
+}
+
 #[wasm_bindgen(js_name = "AssetLockProof")]
 #[derive(Clone)]
 pub struct AssetLockProofWasm(AssetLockProof);
@@ -143,7 +171,7 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<AssetLockProofObjectJs> {
         let inner_object = match &self.0 {
             AssetLockProof::Chain(chain) => {
                 ChainAssetLockProofWasm::from(chain.clone()).to_object()?
@@ -166,11 +194,12 @@ impl AssetLockProofWasm {
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(object.into())
+        Ok(object.unchecked_into())
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(object: Object) -> WasmDppResult<AssetLockProofWasm> {
+    pub fn from_object(object: AssetLockProofObjectJs) -> WasmDppResult<AssetLockProofWasm> {
+        let object = Object::from(JsValue::from(object));
         let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
             .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
 
@@ -193,7 +222,7 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+    pub fn to_json(&self) -> WasmDppResult<AssetLockProofJSONJs> {
         let inner_json = match &self.0 {
             AssetLockProof::Chain(chain) => {
                 ChainAssetLockProofWasm::from(chain.clone()).to_json()?
@@ -216,11 +245,12 @@ impl AssetLockProofWasm {
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(object.into())
+        Ok(object.unchecked_into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(object: Object) -> WasmDppResult<AssetLockProofWasm> {
+    pub fn from_json(object: AssetLockProofJSONJs) -> WasmDppResult<AssetLockProofWasm> {
+        let object = Object::from(JsValue::from(object));
         let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
             .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
 

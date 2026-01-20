@@ -301,9 +301,9 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js: JsValue) -> Result<Self, WasmSdkError> {
+    pub fn from_json(js: js_sys::Object) -> Result<Self, WasmSdkError> {
         let serde_struct: ProofMetadataResponseSerde =
-            serialization::from_json(js).map_err(WasmSdkError::from)?;
+            serialization::from_json(js.into()).map_err(WasmSdkError::from)?;
         ProofMetadataResponseWasm::from_serde(serde_struct)
     }
 
@@ -314,9 +314,9 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(obj: JsValue) -> Result<Self, WasmSdkError> {
+    pub fn from_object(obj: js_sys::Object) -> Result<Self, WasmSdkError> {
         let serde_struct: ProofMetadataResponseSerde =
-            serialization::from_object(obj).map_err(WasmSdkError::from)?;
+            serialization::from_object(obj.into()).map_err(WasmSdkError::from)?;
         ProofMetadataResponseWasm::from_serde(serde_struct)
     }
 }

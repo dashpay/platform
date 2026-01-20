@@ -1,12 +1,12 @@
+use crate::data_contract::document::DocumentWasm;
+use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
+use crate::serialization;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_replace_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::data_contract::document::DocumentWasm;
-use crate::error::WasmDppResult;
-use crate::serialization;
-use crate::utils::{IntoWasm, ToSerdeJSONExt};
+use crate::utils::ToSerdeJSONExt;
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -36,18 +36,8 @@ impl DocumentReplaceTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
-        token_payment_info: &JsValue,
+        token_payment_info: Option<TokenPaymentInfoWasm>,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
-        let token_payment_info =
-            match token_payment_info.is_null() | token_payment_info.is_undefined() {
-                true => None,
-                false => Some(
-                    token_payment_info
-                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
-                        .clone(),
-                ),
-            };
-
         let rs_update_transition = generate_replace_transition(
             document,
             identity_contract_nonce,

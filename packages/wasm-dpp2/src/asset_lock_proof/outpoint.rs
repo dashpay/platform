@@ -4,8 +4,36 @@ use crate::utils::IntoWasm;
 use dpp::dashcore::{OutPoint, Txid};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * OutPoint serialized as a plain object.
+ */
+export interface OutPointObject {
+    txid: string;
+    vout: number;
+}
+
+/**
+ * OutPoint serialized as JSON.
+ */
+export interface OutPointJSON {
+    txid: string;
+    vout: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "OutPointObject")]
+    pub type OutPointObjectJs;
+
+    #[wasm_bindgen(typescript_type = "OutPointJSON")]
+    pub type OutPointJSONJs;
+}
 
 #[wasm_bindgen(js_name = "OutPoint")]
 #[derive(Clone)]

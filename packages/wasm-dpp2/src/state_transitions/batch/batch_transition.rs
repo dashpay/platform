@@ -20,8 +20,44 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionOwned,
     StateTransitionSingleSigned,
 };
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsCast;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * BatchTransition serialized as a plain object.
+ */
+export interface BatchTransitionObject {
+    $formatVersion: string;
+    ownerId: Uint8Array;
+    transitions: BatchedTransitionObject[];
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature: Uint8Array;
+}
+
+/**
+ * BatchTransition serialized as JSON.
+ */
+export interface BatchTransitionJSON {
+    $formatVersion: string;
+    ownerId: string;
+    transitions: BatchedTransitionJSON[];
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "BatchTransitionObject")]
+    pub type BatchTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "BatchTransitionJSON")]
+    pub type BatchTransitionJSONJs;
+}
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=BatchTransition)]
 pub struct BatchTransitionWasm(BatchTransition);
@@ -171,13 +207,13 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serialization::to_object(&self.0)
+    pub fn to_object(&self) -> WasmDppResult<BatchTransitionObjectJs> {
+        serialization::to_object(&self.0).map(JsCast::unchecked_into)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serialization::to_json(&self.0)
+    pub fn to_json(&self) -> WasmDppResult<BatchTransitionJSONJs> {
+        serialization::to_json(&self.0).map(JsCast::unchecked_into)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
@@ -198,12 +234,12 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(object: js_sys::Object) -> WasmDppResult<BatchTransitionWasm> {
+    pub fn from_object(object: BatchTransitionObjectJs) -> WasmDppResult<BatchTransitionWasm> {
         serialization::from_object(object.into()).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(object: js_sys::Object) -> WasmDppResult<BatchTransitionWasm> {
+    pub fn from_json(object: BatchTransitionJSONJs) -> WasmDppResult<BatchTransitionWasm> {
         serialization::from_json(object.into()).map(BatchTransitionWasm)
     }
 
