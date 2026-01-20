@@ -78,7 +78,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               ctx.isRenewal = true;
               break;
             case ERRORS.CERTIFICATE_IP_MISMATCH:
-              throw new Error(`Certificate IP ${ctx.certificate.commonName} does not match external IP ${ctx.externalIp}.\n`
+              throw new Error(`Certificate does not match external IP ${ctx.externalIp}.\n`
                 + 'Please change the external IP in config or use --force to obtain a new certificate.');
             case ERRORS.CERTIFICATE_NOT_VALID:
               // eslint-disable-next-line no-param-reassign
@@ -183,9 +183,13 @@ export default function obtainLetsEncryptCertificateTaskFactory(
               + 'for incoming HTTP connections.');
           }
 
-          // Verify certificate was created
+          // Verify certificate and key were created
           if (!fs.existsSync(ctx.legoCertPath)) {
             throw new Error('Certificate file was not created by lego');
+          }
+
+          if (!fs.existsSync(ctx.legoKeyPath)) {
+            throw new Error('Private key file was not created by lego');
           }
 
           // eslint-disable-next-line no-param-reassign
