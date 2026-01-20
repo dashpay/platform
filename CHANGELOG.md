@@ -1,3 +1,15 @@
+## [3.0.0-rc.2](///compare/v3.0.0-rc.1...v3.0.0-rc.2) (2026-01-16)
+
+
+### Bug Fixes
+
+* **sdk:** toJSON returns empty object ([#2995](undefined/undefined/undefined/issues/2995))
+
+
+### Code Refactoring
+
+* **sdk:** introduce `ProRegTxLike` and `NetworkLike` types  ([#2990](undefined/undefined/undefined/issues/2990))
+
 ## [3.0.0-rc.1](https://github.com/dashpay/platform/compare/v3.0.0-dev.11...v3.0.0-rc.1) (2026-01-13)
 
 

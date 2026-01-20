@@ -5,7 +5,8 @@ use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
 use js_sys::Uint8Array;
 use serde::de::{self, Error, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::ser::Serializer;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 use wasm_bindgen::prelude::*;
 
@@ -103,9 +104,20 @@ impl TryFrom<&str> for PlatformAddressWasm {
     type Error = WasmDppError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        // Try parsing as bech32m string
-        PlatformAddress::from_bech32m_string(value)
-            .map(|(addr, _network)| PlatformAddressWasm(addr))
+        // Try parsing as bech32m string first (e.g., "dashevo1..." or "tdashevo1...")
+        if let Ok((addr, _network)) = PlatformAddress::from_bech32m_string(value) {
+            return Ok(PlatformAddressWasm(addr));
+        }
+
+        // Fall back to hex decoding for compatibility with serialized format
+        let bytes = hex::decode(value).map_err(|e| {
+            WasmDppError::invalid_argument(format!(
+                "Invalid PlatformAddress: not valid bech32m or hex: {}",
+                e
+            ))
+        })?;
+        PlatformAddress::from_bytes(&bytes)
+            .map(PlatformAddressWasm)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
     }
 }
@@ -162,6 +174,21 @@ impl<'de> Deserialize<'de> for PlatformAddressWasm {
         D: Deserializer<'de>,
     {
         deserializer.deserialize_any(PlatformAddressWasmVisitor)
+    }
+}
+
+impl Serialize for PlatformAddressWasm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            // JSON, TOML, etc. - use hex string
+            serializer.serialize_str(&hex::encode(self.0.to_bytes()))
+        } else {
+            // Binary formats (bincode, MessagePack, etc.) - use raw bytes
+            serializer.serialize_bytes(&self.0.to_bytes())
+        }
     }
 }
 

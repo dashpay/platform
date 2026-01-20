@@ -1,5 +1,7 @@
 import getWasm from './helpers/wasm.js';
-import { json, object, id, ownerId } from './mocks/DataContract/index.js';
+import {
+  json, object, id, ownerId
+} from './mocks/DataContract/index.js';
 import { fromHexString } from './utils/hex.js';
 
 let wasm;
