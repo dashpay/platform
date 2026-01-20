@@ -98,6 +98,8 @@ pub enum DashSDKResultDataType {
     BranchState = 11,
     /// Recent address balance changes
     RecentBalanceChanges = 12,
+    /// Recent compacted address balance changes
+    CompactedBalanceChanges = 13,
 }
 
 /// Binary data container for results
@@ -259,6 +261,64 @@ pub struct DashSDKRecentBalanceChanges {
     pub blocks_count: usize,
 }
 
+/// Block-aware credit operation type for compacted balance changes
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum DashSDKBlockAwareCreditOperationType {
+    /// Set credits to a final value
+    BlockAwareSetCredits = 0,
+    /// Add to credits with block height entries
+    BlockAwareAddToCreditsOperations = 1,
+}
+
+/// Entry for block height to credits mapping
+#[repr(C)]
+pub struct DashSDKBlockHeightCreditEntry {
+    /// Block height
+    pub block_height: u64,
+    /// Credit amount
+    pub credits: u64,
+}
+
+/// A compacted balance change for an address (supports block-aware operations)
+#[repr(C)]
+pub struct DashSDKCompactedAddressChange {
+    /// Address bytes
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Operation type
+    pub operation_type: DashSDKBlockAwareCreditOperationType,
+    /// For SetCredits: the final value; for AddToCreditsOperations: ignored (use entries)
+    pub set_credits_value: u64,
+    /// For AddToCreditsOperations: array of block height/credit entries
+    pub add_entries: *mut DashSDKBlockHeightCreditEntry,
+    /// Number of entries (0 for SetCredits)
+    pub add_entries_count: usize,
+}
+
+/// Compacted balance changes for a range of blocks
+#[repr(C)]
+pub struct DashSDKCompactedBlockRange {
+    /// Start block height of the range
+    pub start_block_height: u64,
+    /// End block height of the range
+    pub end_block_height: u64,
+    /// Array of address changes
+    pub changes: *mut DashSDKCompactedAddressChange,
+    /// Number of changes
+    pub changes_count: usize,
+}
+
+/// Recent compacted address balance changes across multiple ranges
+#[repr(C)]
+pub struct DashSDKCompactedBalanceChanges {
+    /// Array of compacted block ranges
+    pub ranges: *mut DashSDKCompactedBlockRange,
+    /// Number of ranges
+    pub ranges_count: usize,
+}
+
 /// Result type for FFI functions that return data
 #[repr(C)]
 pub struct DashSDKResult {
@@ -365,6 +425,15 @@ impl DashSDKResult {
     pub fn success_recent_balance_changes(changes: DashSDKRecentBalanceChanges) -> Self {
         DashSDKResult {
             data_type: DashSDKResultDataType::RecentBalanceChanges,
+            data: Box::into_raw(Box::new(changes)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with compacted balance changes
+    pub fn success_compacted_balance_changes(changes: DashSDKCompactedBalanceChanges) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::CompactedBalanceChanges,
             data: Box::into_raw(Box::new(changes)) as *mut c_void,
             error: std::ptr::null_mut(),
         }
@@ -760,6 +829,44 @@ pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(changes: *mut Dash
             }
         }
         let _ = Vec::from_raw_parts(changes.blocks, changes.blocks_count, changes.blocks_count);
+    }
+}
+
+/// Free a compacted balance changes structure
+///
+/// # Safety
+/// - `changes` must be a valid pointer to `DashSDKCompactedBalanceChanges` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all ranges, changes, addresses, entries, and the struct.
+/// - Do not access `changes` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_compacted_balance_changes_free(changes: *mut DashSDKCompactedBalanceChanges) {
+    if changes.is_null() {
+        return;
+    }
+
+    let changes = Box::from_raw(changes);
+    
+    // Free ranges
+    if !changes.ranges.is_null() && changes.ranges_count > 0 {
+        let ranges_slice = std::slice::from_raw_parts_mut(changes.ranges, changes.ranges_count);
+        for range in ranges_slice.iter() {
+            // Free changes within each range
+            if !range.changes.is_null() && range.changes_count > 0 {
+                let changes_slice = std::slice::from_raw_parts_mut(range.changes, range.changes_count);
+                for change in changes_slice.iter() {
+                    // Free address
+                    if !change.address.is_null() && change.address_len > 0 {
+                        let _ = Vec::from_raw_parts(change.address, change.address_len, change.address_len);
+                    }
+                    // Free add entries
+                    if !change.add_entries.is_null() && change.add_entries_count > 0 {
+                        let _ = Vec::from_raw_parts(change.add_entries, change.add_entries_count, change.add_entries_count);
+                    }
+                }
+                let _ = Vec::from_raw_parts(range.changes, range.changes_count, range.changes_count);
+            }
+        }
+        let _ = Vec::from_raw_parts(changes.ranges, changes.ranges_count, changes.ranges_count);
     }
 }
 

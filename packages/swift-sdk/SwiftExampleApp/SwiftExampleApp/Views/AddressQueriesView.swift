@@ -65,6 +65,18 @@ struct AddressQueriesView: View {
                 }
                 .padding(.vertical, 4)
             }
+            
+            NavigationLink(destination: GetCompactedBalanceChangesView()) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Get Compacted Balance Changes")
+                        .font(.headline)
+                    Text("Fetch compacted (merged) address balance changes")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.vertical, 4)
+            }
         }
         .navigationTitle("Address Queries")
         .navigationBarTitleDisplayMode(.inline)
@@ -1364,6 +1376,334 @@ struct AddressBalanceChangeView: View {
                 Text("(\(formatDash(change.operation.credits)) DASH)")
                     .font(.caption2)
                     .foregroundColor(.blue)
+            }
+        }
+        .padding()
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(8)
+        .padding(.leading, 16)
+    }
+}
+
+// MARK: - Get Compacted Balance Changes View
+
+struct GetCompactedBalanceChangesView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    @State private var startHeightInput: String = "0"
+    @State private var isLoading = false
+    @State private var result: CompactedBalanceChanges?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Get Compacted Balance Changes")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Fetch compacted (merged) address balance changes since a block height. Compacted changes merge multiple blocks into ranges for efficient syncing.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Text("BlockAwareCreditOperation preserves per-block granularity for partial sync scenarios.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Input
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Start Block Height")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    
+                    TextField("Enter start block height", text: $startHeightInput)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .keyboardType(.numberPad)
+                    
+                    Text("Enter 0 to get all compacted balance changes")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal)
+                
+                // Fetch Button
+                Button(action: fetchCompactedChanges) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.triangle.merge")
+                        }
+                        Text(isLoading ? "Fetching..." : "Fetch Compacted Changes")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.purple)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid)
+                .opacity((isLoading || !isFormValid) ? 0.6 : 1.0)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    if let error = errorMessage {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Error", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                                .font(.headline)
+                            Text(error)
+                                .font(.body)
+                                .foregroundColor(.red)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(10)
+                        .padding(.horizontal)
+                    } else if let changes = result {
+                        // Get network from SDK
+                        let network = appState.platformState.sdk?.network ?? DashSDKNetwork(rawValue: 1)
+                        CompactedBalanceChangesResultView(changes: changes, network: network)
+                            .padding(.horizontal)
+                    }
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Compacted Balance Changes")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        return UInt64(startHeightInput) != nil
+    }
+    
+    private func fetchCompactedChanges() {
+        guard let sdk = appState.platformState.sdk else { return }
+        guard let startHeight = UInt64(startHeightInput) else {
+            errorMessage = "Invalid start height"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let changes = try sdk.addresses.getCompactedBalanceChanges(startBlockHeight: startHeight)
+                
+                await MainActor.run {
+                    result = changes
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Compacted Balance Changes Result View
+
+struct CompactedBalanceChangesResultView: View {
+    let changes: CompactedBalanceChanges
+    let network: DashSDKNetwork
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Summary
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Summary", systemImage: "list.bullet.rectangle")
+                    .font(.headline)
+                
+                ResultRow(label: "Ranges", value: "\(changes.ranges.count)")
+                ResultRow(label: "Total Changes", value: "\(changes.totalChangesCount)")
+                
+                if let range = changes.heightRange {
+                    ResultRow(label: "Height Range", value: "\(range.lowerBound) - \(range.upperBound)")
+                }
+            }
+            .padding()
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(10)
+            
+            // Range-by-range details
+            if !changes.ranges.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Compacted Changes by Range", systemImage: "cube.fill")
+                        .font(.headline)
+                    
+                    ForEach(Array(changes.ranges.enumerated()), id: \.offset) { _, range in
+                        CompactedBlockRangeView(range: range, network: network)
+                    }
+                }
+            } else {
+                Text("No compacted balance changes found from the specified block height.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .padding()
+            }
+        }
+    }
+}
+
+struct CompactedBlockRangeView: View {
+    let range: CompactedBlockRange
+    let network: DashSDKNetwork
+    
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: { isExpanded.toggle() }) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Block \(range.startBlockHeight) - \(range.endBlockHeight)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("\(range.changes.count) address(es)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.purple.opacity(0.1))
+                .cornerRadius(8)
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            if isExpanded {
+                ForEach(Array(range.changes.enumerated()), id: \.offset) { _, change in
+                    CompactedAddressChangeView(change: change, network: network)
+                }
+            }
+        }
+    }
+}
+
+struct CompactedAddressChangeView: View {
+    let change: CompactedAddressChange
+    let network: DashSDKNetwork
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Address
+            if let bech32m = change.toBech32m(network: network) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Address")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(bech32m)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Address (hex)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(change.addressHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            
+            // Operation
+            VStack(alignment: .leading, spacing: 4) {
+                switch change.operation {
+                case .setCredits(let credits):
+                    HStack {
+                        Text("Operation")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "equal")
+                                .foregroundColor(.orange)
+                            Text("Set to \(formatCredits(credits))")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    HStack {
+                        Spacer()
+                        Text("(\(formatDash(credits)) DASH)")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                    
+                case .addToCreditsOperations(let entries):
+                    HStack {
+                        Text("Operation")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.square.on.square")
+                                .foregroundColor(.green)
+                            Text("\(entries.count) Add Operation(s)")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                    }
+                    
+                    // Show each add entry
+                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                        HStack {
+                            Text("Block \(entry.blockHeight)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            VStack(alignment: .trailing) {
+                                Text("+\(formatCredits(entry.credits)) credits")
+                                    .font(.caption2)
+                                Text("+\(formatDash(entry.credits)) DASH")
+                                    .font(.caption2)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        .padding(.leading, 16)
+                    }
+                    
+                    // Total
+                    HStack {
+                        Text("Total")
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        Spacer()
+                        VStack(alignment: .trailing) {
+                            Text("\(formatCredits(change.operation.totalCredits)) credits")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            Text("\(formatDash(change.operation.totalCredits)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                }
             }
         }
         .padding()

@@ -546,6 +546,96 @@ public class Addresses: @unchecked Sendable {
         return RecentBalanceChanges(blocks: blocks)
     }
     
+    // MARK: - Compacted Balance Changes Query
+    
+    /// Fetch recent compacted address balance changes starting from a specific block height.
+    ///
+    /// This returns compacted (merged) address balance changes since the specified start height.
+    /// Compacted changes merge multiple blocks into ranges, which is more efficient for syncing.
+    /// The BlockAwareCreditOperation preserves per-block granularity for partial sync.
+    ///
+    /// - Parameter startBlockHeight: Block height to start fetching changes from
+    /// - Returns: CompactedBalanceChanges containing range-by-range compacted changes
+    /// - Throws: SDKError if the query fails
+    public func getCompactedBalanceChanges(startBlockHeight: UInt64) throws -> CompactedBalanceChanges {
+        guard let sdk = sdk, let handle = sdk.handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        
+        let result = dash_sdk_address_fetch_compacted_balance_changes(handle, startBlockHeight)
+        
+        // Check for errors
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        
+        guard let dataPtr = result.data else {
+            // No changes found - return empty result
+            return CompactedBalanceChanges(ranges: [])
+        }
+        
+        // Parse DashSDKCompactedBalanceChanges
+        let changesPtr = dataPtr.assumingMemoryBound(to: DashSDKCompactedBalanceChanges.self)
+        let ffiChanges = changesPtr.pointee
+        
+        // Convert ranges
+        var ranges: [CompactedBlockRange] = []
+        if ffiChanges.ranges_count > 0 && ffiChanges.ranges != nil {
+            for i in 0..<ffiChanges.ranges_count {
+                let ffiRange = ffiChanges.ranges![Int(i)]
+                
+                // Convert address changes within this range
+                var addressChanges: [CompactedAddressChange] = []
+                if ffiRange.changes_count > 0 && ffiRange.changes != nil {
+                    for j in 0..<ffiRange.changes_count {
+                        let ffiChange = ffiRange.changes![Int(j)]
+                        
+                        let addressData: Data
+                        if ffiChange.address != nil && ffiChange.address_len > 0 {
+                            addressData = Data(bytes: ffiChange.address!, count: Int(ffiChange.address_len))
+                        } else {
+                            continue
+                        }
+                        
+                        // Map operation type: 0 = BlockAwareSetCredits, 1 = BlockAwareAddToCreditsOperations
+                        let operation: BlockAwareCreditOperation
+                        if ffiChange.operation_type.rawValue == 0 { // BlockAwareSetCredits
+                            operation = .setCredits(credits: ffiChange.set_credits_value)
+                        } else { // BlockAwareAddToCreditsOperations
+                            // Parse add entries
+                            var entries: [(blockHeight: UInt64, credits: UInt64)] = []
+                            if ffiChange.add_entries_count > 0 && ffiChange.add_entries != nil {
+                                for k in 0..<ffiChange.add_entries_count {
+                                    let entry = ffiChange.add_entries![Int(k)]
+                                    entries.append((blockHeight: entry.block_height, credits: entry.credits))
+                                }
+                            }
+                            operation = .addToCreditsOperations(entries: entries)
+                        }
+                        
+                        addressChanges.append(CompactedAddressChange(
+                            addressBytes: addressData,
+                            operation: operation
+                        ))
+                    }
+                }
+                
+                ranges.append(CompactedBlockRange(
+                    startBlockHeight: ffiRange.start_block_height,
+                    endBlockHeight: ffiRange.end_block_height,
+                    changes: addressChanges
+                ))
+            }
+        }
+        
+        // Free the FFI struct
+        dash_sdk_compacted_balance_changes_free(changesPtr)
+        
+        return CompactedBalanceChanges(ranges: ranges)
+    }
+    
     // MARK: - Convenience Methods
 
     /// Get the balance for a single address

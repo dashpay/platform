@@ -227,6 +227,103 @@ public struct RecentBalanceChanges: Sendable {
     }
 }
 
+// MARK: - Compacted Balance Changes Types
+
+/// Block-aware credit operation - can be a final set value or individual adds by block height
+public enum BlockAwareCreditOperation: Sendable, Equatable {
+    /// Credits were set to a final value (overwrites previous)
+    case setCredits(credits: UInt64)
+    /// Individual add-to-credits operations with their block heights (preserved for partial sync)
+    case addToCreditsOperations(entries: [(blockHeight: UInt64, credits: UInt64)])
+    
+    /// Get the total credits (final value for setCredits, sum of adds for addToCreditsOperations)
+    public var totalCredits: UInt64 {
+        switch self {
+        case .setCredits(let credits):
+            return credits
+        case .addToCreditsOperations(let entries):
+            return entries.reduce(0) { $0 + $1.credits }
+        }
+    }
+    
+    public static func == (lhs: BlockAwareCreditOperation, rhs: BlockAwareCreditOperation) -> Bool {
+        switch (lhs, rhs) {
+        case (.setCredits(let c1), .setCredits(let c2)):
+            return c1 == c2
+        case (.addToCreditsOperations(let e1), .addToCreditsOperations(let e2)):
+            guard e1.count == e2.count else { return false }
+            for (entry1, entry2) in zip(e1, e2) {
+                if entry1.blockHeight != entry2.blockHeight || entry1.credits != entry2.credits {
+                    return false
+                }
+            }
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// A compacted balance change for an address
+public struct CompactedAddressChange: Sendable, Equatable {
+    /// Address bytes
+    public let addressBytes: Data
+    
+    /// Block-aware operation (SetCredits or AddToCreditsOperations)
+    public let operation: BlockAwareCreditOperation
+    
+    /// Convert address bytes to hex string
+    public var addressHex: String {
+        return addressBytes.map { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Convert address bytes to bech32m string
+    public func toBech32m(network: DashSDKNetwork) -> String? {
+        guard addressBytes.count == 21 else { return nil }
+        let hrp: String
+        if network.rawValue == 0 {
+            hrp = "dashevo"
+        } else {
+            hrp = "tdashevo"
+        }
+        return Bech32m.encode(hrp: hrp, data: addressBytes)
+    }
+}
+
+/// Compacted balance changes for a range of blocks
+public struct CompactedBlockRange: Sendable, Equatable {
+    /// Start block height of the range
+    public let startBlockHeight: UInt64
+    
+    /// End block height of the range
+    public let endBlockHeight: UInt64
+    
+    /// Balance changes in this range
+    public let changes: [CompactedAddressChange]
+    
+    /// Height range
+    public var heightRange: ClosedRange<UInt64> {
+        return startBlockHeight...endBlockHeight
+    }
+}
+
+/// Recent compacted balance changes across multiple ranges
+public struct CompactedBalanceChanges: Sendable {
+    /// Compacted block ranges
+    public let ranges: [CompactedBlockRange]
+    
+    /// Total number of address changes across all ranges
+    public var totalChangesCount: Int {
+        return ranges.reduce(0) { $0 + $1.changes.count }
+    }
+    
+    /// Overall height range (if any ranges present)
+    public var heightRange: ClosedRange<UInt64>? {
+        guard let first = ranges.first, let last = ranges.last else { return nil }
+        return first.startBlockHeight...last.endBlockHeight
+    }
+}
+
 // MARK: - Bech32m Encoding/Decoding Helper
 
 /// Bech32m encoding/decoding helper for Platform addresses
