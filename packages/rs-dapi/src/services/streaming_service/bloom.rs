@@ -1,9 +1,37 @@
 use std::sync::Arc;
 
-use dash_spv::bloom::utils::{extract_pubkey_hash, outpoint_to_bytes};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
-use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, Txid};
+use dashcore_rpc::dashcore::{OutPoint, Script, ScriptBuf, Transaction as CoreTx, Txid};
+
+/// Extract pubkey hash from a P2PKH script.
+/// Returns the 20-byte hash if this is a standard P2PKH script, None otherwise.
+fn extract_pubkey_hash(script: &Script) -> Option<[u8; 20]> {
+    let bytes = script.as_bytes();
+    // P2PKH: OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
+    // 0x76 0xa9 0x14 [20 bytes] 0x88 0xac
+    if bytes.len() == 25
+        && bytes[0] == 0x76
+        && bytes[1] == 0xa9
+        && bytes[2] == 0x14
+        && bytes[23] == 0x88
+        && bytes[24] == 0xac
+    {
+        let mut hash = [0u8; 20];
+        hash.copy_from_slice(&bytes[3..23]);
+        return Some(hash);
+    }
+    None
+}
+
+/// Convert an OutPoint to bytes for bloom filter matching.
+/// Uses little-endian txid followed by little-endian vout.
+fn outpoint_to_bytes(outpoint: &OutPoint) -> Vec<u8> {
+    use dashcore_rpc::dashcore::hashes::Hash;
+    let mut bytes = outpoint.txid.to_byte_array().to_vec();
+    bytes.extend(&outpoint.vout.to_le_bytes());
+    bytes
+}
 
 fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
     let script_bytes = script.as_bytes();
@@ -116,7 +144,6 @@ pub(crate) fn bloom_flags_from_int<I: TryInto<u8>>(flags: I) -> BloomFlags {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dash_spv::bloom::utils::outpoint_to_bytes;
     use dashcore_rpc::dashcore::bloom::BloomFilter as CoreBloomFilter;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash};

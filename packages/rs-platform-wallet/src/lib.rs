@@ -14,9 +14,6 @@ use key_wallet::account::ManagedAccountCollection;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
-use key_wallet::wallet::immature_transaction::{
-    ImmatureTransaction, ImmatureTransactionCollection,
-};
 use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::transaction_building::{
@@ -241,12 +238,20 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.set_description(description)
     }
 
-    fn birth_height(&self) -> Option<u32> {
+    fn birth_height(&self) -> u32 {
         self.wallet_info.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: Option<u32>) {
+    fn set_birth_height(&mut self, height: u32) {
         self.wallet_info.set_birth_height(height)
+    }
+
+    fn synced_height(&self) -> u32 {
+        self.wallet_info.synced_height()
+    }
+
+    fn update_synced_height(&mut self, height: u32) {
+        self.wallet_info.update_synced_height(height)
     }
 
     fn first_loaded_at(&self) -> u64 {
@@ -297,21 +302,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.accounts()
     }
 
-    fn process_matured_transactions(&mut self, current_height: u32) -> Vec<ImmatureTransaction> {
-        self.wallet_info
-            .process_matured_transactions(current_height)
-    }
-
-    fn add_immature_transaction(&mut self, tx: ImmatureTransaction) {
-        self.wallet_info.add_immature_transaction(tx)
-    }
-
-    fn immature_transactions(&self) -> &ImmatureTransactionCollection {
+    fn immature_transactions(&self) -> Vec<Transaction> {
         self.wallet_info.immature_transactions()
-    }
-
-    fn immature_balance(&self) -> u64 {
-        self.wallet_info.immature_balance()
     }
 
     fn create_unsigned_payment_transaction(
@@ -331,9 +323,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             fee_level,
             current_block_height,
         )
-    }
-    fn update_chain_height(&mut self, current_height: u32) {
-        self.wallet_info.update_chain_height(current_height)
     }
 
     fn network(&self) -> Network {
