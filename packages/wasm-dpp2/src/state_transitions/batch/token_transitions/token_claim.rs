@@ -30,12 +30,12 @@ impl TokenClaimTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        js_distribution_type: &JsValue,
+        distribution_type: &JsValue,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenClaimTransitionWasm> {
-        let distribution_type = match js_distribution_type.is_undefined() {
+        let distribution_type = match distribution_type.is_undefined() {
             true => TokenDistributionTypeWasm::default(),
-            false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
+            false => TokenDistributionTypeWasm::try_from(distribution_type.clone())?,
         };
 
         Ok(TokenClaimTransitionWasm(TokenClaimTransition::V0(
@@ -76,11 +76,11 @@ impl TokenClaimTransitionWasm {
     pub fn set_distribution_type(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "TokenDistributionType | string | number | undefined")]
-        js_distribution_type: &JsValue,
+        distribution_type: &JsValue,
     ) -> WasmDppResult<()> {
-        let distribution_type = match js_distribution_type.is_undefined() {
+        let distribution_type = match distribution_type.is_undefined() {
             true => TokenDistributionTypeWasm::default(),
-            false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
+            false => TokenDistributionTypeWasm::try_from(distribution_type.clone())?,
         };
 
         self.0.set_distribution_type(distribution_type.into());

@@ -28,10 +28,10 @@ impl From<TokenPreProgrammedDistribution> for TokenPreProgrammedDistributionWasm
     }
 }
 
-pub fn js_distributions_to_distributions(
-    js_distributions: &JsValue,
+pub fn distributions_to_map(
+    distributions: &JsValue,
 ) -> WasmDppResult<BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>> {
-    let distributions_object = Object::from(js_distributions.clone());
+    let distributions_object = Object::from(distributions.clone());
     let distributions_keys = Object::keys(&distributions_object);
 
     let mut distributions = BTreeMap::new();
@@ -86,11 +86,11 @@ pub fn js_distributions_to_distributions(
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]
 impl TokenPreProgrammedDistributionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(js_distributions: &JsValue) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
-        let distributions = js_distributions_to_distributions(js_distributions)?;
+    pub fn constructor(distributions: &JsValue) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
+        let distributions_map = distributions_to_map(distributions)?;
 
         Ok(TokenPreProgrammedDistributionWasm(
-            TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 { distributions }),
+            TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 { distributions: distributions_map }),
         ))
     }
 
@@ -132,10 +132,10 @@ impl TokenPreProgrammedDistributionWasm {
     }
 
     #[wasm_bindgen(setter = "distributions")]
-    pub fn set_distributions(&mut self, js_distributions: &JsValue) -> WasmDppResult<()> {
-        let distributions = js_distributions_to_distributions(js_distributions)?;
+    pub fn set_distributions(&mut self, distributions: &JsValue) -> WasmDppResult<()> {
+        let distributions_map = distributions_to_map(distributions)?;
 
-        self.0.set_distributions(distributions);
+        self.0.set_distributions(distributions_map);
 
         Ok(())
     }

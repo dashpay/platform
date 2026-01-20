@@ -178,13 +178,13 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(setter = "sharedEncryptedNote")]
     pub fn set_shared_encrypted_note(
         &mut self,
-        js_shared_encrypted_note: &JsValue,
+        shared_encrypted_note: &JsValue,
     ) -> WasmDppResult<()> {
         let shared_encrypted_note: Option<SharedEncryptedNote> =
-            match js_shared_encrypted_note.is_undefined() {
+            match shared_encrypted_note.is_undefined() {
                 true => None,
                 false => Some(
-                    js_shared_encrypted_note
+                    shared_encrypted_note
                         .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
                         .clone()
                         .into(),
@@ -198,13 +198,13 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(setter = "privateEncryptedNote")]
     pub fn set_private_encrypted_note(
         &mut self,
-        js_private_encrypted_note: &JsValue,
+        private_encrypted_note: &JsValue,
     ) -> WasmDppResult<()> {
         let private_encrypted_note: Option<PrivateEncryptedNote> =
-            match js_private_encrypted_note.is_undefined() {
+            match private_encrypted_note.is_undefined() {
                 true => None,
                 false => Some(
-                    js_private_encrypted_note
+                    private_encrypted_note
                         .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
                         .clone()
                         .into(),

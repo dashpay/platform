@@ -11,9 +11,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 impl TokenConfigurationChangeItemWasm {
     #[wasm_bindgen(js_name = "NewTokensDestinationIdentityItem")]
     pub fn new_tokens_destination_identity_item(
-        js_identity_id: IdentifierLikeJs,
+        identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<TokenConfigurationChangeItemWasm> {
-        let id_value: JsValue = js_identity_id.into();
+        let id_value: JsValue = identity_id.into();
         let identity_id: Option<Identifier> = match id_value.is_undefined() {
             true => None,
             false => Some(IdentifierWasm::try_from(&id_value)?.into()),

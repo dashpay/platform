@@ -76,13 +76,13 @@ impl OutPointWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(js_buffer: Vec<u8>) -> OutPointWasm {
-        let mut buffer = [0u8; 36];
-        let bytes = js_buffer.as_slice();
+    pub fn from_bytes(buffer: Vec<u8>) -> OutPointWasm {
+        let mut out_buffer = [0u8; 36];
+        let bytes = buffer.as_slice();
         let len = bytes.len();
-        buffer[..len].copy_from_slice(bytes);
+        out_buffer[..len].copy_from_slice(bytes);
 
-        OutPointWasm(OutPoint::from(buffer))
+        OutPointWasm(OutPoint::from(out_buffer))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]

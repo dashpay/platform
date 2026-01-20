@@ -3,6 +3,35 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+export type GasFeesPaidByLike = GasFeesPaidBy | "documentOwner" | "contractOwner" | "preferContractOwner" | 0 | 1 | 2;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GasFeesPaidByLike")]
+    pub type GasFeesPaidByLikeJs;
+}
+
+impl TryFrom<GasFeesPaidByLikeJs> for GasFeesPaidByWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: GasFeesPaidByLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        GasFeesPaidByWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<GasFeesPaidByLikeJs> for GasFeesPaidBy {
+    type Error = WasmDppError;
+
+    fn try_from(value: GasFeesPaidByLikeJs) -> Result<Self, Self::Error> {
+        let wasm: GasFeesPaidByWasm = value.try_into()?;
+        Ok(GasFeesPaidBy::from(wasm))
+    }
+}
+
 #[derive(Clone, Default)]
 #[wasm_bindgen(js_name = "GasFeesPaidBy")]
 pub enum GasFeesPaidByWasm {

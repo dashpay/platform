@@ -39,16 +39,16 @@ impl From<BatchTransitionWasm> for BatchTransition {
 }
 
 fn convert_array_to_vec_batched(
-    js_batched_transitions: &js_sys::Array,
+    batched_transitions: &js_sys::Array,
 ) -> WasmDppResult<Vec<BatchedTransition>> {
-    let mut transitions = Vec::with_capacity(js_batched_transitions.length() as usize);
+    let mut transitions = Vec::with_capacity(batched_transitions.length() as usize);
 
-    for js_batched_transition in js_batched_transitions.iter() {
-        let batched_transition: BatchedTransitionWasm = js_batched_transition
+    for batched_transition in batched_transitions.iter() {
+        let transition: BatchedTransitionWasm = batched_transition
             .to_wasm::<BatchedTransitionWasm>("BatchedTransition")?
             .clone();
 
-        transitions.push(BatchedTransition::from(batched_transition));
+        transitions.push(BatchedTransition::from(transition));
     }
 
     Ok(transitions)
@@ -58,11 +58,11 @@ fn convert_array_to_vec_batched(
 impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromBatchedTransitions")]
     pub fn from_batched_transitions(
-        js_batched_transitions: &js_sys::Array,
+        batched_transitions: &js_sys::Array,
         owner_id: IdentifierLikeJs,
         user_fee_increase: UserFeeIncrease,
     ) -> WasmDppResult<BatchTransitionWasm> {
-        let transitions = convert_array_to_vec_batched(js_batched_transitions)?;
+        let transitions = convert_array_to_vec_batched(batched_transitions)?;
 
         Ok(BatchTransitionWasm(BatchTransition::V1(
             BatchTransitionV1 {
@@ -84,8 +84,8 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "transitions")]
-    pub fn set_transitions(&mut self, js_batched_transitions: &js_sys::Array) -> WasmDppResult<()> {
-        let transitions = convert_array_to_vec_batched(js_batched_transitions)?;
+    pub fn set_transitions(&mut self, batched_transitions: &js_sys::Array) -> WasmDppResult<()> {
+        let transitions = convert_array_to_vec_batched(batched_transitions)?;
 
         self.0.set_transitions(transitions);
         Ok(())
@@ -130,8 +130,8 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "signature")]
-    pub fn set_signature(&mut self, js_signature: Vec<u8>) {
-        self.0.set_signature(BinaryData::from(js_signature))
+    pub fn set_signature(&mut self, signature: Vec<u8>) {
+        self.0.set_signature(BinaryData::from(signature))
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
@@ -198,17 +198,13 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
-    ) -> WasmDppResult<BatchTransitionWasm> {
-        serialization::from_object(js_value).map(BatchTransitionWasm)
+    pub fn from_object(object: js_sys::Object) -> WasmDppResult<BatchTransitionWasm> {
+        serialization::from_object(object.into()).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "object")] js_value: JsValue,
-    ) -> WasmDppResult<BatchTransitionWasm> {
-        serialization::from_json(js_value).map(BatchTransitionWasm)
+    pub fn from_json(object: js_sys::Object) -> WasmDppResult<BatchTransitionWasm> {
+        serialization::from_json(object.into()).map(BatchTransitionWasm)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]

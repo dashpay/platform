@@ -47,10 +47,11 @@ pub use data_contract::{
 pub use epoch::*;
 pub use group::*;
 pub use identity::{
-    IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm, IdentityPublicKeyWasm,
-    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
-    MasternodeVoteTransitionWasm, PartialIdentityWasm,
+    public_key_hash_from_js, IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
+    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, IdentityTopUpTransitionWasm,
+    IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
+    PublicKeyHashLikeJs,
 };
 pub use platform_address::{
     FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressLikeArrayJs, PlatformAddressLikeJs,

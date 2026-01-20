@@ -113,6 +113,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DataContractJSON")]
     pub type DataContractJSONJs;
+
+    #[wasm_bindgen(typescript_type = "DataContractConfig")]
+    pub type DataContractConfigJs;
 }
 
 #[wasm_bindgen(js_name = "DataContract")]
@@ -132,9 +135,9 @@ impl From<DataContractWasm> for DataContract {
 }
 
 pub fn tokens_configuration_from_js_value(
-    js_configuration: &JsValue,
+    configuration: &JsValue,
 ) -> WasmDppResult<BTreeMap<TokenContractPosition, TokenConfiguration>> {
-    let configuration_object = Object::from(js_configuration.clone());
+    let configuration_object = Object::from(configuration.clone());
     let configuration_keys = Object::keys(&configuration_object);
 
     let mut configuration: BTreeMap<TokenContractPosition, TokenConfiguration> = BTreeMap::new();
@@ -488,9 +491,10 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "setConfig")]
     pub fn set_config(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "DataContractConfig")] config: JsValue,
+        config: DataContractConfigJs,
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
+        let config: JsValue = config.into();
         let platform_version: JsValue = platform_version.into();
         let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),

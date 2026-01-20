@@ -38,25 +38,25 @@ impl DocumentCreateTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
-        js_prefunded_voting_balance: &JsValue,
-        js_token_payment_info: &JsValue,
+        prefunded_voting_balance: &JsValue,
+        token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
-        let prefunded_voting_balance = match js_prefunded_voting_balance.is_undefined()
-            | js_prefunded_voting_balance.is_null()
+        let prefunded_voting_balance = match prefunded_voting_balance.is_undefined()
+            | prefunded_voting_balance.is_null()
         {
             true => None,
             false => Some(
-                js_prefunded_voting_balance
+                prefunded_voting_balance
                     .to_wasm::<PrefundedVotingBalanceWasm>("PrefundedVotingBalance")?
                     .clone(),
             ),
         };
 
         let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
+            match token_payment_info.is_null() | token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
-                    js_token_payment_info
+                    token_payment_info
                         .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
@@ -92,9 +92,9 @@ impl DocumentCreateTransitionWasm {
     pub fn set_data(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")]
-        js_data: JsValue,
+        data: JsValue,
     ) -> WasmDppResult<()> {
-        let data = js_data.with_serde_to_platform_value_map()?;
+        let data = data.with_serde_to_platform_value_map()?;
 
         self.0.set_data(data);
         Ok(())
@@ -106,17 +106,17 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "entropy")]
-    pub fn set_entropy(&mut self, js_entropy: Vec<u8>) -> WasmDppResult<()> {
-        if js_entropy.len() != 32 {
+    pub fn set_entropy(&mut self, entropy: Vec<u8>) -> WasmDppResult<()> {
+        if entropy.len() != 32 {
             return Err(WasmDppError::invalid_argument(format!(
                 "Entropy must be exactly 32 bytes, got {}",
-                js_entropy.len()
+                entropy.len()
             )));
         }
-        let mut entropy = [0u8; 32];
-        entropy.copy_from_slice(&js_entropy);
+        let mut entropy_bytes = [0u8; 32];
+        entropy_bytes.copy_from_slice(&entropy);
 
-        self.0.set_entropy(entropy);
+        self.0.set_entropy(entropy_bytes);
         Ok(())
     }
 
@@ -152,9 +152,9 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
-        js_transition.get_create_transition()
+        transition.get_create_transition()
     }
 }
 

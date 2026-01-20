@@ -10,12 +10,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
 impl TokenConfigurationChangeItemWasm {
     #[wasm_bindgen(js_name = "PerpetualDistributionConfigurationItem")]
-    pub fn perpetual_distribution_item(js_perpetual_distribution_value: JsValue) -> Self {
-        let perpetual_distribution_value: Option<TokenPerpetualDistribution> =
-            match js_perpetual_distribution_value.is_undefined() {
+    pub fn perpetual_distribution_item(perpetual_distribution_value: JsValue) -> Self {
+        let perpetual_distribution: Option<TokenPerpetualDistribution> =
+            match perpetual_distribution_value.is_undefined() {
                 true => None,
                 false => Some(
-                    js_perpetual_distribution_value
+                    perpetual_distribution_value
                         .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")
                         .unwrap()
                         .clone()
@@ -24,7 +24,7 @@ impl TokenConfigurationChangeItemWasm {
             };
 
         TokenConfigurationChangeItemWasm(TokenConfigurationChangeItem::PerpetualDistribution(
-            perpetual_distribution_value,
+            perpetual_distribution,
         ))
     }
 

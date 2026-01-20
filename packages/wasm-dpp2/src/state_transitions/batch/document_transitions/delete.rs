@@ -28,13 +28,13 @@ impl DocumentDeleteTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
-        js_token_payment_info: &JsValue,
+        token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
+            match token_payment_info.is_null() | token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
-                    js_token_payment_info
+                    token_payment_info
                         .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
@@ -69,9 +69,9 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
-        js_transition.get_delete_transition()
+        transition.get_delete_transition()
     }
 }
 

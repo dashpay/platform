@@ -62,6 +62,12 @@ export interface TokenConfigurationOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenConfigurationOptions")]
+    pub type TokenConfigurationOptionsJs;
+}
+
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "TokenConfiguration")]
 pub struct TokenConfigurationWasm(TokenConfiguration);
@@ -81,9 +87,8 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "TokenConfigurationOptions")] options: JsValue,
-    ) -> WasmDppResult<TokenConfigurationWasm> {
+    pub fn constructor(options: TokenConfigurationOptionsJs) -> WasmDppResult<TokenConfigurationWasm> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract conventions (required)

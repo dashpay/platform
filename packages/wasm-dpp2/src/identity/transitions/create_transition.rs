@@ -42,6 +42,12 @@ export interface IdentityCreateTransitionOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityCreateTransitionOptions")]
+    pub type IdentityCreateTransitionOptionsJs;
+}
+
 #[wasm_bindgen(js_name = "IdentityCreateTransition")]
 #[derive(Clone)]
 pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
@@ -62,8 +68,9 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "IdentityCreateTransitionOptions")] options: JsValue,
+        options: IdentityCreateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract publicKeys (required array)
@@ -71,7 +78,7 @@ impl IdentityCreateTransitionWasm {
             .map_err(|e| WasmDppError::invalid_argument(format!("Missing publicKeys: {:?}", e)))?;
         let js_public_keys_array = Array::from(&js_public_keys);
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(&js_public_keys_array)?;
+            IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 
         // Extract assetLock (required)
         let js_asset_lock = Reflect::get(&object, &JsValue::from_str("assetLock"))
@@ -170,12 +177,12 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "publicKeys")]
-    pub fn set_public_keys(&mut self, js_public_keys: &js_sys::Array) -> WasmDppResult<()> {
-        let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(js_public_keys)?;
+    pub fn set_public_keys(&mut self, public_keys: &js_sys::Array) -> WasmDppResult<()> {
+        let public_keys_vec: Vec<IdentityPublicKeyInCreationWasm> =
+            IdentityPublicKeyInCreationWasm::vec_from_array(public_keys)?;
 
         self.0.set_public_keys(
-            public_keys
+            public_keys_vec
                 .iter()
                 .map(|key| IdentityPublicKeyInCreation::from(key.clone()))
                 .collect(),

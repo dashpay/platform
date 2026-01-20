@@ -39,6 +39,12 @@ export interface ChangeControlRulesOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ChangeControlRulesOptions")]
+    pub type ChangeControlRulesOptionsJs;
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ChangeControlRules")]
 pub struct ChangeControlRulesWasm(ChangeControlRules);
@@ -58,9 +64,8 @@ impl From<ChangeControlRulesWasm> for ChangeControlRules {
 #[wasm_bindgen(js_class = ChangeControlRules)]
 impl ChangeControlRulesWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "ChangeControlRulesOptions")] options: JsValue,
-    ) -> WasmDppResult<Self> {
+    pub fn constructor(options: ChangeControlRulesOptionsJs) -> WasmDppResult<Self> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract AuthorizedActionTakers objects which need special handling
@@ -189,14 +194,14 @@ impl ChangeControlRulesWasm {
         admin_action_takers: &AuthorizedActionTakersWasm,
         contract_owner_id: IdentifierLikeJs,
         main_group: Option<GroupContractPosition>,
-        js_groups: &JsValue,
+        groups_value: &JsValue,
         action_taker: &ActionTakerWasm,
-        js_goal: &JsValue,
+        goal: &JsValue,
     ) -> WasmDppResult<bool> {
         let contract_owner_id: Identifier = contract_owner_id.try_into()?;
-        let goal = ActionGoalWasm::try_from(js_goal.clone())?;
+        let goal = ActionGoalWasm::try_from(goal.clone())?;
 
-        let groups_object = Object::from(js_groups.clone());
+        let groups_object = Object::from(groups_value.clone());
         let groups_keys = Object::keys(&groups_object);
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();
@@ -213,7 +218,7 @@ impl ChangeControlRulesWasm {
                 ))
             })?;
 
-            let group_value = Reflect::get(js_groups, &key).map_err(|err| {
+            let group_value = Reflect::get(groups_value, &key).map_err(|err| {
                 let message = err.error_message();
                 WasmDppError::invalid_argument(format!(
                     "unable to read group at contract position '{}': {}",

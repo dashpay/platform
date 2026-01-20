@@ -251,9 +251,9 @@ impl PlatformAddressWasm {
     /// - An existing PlatformAddress object
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        js_address: PlatformAddressLikeJs,
+        address: PlatformAddressLikeJs,
     ) -> WasmDppResult<PlatformAddressWasm> {
-        js_address.try_into()
+        address.try_into()
     }
 
     /// Returns the bech32m-encoded address string for the specified network.

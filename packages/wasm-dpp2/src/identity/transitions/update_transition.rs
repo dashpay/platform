@@ -73,7 +73,7 @@ impl IdentityUpdateTransitionWasm {
             .map_err(|_| WasmDppError::invalid_argument("addPublicKeys is required"))?;
         let add_public_keys_array = Array::from(&add_public_keys_js);
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(&add_public_keys_array)?;
+            IdentityPublicKeyInCreationWasm::vec_from_array(&add_public_keys_array)?;
 
         let disable_public_keys_js = Reflect::get(&options_obj, &"disablePublicKeys".into())
             .map_err(|_| WasmDppError::invalid_argument("disablePublicKeys is required"))?;
@@ -202,7 +202,7 @@ impl IdentityUpdateTransitionWasm {
         add_public_keys: &js_sys::Array,
     ) -> WasmDppResult<()> {
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
-            IdentityPublicKeyInCreationWasm::vec_from_js_value(add_public_keys)?;
+            IdentityPublicKeyInCreationWasm::vec_from_array(add_public_keys)?;
 
         let keys: Vec<IdentityPublicKeyInCreation> =
             add_public_keys.iter().map(|id| id.clone().into()).collect();

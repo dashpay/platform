@@ -1,7 +1,7 @@
+use crate::error::WasmDppResult;
+use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
-use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -9,7 +9,6 @@ use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::TokenMintTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenMintTransition)]
@@ -32,16 +31,11 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike | undefined")]
-        js_issued_to_identity_id: &JsValue,
+        issued_to_identity_id: IdentifierLikeOrUndefinedJs,
         amount: u64,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenMintTransitionWasm> {
-        let issued_to_identity_id: Option<Identifier> =
-            match js_issued_to_identity_id.is_undefined() {
-                false => Some(IdentifierWasm::try_from(js_issued_to_identity_id)?.into()),
-                true => None,
-            };
+        let issued_to_identity_id: Option<Identifier> = issued_to_identity_id.try_into()?;
 
         Ok(TokenMintTransitionWasm(TokenMintTransition::V0(
             TokenMintTransitionV0 {
@@ -81,17 +75,10 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(setter = issuedToIdentityId)]
     pub fn set_issued_to_identity_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike | undefined")] js_id: &JsValue,
+        identifier: IdentifierLikeOrUndefinedJs,
     ) -> WasmDppResult<()> {
-        match js_id.is_undefined() {
-            true => {
-                self.0.set_issued_to_identity_id(None);
-            }
-            false => {
-                let id = IdentifierWasm::try_from(js_id)?.into();
-                self.0.set_issued_to_identity_id(Some(id));
-            }
-        }
+        let identifier: Option<Identifier> = identifier.try_into()?;
+        self.0.set_issued_to_identity_id(identifier);
         Ok(())
     }
 

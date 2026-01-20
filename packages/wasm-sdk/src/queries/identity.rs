@@ -10,7 +10,7 @@ use dash_sdk::dpp::identity::Purpose;
 use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQuery};
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
-use js_sys::{Array, BigInt, Map, Uint8Array};
+use js_sys::{Array, BigInt, Map};
 use rs_dapi_client::IntoInner;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -21,6 +21,7 @@ use wasm_dpp2::identifier::{
 };
 use wasm_dpp2::identity::public_key::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
+use wasm_dpp2::{public_key_hash_from_js, PublicKeyHashLikeJs};
 
 #[wasm_bindgen(js_name = "IdentityContractKeys")]
 pub struct IdentityContractKeysWasm {
@@ -743,19 +744,10 @@ impl WasmSdk {
     )]
     pub async fn get_identity_by_public_key_hash(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")]
-        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
-        public_key_hash: JsValue,
+        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: PublicKeyHashLikeJs,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
-        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            hex::decode(&hex_str).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-            })?
-        } else {
-            let arr = Uint8Array::new(&public_key_hash);
-            arr.to_vec()
-        };
+        let hash_bytes: Vec<u8> = public_key_hash_from_js(public_key_hash)?;
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -817,20 +809,10 @@ impl WasmSdk {
     )]
     pub async fn get_identity_by_non_unique_public_key_hash(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")]
-        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
-        public_key_hash: JsValue,
-        #[wasm_bindgen(js_name = "startAfterId")]
-        start_after_id: IdentifierLikeOrUndefinedJs,
+        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: PublicKeyHashLikeJs,
+        #[wasm_bindgen(js_name = "startAfterId")] start_after_id: IdentifierLikeOrUndefinedJs,
     ) -> Result<Array, WasmSdkError> {
-        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            hex::decode(&hex_str).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-            })?
-        } else {
-            let arr = Uint8Array::new(&public_key_hash);
-            arr.to_vec()
-        };
+        let hash_bytes: Vec<u8> = public_key_hash_from_js(public_key_hash)?;
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -1074,19 +1056,10 @@ impl WasmSdk {
     )]
     pub async fn get_identity_by_public_key_hash_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")]
-        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
-        public_key_hash: JsValue,
+        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: PublicKeyHashLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
-        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            hex::decode(&hex_str).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-            })?
-        } else {
-            let arr = Uint8Array::new(&public_key_hash);
-            arr.to_vec()
-        };
+        let hash_bytes: Vec<u8> = public_key_hash_from_js(public_key_hash)?;
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -1116,20 +1089,10 @@ impl WasmSdk {
     )]
     pub async fn get_identity_by_non_unique_public_key_hash_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")]
-        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
-        public_key_hash: JsValue,
-        #[wasm_bindgen(js_name = "startAfterId")]
-        start_after_id: IdentifierLikeOrUndefinedJs,
+        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: PublicKeyHashLikeJs,
+        #[wasm_bindgen(js_name = "startAfterId")] start_after_id: IdentifierLikeOrUndefinedJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            hex::decode(&hex_str).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-            })?
-        } else {
-            let arr = Uint8Array::new(&public_key_hash);
-            arr.to_vec()
-        };
+        let hash_bytes: Vec<u8> = public_key_hash_from_js(public_key_hash)?;
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",

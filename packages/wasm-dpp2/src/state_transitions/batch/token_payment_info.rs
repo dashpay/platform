@@ -1,4 +1,4 @@
-use crate::enums::batch::gas_fees_paid_by::GasFeesPaidByWasm;
+use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
@@ -35,6 +35,12 @@ export interface TokenPaymentInfoOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenPaymentInfoOptions")]
+    pub type TokenPaymentInfoOptionsJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "TokenPaymentInfo")]
 pub struct TokenPaymentInfoWasm(TokenPaymentInfo);
@@ -54,9 +60,8 @@ impl From<TokenPaymentInfoWasm> for TokenPaymentInfo {
 #[wasm_bindgen(js_class = TokenPaymentInfo)]
 impl TokenPaymentInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "TokenPaymentInfoOptions")] options: JsValue,
-    ) -> WasmDppResult<Self> {
+    pub fn constructor(options: TokenPaymentInfoOptionsJs) -> WasmDppResult<Self> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract paymentTokenContractId (optional, can be null/undefined)
@@ -122,9 +127,9 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "paymentTokenContractId")]
     pub fn set_payment_token_contract_id(
         &mut self,
-        js_payment_token_contract_id: IdentifierLikeJs,
+        payment_token_contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = js_payment_token_contract_id.into();
+        let id_value: JsValue = payment_token_contract_id.into();
         let payment_token_contract_id: Option<Identifier> =
             match id_value.is_null() | id_value.is_undefined() {
                 true => None,
@@ -155,16 +160,13 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "gasFeesPaidBy")]
     pub fn set_gas_fees_paid_by(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "GasFeesPaidBy | string | number | undefined")]
-        js_gas_fees_paid_by: &JsValue,
+        gas_fees_paid_by: GasFeesPaidByLikeJs,
     ) -> WasmDppResult<()> {
-        let gas_fees_paid_by =
-            match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
-                true => GasFeesPaidBy::default(),
-                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by.clone())?
-                    .clone()
-                    .into(),
-            };
+        let value: JsValue = gas_fees_paid_by.into();
+        let gas_fees_paid_by = match value.is_undefined() | value.is_null() {
+            true => GasFeesPaidBy::default(),
+            false => GasFeesPaidByWasm::try_from(value)?.into(),
+        };
 
         self.0.set_gas_fees_paid_by(gas_fees_paid_by);
 

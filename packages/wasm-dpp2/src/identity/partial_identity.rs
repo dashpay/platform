@@ -71,7 +71,7 @@ impl PartialIdentityWasm {
 
         let loaded_public_keys_js = Reflect::get(&options_obj, &"loadedPublicKeys".into())
             .map_err(|_| WasmDppError::invalid_argument("loadedPublicKeys is required"))?;
-        let loaded_public_keys = js_value_to_loaded_public_keys(&loaded_public_keys_js)?;
+        let loaded_public_keys = value_to_loaded_public_keys(&loaded_public_keys_js)?;
 
         let balance_js =
             Reflect::get(&options_obj, &"balance".into()).unwrap_or(JsValue::UNDEFINED);
@@ -167,7 +167,7 @@ impl PartialIdentityWasm {
         #[wasm_bindgen(unchecked_param_type = "Record<number, IdentityPublicKey>")]
         loaded_public_keys: &JsValue,
     ) -> WasmDppResult<()> {
-        self.0.loaded_public_keys = js_value_to_loaded_public_keys(loaded_public_keys)?;
+        self.0.loaded_public_keys = value_to_loaded_public_keys(loaded_public_keys)?;
 
         Ok(())
     }
@@ -274,17 +274,17 @@ impl PartialIdentityWasm {
     }
 }
 
-pub fn js_value_to_loaded_public_keys(
-    js_loaded_public_keys: &JsValue,
+pub fn value_to_loaded_public_keys(
+    loaded_public_keys: &JsValue,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
-    match js_loaded_public_keys.is_object() {
+    match loaded_public_keys.is_object() {
         false => Err(WasmDppError::invalid_argument(
             "loaded_public_keys must be an object",
         )),
         true => {
             let mut map = BTreeMap::new();
 
-            let pub_keys_object = Object::from(js_loaded_public_keys.clone());
+            let pub_keys_object = Object::from(loaded_public_keys.clone());
             let keys = Object::keys(&pub_keys_object);
 
             for key in keys.iter() {
@@ -322,9 +322,9 @@ pub fn js_value_to_loaded_public_keys(
 }
 
 pub fn option_array_to_not_found(
-    js_not_found_public_keys: Option<Array>,
+    not_found_public_keys: Option<Array>,
 ) -> WasmDppResult<BTreeSet<KeyID>> {
-    match js_not_found_public_keys {
+    match not_found_public_keys {
         None => Ok(BTreeSet::new()),
         Some(keys) => {
             let keys_iter: Vec<KeyID> = keys

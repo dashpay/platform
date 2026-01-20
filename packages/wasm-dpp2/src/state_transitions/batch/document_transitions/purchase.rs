@@ -37,13 +37,13 @@ impl DocumentPurchaseTransitionWasm {
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         amount: Credits,
-        js_token_payment_info: &JsValue,
+        token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
         let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
+            match token_payment_info.is_null() | token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
-                    js_token_payment_info
+                    token_payment_info
                         .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
@@ -101,9 +101,9 @@ impl DocumentPurchaseTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
-        js_transition.get_purchase_transition()
+        transition.get_purchase_transition()
     }
 }
 

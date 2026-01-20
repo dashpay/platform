@@ -27,6 +27,12 @@ export interface VotePollOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "VotePollOptions")]
+    pub type VotePollOptionsJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = VotePoll)]
 pub struct VotePollWasm(VotePoll);
@@ -46,9 +52,8 @@ impl From<VotePollWasm> for VotePoll {
 #[wasm_bindgen(js_class = VotePoll)]
 impl VotePollWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "VotePollOptions")] options: JsValue,
-    ) -> WasmDppResult<VotePollWasm> {
+    pub fn constructor(options: VotePollOptionsJs) -> WasmDppResult<VotePollWasm> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract contractId (required)
@@ -172,15 +177,15 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexValues")]
-    pub fn set_index_values(&mut self, js_index_values: JsValue) -> WasmDppResult<()> {
-        let index_values = js_index_values
+    pub fn set_index_values(&mut self, index_values: JsValue) -> WasmDppResult<()> {
+        let values = index_values
             .with_serde_to_platform_value()?
             .into_array()
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
-                poll.index_values = index_values;
+                poll.index_values = values;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }

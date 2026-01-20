@@ -38,6 +38,12 @@ export interface TokenKeepsHistoryRulesOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenKeepsHistoryRulesOptions")]
+    pub type TokenKeepsHistoryRulesOptionsJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "TokenKeepsHistoryRules")]
 pub struct TokenKeepsHistoryRulesWasm(TokenKeepsHistoryRules);
@@ -58,8 +64,9 @@ impl From<TokenKeepsHistoryRules> for TokenKeepsHistoryRulesWasm {
 impl TokenKeepsHistoryRulesWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "TokenKeepsHistoryRulesOptions")] options: JsValue,
+        options: TokenKeepsHistoryRulesOptionsJs,
     ) -> WasmDppResult<TokenKeepsHistoryRulesWasm> {
+        let options: JsValue = options.into();
         let opts: TokenKeepsHistoryRulesOptions = serde_wasm_bindgen::from_value(options)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 

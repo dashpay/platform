@@ -36,13 +36,13 @@ impl DocumentReplaceTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
-        js_token_payment_info: &JsValue,
+        token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
         let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
+            match token_payment_info.is_null() | token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
-                    js_token_payment_info
+                    token_payment_info
                         .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
@@ -77,9 +77,9 @@ impl DocumentReplaceTransitionWasm {
     pub fn set_data(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")]
-        js_data: JsValue,
+        data: JsValue,
     ) -> WasmDppResult<()> {
-        let data = js_data.with_serde_to_platform_value_map()?;
+        let data = data.with_serde_to_platform_value_map()?;
 
         self.0.set_data(data);
         Ok(())
@@ -104,9 +104,9 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
-        js_transition.get_replace_transition()
+        transition.get_replace_transition()
     }
 }
 

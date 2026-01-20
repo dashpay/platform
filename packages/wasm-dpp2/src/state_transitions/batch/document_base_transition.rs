@@ -32,6 +32,12 @@ export interface DocumentBaseTransitionOptions {
 }
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentBaseTransitionOptions")]
+    pub type DocumentBaseTransitionOptionsJs;
+}
+
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentBaseTransition")]
 pub struct DocumentBaseTransitionWasm(DocumentBaseTransition);
@@ -52,8 +58,9 @@ impl From<DocumentBaseTransitionWasm> for DocumentBaseTransition {
 impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "DocumentBaseTransitionOptions")] options: JsValue,
+        options: DocumentBaseTransitionOptionsJs,
     ) -> WasmDppResult<DocumentBaseTransitionWasm> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract documentId (required)

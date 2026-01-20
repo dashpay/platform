@@ -4,6 +4,7 @@ use crate::enums::keys::key_type::{KeyTypeLikeJs, KeyTypeWasm};
 use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
 use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
+use hex;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
@@ -88,15 +89,42 @@ export interface IdentityPublicKeyJSON {
     data: string;
     disabledAt?: number;
 }
+
+/**
+ * PublicKeyHash input type - accepts hex string or Uint8Array (20 bytes for HASH160)
+ */
+export type PublicKeyHashLike = string | Uint8Array;
 "#;
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityPublicKeyOptions")]
+    pub type IdentityPublicKeyOptionsJs;
+
     #[wasm_bindgen(typescript_type = "IdentityPublicKeyObject")]
     pub type IdentityPublicKeyObjectJs;
 
     #[wasm_bindgen(typescript_type = "IdentityPublicKeyJSON")]
     pub type IdentityPublicKeyJSONJs;
+
+    #[wasm_bindgen(typescript_type = "PublicKeyHashLike")]
+    pub type PublicKeyHashLikeJs;
+}
+
+/// Convert PublicKeyHashLikeJs to Vec<u8>
+/// Accepts hex string or Uint8Array
+pub fn public_key_hash_from_js(value: PublicKeyHashLikeJs) -> WasmDppResult<Vec<u8>> {
+    let js_value: JsValue = value.into();
+
+    if let Some(hex_str) = js_value.as_string() {
+        hex::decode(&hex_str).map_err(|e| {
+            WasmDppError::invalid_argument(format!("Invalid hex string for public key hash: {}", e))
+        })
+    } else {
+        // Try to convert as Uint8Array
+        let array = js_sys::Uint8Array::new(&js_value);
+        Ok(array.to_vec())
+    }
 }
 
 #[derive(Clone)]
@@ -118,9 +146,8 @@ impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
 #[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyOptions")] options: JsValue,
-    ) -> WasmDppResult<Self> {
+    pub fn constructor(options: IdentityPublicKeyOptionsJs) -> WasmDppResult<Self> {
+        let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
         // Extract purpose (required, complex type)
@@ -374,8 +401,8 @@ impl IdentityPublicKeyWasm {
     ///
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: IdentityPublicKeyObjectJs) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_value = serialization::platform_value_from_object(js_value.into())?;
+    pub fn from_object(value: IdentityPublicKeyObjectJs) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let platform_value = serialization::platform_value_from_object(value.into())?;
         let platform_version = PlatformVersion::latest();
         let key = IdentityPublicKey::from_object(platform_value, platform_version)
             .map_err(WasmDppError::from)?;
@@ -398,8 +425,8 @@ impl IdentityPublicKeyWasm {
     /// Uses serde_json conversion which properly handles the tagged enum
     /// and deserializes base64 strings to binary data.
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: IdentityPublicKeyJSONJs) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let json_value: JsonValue = serde_from_value(js_value.into()).map_err(|err| {
+    pub fn from_json(value: IdentityPublicKeyJSONJs) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let json_value: JsonValue = serde_from_value(value.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "IdentityPublicKey.fromJSON: unable to parse JSON: {}",
                 err

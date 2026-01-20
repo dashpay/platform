@@ -33,11 +33,11 @@ impl From<TokenConfigurationConventionWasm> for TokenConfigurationConvention {
 impl TokenConfigurationConventionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        js_localizations: &JsValue,
+        localizations: &JsValue,
         decimals: u8,
     ) -> WasmDppResult<TokenConfigurationConventionWasm> {
         let localizations: BTreeMap<String, TokenConfigurationLocalization> =
-            js_value_to_localizations(js_localizations)?;
+            value_to_localizations(localizations)?;
 
         Ok(TokenConfigurationConventionWasm(
             TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
@@ -83,20 +83,20 @@ impl TokenConfigurationConventionWasm {
     pub fn set_localizations(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Record<string, TokenConfigurationLocalization>")]
-        js_localizations: &JsValue,
+        localizations: &JsValue,
     ) -> WasmDppResult<()> {
         let localizations: BTreeMap<String, TokenConfigurationLocalization> =
-            js_value_to_localizations(js_localizations)?;
+            value_to_localizations(localizations)?;
 
         self.0.set_localizations(localizations);
         Ok(())
     }
 }
 
-fn js_value_to_localizations(
-    js_localizations: &JsValue,
+fn value_to_localizations(
+    localizations_value: &JsValue,
 ) -> WasmDppResult<BTreeMap<String, TokenConfigurationLocalization>> {
-    let js_object = Object::from(js_localizations.clone());
+    let js_object = Object::from(localizations_value.clone());
     let mut localizations = BTreeMap::new();
 
     for key in Object::keys(&js_object) {

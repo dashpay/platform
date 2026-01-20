@@ -36,13 +36,13 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        js_price: &JsValue,
+        price: &JsValue,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenSetPriceForDirectPurchaseTransitionWasm> {
-        let price: Option<TokenPricingSchedule> = match js_price.is_undefined() {
+        let price: Option<TokenPricingSchedule> = match price.is_undefined() {
             true => None,
             false => Some(
-                js_price
+                price
                     .to_wasm::<TokenPricingScheduleWasm>("TokenPricingSchedule")?
                     .clone()
                     .into(),

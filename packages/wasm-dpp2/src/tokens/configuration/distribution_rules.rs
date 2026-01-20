@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
-use crate::identifier::IdentifierWasm;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
@@ -213,12 +213,12 @@ impl TokenDistributionRulesWasm {
     #[wasm_bindgen(setter = "perpetualDistribution")]
     pub fn set_perpetual_distribution(
         &mut self,
-        js_perpetual_distribution: &JsValue,
+        perpetual_distribution: &JsValue,
     ) -> WasmDppResult<()> {
-        let perpetual_distribution = match js_perpetual_distribution.is_undefined() {
+        let perpetual_distribution = match perpetual_distribution.is_undefined() {
             true => None,
             false => Some(
-                js_perpetual_distribution
+                perpetual_distribution
                     .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
                     .clone()
                     .into(),
@@ -238,12 +238,12 @@ impl TokenDistributionRulesWasm {
     #[wasm_bindgen(setter = "preProgrammedDistribution")]
     pub fn set_pre_programmed_distribution(
         &mut self,
-        js_distribution: &JsValue,
+        distribution: &JsValue,
     ) -> WasmDppResult<()> {
-        let distribution = match js_distribution.is_undefined() {
+        let distribution = match distribution.is_undefined() {
             true => None,
             false => Some(
-                js_distribution
+                distribution
                     .to_wasm::<TokenPreProgrammedDistributionWasm>(
                         "TokenPreProgrammedDistribution",
                     )?
@@ -259,13 +259,9 @@ impl TokenDistributionRulesWasm {
     #[wasm_bindgen(setter = "newTokenDestinationIdentity")]
     pub fn set_new_tokens_destination_identity(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike | undefined")]
-        js_identifier: &JsValue,
+        identifier: IdentifierLikeOrUndefinedJs,
     ) -> WasmDppResult<()> {
-        let identifier = match js_identifier.is_undefined() {
-            true => None,
-            false => Some(IdentifierWasm::try_from(js_identifier)?.into()),
-        };
+        let identifier: Option<dpp::prelude::Identifier> = identifier.try_into()?;
         self.0.set_new_tokens_destination_identity(identifier);
         Ok(())
     }

@@ -30,10 +30,10 @@ impl From<GroupWasm> for Group {
     }
 }
 
-pub fn js_members_to_map(
-    js_members: &JsValue,
+pub fn members_to_map(
+    members_value: &JsValue,
 ) -> WasmDppResult<BTreeMap<Identifier, GroupMemberPower>> {
-    let members_object = Object::from(js_members.clone());
+    let members_object = Object::from(members_value.clone());
     let members_keys = Object::keys(&members_object);
 
     let mut members = BTreeMap::new();
@@ -49,7 +49,7 @@ pub fn js_members_to_map(
             })?
             .into();
 
-        let val = Reflect::get(js_members, &key).map_err(|_| {
+        let val = Reflect::get(members_value, &key).map_err(|_| {
             WasmDppError::invalid_argument(format!("Invalid value at key '{}'", key_str))
         })?;
 
@@ -66,10 +66,10 @@ pub fn js_members_to_map(
 impl GroupWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        js_members: &JsValue,
+        members: &JsValue,
         required_power: GroupRequiredPower,
     ) -> WasmDppResult<GroupWasm> {
-        let members = js_members_to_map(js_members)?;
+        let members = members_to_map(members)?;
 
         Ok(GroupWasm(Group::V0(GroupV0 {
             members,
@@ -111,9 +111,9 @@ impl GroupWasm {
     pub fn set_members(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Record<string, number>")]
-        js_members: &JsValue,
+        members: &JsValue,
     ) -> WasmDppResult<()> {
-        let members = js_members_to_map(js_members)?;
+        let members = members_to_map(members)?;
 
         self.0.set_members(members);
 
@@ -128,10 +128,10 @@ impl GroupWasm {
     #[wasm_bindgen(js_name = "setMemberRequiredPower")]
     pub fn set_member_required_power(
         &mut self,
-        js_member: IdentifierLikeJs,
+        member: IdentifierLikeJs,
         member_required_power: GroupRequiredPower,
     ) -> WasmDppResult<()> {
-        self.0.set_member_power(js_member.try_into()?, member_required_power);
+        self.0.set_member_power(member.try_into()?, member_required_power);
         Ok(())
     }
 
@@ -141,11 +141,8 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "object")]
-        js_value: JsValue,
-    ) -> WasmDppResult<GroupWasm> {
-        serialization::from_json(js_value).map(GroupWasm)
+    pub fn from_json(object: js_sys::Object) -> WasmDppResult<GroupWasm> {
+        serialization::from_json(object.into()).map(GroupWasm)
     }
 
     #[wasm_bindgen(js_name = "toObject")]
@@ -157,8 +154,8 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<GroupWasm> {
-        serialization::from_object(js_value).map(GroupWasm)
+    pub fn from_object(value: JsValue) -> WasmDppResult<GroupWasm> {
+        serialization::from_object(value).map(GroupWasm)
     }
 }
 
