@@ -1416,6 +1416,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '3.0.0-rc.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Add letsencrypt provider config if it doesn't exist
+            if (options.platform?.gateway?.ssl?.providerConfigs
+              && !options.platform.gateway.ssl.providerConfigs.letsencrypt) {
+              options.platform.gateway.ssl.providerConfigs.letsencrypt = {
+                email: null,
+              };
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
