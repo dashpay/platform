@@ -40,7 +40,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
         title: 'Check if certificate already exists and is valid',
         skip: (ctx) => ctx.force,
         task: async (ctx, task) => {
-          const expirationDays = ctx.expirationDays || LegoCertificate.EXPIRATION_LIMIT_DAYS;
+          const expirationDays = ctx.expirationDays ?? LegoCertificate.EXPIRATION_LIMIT_DAYS;
           const { error, data } = await validateLetsEncryptCertificate(config, expirationDays);
 
           Object.assign(ctx, data);
