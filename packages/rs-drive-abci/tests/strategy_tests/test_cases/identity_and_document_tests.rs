@@ -668,6 +668,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(

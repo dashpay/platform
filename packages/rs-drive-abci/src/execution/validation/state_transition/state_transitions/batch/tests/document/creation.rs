@@ -50,6 +50,107 @@ mod creation_tests {
     use crate::config::PlatformConfig;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
 
+    const REFERENCE_VALIDATION_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract.json";
+    const REFERENCE_VALIDATION_MUST_EXIST_FALSE_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-must-exist-false.json";
+
+    fn run_reference_validation_creation_with_contract<F>(
+        contract_path: &str,
+        to_user_id: F,
+    ) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(Identifier) -> Identifier,
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            contract_path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("toUserId", to_user_id(identity.id()).into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
     #[test]
     fn test_document_creation() {
         let platform_version = PlatformVersion::latest();
@@ -112,7 +213,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -198,7 +299,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition],
+                &[documents_batch_create_serialized_transition],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -295,7 +396,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -356,7 +457,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -463,7 +564,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -701,7 +802,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_preorder_transition_1.clone(),
                     documents_batch_create_serialized_preorder_transition_2.clone(),
                 ],
@@ -728,7 +829,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_transition_1.clone(),
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
@@ -1094,7 +1195,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                &[documents_batch_create_serialized_preorder_transition_1.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1118,7 +1219,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition_1.clone()],
+                &[documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1365,7 +1466,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                &[documents_batch_create_serialized_preorder_transition_1.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1389,7 +1490,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition_1.clone()],
+                &[documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -1774,7 +1875,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_preorder_transition_1.clone(),
                     documents_batch_create_serialized_preorder_transition_2.clone(),
                     documents_batch_create_serialized_preorder_transition_3.clone(),
@@ -1802,7 +1903,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![
+                &[
                     documents_batch_create_serialized_transition_1.clone(),
                     documents_batch_create_serialized_transition_2.clone(),
                 ],
@@ -1829,7 +1930,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition_3.clone()],
+                &[documents_batch_create_serialized_transition_3.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2211,7 +2312,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition_1.clone()],
+                &[documents_batch_create_serialized_transition_1.clone()],
                 &platform_state,
                 &BlockInfo::default_with_time(
                     &platform_state
@@ -2445,7 +2546,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2506,7 +2607,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2632,7 +2733,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition],
+                &[documents_batch_create_serialized_transition],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2769,7 +2870,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -2914,7 +3015,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3057,7 +3158,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3188,7 +3289,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3320,7 +3421,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3452,7 +3553,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3573,7 +3674,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3706,7 +3807,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3871,7 +3972,7 @@ mod creation_tests {
         let processing_result = platform
             .platform
             .process_raw_state_transitions(
-                &vec![documents_batch_create_serialized_transition.clone()],
+                &[documents_batch_create_serialized_transition.clone()],
                 &platform_state,
                 &BlockInfo::default(),
                 &transaction,
@@ -3925,5 +4026,47 @@ mod creation_tests {
 
         // He was paid 5
         assert_eq!(token_balance, Some(5));
+    }
+
+    #[test]
+    fn test_document_creation_fails_when_referenced_identity_missing() {
+        let result = run_reference_validation_creation_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |_| Identifier::random(),
+        );
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[test]
+    fn test_document_creation_succeeds_when_referenced_identity_exists() {
+        let result = run_reference_validation_creation_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |identity_id| identity_id,
+        );
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[test]
+    fn test_document_creation_succeeds_when_must_exist_false() {
+        let result = run_reference_validation_creation_with_contract(
+            REFERENCE_VALIDATION_MUST_EXIST_FALSE_CONTRACT_PATH,
+            |_| Identifier::random(),
+        );
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
     }
 }

@@ -20,11 +20,11 @@ Introduce an optional `refersTo` keyword on document properties so contracts can
 - Keep existing `identifier_paths`/`binary_paths` behavior (the sets of property paths already tracked for identifier and binary fields); `refersTo` is additive on top.
 
 ## Runtime Validation
-- Enforce during Drive advanced structure validation (`validate_advanced_structure_from_state` in batch transitions) for document create and replace transitions:
+- Enforce during Drive document state validation (create/replace state validators) for document create and replace transitions:
   - For each property with `refersTo.mustExist == true`, fetch the referenced identity ID and fail with a consensus state error if missing.
   - Support nested properties (use flattened property paths).
   - Count identity fetches in execution context fee accounting.
-- Implement via versioned advanced structure validators for document create/replace (new v1 modules) while keeping v0 behavior unchanged.
+- Implement via versioned document state validators (new v2 modules) while keeping v0/v1 behavior unchanged.
 - Applied in ABCI paths: CheckTx, PrepareProposal, and ProcessProposal.
 - Basic validation (DPP) only checks keyword shape/placement; no state access.
 
@@ -35,6 +35,10 @@ Introduce an optional `refersTo` keyword on document properties so contracts can
 ## Backward Compatibility
 - Gated by platform/protocol version (and/or data contract system version). Legacy nodes reject contracts containing `refersTo`; such contracts are accepted only after activation. Post-activation, newer nodes enforce `mustExist:true` semantics.
 - Existing pre-activation contracts and documents remain valid; documents are rejected only when the contract opts in with `mustExist:true` and the network is past activation.
+
+## Implementation Notes
+- Reference existence checks use the identity revision lookup (`fetch_identity_revision`) as the minimal-cost existence check.
+- Reference validation dispatches through a versioned `DocumentReferenceValidation` trait; v0 rules are implemented for identity references.
 
 ## Acceptance Criteria
 - Contracts containing `refersTo` validate against updated meta-schema and pass compatibility checks when added to existing identifier fields.
