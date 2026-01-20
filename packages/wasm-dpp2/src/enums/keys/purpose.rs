@@ -3,6 +3,31 @@ use dpp::identity::Purpose;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+/// Extern type for flexible Purpose input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PurposeLike")]
+    pub type PurposeLikeJs;
+}
+
+impl TryFrom<PurposeLikeJs> for PurposeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: PurposeLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        PurposeWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<PurposeLikeJs> for Purpose {
+    type Error = WasmDppError;
+
+    fn try_from(value: PurposeLikeJs) -> Result<Self, Self::Error> {
+        let wasm: PurposeWasm = value.try_into()?;
+        Ok(Purpose::from(wasm))
+    }
+}
+
 #[wasm_bindgen(js_name = "Purpose")]
 pub enum PurposeWasm {
     AUTHENTICATION = 0,

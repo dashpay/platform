@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::state_transitions::StateTransitionWasm;
@@ -59,15 +59,14 @@ impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromBatchedTransitions")]
     pub fn from_batched_transitions(
         js_batched_transitions: &js_sys::Array,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        owner_id: &JsValue,
+        owner_id: IdentifierLikeJs,
         user_fee_increase: UserFeeIncrease,
     ) -> WasmDppResult<BatchTransitionWasm> {
         let transitions = convert_array_to_vec_batched(js_batched_transitions)?;
 
         Ok(BatchTransitionWasm(BatchTransition::V1(
             BatchTransitionV1 {
-                owner_id: IdentifierWasm::try_from(owner_id)?.into(),
+                owner_id: owner_id.try_into()?,
                 transitions,
                 user_fee_increase,
                 signature_public_key_id: 0u32,

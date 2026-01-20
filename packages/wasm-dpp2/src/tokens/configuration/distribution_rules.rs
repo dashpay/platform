@@ -259,16 +259,14 @@ impl TokenDistributionRulesWasm {
     #[wasm_bindgen(setter = "newTokenDestinationIdentity")]
     pub fn set_new_tokens_destination_identity(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike | undefined")]
         js_identifier: &JsValue,
     ) -> WasmDppResult<()> {
         let identifier = match js_identifier.is_undefined() {
             true => None,
             false => Some(IdentifierWasm::try_from(js_identifier)?.into()),
         };
-
         self.0.set_new_tokens_destination_identity(identifier);
-
         Ok(())
     }
 

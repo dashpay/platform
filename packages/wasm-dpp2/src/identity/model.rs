@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
@@ -11,9 +11,8 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-use std::convert::TryFrom;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsCast;
 
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_TYPES_TS: &'static str = r#"
@@ -68,25 +67,15 @@ impl From<IdentityWasm> for Identity {
 #[wasm_bindgen(js_class = Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        id: &JsValue,
-    ) -> WasmDppResult<IdentityWasm> {
-        let identifier: Identifier = IdentifierWasm::try_from(id)?.into();
-
+    pub fn constructor(id: IdentifierLikeJs) -> WasmDppResult<IdentityWasm> {
+        let identifier: Identifier = id.try_into()?;
         let identity = Identity::create_basic_identity(identifier, PlatformVersion::first())?;
-
         Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let identifier: Identifier = IdentifierWasm::try_from(id)?.into();
-        self.0.set_id(identifier);
+    pub fn set_id(&mut self, id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_id(id.try_into()?);
         Ok(())
     }
 
@@ -187,17 +176,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "IdentityJSON")] value: JsValue,
-    ) -> WasmDppResult<IdentityWasm> {
-        serialization::from_json(value).map(IdentityWasm)
+    pub fn from_json(value: IdentityJSONJs) -> WasmDppResult<IdentityWasm> {
+        serialization::from_json(value.into()).map(IdentityWasm)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "IdentityObject")] value: JsValue,
-    ) -> WasmDppResult<IdentityWasm> {
-        let platform_value = serialization::js_value_to_platform_value(&value)?;
+    pub fn from_object(value: IdentityObjectJs) -> WasmDppResult<IdentityWasm> {
+        let platform_value = serialization::js_value_to_platform_value(&value.into())?;
         let identity = Identity::try_from_platform_versioned(platform_value, PlatformVersion::latest())?;
         Ok(IdentityWasm(identity))
     }

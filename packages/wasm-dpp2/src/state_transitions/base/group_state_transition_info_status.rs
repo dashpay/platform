@@ -4,15 +4,15 @@
 //! which represents group action context for state transitions.
 
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::base::GroupStateTransitionInfoWasm;
 use crate::utils::IntoWasm;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 use dpp::prelude::Identifier;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 /// Wrapper for GroupStateTransitionInfoStatus enum.
 ///
@@ -62,10 +62,9 @@ impl GroupStateTransitionInfoStatusWasm {
     #[wasm_bindgen(js_name = "otherSigner")]
     pub fn other_signer(
         group_contract_position: u16,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        action_id: &JsValue,
+        action_id: IdentifierLikeJs,
     ) -> WasmDppResult<GroupStateTransitionInfoStatusWasm> {
-        let action_id: Identifier = IdentifierWasm::try_from(action_id)?.into();
+        let action_id: Identifier = action_id.try_into()?;
 
         Ok(GroupStateTransitionInfoStatusWasm(
             GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(

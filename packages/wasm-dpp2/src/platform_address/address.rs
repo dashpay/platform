@@ -1,4 +1,4 @@
-use crate::core::network::NetworkWasm;
+use crate::core::network::NetworkLikeJs;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
@@ -24,7 +24,55 @@ const PLATFORM_ADDRESS_TS_HELPERS: &'static str = r#"
  * - A bech32m string (e.g., "dashevo1..." or "tdashevo1...")
  */
 export type PlatformAddressLike = PlatformAddress | Uint8Array | string;
+
+/**
+ * An array of Platform addresses.
+ */
+export type PlatformAddressLikeArray = Array<PlatformAddress | Uint8Array | string>;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PlatformAddressLike")]
+    pub type PlatformAddressLikeJs;
+
+    #[wasm_bindgen(typescript_type = "PlatformAddressLikeArray")]
+    pub type PlatformAddressLikeArrayJs;
+}
+
+impl TryFrom<PlatformAddressLikeJs> for PlatformAddressWasm {
+    type Error = WasmDppError;
+    fn try_from(value: PlatformAddressLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        PlatformAddressWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<PlatformAddressLikeJs> for PlatformAddress {
+    type Error = WasmDppError;
+    fn try_from(value: PlatformAddressLikeJs) -> Result<Self, Self::Error> {
+        let wasm: PlatformAddressWasm = value.try_into()?;
+        Ok(PlatformAddress::from(wasm))
+    }
+}
+
+/// Helper function to convert an array of PlatformAddressLike to Vec<PlatformAddress>
+pub fn platform_addresses_from_js_array(
+    array: PlatformAddressLikeArrayJs,
+) -> Result<Vec<PlatformAddress>, WasmDppError> {
+    let js_value: JsValue = array.into();
+    let js_array = js_sys::Array::from(&js_value);
+    js_array
+        .iter()
+        .map(|v| {
+            PlatformAddressWasm::try_from(v)
+                .map(PlatformAddress::from)
+                .map_err(|err| {
+                    WasmDppError::invalid_argument(format!("Invalid platform address: {}", err))
+                })
+        })
+        .collect()
+}
 
 impl From<PlatformAddressWasm> for PlatformAddress {
     fn from(address: PlatformAddressWasm) -> Self {
@@ -203,19 +251,18 @@ impl PlatformAddressWasm {
     /// - An existing PlatformAddress object
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddress | Uint8Array | string")]
-        js_address: &JsValue,
+        js_address: PlatformAddressLikeJs,
     ) -> WasmDppResult<PlatformAddressWasm> {
-        PlatformAddressWasm::try_from(js_address)
+        js_address.try_into()
     }
 
     /// Returns the bech32m-encoded address string for the specified network.
     #[wasm_bindgen(js_name = "toBech32m")]
     pub fn to_bech32m(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+        network: NetworkLikeJs,
     ) -> WasmDppResult<String> {
-        let net: Network = NetworkWasm::try_from(&network)?.into();
+        let net: Network = network.try_into()?;
         Ok(self.0.to_bech32m_string(net))
     }
 

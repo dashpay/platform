@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_transitions::config_update::TokenConfigUpdateTransitionWasm;
 use crate::state_transitions::batch::token_transitions::direct_purchase::TokenDirectPurchaseTransitionWasm;
@@ -31,6 +31,13 @@ const TOKEN_TRANSITION_TYPES_TS: &'static str = r#"
 export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition;
 "#;
 
+/// Extern type for flexible TokenTransition input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenTransitionLike")]
+    pub type TokenTransitionLikeJs;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenTransition)]
 pub struct TokenTransitionWasm(TokenTransition);
@@ -50,15 +57,13 @@ impl From<TokenTransitionWasm> for TokenTransition {
 #[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "TokenTransitionLike")]
-        transition: &JsValue,
-    ) -> WasmDppResult<TokenTransitionWasm> {
+    pub fn constructor(transition: TokenTransitionLikeJs) -> WasmDppResult<TokenTransitionWasm> {
+        let transition: JsValue = transition.into();
         if !transition.is_object() {
             return Err(WasmDppError::invalid_argument("Bad token transition input"));
         }
 
-        let transition = match get_class_type(transition)?.as_str() {
+        let transition = match get_class_type(&transition)?.as_str() {
             "TokenMintTransition" => TokenTransition::from(TokenMintTransition::from(
                 transition
                     .to_wasm::<TokenMintTransitionWasm>("TokenMintTransition")?
@@ -221,12 +226,9 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getHistoricalDocumentId")]
-    pub fn get_historical_document_id(
-        &self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        owner: &JsValue,
-    ) -> WasmDppResult<IdentifierWasm> {
-        let owner = IdentifierWasm::try_from(owner)?.into();
+    pub fn get_historical_document_id(&self, owner: IdentifierLikeJs) -> WasmDppResult<IdentifierWasm> {
+        let owner_value: JsValue = owner.into();
+        let owner = IdentifierWasm::try_from(&owner_value)?.into();
         Ok(self.0.historical_document_id(owner).into())
     }
 
@@ -251,11 +253,9 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "tokenId")]
-    pub fn set_token_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] token_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let id = IdentifierWasm::try_from(token_id)?.into();
+    pub fn set_token_id(&mut self, token_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let id_value: JsValue = token_id.into();
+        let id = IdentifierWasm::try_from(&id_value)?.into();
 
         self.0.set_token_id(id);
 
@@ -263,11 +263,9 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "contractId")]
-    pub fn set_contract_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let id = IdentifierWasm::try_from(contract_id)?.into();
+    pub fn set_contract_id(&mut self, contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let id_value: JsValue = contract_id.into();
+        let id = IdentifierWasm::try_from(&id_value)?.into();
 
         self.0.set_data_contract_id(id);
 

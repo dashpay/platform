@@ -1,4 +1,4 @@
-use super::network::NetworkWasm;
+use super::network::{NetworkLikeJs, NetworkWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
@@ -7,7 +7,6 @@ use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::encode;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "CoreScript")]
@@ -62,9 +61,9 @@ impl CoreScriptWasm {
     #[wasm_bindgen(js_name = "toAddress")]
     pub fn to_address(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: &JsValue,
+        network: NetworkLikeJs,
     ) -> WasmDppResult<String> {
-        let network_wasm = NetworkWasm::try_from(network.clone())?;
+        let network_wasm: NetworkWasm = network.try_into()?;
 
         let payload = Payload::from_script(self.0.as_script())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;

@@ -1,8 +1,8 @@
-use crate::core::network::NetworkWasm;
+use crate::core::network::NetworkLikeJs;
 use crate::data_contract::contract_bounds::ContractBoundsWasm;
-use crate::enums::keys::key_type::KeyTypeWasm;
-use crate::enums::keys::purpose::PurposeWasm;
-use crate::enums::keys::security_level::SecurityLevelWasm;
+use crate::enums::keys::key_type::{KeyTypeLikeJs, KeyTypeWasm};
+use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
+use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
@@ -178,7 +178,7 @@ impl IdentityPublicKeyWasm {
     pub fn validate_private_key(
         &self,
         private_key_bytes_input: Vec<u8>,
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+        network: NetworkLikeJs,
     ) -> WasmDppResult<bool> {
         if private_key_bytes_input.len() != 32 {
             return Err(WasmDppError::invalid_argument(format!(
@@ -189,7 +189,7 @@ impl IdentityPublicKeyWasm {
         let mut private_key_bytes = [0u8; 32];
         private_key_bytes.copy_from_slice(&private_key_bytes_input);
 
-        let network = Network::from(NetworkWasm::try_from(network)?);
+        let network: Network = network.try_into()?;
 
         let is_valid = self
             .0
@@ -259,33 +259,26 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = purpose)]
-    pub fn set_purpose(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "PurposeLike")] purpose: JsValue,
-    ) -> WasmDppResult<()> {
-        let purpose = PurposeWasm::try_from(purpose)?;
-        self.0.set_purpose(Purpose::from(purpose));
+    pub fn set_purpose(&mut self, purpose: PurposeLikeJs) -> WasmDppResult<()> {
+        let purpose: Purpose = purpose.try_into()?;
+        self.0.set_purpose(purpose);
         Ok(())
     }
 
     #[wasm_bindgen(setter = securityLevel)]
     pub fn set_security_level(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "SecurityLevelLike")] security_level: JsValue,
+        security_level: SecurityLevelLikeJs,
     ) -> WasmDppResult<()> {
-        let security_level = SecurityLevelWasm::try_from(security_level)?;
-        self.0
-            .set_security_level(SecurityLevel::from(security_level));
+        let security_level: SecurityLevel = security_level.try_into()?;
+        self.0.set_security_level(security_level);
         Ok(())
     }
 
     #[wasm_bindgen(setter = keyType)]
-    pub fn set_key_type(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "KeyTypeLike")] key_type: JsValue,
-    ) -> WasmDppResult<()> {
-        let key_type = KeyTypeWasm::try_from(key_type)?;
-        self.0.set_key_type(KeyType::from(key_type));
+    pub fn set_key_type(&mut self, key_type: KeyTypeLikeJs) -> WasmDppResult<()> {
+        let key_type: KeyType = key_type.try_into()?;
+        self.0.set_key_type(key_type);
         Ok(())
     }
 
@@ -381,10 +374,8 @@ impl IdentityPublicKeyWasm {
     ///
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(
-        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyObject")] js_value: JsValue,
-    ) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_value = serialization::platform_value_from_object(js_value)?;
+    pub fn from_object(js_value: IdentityPublicKeyObjectJs) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let platform_value = serialization::platform_value_from_object(js_value.into())?;
         let platform_version = PlatformVersion::latest();
         let key = IdentityPublicKey::from_object(platform_value, platform_version)
             .map_err(WasmDppError::from)?;
@@ -407,10 +398,8 @@ impl IdentityPublicKeyWasm {
     /// Uses serde_json conversion which properly handles the tagged enum
     /// and deserializes base64 strings to binary data.
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(
-        #[wasm_bindgen(unchecked_param_type = "IdentityPublicKeyJSON")] js_value: JsValue,
-    ) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let json_value: JsonValue = serde_from_value(js_value).map_err(|err| {
+    pub fn from_json(js_value: IdentityPublicKeyJSONJs) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let json_value: JsonValue = serde_from_value(js_value.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "IdentityPublicKey.fromJSON: unable to parse JSON: {}",
                 err

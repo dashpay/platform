@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::utils::IntoWasm;
@@ -123,11 +123,8 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] js_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        self.0.set_id(IdentifierWasm::try_from(js_id)?.into());
+    pub fn set_id(&mut self, id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_id(id.try_into()?);
         Ok(())
     }
 
@@ -137,13 +134,8 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_data_contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        self.0
-            .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
+    pub fn set_data_contract_id(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_data_contract_id(data_contract_id.try_into()?);
         Ok(())
     }
 

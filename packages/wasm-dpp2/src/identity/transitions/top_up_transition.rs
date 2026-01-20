@@ -1,6 +1,6 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
@@ -26,11 +26,10 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         asset_lock_proof: &AssetLockProofWasm,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)?.into();
+        let identity_id: Identifier = identity_id.try_into()?;
 
         Ok(IdentityTopUpTransitionWasm(IdentityTopUpTransition::V0(
             IdentityTopUpTransitionV0 {
@@ -80,14 +79,8 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
-    pub fn set_identity_identifier(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_identifier: &JsValue,
-    ) -> WasmDppResult<()> {
-        let identity_identifier: Identifier =
-            IdentifierWasm::try_from(identity_identifier)?.into();
-        self.0.set_identity_id(identity_identifier);
+    pub fn set_identity_identifier(&mut self, identity_identifier: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_identity_id(identity_identifier.try_into()?);
         Ok(())
     }
 

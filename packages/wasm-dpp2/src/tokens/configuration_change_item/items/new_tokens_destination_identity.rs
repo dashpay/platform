@@ -1,5 +1,5 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
@@ -11,12 +11,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 impl TokenConfigurationChangeItemWasm {
     #[wasm_bindgen(js_name = "NewTokensDestinationIdentityItem")]
     pub fn new_tokens_destination_identity_item(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_identity_id: &JsValue,
+        js_identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<TokenConfigurationChangeItemWasm> {
-        let identity_id: Option<Identifier> = match js_identity_id.is_undefined() {
+        let id_value: JsValue = js_identity_id.into();
+        let identity_id: Option<Identifier> = match id_value.is_undefined() {
             true => None,
-            false => Some(IdentifierWasm::try_from(js_identity_id)?.into()),
+            false => Some(IdentifierWasm::try_from(&id_value)?.into()),
         };
 
         Ok(TokenConfigurationChangeItemWasm(

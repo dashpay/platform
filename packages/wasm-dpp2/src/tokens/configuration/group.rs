@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::serialization;
 use crate::utils::JsValueExt;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
@@ -128,14 +128,10 @@ impl GroupWasm {
     #[wasm_bindgen(js_name = "setMemberRequiredPower")]
     pub fn set_member_required_power(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_member: &JsValue,
+        js_member: IdentifierLikeJs,
         member_required_power: GroupRequiredPower,
     ) -> WasmDppResult<()> {
-        let member: Identifier = IdentifierWasm::try_from(js_member)?.into();
-
-        self.0.set_member_power(member, member_required_power);
-
+        self.0.set_member_power(js_member.try_into()?, member_required_power);
         Ok(())
     }
 

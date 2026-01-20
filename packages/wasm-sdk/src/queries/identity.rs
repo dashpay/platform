@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{
+    IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierLikeOrUndefinedJs, IdentifierWasm,
+};
 use wasm_dpp2::identity::public_key::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
 
@@ -320,12 +322,10 @@ impl WasmSdk {
     pub async fn get_identity(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<Option<IdentityWasm>, WasmSdkError> {
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let identity = Identity::fetch_by_identifier(self.as_ref(), id).await?;
 
@@ -339,12 +339,10 @@ impl WasmSdk {
     pub async fn get_identity_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let (identity, metadata, proof) =
             Identity::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
@@ -363,8 +361,7 @@ impl WasmSdk {
     pub async fn get_identity_unproved(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<IdentityWasm, WasmSdkError> {
         use dash_sdk::platform::proto::get_identity_request::{
             GetIdentityRequestV0, Version as GetIdentityRequestVersion,
@@ -375,9 +372,8 @@ impl WasmSdk {
         use dash_sdk::platform::proto::{GetIdentityRequest, GetIdentityResponse};
         use rs_dapi_client::{DapiRequest, RequestSettings};
 
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let request = GetIdentityRequest {
             version: Some(GetIdentityRequestVersion::V0(GetIdentityRequestV0 {
@@ -551,15 +547,13 @@ impl WasmSdk {
     pub async fn get_identity_nonce(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityNonceFetcher;
 
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let nonce_result = IdentityNonceFetcher::fetch(self.as_ref(), id).await?;
 
@@ -576,15 +570,13 @@ impl WasmSdk {
     pub async fn get_identity_nonce_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityNonceFetcher;
 
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let (nonce_result, metadata, proof) =
             IdentityNonceFetcher::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
@@ -606,21 +598,17 @@ impl WasmSdk {
     pub async fn get_identity_contract_nonce(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
+        contract_id: IdentifierLikeJs,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
-        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
+        let identity_id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+        let contract_id: Identifier = contract_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
 
         let nonce_result =
             IdentityContractNonceFetcher::fetch(self.as_ref(), (identity_id, contract_id)).await?;
@@ -638,21 +626,17 @@ impl WasmSdk {
     pub async fn get_identity_contract_nonce_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
+        contract_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
-        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
+        let identity_id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+        let contract_id: Identifier = contract_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
 
         let (nonce_result, metadata, proof) =
             IdentityContractNonceFetcher::fetch_with_metadata_and_proof(
@@ -679,15 +663,13 @@ impl WasmSdk {
     pub async fn get_identity_balance(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalance;
 
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let identity_id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let balance_result = IdentityBalance::fetch(self.as_ref(), identity_id).await?;
 
@@ -704,22 +686,14 @@ impl WasmSdk {
     pub async fn get_identities_balances(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identity_ids: Vec<JsValue>,
+        identity_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::IdentityBalance;
+        use wasm_dpp2::identifier::identifiers_from_js_array;
 
         // Convert JS identifiers to native Identifiers
-        let identifiers: Vec<Identifier> = identity_ids
-            .into_iter()
-            .map(|value| {
-                IdentifierWasm::try_from(&value)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let identifiers: Vec<Identifier> = identifiers_from_js_array(identity_ids)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
 
         let balances_result: drive_proof_verifier::types::IdentityBalances =
             IdentityBalance::fetch_many(self.as_ref(), identifiers.clone()).await?;
@@ -745,15 +719,13 @@ impl WasmSdk {
     pub async fn get_identity_balance_and_revision(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let result = IdentityBalanceAndRevision::fetch(self.as_ref(), id).await?;
 
@@ -849,8 +821,7 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
         public_key_hash: JsValue,
         #[wasm_bindgen(js_name = "startAfterId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
-        start_after_id: JsValue,
+        start_after_id: IdentifierLikeOrUndefinedJs,
     ) -> Result<Array, WasmSdkError> {
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
             hex::decode(&hex_str).map_err(|e| {
@@ -870,20 +841,8 @@ impl WasmSdk {
         hash_array.copy_from_slice(&hash_bytes);
 
         // Convert start_after if provided
-        let start_id = if start_after_id.is_undefined() || start_after_id.is_null() {
-            None
-        } else {
-            Some(
-                IdentifierWasm::try_from(&start_after_id)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!(
-                            "Invalid startAfter identity ID: {}",
-                            err
-                        ))
-                    })?,
-            )
-        };
+        let start_id: Option<Identifier> = start_after_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid startAfter identity ID: {}", err)))?;
 
         use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 
@@ -908,30 +867,20 @@ impl WasmSdk {
     pub async fn get_identity_token_balances(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
+        use wasm_dpp2::identifier::identifiers_from_js_array;
 
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let identity_id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         // Convert token IDs to Identifiers
-        let token_identifiers: Vec<Identifier> = token_ids
-            .into_iter()
-            .map(|value| {
-                IdentifierWasm::try_from(&value)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let token_identifiers: Vec<Identifier> = identifiers_from_js_array(token_ids)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
 
         let query = IdentityTokenBalancesQuery {
             identity_id,
@@ -1022,15 +971,13 @@ impl WasmSdk {
     pub async fn get_identity_balance_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalance;
 
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let identity_id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let (balance_result, metadata, proof) =
             IdentityBalance::fetch_with_metadata_and_proof(self.as_ref(), identity_id, None)
@@ -1053,22 +1000,14 @@ impl WasmSdk {
     pub async fn get_identities_balances_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identity_ids: Vec<JsValue>,
+        identity_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::IdentityBalance;
+        use wasm_dpp2::identifier::identifiers_from_js_array;
 
         // Convert JS identifiers to native Identifiers
-        let identifiers: Vec<Identifier> = identity_ids
-            .into_iter()
-            .map(|value| {
-                IdentifierWasm::try_from(&value)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let identifiers: Vec<Identifier> = identifiers_from_js_array(identity_ids)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
 
         let (balances_result, metadata, proof): (
             drive_proof_verifier::types::IdentityBalances,
@@ -1105,15 +1044,13 @@ impl WasmSdk {
     pub async fn get_identity_balance_and_revision_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
-        let id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         let (result, metadata, proof) =
             IdentityBalanceAndRevision::fetch_with_metadata_and_proof(self.as_ref(), id, None)
@@ -1183,8 +1120,7 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
         public_key_hash: JsValue,
         #[wasm_bindgen(js_name = "startAfterId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
-        start_after_id: JsValue,
+        start_after_id: IdentifierLikeOrUndefinedJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
             hex::decode(&hex_str).map_err(|e| {
@@ -1204,20 +1140,8 @@ impl WasmSdk {
         hash_array.copy_from_slice(&hash_bytes);
 
         // Convert start_after if provided
-        let start_id = if start_after_id.is_undefined() || start_after_id.is_null() {
-            None
-        } else {
-            Some(
-                IdentifierWasm::try_from(&start_after_id)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!(
-                            "Invalid startAfter identity ID: {}",
-                            err
-                        ))
-                    })?,
-            )
-        };
+        let start_id: Option<Identifier> = start_after_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid startAfter identity ID: {}", err)))?;
 
         use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 
@@ -1291,30 +1215,20 @@ impl WasmSdk {
     pub async fn get_identity_token_balances_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
+        use wasm_dpp2::identifier::identifiers_from_js_array;
 
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
-            .into();
+        let identity_id: Identifier = identity_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         // Convert token IDs to Identifiers
-        let token_identifiers: Vec<Identifier> = token_ids
-            .into_iter()
-            .map(|value| {
-                IdentifierWasm::try_from(&value)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let token_identifiers: Vec<Identifier> = identifiers_from_js_array(token_ids)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
 
         let query = IdentityTokenBalancesQuery {
             identity_id,

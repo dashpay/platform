@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::ProTxHashWasm;
+use wasm_dpp2::{pro_tx_hashes_from_js_array, ProTxHashLikeArrayJs, ProTxHashWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
 const EPOCHS_QUERY_TS: &'static str = r#"
@@ -317,15 +317,12 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         &self,
         epoch: u16,
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike[]")] ids: Vec<JsValue>,
+        ids: ProTxHashLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
-        // Parse the ProTxHash values using centralized wrapper
-        let pro_tx_hashes: Vec<ProTxHash> = ids
-            .into_iter()
-            .map(|hash_js| ProTxHashWasm::try_from(&hash_js).map(|w| w.into()))
-            .collect::<Result<Vec<_>, _>>()?;
+        // Parse the ProTxHash values using helper function
+        let pro_tx_hashes: Vec<ProTxHash> = pro_tx_hashes_from_js_array(ids)?;
 
         // Use FetchMany to get block counts for specific IDs
         let counts =
@@ -503,16 +500,12 @@ impl WasmSdk {
         &self,
         epoch: u16,
         #[wasm_bindgen(js_name = "proTxHashes")]
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike[]")]
-        pro_tx_hashes: Vec<JsValue>,
+        pro_tx_hashes: ProTxHashLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
-        // Parse the ProTxHash values using centralized wrapper
-        let parsed_hashes: Vec<ProTxHash> = pro_tx_hashes
-            .into_iter()
-            .map(|hash_js| ProTxHashWasm::try_from(&hash_js).map(|w| w.into()))
-            .collect::<Result<Vec<_>, _>>()?;
+        // Parse the ProTxHash values using helper function
+        let parsed_hashes: Vec<ProTxHash> = pro_tx_hashes_from_js_array(pro_tx_hashes)?;
 
         // Use FetchMany with proof to get block counts for specific IDs
         let (counts, metadata, proof) = ProposerBlockCountById::fetch_many_with_metadata_and_proof(

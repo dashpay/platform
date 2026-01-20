@@ -1,9 +1,9 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::{impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = ResourceVoteChoice)]
@@ -24,13 +24,9 @@ impl From<ResourceVoteChoiceWasm> for ResourceVoteChoice {
 #[wasm_bindgen(js_class = ResourceVoteChoice)]
 impl ResourceVoteChoiceWasm {
     #[wasm_bindgen(js_name = "TowardsIdentity")]
-    pub fn towards_identity(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] js_id: &JsValue,
-    ) -> WasmDppResult<Self> {
-        let id = IdentifierWasm::try_from(js_id)?.into();
-
+    pub fn towards_identity(id: IdentifierLikeJs) -> WasmDppResult<Self> {
         Ok(ResourceVoteChoiceWasm(ResourceVoteChoice::TowardsIdentity(
-            id,
+            id.try_into()?,
         )))
     }
 

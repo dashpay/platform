@@ -1,14 +1,13 @@
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
 use dpp::state_transition::batch_transition::TokenFreezeTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenFreezeTransition)]
@@ -31,12 +30,10 @@ impl TokenFreezeTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_identity_to_freeze_id: &JsValue,
+        identity_to_freeze_id: IdentifierLikeJs,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenFreezeTransitionWasm> {
-        let identity_to_freeze_id: Identifier =
-            IdentifierWasm::try_from(js_identity_to_freeze_id)?.into();
+        let identity_to_freeze_id: Identifier = identity_to_freeze_id.try_into()?;
 
         Ok(TokenFreezeTransitionWasm(TokenFreezeTransition::V0(
             TokenFreezeTransitionV0 {
@@ -73,13 +70,8 @@ impl TokenFreezeTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "frozenIdentityId")]
-    pub fn set_frozen_identity_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_frozen_identity_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        self.0
-            .set_frozen_identity_id(IdentifierWasm::try_from(js_frozen_identity_id)?.into());
+    pub fn set_frozen_identity_id(&mut self, frozen_identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_frozen_identity_id(frozen_identity_id.try_into()?);
         Ok(())
     }
 }

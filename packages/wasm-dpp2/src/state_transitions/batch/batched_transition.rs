@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::token_transition::TokenTransitionWasm;
@@ -20,6 +20,13 @@ const BATCHED_TRANSITION_TYPES_TS: &'static str = r#"
 export type BatchedTransitionLike = DocumentTransition | TokenTransition;
 "#;
 
+/// Extern type for flexible BatchedTransition input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "BatchedTransitionLike")]
+    pub type BatchedTransitionLikeJs;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=BatchedTransition)]
 pub struct BatchedTransitionWasm(BatchedTransition);
@@ -39,15 +46,13 @@ impl From<BatchedTransitionWasm> for BatchedTransition {
 #[wasm_bindgen(js_class = BatchedTransition)]
 impl BatchedTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "BatchedTransitionLike")]
-        js_transition: &JsValue,
-    ) -> WasmDppResult<BatchedTransitionWasm> {
+    pub fn constructor(transition: BatchedTransitionLikeJs) -> WasmDppResult<BatchedTransitionWasm> {
+        let js_transition: JsValue = transition.into();
         if js_transition.is_undefined() || !js_transition.is_object() {
             return Err(WasmDppError::invalid_argument("transition is undefined"));
         }
 
-        match get_class_type(js_transition)?.as_str() {
+        match get_class_type(&js_transition)?.as_str() {
             "TokenTransition" => Ok(BatchedTransitionWasm::from(BatchedTransition::from(
                 TokenTransition::from(
                     js_transition
@@ -91,12 +96,9 @@ impl BatchedTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+    pub fn set_data_contract_id(&mut self, js_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let id_value: JsValue = js_contract_id.into();
+        let contract_id: Identifier = IdentifierWasm::try_from(&id_value)?.into();
 
         self.0 = match self.0.clone() {
             BatchedTransition::Document(mut document_transition) => {

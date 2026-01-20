@@ -6,7 +6,7 @@ use crate::state_transitions::batch::document_transitions::transfer::DocumentTra
 use crate::state_transitions::batch::document_transitions::update_price::DocumentUpdatePriceTransitionWasm;
 use crate::enums::batch::batch_enum::BatchTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
@@ -16,7 +16,6 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
     DocumentTransitionActionType, DocumentTransitionActionTypeGetter,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentTransition")]
@@ -153,13 +152,8 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_data_contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        self.0
-            .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
+    pub fn set_data_contract_id(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_data_contract_id(data_contract_id.try_into()?);
         Ok(())
     }
 

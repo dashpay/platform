@@ -4,6 +4,31 @@ use serde::{Deserialize, Deserializer};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+/// Extern type for flexible Pooling input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "CreditWithdrawalTransitionPoolingLike")]
+    pub type PoolingLikeJs;
+}
+
+impl TryFrom<PoolingLikeJs> for PoolingWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: PoolingLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        PoolingWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<PoolingLikeJs> for Pooling {
+    type Error = WasmDppError;
+
+    fn try_from(value: PoolingLikeJs) -> Result<Self, Self::Error> {
+        let wasm: PoolingWasm = value.try_into()?;
+        Ok(Pooling::from(wasm))
+    }
+}
+
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
 pub enum PoolingWasm {

@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::utils::ToSerdeJSONExt;
 use crate::{impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info};
 use dpp::bincode;
@@ -135,12 +135,8 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "contractId")]
-    pub fn set_contract_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?.into();
+    pub fn set_contract_id(&mut self, contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let contract_id = contract_id.try_into()?;
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {

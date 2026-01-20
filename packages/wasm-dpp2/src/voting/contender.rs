@@ -1,5 +1,5 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use dpp::prelude::Identifier;
 use dpp::voting::contender_structs::{
@@ -29,12 +29,11 @@ impl From<ContenderWithSerializedDocumentWasm> for ContenderWithSerializedDocume
 impl ContenderWithSerializedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_id: &JsValue,
+        identity_id: IdentifierLikeJs,
         serialized_document: Option<Vec<u8>>,
         vote_tally: Option<u32>,
     ) -> WasmDppResult<Self> {
-        let identity: Identifier = IdentifierWasm::try_from(identity_id)?.into();
+        let identity: Identifier = identity_id.try_into()?;
 
         let inner = ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
             identity_id: identity,

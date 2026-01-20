@@ -1,7 +1,7 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
@@ -189,12 +189,9 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
-    pub fn set_identity_identifier(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let identity_id = IdentifierWasm::try_from(identity_id)?.into();
+    pub fn set_identity_identifier(&mut self, identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let id_value: JsValue = identity_id.into();
+        let identity_id = IdentifierWasm::try_from(&id_value)?.into();
         self.0.set_identity_id(identity_id);
         Ok(())
     }

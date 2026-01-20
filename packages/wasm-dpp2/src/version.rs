@@ -18,6 +18,28 @@ const PLATFORM_VERSION_LIKE_TS: &'static str = r#"
 export type PlatformVersionLike = PlatformVersion | string | number;
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PlatformVersionLike")]
+    pub type PlatformVersionLikeJs;
+}
+
+impl TryFrom<PlatformVersionLikeJs> for PlatformVersionWasm {
+    type Error = WasmDppError;
+    fn try_from(value: PlatformVersionLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        PlatformVersionWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<PlatformVersionLikeJs> for PlatformVersion {
+    type Error = WasmDppError;
+    fn try_from(value: PlatformVersionLikeJs) -> Result<Self, Self::Error> {
+        let wasm: PlatformVersionWasm = value.try_into()?;
+        Ok(PlatformVersion::from(wasm))
+    }
+}
+
 #[wasm_bindgen(js_name = "PlatformVersion")]
 #[derive(Default)]
 #[allow(non_camel_case_types)]

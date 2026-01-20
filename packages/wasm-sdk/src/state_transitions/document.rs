@@ -105,11 +105,11 @@ impl WasmSdk {
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
-        let contract_id: Identifier = document_wasm.get_data_contract_id().into();
-        let document_type_name = document_wasm.get_document_type_name();
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
+        let document_type_name = document_wasm.document_type_name();
 
         // Get entropy from document
-        let entropy = document_wasm.get_entropy().ok_or_else(|| {
+        let entropy = document_wasm.entropy().ok_or_else(|| {
             WasmSdkError::invalid_argument("Document must have entropy set for creation")
         })?;
 
@@ -224,8 +224,8 @@ impl WasmSdk {
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
-        let contract_id: Identifier = document_wasm.get_data_contract_id().into();
-        let document_type_name = document_wasm.get_document_type_name();
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
+        let document_type_name = document_wasm.document_type_name();
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -354,10 +354,10 @@ impl WasmSdk {
                 .map(|boxed| (*boxed).clone())?;
             let doc_inner: Document = doc.clone().into();
             (
-                doc.get_id().into(),
+                doc.id().into(),
                 doc_inner.owner_id(),
-                doc.get_data_contract_id().into(),
-                doc.get_document_type_name(),
+                doc.data_contract_id().into(),
+                doc.document_type_name(),
             )
         } else {
             // It's a plain object - extract individual fields
@@ -476,9 +476,9 @@ impl WasmSdk {
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
-        let contract_id: Identifier = document_wasm.get_data_contract_id().into();
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
         let owner_id: Identifier = document.owner_id();
-        let document_type_name = document_wasm.get_document_type_name();
+        let document_type_name = document_wasm.document_type_name();
 
         // Extract recipient ID from options
         let recipient_id: Identifier =
@@ -602,8 +602,8 @@ impl WasmSdk {
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
-        let contract_id: Identifier = document_wasm.get_data_contract_id().into();
-        let document_type_name = document_wasm.get_document_type_name();
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
+        let document_type_name = document_wasm.document_type_name();
 
         // Extract buyer ID from options
         let buyer_id: Identifier =
@@ -723,8 +723,8 @@ impl WasmSdk {
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
-        let contract_id: Identifier = document_wasm.get_data_contract_id().into();
-        let document_type_name = document_wasm.get_document_type_name();
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
+        let document_type_name = document_wasm.document_type_name();
 
         // Extract price from options
         let price_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("price"))

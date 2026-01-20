@@ -18,7 +18,56 @@ pub struct IdentifierWasm(Identifier);
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTIFIER_TS_HELPERS: &'static str = r#"
 export type IdentifierLike = Identifier | Uint8Array | string;
+export type IdentifierLikeArray = Array<Identifier | Uint8Array | string>;
+export type IdentifierLikeOrUndefined = Identifier | Uint8Array | string | undefined;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentifierLike")]
+    pub type IdentifierLikeJs;
+
+    #[wasm_bindgen(typescript_type = "IdentifierLikeArray")]
+    pub type IdentifierLikeArrayJs;
+
+    #[wasm_bindgen(typescript_type = "IdentifierLikeOrUndefined")]
+    pub type IdentifierLikeOrUndefinedJs;
+}
+
+impl TryFrom<IdentifierLikeJs> for IdentifierWasm {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        IdentifierWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<IdentifierLikeJs> for Identifier {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeJs) -> Result<Self, Self::Error> {
+        Ok(IdentifierWasm::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<IdentifierLikeOrUndefinedJs> for Option<IdentifierWasm> {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeOrUndefinedJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        if js_value.is_undefined() || js_value.is_null() {
+            Ok(None)
+        } else {
+            IdentifierWasm::try_from(js_value).map(Some)
+        }
+    }
+}
+
+impl TryFrom<IdentifierLikeOrUndefinedJs> for Option<Identifier> {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeOrUndefinedJs) -> Result<Self, Self::Error> {
+        let opt: Option<IdentifierWasm> = value.try_into()?;
+        Ok(opt.map(Identifier::from))
+    }
+}
 
 impl From<IdentifierWasm> for Identifier {
     fn from(identifier: IdentifierWasm) -> Self {
@@ -206,11 +255,8 @@ impl Serialize for IdentifierWasm {
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identifier: &JsValue,
-    ) -> WasmDppResult<IdentifierWasm> {
-        IdentifierWasm::try_from(identifier)
+    pub fn constructor(identifier: IdentifierLikeJs) -> WasmDppResult<IdentifierWasm> {
+        identifier.try_into()
     }
 
     #[wasm_bindgen(js_name = "toBase58")]
@@ -307,3 +353,19 @@ impl IdentifierWasm {
 }
 
 impl_wasm_type_info!(IdentifierWasm, Identifier);
+
+/// Convert a JavaScript array of identifier-like values to a Vec of Identifiers.
+///
+/// Accepts an array where each element can be an Identifier, Uint8Array, or string.
+pub fn identifiers_from_js_array(array: IdentifierLikeArrayJs) -> WasmDppResult<Vec<Identifier>> {
+    let js_value: JsValue = array.into();
+    let js_array = js_sys::Array::from(&js_value);
+    js_array
+        .iter()
+        .map(|v| {
+            IdentifierWasm::try_from(v)
+                .map(Identifier::from)
+                .map_err(|err| WasmDppError::invalid_argument(format!("Invalid identifier: {}", err)))
+        })
+        .collect()
+}

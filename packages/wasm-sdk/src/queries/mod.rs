@@ -335,7 +335,7 @@ impl ProofMetadataResponseWasm {
         metadata: dash_sdk::platform::proto::ResponseMetadata,
         proof: dash_sdk::platform::proto::Proof,
     ) -> Self {
-        ProofMetadataResponseWasm::new(data.into(), metadata.into(), proof.into())
+        ProofMetadataResponseWasm::constructor(data.into(), metadata.into(), proof.into())
     }
 }
 

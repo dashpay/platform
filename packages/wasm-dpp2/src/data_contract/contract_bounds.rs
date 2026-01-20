@@ -1,10 +1,9 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::prelude::Identifier;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "ContractBounds")]
@@ -27,11 +26,10 @@ impl From<ContractBoundsWasm> for ContractBounds {
 impl ContractBoundsWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        contract_id: &JsValue,
+        contract_id: IdentifierLikeJs,
         document_type_name: Option<String>,
     ) -> WasmDppResult<ContractBoundsWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(match document_type_name {
             Some(document_type_name) => ContractBounds::SingleContractDocumentType {
@@ -43,11 +41,8 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(js_name = "SingleContract")]
-    pub fn single_contract(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        contract_id: &JsValue,
-    ) -> WasmDppResult<ContractBoundsWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(contract_id)?.into();
+    pub fn single_contract(contract_id: IdentifierLikeJs) -> WasmDppResult<ContractBoundsWasm> {
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(ContractBounds::SingleContract {
             id: contract_id,
@@ -56,11 +51,10 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "SingleContractDocumentType")]
     pub fn single_contract_document_type_name(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        contract_id: &JsValue,
+        contract_id: IdentifierLikeJs,
         document_type_name: String,
     ) -> WasmDppResult<ContractBoundsWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(
             ContractBounds::SingleContractDocumentType {
@@ -91,12 +85,8 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(setter = "identifier")]
-    pub fn set_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let contract_id: Identifier = IdentifierWasm::try_from(contract_id)?.into();
+    pub fn set_id(&mut self, contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let contract_id: Identifier = contract_id.try_into()?;
 
         self.0 = match self.clone().0 {
             ContractBounds::SingleContract { .. } => {

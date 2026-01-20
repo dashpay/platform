@@ -15,6 +15,28 @@ const NETWORK_LIKE_TS: &'static str = r#"
 export type NetworkLike = Network | "mainnet" | "testnet" | "devnet" | "regtest" | 0 | 1 | 2 | 3;
 "#;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "NetworkLike")]
+    pub type NetworkLikeJs;
+}
+
+impl TryFrom<NetworkLikeJs> for NetworkWasm {
+    type Error = WasmDppError;
+    fn try_from(value: NetworkLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        NetworkWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<NetworkLikeJs> for Network {
+    type Error = WasmDppError;
+    fn try_from(value: NetworkLikeJs) -> Result<Self, Self::Error> {
+        let wasm: NetworkWasm = value.try_into()?;
+        Ok(Network::from(wasm))
+    }
+}
+
 #[wasm_bindgen(js_name = "Network")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types)]

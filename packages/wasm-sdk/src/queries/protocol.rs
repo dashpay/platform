@@ -2,11 +2,12 @@ use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::dashcore::ProTxHash;
 use js_sys::Map;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::ProTxHashWasm;
+use wasm_dpp2::ProTxHashLikeNullableJs;
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeState")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -151,25 +152,14 @@ impl WasmSdk {
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
         #[wasm_bindgen(js_name = "startProTxHash")]
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike | null")]
-        start_pro_tx_hash: JsValue,
+        start_pro_tx_hash: ProTxHashLikeNullableJs,
         count: u32,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
         use drive_proof_verifier::types::MasternodeProtocolVote;
 
-        // Parse the ProTxHash using centralized helper
-        let start_hash = if start_pro_tx_hash.is_null() || start_pro_tx_hash.is_undefined() {
-            None
-        } else if let Some(s) = start_pro_tx_hash.as_string() {
-            if s.is_empty() {
-                None
-            } else {
-                Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-            }
-        } else {
-            Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-        };
+        // Parse the ProTxHash using extern type
+        let start_hash: Option<ProTxHash> = start_pro_tx_hash.try_into()?;
 
         let votes_result =
             MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count)).await?;
@@ -248,25 +238,14 @@ impl WasmSdk {
     pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "startProTxHash")]
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike | null")]
-        start_pro_tx_hash: JsValue,
+        start_pro_tx_hash: ProTxHashLikeNullableJs,
         count: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::{FetchMany, LimitQuery};
         use drive_proof_verifier::types::MasternodeProtocolVote;
 
-        // Parse the ProTxHash using centralized helper
-        let start_hash = if start_pro_tx_hash.is_null() || start_pro_tx_hash.is_undefined() {
-            None
-        } else if let Some(s) = start_pro_tx_hash.as_string() {
-            if s.is_empty() {
-                None
-            } else {
-                Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-            }
-        } else {
-            Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-        };
+        // Parse the ProTxHash using extern type
+        let start_hash: Option<ProTxHash> = start_pro_tx_hash.try_into()?;
 
         // Create a LimitQuery with the start hash and count
         let query = LimitQuery {

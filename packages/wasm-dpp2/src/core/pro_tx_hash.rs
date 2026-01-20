@@ -15,7 +15,71 @@ const PRO_TX_HASH_LIKE_TS: &'static str = r#"
  * - Uint8Array: 32 bytes in internal byte order
  */
 export type ProTxHashLike = ProTxHash | string | Uint8Array;
+export type ProTxHashLikeArray = Array<ProTxHash | string | Uint8Array>;
 "#;
+
+/// Extern type for flexible ProTxHash input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ProTxHashLike")]
+    pub type ProTxHashLikeJs;
+
+    #[wasm_bindgen(typescript_type = "ProTxHashLike | null")]
+    pub type ProTxHashLikeNullableJs;
+
+    #[wasm_bindgen(typescript_type = "ProTxHashLikeArray")]
+    pub type ProTxHashLikeArrayJs;
+}
+
+impl TryFrom<ProTxHashLikeJs> for ProTxHashWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: ProTxHashLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        ProTxHashWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<ProTxHashLikeJs> for ProTxHash {
+    type Error = WasmDppError;
+
+    fn try_from(value: ProTxHashLikeJs) -> Result<Self, Self::Error> {
+        let wasm: ProTxHashWasm = value.try_into()?;
+        Ok(ProTxHash::from(wasm))
+    }
+}
+
+impl TryFrom<ProTxHashLikeNullableJs> for Option<ProTxHash> {
+    type Error = WasmDppError;
+
+    fn try_from(value: ProTxHashLikeNullableJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        if js_value.is_null() || js_value.is_undefined() {
+            return Ok(None);
+        }
+        // Check for empty string
+        if let Some(s) = js_value.as_string() {
+            if s.is_empty() {
+                return Ok(None);
+            }
+        }
+        ProTxHashWasm::try_from(js_value).map(|w| Some(ProTxHash::from(w)))
+    }
+}
+
+/// Helper function to convert a JavaScript array of ProTxHashLike values to Vec<ProTxHash>
+pub fn pro_tx_hashes_from_js_array(array: ProTxHashLikeArrayJs) -> Result<Vec<ProTxHash>, WasmDppError> {
+    let js_value: JsValue = array.into();
+    let js_array = js_sys::Array::from(&js_value);
+    js_array
+        .iter()
+        .map(|v| {
+            ProTxHashWasm::try_from(v)
+                .map(ProTxHash::from)
+                .map_err(|err| WasmDppError::invalid_argument(format!("Invalid ProTxHash: {}", err)))
+        })
+        .collect()
+}
 
 #[wasm_bindgen(js_name = "ProTxHash")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

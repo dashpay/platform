@@ -1,6 +1,6 @@
 use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
-use crate::queries::utils::{deserialize_required_query, identifier_from_js};
+use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::DataContract;
@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
 use wasm_dpp2::IdentitySignerWasm;
@@ -539,10 +539,9 @@ impl WasmSdk {
     pub async fn get_dpns_username(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<Option<String>, WasmSdkError> {
-        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_id_parsed = IdentifierWasm::try_from(identity_id)?.into();
 
         let array = self
             .fetch_dpns_usernames(identity_id_parsed, Some(1))
@@ -579,10 +578,9 @@ impl WasmSdk {
     pub async fn get_dpns_username_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_id: JsValue,
+        identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_id_parsed = IdentifierWasm::try_from(identity_id)?.into();
 
         let mut response = self
             .fetch_dpns_usernames_with_proof(identity_id_parsed, Some(1))

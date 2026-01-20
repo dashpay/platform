@@ -1,7 +1,7 @@
 use crate::data_contract::contract_bounds::ContractBoundsWasm;
-use crate::enums::keys::key_type::KeyTypeWasm;
-use crate::enums::keys::purpose::PurposeWasm;
-use crate::enums::keys::security_level::SecurityLevelWasm;
+use crate::enums::keys::key_type::{KeyTypeLikeJs, KeyTypeWasm};
+use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
+use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_conversions;
@@ -230,33 +230,26 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = purpose)]
-    pub fn set_purpose(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "PurposeLike")] js_purpose: JsValue,
-    ) -> WasmDppResult<()> {
-        let purpose = PurposeWasm::try_from(js_purpose)?;
-        self.0.set_purpose(Purpose::from(purpose));
+    pub fn set_purpose(&mut self, purpose: PurposeLikeJs) -> WasmDppResult<()> {
+        let purpose: Purpose = purpose.try_into()?;
+        self.0.set_purpose(purpose);
         Ok(())
     }
 
     #[wasm_bindgen(setter = securityLevel)]
     pub fn set_security_level(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "SecurityLevelLike")] js_security_level: JsValue,
+        security_level: SecurityLevelLikeJs,
     ) -> WasmDppResult<()> {
-        let security_level = SecurityLevelWasm::try_from(js_security_level)?;
-        self.0
-            .set_security_level(SecurityLevel::from(security_level));
+        let security_level: SecurityLevel = security_level.try_into()?;
+        self.0.set_security_level(security_level);
         Ok(())
     }
 
     #[wasm_bindgen(setter = keyType)]
-    pub fn set_key_type(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "KeyTypeLike")] key_type: JsValue,
-    ) -> WasmDppResult<()> {
-        let key_type = KeyTypeWasm::try_from(key_type)?;
-        self.0.set_type(key_type.into());
+    pub fn set_key_type(&mut self, key_type: KeyTypeLikeJs) -> WasmDppResult<()> {
+        let key_type: KeyType = key_type.try_into()?;
+        self.0.set_type(key_type);
         Ok(())
     }
 

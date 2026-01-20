@@ -1,5 +1,5 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
-use crate::version::PlatformVersionWasm;
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
@@ -97,9 +97,9 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "default")]
     pub fn default(
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
-        platform_version: JsValue,
+        platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let platform_version: JsValue = platform_version.into();
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         IdentityCreateTransition::default_versioned(&platform_version.into())

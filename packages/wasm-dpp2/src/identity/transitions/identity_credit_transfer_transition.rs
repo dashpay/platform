@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
@@ -131,26 +131,14 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "recipientId")]
-    pub fn set_recipient_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        recipient: &JsValue,
-    ) -> WasmDppResult<()> {
-        let recipient: Identifier = IdentifierWasm::try_from(recipient)?.into();
-
-        self.0.set_recipient_id(recipient);
+    pub fn set_recipient_id(&mut self, recipient: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_recipient_id(recipient.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "senderId")]
-    pub fn set_sender_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        sender: &JsValue,
-    ) -> WasmDppResult<()> {
-        let sender: Identifier = IdentifierWasm::try_from(sender)?.into();
-
-        self.0.set_identity_id(sender);
+    pub fn set_sender_id(&mut self, sender: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_identity_id(sender.try_into()?);
         Ok(())
     }
 

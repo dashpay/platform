@@ -3,6 +3,31 @@ use dpp::identity::KeyType;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+/// Extern type for flexible KeyType input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "KeyTypeLike")]
+    pub type KeyTypeLikeJs;
+}
+
+impl TryFrom<KeyTypeLikeJs> for KeyTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: KeyTypeLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        KeyTypeWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<KeyTypeLikeJs> for KeyType {
+    type Error = WasmDppError;
+
+    fn try_from(value: KeyTypeLikeJs) -> Result<Self, Self::Error> {
+        let wasm: KeyTypeWasm = value.try_into()?;
+        Ok(KeyType::from(wasm))
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[wasm_bindgen(js_name = "KeyType")]
 pub enum KeyTypeWasm {

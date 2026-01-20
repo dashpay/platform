@@ -1,5 +1,5 @@
 use crate::data_contract::DataContractWasm;
-use crate::version::PlatformVersionWasm;
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
@@ -30,11 +30,11 @@ impl DataContractCreateTransitionWasm {
     pub fn constructor(
         data_contract: &DataContractWasm,
         identity_nonce: IdentityNonce,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
-        platform_version: JsValue,
+        platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractCreateTransitionWasm> {
         let rs_data_contract: DataContract = data_contract.clone().into();
 
+        let platform_version: JsValue = platform_version.into();
         let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(platform_version)?,
@@ -118,9 +118,9 @@ impl DataContractCreateTransitionWasm {
     pub fn set_data_contract(
         &mut self,
         data_contract: &DataContractWasm,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
-        platform_version: JsValue,
+        platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
+        let platform_version: JsValue = platform_version.into();
         let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(platform_version)?,
@@ -145,10 +145,10 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name = "getDataContract")]
     pub fn get_data_contract(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformVersionLike")]
-        platform_version: JsValue,
+        platform_version: PlatformVersionLikeJs,
         full_validation: Option<bool>,
     ) -> WasmDppResult<DataContractWasm> {
+        let platform_version: JsValue = platform_version.into();
         let platform_version = match platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(platform_version)?,

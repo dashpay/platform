@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
@@ -155,15 +155,8 @@ impl TokenTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = recipientId)]
-    pub fn set_recipient_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_recipient: &JsValue,
-    ) -> WasmDppResult<()> {
-        let recipient = IdentifierWasm::try_from(js_recipient)?.into();
-
-        self.0.set_recipient_id(recipient);
-
+    pub fn set_recipient_id(&mut self, recipient_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_recipient_id(recipient_id.try_into()?);
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use crate::VoteWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
@@ -146,28 +146,14 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = proTxHash)]
-    pub fn set_pro_tx_hash(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        pro_tx_hash: &JsValue,
-    ) -> WasmDppResult<()> {
-        let pro_tx_hash = IdentifierWasm::try_from(pro_tx_hash)?.into();
-
-        self.0.set_pro_tx_hash(pro_tx_hash);
-
+    pub fn set_pro_tx_hash(&mut self, pro_tx_hash: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_pro_tx_hash(pro_tx_hash.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = voterIdentityId)]
-    pub fn set_voter_identity_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        voter_identity_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let voter_identity_id = IdentifierWasm::try_from(voter_identity_id)?.into();
-
-        self.0.set_voter_identity_id(voter_identity_id);
-
+    pub fn set_voter_identity_id(&mut self, voter_identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_voter_identity_id(voter_identity_id.try_into()?);
         Ok(())
     }
 

@@ -5,7 +5,7 @@ use crate::state_transitions::batch::generators::generate_transfer_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
 use crate::data_contract::document::DocumentWasm;
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::utils::IntoWasm;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -36,8 +36,7 @@ impl DocumentTransferTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_recipient_owner_id: &JsValue,
+        recipient_owner_id: IdentifierLikeJs,
         js_token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentTransferTransitionWasm> {
         let token_payment_info =
@@ -54,7 +53,7 @@ impl DocumentTransferTransitionWasm {
             document,
             identity_contract_nonce,
             document.document_type_name().to_string(),
-            IdentifierWasm::try_from(js_recipient_owner_id)?.into(),
+            recipient_owner_id.try_into()?,
             token_payment_info,
         );
 
@@ -77,13 +76,8 @@ impl DocumentTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "recipientId")]
-    pub fn set_recipient_owner_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_recipient_owner_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        self.0
-            .set_recipient_owner_id(IdentifierWasm::try_from(js_recipient_owner_id)?.into());
+    pub fn set_recipient_owner_id(&mut self, recipient_owner_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_recipient_owner_id(recipient_owner_id.try_into()?);
         Ok(())
     }
 

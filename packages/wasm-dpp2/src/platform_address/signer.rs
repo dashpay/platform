@@ -1,4 +1,4 @@
-use super::PlatformAddressWasm;
+use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
@@ -67,9 +67,9 @@ impl PlatformAddressSignerWasm {
     #[wasm_bindgen(js_name = "hasKey")]
     pub fn has_key(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
+        address: PlatformAddressLikeJs,
     ) -> WasmDppResult<bool> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
+        let platform_address: PlatformAddressWasm = address.try_into()?;
         Ok(self.private_keys.contains_key(&platform_address))
     }
 

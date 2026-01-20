@@ -1,7 +1,7 @@
 use crate::enums::batch::gas_fees_paid_by::GasFeesPaidByWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
@@ -122,16 +122,14 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "paymentTokenContractId")]
     pub fn set_payment_token_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_payment_token_contract_id: &JsValue,
+        js_payment_token_contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
-            .is_null()
-            | js_payment_token_contract_id.is_undefined()
-        {
-            true => None,
-            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id)?.into()),
-        };
+        let id_value: JsValue = js_payment_token_contract_id.into();
+        let payment_token_contract_id: Option<Identifier> =
+            match id_value.is_null() | id_value.is_undefined() {
+                true => None,
+                false => Some(IdentifierWasm::try_from(&id_value)?.into()),
+            };
 
         self.0
             .set_payment_token_contract_id(payment_token_contract_id);

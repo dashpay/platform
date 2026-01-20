@@ -1,9 +1,8 @@
-use dash_sdk::dpp::platform_value::{Identifier, Value as PlatformValue};
+use dash_sdk::dpp::platform_value::Value as PlatformValue;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierWasm;
 
 use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
@@ -84,20 +83,4 @@ pub(crate) fn convert_json_values_to_platform_values(
         .collect::<Result<Vec<_>, _>>()?;
 
     js_values_to_platform_values(js_values)
-}
-
-pub(crate) fn identifier_from_js(value: &JsValue, field: &str) -> Result<Identifier, WasmSdkError> {
-    IdentifierWasm::try_from(value)
-        .map(Identifier::from)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", field, err)))
-}
-
-pub(crate) fn identifiers_from_js(
-    values: Vec<JsValue>,
-    field: &str,
-) -> Result<Vec<Identifier>, WasmSdkError> {
-    values
-        .into_iter()
-        .map(|value| identifier_from_js(&value, field))
-        .collect()
 }

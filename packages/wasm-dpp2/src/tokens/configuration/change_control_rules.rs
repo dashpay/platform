@@ -1,7 +1,7 @@
 use crate::enums::token::action_goal::ActionGoalWasm;
 use crate::impl_wasm_type_info;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::IdentifierLikeJs;
 use crate::tokens::configuration::action_taker::ActionTakerWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::group::GroupWasm;
@@ -187,14 +187,13 @@ impl ChangeControlRulesWasm {
     pub fn can_change_admin_action_takers(
         &self,
         admin_action_takers: &AuthorizedActionTakersWasm,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_contract_owner_id: &JsValue,
+        contract_owner_id: IdentifierLikeJs,
         main_group: Option<GroupContractPosition>,
         js_groups: &JsValue,
         action_taker: &ActionTakerWasm,
         js_goal: &JsValue,
     ) -> WasmDppResult<bool> {
-        let contract_owner_id: Identifier = IdentifierWasm::try_from(js_contract_owner_id)?.into();
+        let contract_owner_id: Identifier = contract_owner_id.try_into()?;
         let goal = ActionGoalWasm::try_from(js_goal.clone())?;
 
         let groups_object = Object::from(js_groups.clone());

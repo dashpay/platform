@@ -1,4 +1,4 @@
-use super::PlatformAddressWasm;
+use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -37,11 +37,11 @@ impl PlatformAddressInputWasm {
     /// @param amount - The amount of credits to spend from this address
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
+        address: PlatformAddressLikeJs,
         nonce: u32,
         amount: BigInt,
     ) -> WasmDppResult<PlatformAddressInputWasm> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
+        let platform_address: PlatformAddressWasm = address.try_into()?;
         let amount_u64 = bigint_to_u64(amount)?;
 
         Ok(PlatformAddressInputWasm {
@@ -100,10 +100,10 @@ impl PlatformAddressOutputWasm {
     /// @param amount - The amount of credits to send to this address (optional for asset lock funding)
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
+        address: PlatformAddressLikeJs,
         amount: Option<BigInt>,
     ) -> WasmDppResult<PlatformAddressOutputWasm> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
+        let platform_address: PlatformAddressWasm = address.try_into()?;
         let amount_u64 = amount.map(bigint_to_u64).transpose()?;
 
         Ok(PlatformAddressOutputWasm {

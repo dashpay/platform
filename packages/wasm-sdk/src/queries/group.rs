@@ -1,7 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::queries::utils::{
-    convert_optional_limit, deserialize_required_query, identifiers_from_js,
-};
+use crate::queries::utils::{convert_optional_limit, deserialize_required_query};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
@@ -19,7 +17,7 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::group::GroupActionWasm;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::tokens::GroupWasm;
 
 // Proof info functions are now included below
@@ -593,14 +591,12 @@ impl WasmSdk {
     pub async fn get_group_info(
         &self,
         #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
     ) -> Result<Option<GroupWasm>, WasmSdkError> {
         // Parse data contract ID
-        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
+        let contract_id: Identifier = data_contract_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
 
         // Create group query
         let query = GroupQuery {
@@ -802,17 +798,16 @@ impl WasmSdk {
     pub async fn get_groups_data_contracts(
         &self,
         #[wasm_bindgen(js_name = "dataContractIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        data_contract_ids: Vec<JsValue>,
+        data_contract_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
+        use wasm_dpp2::identifier::identifiers_from_js_array;
+
+        let contract_identifiers = identifiers_from_js_array(data_contract_ids)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract IDs: {}", err)))?;
+
         let contracts_map = Map::new();
 
-        for contract_js in data_contract_ids {
-            let contract_id: Identifier = IdentifierWasm::try_from(&contract_js)
-                .map_err(|err| {
-                    WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
-                })?
-                .into();
+        for contract_id in contract_identifiers {
 
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
@@ -848,14 +843,12 @@ impl WasmSdk {
     pub async fn get_group_info_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse data contract ID
-        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
+        let contract_id: Identifier = data_contract_id.try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
 
         // Create group query
         let query = GroupQuery {
@@ -1099,14 +1092,16 @@ impl WasmSdk {
     pub async fn get_groups_data_contracts_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "dataContractIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        data_contract_ids: Vec<JsValue>,
+        data_contract_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        use wasm_dpp2::identifier::identifiers_from_js_array;
+
         let contracts_map = Map::new();
         let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
         let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
-        let contract_identifiers = identifiers_from_js(data_contract_ids, "contract ID")?;
+        let contract_identifiers = identifiers_from_js_array(data_contract_ids)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract IDs: {}", err)))?;
 
         for contract_id in contract_identifiers {
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));

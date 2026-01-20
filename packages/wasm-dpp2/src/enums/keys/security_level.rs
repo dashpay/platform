@@ -3,6 +3,31 @@ use dpp::identity::SecurityLevel;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+/// Extern type for flexible SecurityLevel input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "SecurityLevelLike")]
+    pub type SecurityLevelLikeJs;
+}
+
+impl TryFrom<SecurityLevelLikeJs> for SecurityLevelWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: SecurityLevelLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        SecurityLevelWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<SecurityLevelLikeJs> for SecurityLevel {
+    type Error = WasmDppError;
+
+    fn try_from(value: SecurityLevelLikeJs) -> Result<Self, Self::Error> {
+        let wasm: SecurityLevelWasm = value.try_into()?;
+        Ok(SecurityLevel::from(wasm))
+    }
+}
+
 #[wasm_bindgen(js_name = SecurityLevel)]
 pub enum SecurityLevelWasm {
     MASTER = 0,

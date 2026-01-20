@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::utils::{IntoWasm, JsValueExt, try_to_u64};
 use dpp::fee::Credits;
@@ -156,14 +156,8 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")] id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let identifier = IdentifierWasm::try_from(id)?.into();
-
-        self.0.id = identifier;
-
+    pub fn set_id(&mut self, id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.id = id.try_into()?;
         Ok(())
     }
 

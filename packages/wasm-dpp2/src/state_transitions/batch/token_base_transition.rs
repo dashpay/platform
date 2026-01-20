@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
 use crate::utils::{IntoWasm, try_to_u64};
@@ -136,24 +136,18 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = dataContractId)]
-    pub fn set_data_contract_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        data_contract_id: &JsValue,
-    ) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let id_value: JsValue = data_contract_id.into();
         self.0
-            .set_data_contract_id(IdentifierWasm::try_from(data_contract_id)?.into());
+            .set_data_contract_id(IdentifierWasm::try_from(&id_value)?.into());
         Ok(())
     }
 
     #[wasm_bindgen(setter = tokenId)]
-    pub fn set_token_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        token_id: &JsValue,
-    ) -> WasmDppResult<()> {
+    pub fn set_token_id(&mut self, token_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        let id_value: JsValue = token_id.into();
         self.0
-            .set_token_id(IdentifierWasm::try_from(token_id)?.into());
+            .set_token_id(IdentifierWasm::try_from(&id_value)?.into());
 
         Ok(())
     }

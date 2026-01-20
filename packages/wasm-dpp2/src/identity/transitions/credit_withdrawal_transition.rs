@@ -1,9 +1,9 @@
-use super::pooling::PoolingWasm;
+use super::pooling::{PoolingLikeJs, PoolingWasm};
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::core::core_script::CoreScriptWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
@@ -195,25 +195,15 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "pooling")]
-    pub fn set_pooling(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "CreditWithdrawalTransitionPoolingLike")]
-        pooling: JsValue,
-    ) -> WasmDppResult<()> {
-        let pooling: PoolingWasm = PoolingWasm::try_from(pooling)?;
-        self.0.set_pooling(pooling.into());
+    pub fn set_pooling(&mut self, pooling: PoolingLikeJs) -> WasmDppResult<()> {
+        let pooling: dpp::withdrawal::Pooling = pooling.try_into()?;
+        self.0.set_pooling(pooling);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "identityId")]
-    pub fn set_identity_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        identity_id: JsValue,
-    ) -> WasmDppResult<()> {
-        let identity_id = IdentifierWasm::try_from(&identity_id)?.into();
-
-        self.0.set_identity_id(identity_id);
+    pub fn set_identity_id(&mut self, identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_identity_id(identity_id.try_into()?);
         Ok(())
     }
 

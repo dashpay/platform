@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::configuration_convention::TokenConfigurationConventionWasm;
@@ -412,11 +412,10 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(js_name = "calculateTokenId")]
     pub fn calculate_token_id(
-        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
-        js_contract_id: &JsValue,
+        contract_id: IdentifierLikeJs,
         token_pos: TokenContractPosition,
     ) -> WasmDppResult<IdentifierWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(IdentifierWasm::from(calculate_token_id(
             contract_id.as_bytes(),
