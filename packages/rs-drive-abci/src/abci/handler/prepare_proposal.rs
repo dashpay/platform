@@ -213,9 +213,6 @@ where
             // Such state transitions must be invalidated by check tx, but they might
             // still be added to mempool due to inconsistency between check tx and tx processing
             // (fees calculation) or malicious proposer.
-            // Such state transitions must be invalidated by check tx, but they might
-            // still be added to mempool due to inconsistency between check tx and tx processing
-            // (fees calculation) or malicious proposer.
             StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) => {
                 tracing::trace!(
                     "UnpaidConsensusError at height {}, round {}: {:?}",
