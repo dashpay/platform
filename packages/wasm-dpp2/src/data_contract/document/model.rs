@@ -710,12 +710,9 @@ impl DocumentWasm {
     fn to_bytes_internal(
         &self,
         data_contract: &DataContractWasm,
-        platform_version: JsValue,
+        platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<Vec<u8>> {
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
-        };
+        let platform_version: PlatformVersionWasm = platform_version.try_into()?;
 
         let document_type_ref = data_contract
             .get_document_type_ref_by_name(self.document_type_name())
