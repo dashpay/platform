@@ -1,10 +1,12 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::platform::{Fetch, FetchMany};
 use drive_proof_verifier::types::{AddressInfo, AddressInfos};
 use js_sys::{BigInt, Map};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -12,7 +14,8 @@ use wasm_dpp2::PlatformAddressWasm;
 
 /// Information about a Platform address including its nonce and balance.
 #[wasm_bindgen(js_name = "PlatformAddressInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlatformAddressInfoWasm {
     address: PlatformAddressWasm,
     nonce: u32,
@@ -49,6 +52,8 @@ impl PlatformAddressInfoWasm {
         BigInt::from(self.balance)
     }
 }
+
+impl_wasm_serde_conversions!(PlatformAddressInfoWasm, PlatformAddressInfo);
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -94,9 +99,13 @@ impl WasmSdk {
             AddressInfo::fetch_with_metadata_and_proof(self.as_ref(), platform_address, None)
                 .await?;
 
-        let data = address_info
-            .map(|info| JsValue::from(PlatformAddressInfoWasm::from(info)))
-            .unwrap_or(JsValue::UNDEFINED);
+        let data = match address_info {
+            Some(info) => {
+                let wrapper = PlatformAddressInfoWasm::from(info);
+                wrapper.to_object()?
+            }
+            None => JsValue::UNDEFINED,
+        };
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -135,11 +144,13 @@ impl WasmSdk {
 
         for address in platform_addresses {
             let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = address_infos
-                .get(&address)
-                .and_then(|opt| opt.as_ref())
-                .map(|info| JsValue::from(PlatformAddressInfoWasm::from(info.clone())))
-                .unwrap_or(JsValue::UNDEFINED);
+            let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
+                Some(info) => {
+                    let wrapper = PlatformAddressInfoWasm::from(info.clone());
+                    wrapper.to_object()?
+                }
+                None => JsValue::UNDEFINED,
+            };
             results_map.set(&key, &value);
         }
 
@@ -183,11 +194,13 @@ impl WasmSdk {
 
         for address in platform_addresses {
             let key = JsValue::from(PlatformAddressWasm::from(address));
-            let value = address_infos
-                .get(&address)
-                .and_then(|opt| opt.as_ref())
-                .map(|info| JsValue::from(PlatformAddressInfoWasm::from(info.clone())))
-                .unwrap_or(JsValue::UNDEFINED);
+            let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
+                Some(info) => {
+                    let wrapper = PlatformAddressInfoWasm::from(info.clone());
+                    wrapper.to_object()?
+                }
+                None => JsValue::UNDEFINED,
+            };
             results_map.set(&key, &value);
         }
 

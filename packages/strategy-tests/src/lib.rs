@@ -2201,6 +2201,7 @@ impl Strategy {
                             let Some(inputs) = current_addresses_with_balance
                                 .take_random_amounts_with_range(amount_range, rng)
                             else {
+                                eprintln!("no funds left on block {}", block_info.height);
                                 // no funds left
                                 break;
                             };

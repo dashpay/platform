@@ -14,6 +14,7 @@ use std::str::FromStr;
 use tracing::debug;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::NetworkWasm;
 
 // TypeScript option bags (module scope) for extended derivation helpers
 #[wasm_bindgen(typescript_custom_section)]
@@ -97,11 +98,8 @@ fn derive_common_from_mnemonic(
     // Get seed from mnemonic
     let seed = WasmSdk::mnemonic_to_seed(mnemonic, passphrase)?;
 
-    let net = match network {
-        "mainnet" => dashcore::Network::Dash,
-        "testnet" => dashcore::Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
-    };
+    let network_wasm = NetworkWasm::try_from(JsValue::from_str(network))?;
+    let net: dashcore::Network = network_wasm.into();
 
     // Create master extended private key from seed
     let master_key = ExtendedPrivKey::new_master(net, &seed)
@@ -171,7 +169,7 @@ impl From<CommonDerivation> for DerivedKeyInfoWasm {
 }
 
 // Field getters are generated via getter_with_clone annotations above
-impl_wasm_serde_conversions!(DerivedKeyInfoWasm);
+impl_wasm_serde_conversions!(DerivedKeyInfoWasm, DerivedKeyInfo);
 
 #[wasm_bindgen(js_name = "DashpayContactKeyInfo")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -237,7 +235,7 @@ impl DashpayContactKeyInfoWasm {
 }
 
 // Field getters are generated via getter_with_clone annotations above
-impl_wasm_serde_conversions!(DashpayContactKeyInfoWasm);
+impl_wasm_serde_conversions!(DashpayContactKeyInfoWasm, DashpayContactKeyInfo);
 #[wasm_bindgen]
 impl WasmSdk {
     /// Derive a key from seed phrase with extended path supporting 256-bit indices
