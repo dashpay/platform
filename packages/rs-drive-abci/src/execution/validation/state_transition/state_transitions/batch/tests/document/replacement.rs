@@ -2298,4 +2298,21 @@ mod replacement_tests {
             "expected identity reference validation to increase processing fee"
         );
     }
+
+    #[test]
+    fn test_document_replace_fails_when_reference_field_changed_to_missing_identity() {
+        let (result, _) = run_reference_validation_replace_with_contract(
+            REFERENCE_VALIDATION_CONTRACT_PATH,
+            |_, _| Identifier::random(),
+            true,
+        );
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
 }

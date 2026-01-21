@@ -54,13 +54,16 @@ mod creation_tests {
         "tests/supporting_files/contract/reference-validation/reference-validation-contract.json";
     const REFERENCE_VALIDATION_MUST_EXIST_FALSE_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-must-exist-false.json";
+    const REFERENCE_VALIDATION_NESTED_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-nested.json";
 
-    fn run_reference_validation_creation_with_contract<F>(
+    // Helper to run document creation with custom reference mutations.
+    fn run_reference_validation_creation_with_mutator<F>(
         contract_path: &str,
-        to_user_id: F,
+        mutator: F,
     ) -> StateTransitionExecutionResult
     where
-        F: FnOnce(Identifier) -> Identifier,
+        F: FnOnce(&mut Document, Identifier, Identifier),
     {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -73,6 +76,7 @@ mod creation_tests {
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (other_identity, ..) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
 
         let contract = setup_contract(
             &platform.drive,
@@ -101,7 +105,7 @@ mod creation_tests {
             )
             .expect("expected a random document");
 
-        document.set("toUserId", to_user_id(identity.id()).into());
+        mutator(&mut document, identity.id(), other_identity.id());
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
@@ -4030,9 +4034,11 @@ mod creation_tests {
 
     #[test]
     fn test_document_creation_fails_when_referenced_identity_missing() {
-        let result = run_reference_validation_creation_with_contract(
+        let result = run_reference_validation_creation_with_mutator(
             REFERENCE_VALIDATION_CONTRACT_PATH,
-            |_| Identifier::random(),
+            |document, _, _| {
+                document.set("toUserId", Identifier::random().into());
+            },
         );
 
         assert_matches!(
@@ -4046,9 +4052,11 @@ mod creation_tests {
 
     #[test]
     fn test_document_creation_succeeds_when_referenced_identity_exists() {
-        let result = run_reference_validation_creation_with_contract(
+        let result = run_reference_validation_creation_with_mutator(
             REFERENCE_VALIDATION_CONTRACT_PATH,
-            |identity_id| identity_id,
+            |document, identity_id, _| {
+                document.set("toUserId", identity_id.into());
+            },
         );
 
         assert_matches!(
@@ -4059,14 +4067,53 @@ mod creation_tests {
 
     #[test]
     fn test_document_creation_succeeds_when_must_exist_false() {
-        let result = run_reference_validation_creation_with_contract(
+        let result = run_reference_validation_creation_with_mutator(
             REFERENCE_VALIDATION_MUST_EXIST_FALSE_CONTRACT_PATH,
-            |_| Identifier::random(),
+            |document, _, _| {
+                document.set("toUserId", Identifier::random().into());
+            },
         );
 
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[test]
+    fn test_document_creation_succeeds_with_nested_and_multiple_references() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_NESTED_CONTRACT_PATH,
+            |document, owner_id, other_id| {
+                document.set("toUserId", owner_id.into());
+                document.set("otherUserId", other_id.into());
+                document.set("meta.nestedUserId", owner_id.into());
+            },
+        );
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[test]
+    fn test_document_creation_fails_when_nested_reference_missing() {
+        let result = run_reference_validation_creation_with_mutator(
+            REFERENCE_VALIDATION_NESTED_CONTRACT_PATH,
+            |document, owner_id, other_id| {
+                document.set("toUserId", owner_id.into());
+                document.set("otherUserId", other_id.into());
+                document.set("meta.nestedUserId", Identifier::random().into());
+            },
+        );
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
         );
     }
 }

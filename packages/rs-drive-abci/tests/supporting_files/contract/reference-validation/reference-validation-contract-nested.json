@@ -1,0 +1,67 @@
+{
+  "$format_version": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "keywords": [],
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "toUserId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "identity"
+          }
+        },
+        "otherUserId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "identity"
+          }
+        },
+        "meta": {
+          "type": "object",
+          "position": 2,
+          "properties": {
+            "nestedUserId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "position": 0,
+              "refersTo": {
+                "type": "identity"
+              }
+            }
+          },
+          "required": [
+            "nestedUserId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "toUserId",
+        "otherUserId",
+        "meta"
+      ],
+      "indices": [],
+      "additionalProperties": false
+    }
+  },
+  "groups": {},
+  "tokens": {}
+}
