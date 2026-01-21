@@ -64,8 +64,12 @@ impl DocumentTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "recipientId")]
-    pub fn set_recipient_owner_id(&mut self, recipient_owner_id: IdentifierLikeJs) -> WasmDppResult<()> {
-        self.0.set_recipient_owner_id(recipient_owner_id.try_into()?);
+    pub fn set_recipient_owner_id(
+        &mut self,
+        recipient_owner_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
+        self.0
+            .set_recipient_owner_id(recipient_owner_id.try_into()?);
         Ok(())
     }
 

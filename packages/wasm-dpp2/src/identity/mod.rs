@@ -7,8 +7,7 @@ pub mod transitions;
 pub use model::IdentityWasm;
 pub use partial_identity::PartialIdentityWasm;
 pub use public_key::{
-    public_key_hash_from_js, IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm,
-    PublicKeyHashLikeJs,
+    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, PublicKeyHashLikeJs, public_key_hash_from_js,
 };
 pub use signer::IdentitySignerWasm;
 pub use transitions::create_transition::IdentityCreateTransitionWasm;

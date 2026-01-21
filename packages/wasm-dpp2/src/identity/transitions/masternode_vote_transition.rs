@@ -118,11 +118,9 @@ impl MasternodeVoteTransitionWasm {
         let signature_public_key_id: KeyID = if signature_public_key_js.is_undefined() {
             0
         } else {
-            signature_public_key_js
-                .as_f64()
-                .ok_or_else(|| {
-                    WasmDppError::invalid_argument("signaturePublicKeyId must be a number")
-                })? as KeyID
+            signature_public_key_js.as_f64().ok_or_else(|| {
+                WasmDppError::invalid_argument("signaturePublicKeyId must be a number")
+            })? as KeyID
         };
 
         let signature_js =
@@ -182,7 +180,10 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = voterIdentityId)]
-    pub fn set_voter_identity_id(&mut self, voter_identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_voter_identity_id(
+        &mut self,
+        voter_identity_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_voter_identity_id(voter_identity_id.try_into()?);
         Ok(())
     }
@@ -304,6 +305,11 @@ impl MasternodeVoteTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition, MasternodeVoteTransitionObjectJs, MasternodeVoteTransitionJSONJs);
+impl_wasm_conversions!(
+    MasternodeVoteTransitionWasm,
+    MasternodeVoteTransition,
+    MasternodeVoteTransitionObjectJs,
+    MasternodeVoteTransitionJSONJs
+);
 
 impl_wasm_type_info!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);

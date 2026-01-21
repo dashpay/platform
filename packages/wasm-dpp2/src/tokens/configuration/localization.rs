@@ -111,7 +111,9 @@ impl TokenConfigurationLocalizationWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(value: TokenConfigurationLocalizationJSONJs) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+    pub fn from_json(
+        value: TokenConfigurationLocalizationJSONJs,
+    ) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
         serialization::from_json(value.into()).map(TokenConfigurationLocalizationWasm)
     }
 
@@ -121,7 +123,9 @@ impl TokenConfigurationLocalizationWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: TokenConfigurationLocalizationObjectJs) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+    pub fn from_object(
+        value: TokenConfigurationLocalizationObjectJs,
+    ) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
         serialization::from_object(value.into()).map(TokenConfigurationLocalizationWasm)
     }
 }
@@ -144,4 +148,7 @@ impl TokenConfigurationLocalizationWasm {
     }
 }
 
-impl_wasm_type_info!(TokenConfigurationLocalizationWasm, TokenConfigurationLocalization);
+impl_wasm_type_info!(
+    TokenConfigurationLocalizationWasm,
+    TokenConfigurationLocalization
+);

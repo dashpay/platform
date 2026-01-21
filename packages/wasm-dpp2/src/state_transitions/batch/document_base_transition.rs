@@ -70,7 +70,9 @@ impl DocumentBaseTransitionWasm {
 
         // Extract dataContractId (required)
         let js_data_contract_id = Reflect::get(&object, &JsValue::from_str("dataContractId"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing dataContractId: {:?}", e)))?;
+            .map_err(|e| {
+                WasmDppError::invalid_argument(format!("Missing dataContractId: {:?}", e))
+            })?;
         let data_contract_id = IdentifierWasm::try_from(&js_data_contract_id)?.into();
 
         // Extract tokenPaymentInfo (optional)
@@ -141,7 +143,10 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(
+        &mut self,
+        data_contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_data_contract_id(data_contract_id.try_into()?);
         Ok(())
     }

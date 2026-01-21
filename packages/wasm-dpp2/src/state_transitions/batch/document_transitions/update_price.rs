@@ -79,4 +79,7 @@ impl DocumentUpdatePriceTransitionWasm {
     }
 }
 
-impl_wasm_type_info!(DocumentUpdatePriceTransitionWasm, DocumentUpdatePriceTransition);
+impl_wasm_type_info!(
+    DocumentUpdatePriceTransitionWasm,
+    DocumentUpdatePriceTransition
+);

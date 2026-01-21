@@ -99,8 +99,8 @@ impl IdentityCreditTransferWasm {
                 .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
         )?;
 
-        let user_fee_increase_js = Reflect::get(&options_obj, &"userFeeIncrease".into())
-            .unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase_js =
+            Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {
@@ -265,6 +265,11 @@ impl IdentityCreditTransferWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityCreditTransferWasm, IdentityCreditTransferTransition, IdentityCreditTransferObjectJs, IdentityCreditTransferJSONJs);
+impl_wasm_conversions!(
+    IdentityCreditTransferWasm,
+    IdentityCreditTransferTransition,
+    IdentityCreditTransferObjectJs,
+    IdentityCreditTransferJSONJs
+);
 
 impl_wasm_type_info!(IdentityCreditTransferWasm, IdentityCreditTransfer);

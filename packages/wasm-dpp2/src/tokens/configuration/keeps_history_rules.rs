@@ -114,12 +114,14 @@ impl TokenKeepsHistoryRulesWasm {
 
     #[wasm_bindgen(setter = "isKeepingTransferHistory")]
     pub fn set_is_keeping_transfer_history(&mut self, is_keeping_transfer_history: bool) {
-        self.0.set_keeps_transfer_history(is_keeping_transfer_history);
+        self.0
+            .set_keeps_transfer_history(is_keeping_transfer_history);
     }
 
     #[wasm_bindgen(setter = "isKeepingFreezingHistory")]
     pub fn set_is_keeping_freezing_history(&mut self, is_keeping_freezing_history: bool) {
-        self.0.set_keeps_freezing_history(is_keeping_freezing_history);
+        self.0
+            .set_keeps_freezing_history(is_keeping_freezing_history);
     }
 
     #[wasm_bindgen(setter = "isKeepingMintingHistory")]
@@ -133,13 +135,19 @@ impl TokenKeepsHistoryRulesWasm {
     }
 
     #[wasm_bindgen(setter = "isKeepingDirectPricingHistory")]
-    pub fn set_is_keeping_direct_pricing_history(&mut self, is_keeping_direct_pricing_history: bool) {
+    pub fn set_is_keeping_direct_pricing_history(
+        &mut self,
+        is_keeping_direct_pricing_history: bool,
+    ) {
         self.0
             .set_keeps_direct_pricing_history(is_keeping_direct_pricing_history);
     }
 
     #[wasm_bindgen(setter = "isKeepingDirectPurchaseHistory")]
-    pub fn set_is_keeping_direct_purchase_history(&mut self, is_keeping_direct_purchase_history: bool) {
+    pub fn set_is_keeping_direct_purchase_history(
+        &mut self,
+        is_keeping_direct_purchase_history: bool,
+    ) {
         self.0
             .set_keeps_direct_purchase_history(is_keeping_direct_purchase_history);
     }

@@ -1,7 +1,7 @@
 use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWasm};
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_type_info;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_wasm_type_info;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
@@ -68,12 +68,13 @@ impl TokenPaymentInfoWasm {
         let js_payment_token_contract_id =
             Reflect::get(&object, &JsValue::from_str("paymentTokenContractId"))
                 .unwrap_or(JsValue::UNDEFINED);
-        let payment_token_contract_id: Option<Identifier> =
-            match js_payment_token_contract_id.is_null() | js_payment_token_contract_id.is_undefined()
-            {
-                true => None,
-                false => Some(IdentifierWasm::try_from(&js_payment_token_contract_id)?.into()),
-            };
+        let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
+            .is_null()
+            | js_payment_token_contract_id.is_undefined()
+        {
+            true => None,
+            false => Some(IdentifierWasm::try_from(&js_payment_token_contract_id)?.into()),
+        };
 
         // Extract gasFeesPaidBy (optional)
         let js_gas_fees_paid_by = Reflect::get(&object, &JsValue::from_str("gasFeesPaidBy"))
@@ -81,7 +82,9 @@ impl TokenPaymentInfoWasm {
         let gas_fees_paid_by =
             match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
                 true => GasFeesPaidBy::default(),
-                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by)?.clone().into(),
+                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by)?
+                    .clone()
+                    .into(),
             };
 
         // Extract simple fields via serde

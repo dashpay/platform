@@ -541,9 +541,7 @@ macro_rules! impl_wasm_conversions {
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
-            pub fn from_object(
-                obj: $object_type,
-            ) -> Result<$wrapper, $crate::error::WasmDppError> {
+            pub fn from_object(obj: $object_type) -> Result<$wrapper, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::from_object(obj.into()).map(Self)
             }
 
@@ -554,9 +552,7 @@ macro_rules! impl_wasm_conversions {
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
-            pub fn from_json(
-                js: $json_type,
-            ) -> Result<$wrapper, $crate::error::WasmDppError> {
+            pub fn from_json(js: $json_type) -> Result<$wrapper, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::from_json(js.into()).map(Self)
             }
         }

@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
@@ -11,8 +12,8 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_TYPES_TS: &'static str = r#"
@@ -183,7 +184,8 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(value: IdentityObjectJs) -> WasmDppResult<IdentityWasm> {
         let platform_value = serialization::js_value_to_platform_value(&value.into())?;
-        let identity = Identity::try_from_platform_versioned(platform_value, PlatformVersion::latest())?;
+        let identity =
+            Identity::try_from_platform_versioned(platform_value, PlatformVersion::latest())?;
         Ok(IdentityWasm(identity))
     }
 
@@ -194,5 +196,6 @@ impl IdentityWasm {
     }
 }
 
-impl_try_from_options!(IdentityWasm, "Identity");
+impl_try_from_js_value!(IdentityWasm, "Identity");
+impl_try_from_options!(IdentityWasm);
 impl_wasm_type_info!(IdentityWasm, Identity);

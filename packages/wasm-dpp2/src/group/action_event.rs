@@ -82,5 +82,10 @@ impl GroupActionEventWasm {
     }
 }
 
-impl_wasm_conversions!(GroupActionEventWasm, GroupActionEvent, GroupActionEventObjectJs, GroupActionEventJSONJs);
+impl_wasm_conversions!(
+    GroupActionEventWasm,
+    GroupActionEvent,
+    GroupActionEventObjectJs,
+    GroupActionEventJSONJs
+);
 impl_wasm_type_info!(GroupActionEventWasm, GroupActionEvent);

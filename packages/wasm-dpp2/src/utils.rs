@@ -177,23 +177,26 @@ pub fn generate_document_id_v0(
 
 /// Macro to implement `try_from_options` helper method for extracting a WASM type from an options object.
 ///
-/// This generates a method that reads a named field from a JsValue options object and converts it
-/// to the WASM wrapper type using `to_wasm`.
+/// This generates methods that read a named field from a JsValue options object and convert it
+/// to the WASM wrapper type using the type's `TryFrom<&JsValue>` implementation.
+///
+/// The type must implement `TryFrom<&JsValue, Error = WasmDppError>`.
 ///
 /// # Usage
 ///
 /// ```ignore
 /// // Basic form: requires field_name parameter
-/// impl_try_from_options!(MyTypeWasm, "MyType");
+/// impl_try_from_options!(MyTypeWasm);
 ///
 /// // With default field name: generates both try_from_options() and try_from_options_with_field()
-/// impl_try_from_options!(MySignerWasm, "MySigner", "signer");
+/// impl_try_from_options!(MySignerWasm, "signer");
 /// ```
 ///
 /// The basic form generates:
 /// ```ignore
 /// impl MyTypeWasm {
 ///     pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+///     pub fn try_from_optional_options(options: &JsValue, field_name: &str) -> WasmDppResult<Option<Self>> { ... }
 /// }
 /// ```
 ///
@@ -202,17 +205,19 @@ pub fn generate_document_id_v0(
 /// impl MySignerWasm {
 ///     pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> { ... }
 ///     pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+///     pub fn try_from_optional_options(options: &JsValue) -> WasmDppResult<Option<Self>> { ... }
+///     pub fn try_from_optional_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Option<Self>> { ... }
 /// }
 /// ```
 #[macro_export]
 macro_rules! impl_try_from_options {
     // Basic form: requires field_name parameter
-    ($wrapper:ty, $type_name:expr) => {
+    ($wrapper:ty) => {
         impl $wrapper {
             /// Try to extract this type from an options object field.
             ///
             /// This helper reads the specified field from an options object and converts it
-            /// to the WASM wrapper type.
+            /// using the type's TryFrom implementation.
             pub fn try_from_options(
                 options: &wasm_bindgen::JsValue,
                 field_name: &str,
@@ -233,14 +238,12 @@ macro_rules! impl_try_from_options {
                     )));
                 }
 
-                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
-                    .map(|boxed| (*boxed).clone())
+                Self::try_from(&value_js).map_err(Into::into)
             }
 
             /// Try to extract this type from an options object field, returning None if not present.
             ///
-            /// This helper reads the specified field from an options object and converts it
-            /// to the WASM wrapper type. Returns Ok(None) if the field is undefined or null.
+            /// Returns Ok(None) if the field is undefined or null.
             pub fn try_from_optional_options(
                 options: &wasm_bindgen::JsValue,
                 field_name: &str,
@@ -253,19 +256,18 @@ macro_rules! impl_try_from_options {
                     return Ok(None);
                 }
 
-                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
-                    .map(|boxed| Some((*boxed).clone()))
+                Self::try_from(&value_js).map(Some).map_err(Into::into)
             }
         }
     };
 
     // Form with default field name: generates try_from_options() with default and try_from_options_with_field()
-    ($wrapper:ty, $type_name:expr, $default_field:expr) => {
+    ($wrapper:ty, $default_field:expr) => {
         impl $wrapper {
             /// Try to extract this type from an options object using the default field name.
             ///
             /// This helper reads the default field from an options object and converts it
-            /// to the WASM wrapper type.
+            /// using the type's TryFrom implementation.
             pub fn try_from_options(
                 options: &wasm_bindgen::JsValue,
             ) -> $crate::error::WasmDppResult<Self> {
@@ -275,7 +277,7 @@ macro_rules! impl_try_from_options {
             /// Try to extract this type from an options object with a custom field name.
             ///
             /// This helper reads the specified field from an options object and converts it
-            /// to the WASM wrapper type.
+            /// using the type's TryFrom implementation.
             pub fn try_from_options_with_field(
                 options: &wasm_bindgen::JsValue,
                 field_name: &str,
@@ -296,7 +298,61 @@ macro_rules! impl_try_from_options {
                     )));
                 }
 
-                $crate::utils::IntoWasm::to_wasm::<$wrapper>(&value_js, $type_name)
+                Self::try_from(&value_js).map_err(Into::into)
+            }
+
+            /// Try to extract this type from an options object using the default field name,
+            /// returning None if not present.
+            ///
+            /// Returns Ok(None) if the field is undefined or null.
+            pub fn try_from_optional_options(
+                options: &wasm_bindgen::JsValue,
+            ) -> $crate::error::WasmDppResult<Option<Self>> {
+                Self::try_from_optional_options_with_field(options, $default_field)
+            }
+
+            /// Try to extract this type from an options object with a custom field name,
+            /// returning None if not present.
+            ///
+            /// Returns Ok(None) if the field is undefined or null.
+            pub fn try_from_optional_options_with_field(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Option<Self>> {
+                let value_js =
+                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
+                        .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
+
+                if value_js.is_undefined() || value_js.is_null() {
+                    return Ok(None);
+                }
+
+                Self::try_from(&value_js).map(Some).map_err(Into::into)
+            }
+        }
+    };
+}
+
+/// Macro to implement `TryFrom<&JsValue>` for WASM wrapper types using `IntoWasm`.
+///
+/// This is for complex types that can only be instantiated from their WASM class objects
+/// (not from strings, numbers, or bytes). The implementation reads the internal `__wbg_ptr`
+/// from the JavaScript object.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl_try_from_js_value!(DocumentWasm, "Document");
+/// impl_try_from_js_value!(DataContractWasm, "DataContract");
+/// ```
+#[macro_export]
+macro_rules! impl_try_from_js_value {
+    ($wrapper:ty, $type_name:expr) => {
+        impl TryFrom<&wasm_bindgen::JsValue> for $wrapper {
+            type Error = $crate::error::WasmDppError;
+
+            fn try_from(value: &wasm_bindgen::JsValue) -> Result<Self, Self::Error> {
+                $crate::utils::IntoWasm::to_wasm::<$wrapper>(value, $type_name)
                     .map(|boxed| (*boxed).clone())
             }
         }

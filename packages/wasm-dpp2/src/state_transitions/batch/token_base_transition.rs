@@ -58,13 +58,12 @@ impl TokenBaseTransitionWasm {
                 .map_err(|_| WasmDppError::invalid_argument("identityContractNonce is required"))?,
         )?;
 
-        let token_contract_position =
-            Reflect::get(&options_obj, &"tokenContractPosition".into())
-                .map_err(|_| WasmDppError::invalid_argument("tokenContractPosition is required"))?
-                .as_f64()
-                .ok_or_else(|| {
-                    WasmDppError::invalid_argument("tokenContractPosition must be a number")
-                })? as u16;
+        let token_contract_position = Reflect::get(&options_obj, &"tokenContractPosition".into())
+            .map_err(|_| WasmDppError::invalid_argument("tokenContractPosition is required"))?
+            .as_f64()
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument("tokenContractPosition must be a number")
+            })? as u16;
 
         let data_contract_id_js = Reflect::get(&options_obj, &"dataContractId".into())
             .map_err(|_| WasmDppError::invalid_argument("dataContractId is required"))?;
@@ -136,7 +135,10 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = dataContractId)]
-    pub fn set_data_contract_id(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(
+        &mut self,
+        data_contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         let id_value: JsValue = data_contract_id.into();
         self.0
             .set_data_contract_id(IdentifierWasm::try_from(&id_value)?.into());
@@ -158,16 +160,15 @@ impl TokenBaseTransitionWasm {
         #[wasm_bindgen(unchecked_param_type = "GroupStateTransitionInfo | undefined")]
         using_group_info: &JsValue,
     ) -> WasmDppResult<()> {
-        let group_info: Option<GroupStateTransitionInfo> =
-            match using_group_info.is_undefined() {
-                false => Some(
-                    using_group_info
-                        .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
-                        .clone()
-                        .into(),
-                ),
-                true => None,
-            };
+        let group_info: Option<GroupStateTransitionInfo> = match using_group_info.is_undefined() {
+            false => Some(
+                using_group_info
+                    .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
+                    .clone()
+                    .into(),
+            ),
+            true => None,
+        };
 
         self.0.set_using_group_info(group_info);
 

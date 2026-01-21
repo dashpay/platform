@@ -2,9 +2,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_type_info;
 use crate::utils::try_to_u64;
-use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
-use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
+use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::prelude::Identifier;
 use js_sys::{BigInt, Map, Object, Reflect};
 use std::collections::BTreeMap;
@@ -174,7 +174,9 @@ fn block_proposers_to_map(map: &BTreeMap<Identifier, u64>) -> BlockProposersMapJ
 #[wasm_bindgen(js_class = FinalizedEpochInfo)]
 impl FinalizedEpochInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(options: FinalizedEpochInfoOptionsJs) -> WasmDppResult<FinalizedEpochInfoWasm> {
+    pub fn constructor(
+        options: FinalizedEpochInfoOptionsJs,
+    ) -> WasmDppResult<FinalizedEpochInfoWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
         let first_block_time = try_to_u64(
@@ -195,8 +197,9 @@ impl FinalizedEpochInfoWasm {
         let first_core_block_height = Reflect::get(&options_obj, &"firstCoreBlockHeight".into())
             .map_err(|_| WasmDppError::invalid_argument("firstCoreBlockHeight is required"))?
             .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("firstCoreBlockHeight must be a number"))?
-            as u32;
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument("firstCoreBlockHeight must be a number")
+            })? as u32;
 
         let next_epoch_start_core_block_height =
             Reflect::get(&options_obj, &"nextEpochStartCoreBlockHeight".into())
@@ -214,17 +217,15 @@ impl FinalizedEpochInfoWasm {
         )?;
 
         let total_distributed_storage_fees = try_to_u64(
-            Reflect::get(&options_obj, &"totalDistributedStorageFees".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("totalDistributedStorageFees is required")
-                })?,
+            Reflect::get(&options_obj, &"totalDistributedStorageFees".into()).map_err(|_| {
+                WasmDppError::invalid_argument("totalDistributedStorageFees is required")
+            })?,
         )?;
 
         let total_created_storage_fees = try_to_u64(
-            Reflect::get(&options_obj, &"totalCreatedStorageFees".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("totalCreatedStorageFees is required")
-                })?,
+            Reflect::get(&options_obj, &"totalCreatedStorageFees".into()).map_err(|_| {
+                WasmDppError::invalid_argument("totalCreatedStorageFees is required")
+            })?,
         )?;
 
         let core_block_rewards = try_to_u64(
@@ -383,7 +384,8 @@ impl FinalizedEpochInfoWasm {
         &mut self,
         block_proposers: BlockProposersMapJs,
     ) -> WasmDppResult<()> {
-        let block_proposers_map = block_proposers_from_map(&Map::from(JsValue::from(block_proposers)))?;
+        let block_proposers_map =
+            block_proposers_from_map(&Map::from(JsValue::from(block_proposers)))?;
         self.v0_mut().block_proposers = block_proposers_map;
         Ok(())
     }
@@ -399,5 +401,10 @@ impl FinalizedEpochInfoWasm {
     }
 }
 
-crate::impl_wasm_conversions!(FinalizedEpochInfoWasm, FinalizedEpochInfo, FinalizedEpochInfoObjectJs, FinalizedEpochInfoJSONJs);
+crate::impl_wasm_conversions!(
+    FinalizedEpochInfoWasm,
+    FinalizedEpochInfo,
+    FinalizedEpochInfoObjectJs,
+    FinalizedEpochInfoJSONJs
+);
 impl_wasm_type_info!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

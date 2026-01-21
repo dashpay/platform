@@ -70,10 +70,17 @@ impl TokenDestroyFrozenFundsTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "frozenIdentityId")]
-    pub fn set_frozen_identity_id(&mut self, frozen_identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
-        self.0.set_frozen_identity_id(frozen_identity_id.try_into()?);
+    pub fn set_frozen_identity_id(
+        &mut self,
+        frozen_identity_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
+        self.0
+            .set_frozen_identity_id(frozen_identity_id.try_into()?);
         Ok(())
     }
 }
 
-impl_wasm_type_info!(TokenDestroyFrozenFundsTransitionWasm, TokenDestroyFrozenFundsTransition);
+impl_wasm_type_info!(
+    TokenDestroyFrozenFundsTransitionWasm,
+    TokenDestroyFrozenFundsTransition
+);

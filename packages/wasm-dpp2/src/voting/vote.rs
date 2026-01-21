@@ -55,7 +55,10 @@ impl From<VoteWasm> for Vote {
 #[wasm_bindgen(js_class = Vote)]
 impl VoteWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(vote_poll: &VotePollWasm, resource_vote_choice: &ResourceVoteChoiceWasm) -> Self {
+    pub fn constructor(
+        vote_poll: &VotePollWasm,
+        resource_vote_choice: &ResourceVoteChoiceWasm,
+    ) -> Self {
         VoteWasm(Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
             vote_poll: vote_poll.clone().into(),
             resource_vote_choice: resource_vote_choice.clone().into(),

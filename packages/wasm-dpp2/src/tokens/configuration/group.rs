@@ -160,7 +160,8 @@ impl GroupWasm {
         member: IdentifierLikeJs,
         member_required_power: GroupRequiredPower,
     ) -> WasmDppResult<()> {
-        self.0.set_member_power(member.try_into()?, member_required_power);
+        self.0
+            .set_member_power(member.try_into()?, member_required_power);
         Ok(())
     }
 

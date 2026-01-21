@@ -4,8 +4,8 @@ use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use js_sys::{BigInt, Object, Reflect};
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const EXTENDED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
@@ -106,8 +106,9 @@ impl ExtendedEpochInfoWasm {
         let first_core_block_height = Reflect::get(&options_obj, &"firstCoreBlockHeight".into())
             .map_err(|_| WasmDppError::invalid_argument("firstCoreBlockHeight is required"))?
             .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("firstCoreBlockHeight must be a number"))?
-            as u32;
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument("firstCoreBlockHeight must be a number")
+            })? as u32;
 
         let fee_multiplier_permille = try_to_u64(
             Reflect::get(&options_obj, &"feeMultiplierPermille".into())
@@ -120,14 +121,16 @@ impl ExtendedEpochInfoWasm {
             .ok_or_else(|| WasmDppError::invalid_argument("protocolVersion must be a number"))?
             as u32;
 
-        Ok(ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
-            index,
-            first_block_time,
-            first_block_height,
-            first_core_block_height,
-            fee_multiplier_permille,
-            protocol_version,
-        })))
+        Ok(ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(
+            ExtendedEpochInfoV0 {
+                index,
+                first_block_time,
+                first_block_height,
+                first_core_block_height,
+                fee_multiplier_permille,
+                protocol_version,
+            },
+        )))
     }
 
     #[wasm_bindgen(getter = "index")]
@@ -196,5 +199,10 @@ impl ExtendedEpochInfoWasm {
     }
 }
 
-impl_wasm_conversions!(ExtendedEpochInfoWasm, ExtendedEpochInfo, ExtendedEpochInfoObjectJs, ExtendedEpochInfoJSONJs);
+impl_wasm_conversions!(
+    ExtendedEpochInfoWasm,
+    ExtendedEpochInfo,
+    ExtendedEpochInfoObjectJs,
+    ExtendedEpochInfoJSONJs
+);
 impl_wasm_type_info!(ExtendedEpochInfoWasm, ExtendedEpochInfo);

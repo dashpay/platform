@@ -1,9 +1,9 @@
 use crate::data_contract::DataContractWasm;
-use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -230,4 +230,7 @@ impl_wasm_conversions!(
     DataContractCreateTransitionObjectJs,
     DataContractCreateTransitionJSONJs
 );
-impl_wasm_type_info!(DataContractCreateTransitionWasm, DataContractCreateTransition);
+impl_wasm_type_info!(
+    DataContractCreateTransitionWasm,
+    DataContractCreateTransition
+);

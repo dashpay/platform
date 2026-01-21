@@ -250,18 +250,13 @@ impl PlatformAddressWasm {
     /// - A Uint8Array (21 bytes: type byte + 20-byte hash)
     /// - An existing PlatformAddress object
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        address: PlatformAddressLikeJs,
-    ) -> WasmDppResult<PlatformAddressWasm> {
+    pub fn constructor(address: PlatformAddressLikeJs) -> WasmDppResult<PlatformAddressWasm> {
         address.try_into()
     }
 
     /// Returns the bech32m-encoded address string for the specified network.
     #[wasm_bindgen(js_name = "toBech32m")]
-    pub fn to_bech32m(
-        &self,
-        network: NetworkLikeJs,
-    ) -> WasmDppResult<String> {
+    pub fn to_bech32m(&self, network: NetworkLikeJs) -> WasmDppResult<String> {
         let net: Network = network.try_into()?;
         Ok(self.0.to_bech32m_string(net))
     }

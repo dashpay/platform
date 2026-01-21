@@ -3,16 +3,16 @@
 //! This module provides WASM bindings for the GroupStateTransitionInfoStatus enum,
 //! which represents group action context for state transitions.
 
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::base::GroupStateTransitionInfoWasm;
-use crate::utils::IntoWasm;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 /// Wrapper for GroupStateTransitionInfoStatus enum.
 ///
@@ -117,41 +117,12 @@ impl GroupStateTransitionInfoStatusWasm {
     }
 }
 
-impl GroupStateTransitionInfoStatusWasm {
-    /// Try to extract a GroupStateTransitionInfoStatus from an options object field.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let field_value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-            .map_err(|_| WasmDppError::invalid_argument(format!("{} is required", field_name)))?;
-
-        if field_value.is_undefined() || field_value.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        // Try to convert using the IntoWasm helper
-        field_value
-            .to_wasm::<GroupStateTransitionInfoStatusWasm>("GroupStateTransitionInfoStatus")
-            .map(|boxed| boxed.clone())
-    }
-
-    /// Try to extract an optional GroupStateTransitionInfoStatus from an options object field.
-    pub fn try_from_optional_options(
-        options: &JsValue,
-        field_name: &str,
-    ) -> WasmDppResult<Option<Self>> {
-        let field_value =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Failed to access {}", field_name))
-            })?;
-
-        if field_value.is_undefined() || field_value.is_null() {
-            return Ok(None);
-        }
-
-        Self::try_from_options(options, field_name).map(Some)
-    }
-}
-
-impl_wasm_type_info!(GroupStateTransitionInfoStatusWasm, GroupStateTransitionInfoStatus);
+impl_try_from_js_value!(
+    GroupStateTransitionInfoStatusWasm,
+    "GroupStateTransitionInfoStatus"
+);
+impl_try_from_options!(GroupStateTransitionInfoStatusWasm);
+impl_wasm_type_info!(
+    GroupStateTransitionInfoStatusWasm,
+    GroupStateTransitionInfoStatus
+);

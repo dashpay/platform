@@ -71,4 +71,7 @@ impl TokenEmergencyActionTransitionWasm {
     }
 }
 
-impl_wasm_type_info!(TokenEmergencyActionTransitionWasm, TokenEmergencyActionTransition);
+impl_wasm_type_info!(
+    TokenEmergencyActionTransitionWasm,
+    TokenEmergencyActionTransition
+);

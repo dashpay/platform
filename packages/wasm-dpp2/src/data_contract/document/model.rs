@@ -1,11 +1,12 @@
 use crate::data_contract::DataContractWasm;
-use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::ToSerdeJSONExt;
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
@@ -384,7 +385,10 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=dataContractId)]
-    pub fn set_data_contract_id_js(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_data_contract_id_js(
+        &mut self,
+        data_contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.data_contract_id = data_contract_id.try_into()?;
         Ok(())
     }
@@ -601,7 +605,8 @@ impl DocumentWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes_internal(data_contract, platform_version.into())?.as_slice(),
+            self.to_bytes_internal(data_contract, platform_version.into())?
+                .as_slice(),
             Hex,
         ))
     }
@@ -613,7 +618,8 @@ impl DocumentWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes_internal(data_contract, platform_version.into())?.as_slice(),
+            self.to_bytes_internal(data_contract, platform_version.into())?
+                .as_slice(),
             Base64,
         ))
     }
@@ -754,5 +760,6 @@ impl DocumentWasm {
     }
 }
 
-impl_try_from_options!(DocumentWasm, "Document");
+impl_try_from_js_value!(DocumentWasm, "Document");
+impl_try_from_options!(DocumentWasm);
 impl_wasm_type_info!(DocumentWasm, Document);

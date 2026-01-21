@@ -145,7 +145,9 @@ impl IdentityPublicKeyInCreationWasm {
 
         // Extract securityLevel (required, complex type)
         let js_security_level = Reflect::get(&object, &JsValue::from_str("securityLevel"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e)))?;
+            .map_err(|e| {
+                WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e))
+            })?;
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
 
         // Extract keyType (required, complex type)
@@ -196,22 +198,50 @@ impl IdentityPublicKeyInCreationWasm {
         // Build options object for IdentityPublicKey constructor
         let options = Object::new();
 
-        Reflect::set(&options, &JsValue::from_str("keyId"), &JsValue::from(self.0.id()))
-            .map_err(|e| WasmDppError::generic(format!("Failed to set keyId: {:?}", e)))?;
-        Reflect::set(&options, &JsValue::from_str("purpose"), &JsValue::from(PurposeWasm::from(self.0.purpose())))
-            .map_err(|e| WasmDppError::generic(format!("Failed to set purpose: {:?}", e)))?;
-        Reflect::set(&options, &JsValue::from_str("securityLevel"), &JsValue::from(SecurityLevelWasm::from(self.0.security_level())))
-            .map_err(|e| WasmDppError::generic(format!("Failed to set securityLevel: {:?}", e)))?;
-        Reflect::set(&options, &JsValue::from_str("keyType"), &JsValue::from(KeyTypeWasm::from(self.0.key_type())))
-            .map_err(|e| WasmDppError::generic(format!("Failed to set keyType: {:?}", e)))?;
-        Reflect::set(&options, &JsValue::from_str("isReadOnly"), &JsValue::from(self.0.read_only()))
-            .map_err(|e| WasmDppError::generic(format!("Failed to set isReadOnly: {:?}", e)))?;
-        Reflect::set(&options, &JsValue::from_str("data"), &JsValue::from(self.0.data().to_string(Hex)))
-            .map_err(|e| WasmDppError::generic(format!("Failed to set data: {:?}", e)))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("keyId"),
+            &JsValue::from(self.0.id()),
+        )
+        .map_err(|e| WasmDppError::generic(format!("Failed to set keyId: {:?}", e)))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("purpose"),
+            &JsValue::from(PurposeWasm::from(self.0.purpose())),
+        )
+        .map_err(|e| WasmDppError::generic(format!("Failed to set purpose: {:?}", e)))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("securityLevel"),
+            &JsValue::from(SecurityLevelWasm::from(self.0.security_level())),
+        )
+        .map_err(|e| WasmDppError::generic(format!("Failed to set securityLevel: {:?}", e)))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("keyType"),
+            &JsValue::from(KeyTypeWasm::from(self.0.key_type())),
+        )
+        .map_err(|e| WasmDppError::generic(format!("Failed to set keyType: {:?}", e)))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("isReadOnly"),
+            &JsValue::from(self.0.read_only()),
+        )
+        .map_err(|e| WasmDppError::generic(format!("Failed to set isReadOnly: {:?}", e)))?;
+        Reflect::set(
+            &options,
+            &JsValue::from_str("data"),
+            &JsValue::from(self.0.data().to_string(Hex)),
+        )
+        .map_err(|e| WasmDppError::generic(format!("Failed to set data: {:?}", e)))?;
 
         if let Some(bounds) = self.get_contract_bounds() {
-            Reflect::set(&options, &JsValue::from_str("contractBounds"), &JsValue::from(bounds))
-                .map_err(|e| WasmDppError::generic(format!("Failed to set contractBounds: {:?}", e)))?;
+            Reflect::set(
+                &options,
+                &JsValue::from_str("contractBounds"),
+                &JsValue::from(bounds),
+            )
+            .map_err(|e| WasmDppError::generic(format!("Failed to set contractBounds: {:?}", e)))?;
         }
 
         use wasm_bindgen::JsCast;
@@ -281,10 +311,7 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = securityLevel)]
-    pub fn set_security_level(
-        &mut self,
-        security_level: SecurityLevelLikeJs,
-    ) -> WasmDppResult<()> {
+    pub fn set_security_level(&mut self, security_level: SecurityLevelLikeJs) -> WasmDppResult<()> {
         let security_level: SecurityLevel = security_level.try_into()?;
         self.0.set_security_level(security_level);
         Ok(())
@@ -333,6 +360,11 @@ impl IdentityPublicKeyInCreationWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation, IdentityPublicKeyInCreationObjectJs, IdentityPublicKeyInCreationJSONJs);
+impl_wasm_conversions!(
+    IdentityPublicKeyInCreationWasm,
+    IdentityPublicKeyInCreation,
+    IdentityPublicKeyInCreationObjectJs,
+    IdentityPublicKeyInCreationJSONJs
+);
 
 impl_wasm_type_info!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);

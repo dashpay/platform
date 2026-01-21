@@ -117,14 +117,16 @@ impl IdentityUpdateTransitionWasm {
             .map(|v| {
                 v.as_f64()
                     .ok_or_else(|| {
-                        WasmDppError::invalid_argument("disablePublicKeys must be an array of numbers")
+                        WasmDppError::invalid_argument(
+                            "disablePublicKeys must be an array of numbers",
+                        )
                     })
                     .map(|n| n as KeyID)
             })
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
-        let user_fee_increase_js = Reflect::get(&options_obj, &"userFeeIncrease".into())
-            .unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase_js =
+            Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {
@@ -340,5 +342,10 @@ impl IdentityUpdateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityUpdateTransitionWasm, IdentityUpdateTransition, IdentityUpdateTransitionObjectJs, IdentityUpdateTransitionJSONJs);
+impl_wasm_conversions!(
+    IdentityUpdateTransitionWasm,
+    IdentityUpdateTransition,
+    IdentityUpdateTransitionObjectJs,
+    IdentityUpdateTransitionJSONJs
+);
 impl_wasm_type_info!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);

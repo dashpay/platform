@@ -114,8 +114,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
             .map_err(|_| WasmDppError::invalid_argument("pooling is required"))?;
         let pooling = PoolingWasm::try_from(pooling_js)?;
 
-        let output_script_js = Reflect::get(&options_obj, &"outputScript".into())
-            .unwrap_or(JsValue::UNDEFINED);
+        let output_script_js =
+            Reflect::get(&options_obj, &"outputScript".into()).unwrap_or(JsValue::UNDEFINED);
         let output_script: Option<CoreScript> = match output_script_js.is_undefined() {
             true => None,
             false => Some(
@@ -133,8 +133,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
             try_to_u64(nonce_js)?
         };
 
-        let user_fee_increase_js = Reflect::get(&options_obj, &"userFeeIncrease".into())
-            .unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase_js =
+            Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {
@@ -363,4 +363,7 @@ impl_wasm_conversions!(
     IdentityCreditWithdrawalTransitionJSONJs
 );
 
-impl_wasm_type_info!(IdentityCreditWithdrawalTransitionWasm, IdentityCreditWithdrawalTransition);
+impl_wasm_type_info!(
+    IdentityCreditWithdrawalTransitionWasm,
+    IdentityCreditWithdrawalTransition
+);

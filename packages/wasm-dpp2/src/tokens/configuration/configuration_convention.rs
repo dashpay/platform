@@ -120,4 +120,7 @@ fn value_to_localizations(
     Ok(localizations)
 }
 
-impl_wasm_type_info!(TokenConfigurationConventionWasm, TokenConfigurationConvention);
+impl_wasm_type_info!(
+    TokenConfigurationConventionWasm,
+    TokenConfigurationConvention
+);

@@ -77,5 +77,10 @@ impl GroupActionWasm {
     }
 }
 
-impl_wasm_conversions!(GroupActionWasm, GroupAction, GroupActionObjectJs, GroupActionJSONJs);
+impl_wasm_conversions!(
+    GroupActionWasm,
+    GroupAction,
+    GroupActionObjectJs,
+    GroupActionJSONJs
+);
 impl_wasm_type_info!(GroupActionWasm, GroupAction);

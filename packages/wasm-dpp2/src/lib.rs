@@ -46,27 +46,28 @@ pub use data_contract::{
 };
 pub use epoch::*;
 pub use group::*;
-pub use identity::{
-    public_key_hash_from_js, IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
-    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, IdentityTopUpTransitionWasm,
-    IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
-    PublicKeyHashLikeJs,
-};
-pub use platform_address::{
-    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressLikeArrayJs, PlatformAddressLikeJs,
-    PlatformAddressOutputWasm, PlatformAddressSignerWasm, PlatformAddressWasm,
-    default_fee_strategy, fee_strategy_from_steps, fee_strategy_from_steps_or_default,
-    outputs_to_btree_map, outputs_to_optional_btree_map, platform_addresses_from_js_array,
-};
-pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
-pub use tokens::*;
-pub use voting::{
-    ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
-    ResourceVoteChoiceWasm, ResourceVoteWasm, VotePollWasm, VoteWasm,
-};
 pub use identifier::{
     IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierLikeOrUndefinedJs, IdentifierWasm,
     identifiers_from_js_array,
 };
+pub use identity::{
+    IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
+    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, IdentityTopUpTransitionWasm,
+    IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
+    PublicKeyHashLikeJs, public_key_hash_from_js,
+};
+pub use platform_address::{
+    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressLikeArrayJs,
+    PlatformAddressLikeJs, PlatformAddressOutputWasm, PlatformAddressSignerWasm,
+    PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
+    platform_addresses_from_js_array,
+};
+pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
+pub use tokens::*;
 pub use version::{PlatformVersionLikeJs, PlatformVersionWasm};
+pub use voting::{
+    ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
+    ResourceVoteChoiceWasm, ResourceVoteWasm, VotePollWasm, VoteWasm,
+};

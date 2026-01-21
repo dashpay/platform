@@ -147,5 +147,10 @@ impl ContractBoundsWasm {
     }
 }
 
-impl_wasm_conversions!(ContractBoundsWasm, ContractBounds, ContractBoundsObjectJs, ContractBoundsJSONJs);
+impl_wasm_conversions!(
+    ContractBoundsWasm,
+    ContractBounds,
+    ContractBoundsObjectJs,
+    ContractBoundsJSONJs
+);
 impl_wasm_type_info!(ContractBoundsWasm, ContractBounds);

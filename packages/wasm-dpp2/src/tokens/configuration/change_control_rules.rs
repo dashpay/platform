@@ -1,7 +1,7 @@
 use crate::enums::token::action_goal::ActionGoalWasm;
-use crate::impl_wasm_type_info;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierLikeJs;
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::action_taker::ActionTakerWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::group::GroupWasm;
@@ -69,14 +69,18 @@ impl ChangeControlRulesWasm {
         let object = Object::from(options.clone());
 
         // Extract AuthorizedActionTakers objects which need special handling
-        let authorized_to_make_change = Reflect::get(&object, &JsValue::from_str("authorizedToMakeChange"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing authorizedToMakeChange: {:?}", e)))?;
+        let authorized_to_make_change =
+            Reflect::get(&object, &JsValue::from_str("authorizedToMakeChange")).map_err(|e| {
+                WasmDppError::invalid_argument(format!("Missing authorizedToMakeChange: {:?}", e))
+            })?;
         let authorized_to_make_change = authorized_to_make_change
             .to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")?
             .clone();
 
         let admin_action_takers = Reflect::get(&object, &JsValue::from_str("adminActionTakers"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing adminActionTakers: {:?}", e)))?;
+            .map_err(|e| {
+                WasmDppError::invalid_argument(format!("Missing adminActionTakers: {:?}", e))
+            })?;
         let admin_action_takers = admin_action_takers
             .to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")?
             .clone();
@@ -85,13 +89,18 @@ impl ChangeControlRulesWasm {
         let opts: ChangeControlRulesOptions = serde_wasm_bindgen::from_value(options)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        Ok(ChangeControlRulesWasm(ChangeControlRules::V0(ChangeControlRulesV0 {
-            authorized_to_make_change: authorized_to_make_change.into(),
-            admin_action_takers: admin_action_takers.into(),
-            changing_authorized_action_takers_to_no_one_allowed: opts.is_changing_authorized_action_takers_to_no_one_allowed,
-            changing_admin_action_takers_to_no_one_allowed: opts.is_changing_admin_action_takers_to_no_one_allowed,
-            self_changing_admin_action_takers_allowed: opts.is_self_changing_admin_action_takers_allowed,
-        })))
+        Ok(ChangeControlRulesWasm(ChangeControlRules::V0(
+            ChangeControlRulesV0 {
+                authorized_to_make_change: authorized_to_make_change.into(),
+                admin_action_takers: admin_action_takers.into(),
+                changing_authorized_action_takers_to_no_one_allowed: opts
+                    .is_changing_authorized_action_takers_to_no_one_allowed,
+                changing_admin_action_takers_to_no_one_allowed: opts
+                    .is_changing_admin_action_takers_to_no_one_allowed,
+                self_changing_admin_action_takers_allowed: opts
+                    .is_self_changing_admin_action_takers_allowed,
+            },
+        )))
     }
 
     #[wasm_bindgen(getter = "authorizedToMakeChange")]

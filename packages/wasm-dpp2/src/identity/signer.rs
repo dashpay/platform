@@ -179,7 +179,7 @@ impl IdentitySignerWasm {
     }
 }
 
-impl_try_from_options!(IdentitySignerWasm, "IdentitySigner", "signer");
+impl_try_from_options!(IdentitySignerWasm, "signer");
 impl_wasm_type_info!(IdentitySignerWasm, IdentitySigner);
 
 impl TryFrom<&JsValue> for IdentitySignerWasm {

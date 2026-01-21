@@ -58,9 +58,8 @@ impl TokenDistributionRulesWasm {
     ) -> WasmDppResult<TokenDistributionRulesWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let js_perpetual_distribution =
-            Reflect::get(&options_obj, &"perpetualDistribution".into())
-                .unwrap_or(JsValue::UNDEFINED);
+        let js_perpetual_distribution = Reflect::get(&options_obj, &"perpetualDistribution".into())
+            .unwrap_or(JsValue::UNDEFINED);
         let perpetual_distribution = if js_perpetual_distribution.is_undefined() {
             None
         } else {
@@ -236,10 +235,7 @@ impl TokenDistributionRulesWasm {
     }
 
     #[wasm_bindgen(setter = "preProgrammedDistribution")]
-    pub fn set_pre_programmed_distribution(
-        &mut self,
-        distribution: &JsValue,
-    ) -> WasmDppResult<()> {
+    pub fn set_pre_programmed_distribution(&mut self, distribution: &JsValue) -> WasmDppResult<()> {
         let distribution = match distribution.is_undefined() {
             true => None,
             false => Some(
@@ -273,8 +269,12 @@ impl TokenDistributionRulesWasm {
     }
 
     #[wasm_bindgen(setter = "isMintingAllowingChoosingDestination")]
-    pub fn set_is_minting_allowing_choosing_destination(&mut self, is_minting_allowing_choosing_destination: bool) {
-        self.0.set_minting_allow_choosing_destination(is_minting_allowing_choosing_destination);
+    pub fn set_is_minting_allowing_choosing_destination(
+        &mut self,
+        is_minting_allowing_choosing_destination: bool,
+    ) {
+        self.0
+            .set_minting_allow_choosing_destination(is_minting_allowing_choosing_destination);
     }
 
     #[wasm_bindgen(setter = "mintingAllowChoosingDestinationRules")]

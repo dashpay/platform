@@ -72,4 +72,7 @@ impl TokenDirectPurchaseTransitionWasm {
     }
 }
 
-impl_wasm_type_info!(TokenDirectPurchaseTransitionWasm, TokenDirectPurchaseTransition);
+impl_wasm_type_info!(
+    TokenDirectPurchaseTransitionWasm,
+    TokenDirectPurchaseTransition
+);

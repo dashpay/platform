@@ -46,7 +46,9 @@ impl From<BatchedTransitionWasm> for BatchedTransition {
 #[wasm_bindgen(js_class = BatchedTransition)]
 impl BatchedTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(transition: BatchedTransitionLikeJs) -> WasmDppResult<BatchedTransitionWasm> {
+    pub fn constructor(
+        transition: BatchedTransitionLikeJs,
+    ) -> WasmDppResult<BatchedTransitionWasm> {
         let js_transition: JsValue = transition.into();
         if js_transition.is_undefined() || !js_transition.is_object() {
             return Err(WasmDppError::invalid_argument("transition is undefined"));

@@ -58,17 +58,19 @@ impl TryFrom<ProTxHashLikeNullableJs> for Option<ProTxHash> {
             return Ok(None);
         }
         // Check for empty string
-        if let Some(s) = js_value.as_string() {
-            if s.is_empty() {
-                return Ok(None);
-            }
+        if let Some(s) = js_value.as_string()
+            && s.is_empty()
+        {
+            return Ok(None);
         }
         ProTxHashWasm::try_from(js_value).map(|w| Some(ProTxHash::from(w)))
     }
 }
 
 /// Helper function to convert a JavaScript array of ProTxHashLike values to Vec<ProTxHash>
-pub fn pro_tx_hashes_from_js_array(array: ProTxHashLikeArrayJs) -> Result<Vec<ProTxHash>, WasmDppError> {
+pub fn pro_tx_hashes_from_js_array(
+    array: ProTxHashLikeArrayJs,
+) -> Result<Vec<ProTxHash>, WasmDppError> {
     let js_value: JsValue = array.into();
     let js_array = js_sys::Array::from(&js_value);
     js_array
@@ -76,7 +78,9 @@ pub fn pro_tx_hashes_from_js_array(array: ProTxHashLikeArrayJs) -> Result<Vec<Pr
         .map(|v| {
             ProTxHashWasm::try_from(v)
                 .map(ProTxHash::from)
-                .map_err(|err| WasmDppError::invalid_argument(format!("Invalid ProTxHash: {}", err)))
+                .map_err(|err| {
+                    WasmDppError::invalid_argument(format!("Invalid ProTxHash: {}", err))
+                })
         })
         .collect()
 }

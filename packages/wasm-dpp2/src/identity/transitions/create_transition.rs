@@ -1,5 +1,4 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
-use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
@@ -7,6 +6,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::IntoWasm;
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -263,5 +263,10 @@ impl IdentityCreateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityCreateTransitionWasm, IdentityCreateTransition, IdentityCreateTransitionObjectJs, IdentityCreateTransitionJSONJs);
+impl_wasm_conversions!(
+    IdentityCreateTransitionWasm,
+    IdentityCreateTransition,
+    IdentityCreateTransitionObjectJs,
+    IdentityCreateTransitionJSONJs
+);
 impl_wasm_type_info!(IdentityCreateTransitionWasm, IdentityCreateTransition);

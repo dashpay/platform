@@ -1,6 +1,6 @@
 use crate::error::WasmDppResult;
-use crate::impl_wasm_type_info;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_wasm_type_info;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -29,7 +29,9 @@ impl TokenDistributionRecipientWasm {
     }
 
     #[wasm_bindgen(js_name = "Identity")]
-    pub fn identity(identity_id: IdentifierLikeJs) -> WasmDppResult<TokenDistributionRecipientWasm> {
+    pub fn identity(
+        identity_id: IdentifierLikeJs,
+    ) -> WasmDppResult<TokenDistributionRecipientWasm> {
         Ok(TokenDistributionRecipientWasm(
             TokenDistributionRecipient::Identity(identity_id.try_into()?),
         ))

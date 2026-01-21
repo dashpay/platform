@@ -3,9 +3,9 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_type_info;
 use crate::utils::try_to_u64;
 use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::prelude::{Identifier, TimestampMillis};
 use js_sys::{BigInt, Map, Reflect};
 use std::collections::BTreeMap;
@@ -81,8 +81,8 @@ fn distribution_amounts_from_map(
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid identifier: {}", e)))?
             .into();
 
-        let token_amount = try_to_u64(value)
-            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        let token_amount =
+            try_to_u64(value).map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         amounts.insert(identifier, token_amount);
     }
@@ -137,7 +137,9 @@ pub fn distributions_from_map(
     Ok(distributions)
 }
 
-fn distribution_amounts_to_map(amounts: &BTreeMap<Identifier, TokenAmount>) -> DistributionAmountsMapJs {
+fn distribution_amounts_to_map(
+    amounts: &BTreeMap<Identifier, TokenAmount>,
+) -> DistributionAmountsMapJs {
     let js_map = Map::new();
 
     for (identifier, amount) in amounts {
@@ -167,8 +169,7 @@ impl TokenPreProgrammedDistributionWasm {
     pub fn constructor(
         distributions: PreProgrammedDistributionsMapJs,
     ) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
-        let distributions_map =
-            distributions_from_map(&Map::from(JsValue::from(distributions)))?;
+        let distributions_map = distributions_from_map(&Map::from(JsValue::from(distributions)))?;
 
         Ok(TokenPreProgrammedDistributionWasm(
             TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 {
@@ -187,8 +188,7 @@ impl TokenPreProgrammedDistributionWasm {
         &mut self,
         distributions: PreProgrammedDistributionsMapJs,
     ) -> WasmDppResult<()> {
-        let distributions_map =
-            distributions_from_map(&Map::from(JsValue::from(distributions)))?;
+        let distributions_map = distributions_from_map(&Map::from(JsValue::from(distributions)))?;
 
         self.0.set_distributions(distributions_map);
 
@@ -196,4 +196,7 @@ impl TokenPreProgrammedDistributionWasm {
     }
 }
 
-impl_wasm_type_info!(TokenPreProgrammedDistributionWasm, TokenPreProgrammedDistribution);
+impl_wasm_type_info!(
+    TokenPreProgrammedDistributionWasm,
+    TokenPreProgrammedDistribution
+);

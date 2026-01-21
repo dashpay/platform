@@ -4,7 +4,7 @@ use crate::enums::keys::key_type::{KeyTypeLikeJs, KeyTypeWasm};
 use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
 use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
-use hex;
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
@@ -25,6 +25,7 @@ use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::version::PlatformVersion;
+use hex;
 use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -157,7 +158,9 @@ impl IdentityPublicKeyWasm {
 
         // Extract securityLevel (required, complex type)
         let js_security_level = Reflect::get(&object, &JsValue::from_str("securityLevel"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e)))?;
+            .map_err(|e| {
+                WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e))
+            })?;
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
 
         // Extract keyType (required, complex type)
@@ -227,7 +230,9 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(getter = "contractBounds")]
     pub fn contract_bounds(&self) -> Option<ContractBoundsWasm> {
-        self.0.contract_bounds().map(|b| ContractBoundsWasm::from(b.clone()))
+        self.0
+            .contract_bounds()
+            .map(|b| ContractBoundsWasm::from(b.clone()))
     }
 
     #[wasm_bindgen(getter = keyId)]
@@ -293,10 +298,7 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = securityLevel)]
-    pub fn set_security_level(
-        &mut self,
-        security_level: SecurityLevelLikeJs,
-    ) -> WasmDppResult<()> {
+    pub fn set_security_level(&mut self, security_level: SecurityLevelLikeJs) -> WasmDppResult<()> {
         let security_level: SecurityLevel = security_level.try_into()?;
         self.0.set_security_level(security_level);
         Ok(())
@@ -441,5 +443,6 @@ impl IdentityPublicKeyWasm {
     }
 }
 
-impl_try_from_options!(IdentityPublicKeyWasm, "IdentityPublicKey");
+impl_try_from_js_value!(IdentityPublicKeyWasm, "IdentityPublicKey");
+impl_try_from_options!(IdentityPublicKeyWasm);
 impl_wasm_type_info!(IdentityPublicKeyWasm, IdentityPublicKey);

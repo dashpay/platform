@@ -152,7 +152,10 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, data_contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(
+        &mut self,
+        data_contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_data_contract_id(data_contract_id.try_into()?);
         Ok(())
     }

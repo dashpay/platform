@@ -66,8 +66,7 @@ impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(setter = "data")]
     pub fn set_data(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")]
-        data: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")] data: JsValue,
     ) -> WasmDppResult<()> {
         let data = data.with_serde_to_platform_value_map()?;
 

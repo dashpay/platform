@@ -111,7 +111,10 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
-    pub fn set_identity_identifier(&mut self, identity_identifier: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_identity_identifier(
+        &mut self,
+        identity_identifier: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_identity_id(identity_identifier.try_into()?);
         Ok(())
     }
@@ -199,5 +202,10 @@ impl IdentityTopUpTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityTopUpTransitionWasm, IdentityTopUpTransition, IdentityTopUpTransitionObjectJs, IdentityTopUpTransitionJSONJs);
+impl_wasm_conversions!(
+    IdentityTopUpTransitionWasm,
+    IdentityTopUpTransition,
+    IdentityTopUpTransitionObjectJs,
+    IdentityTopUpTransitionJSONJs
+);
 impl_wasm_type_info!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);

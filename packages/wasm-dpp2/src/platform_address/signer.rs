@@ -65,10 +65,7 @@ impl PlatformAddressSignerWasm {
 
     /// Returns true if this signer has a key for the given address.
     #[wasm_bindgen(js_name = "hasKey")]
-    pub fn has_key(
-        &self,
-        address: PlatformAddressLikeJs,
-    ) -> WasmDppResult<bool> {
+    pub fn has_key(&self, address: PlatformAddressLikeJs) -> WasmDppResult<bool> {
         let platform_address: PlatformAddressWasm = address.try_into()?;
         Ok(self.private_keys.contains_key(&platform_address))
     }
@@ -143,7 +140,7 @@ impl PlatformAddressSignerWasm {
     }
 }
 
-impl_try_from_options!(PlatformAddressSignerWasm, "PlatformAddressSigner", "signer");
+impl_try_from_options!(PlatformAddressSignerWasm, "signer");
 
 impl TryFrom<&JsValue> for PlatformAddressSignerWasm {
     type Error = WasmDppError;

@@ -1,6 +1,6 @@
 use crate::error::WasmDppResult;
-use crate::impl_wasm_type_info;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_wasm_type_info;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::platform_value::string_encoding::encode;

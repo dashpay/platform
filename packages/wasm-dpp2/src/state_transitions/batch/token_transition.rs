@@ -226,7 +226,10 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getHistoricalDocumentId")]
-    pub fn get_historical_document_id(&self, owner: IdentifierLikeJs) -> WasmDppResult<IdentifierWasm> {
+    pub fn get_historical_document_id(
+        &self,
+        owner: IdentifierLikeJs,
+    ) -> WasmDppResult<IdentifierWasm> {
         let owner_value: JsValue = owner.into();
         let owner = IdentifierWasm::try_from(&owner_value)?.into();
         Ok(self.0.historical_document_id(owner).into())

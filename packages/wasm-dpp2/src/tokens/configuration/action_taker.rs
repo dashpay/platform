@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_type_info;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_type_info;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
 use js_sys::Array;
@@ -33,8 +33,7 @@ impl From<ActionTakerWasm> for ActionTaker {
 impl ActionTakerWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "ActionTakerValue")]
-        value: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ActionTakerValue")] value: &JsValue,
     ) -> WasmDppResult<ActionTakerWasm> {
         if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
             return Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
@@ -92,8 +91,7 @@ impl ActionTakerWasm {
     #[wasm_bindgen(setter = "value")]
     pub fn set_value(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "ActionTakerValue")]
-        value: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ActionTakerValue")] value: &JsValue,
     ) -> WasmDppResult<()> {
         self.0 = Self::constructor(value)?.0;
 

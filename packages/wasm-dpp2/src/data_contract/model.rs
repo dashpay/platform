@@ -1,12 +1,13 @@
-use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{IntoWasm, JsValueExt};
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -187,16 +188,17 @@ impl DataContractWasm {
         let schema: Value = serialization::platform_value_from_object(js_schema)?;
 
         // Extract definitions (optional)
-        let js_definitions = Reflect::get(&object, &JsValue::from_str("definitions"))
-            .unwrap_or(JsValue::UNDEFINED);
-        let definitions: Option<Value> = match js_definitions.is_undefined() | js_definitions.is_null() {
-            true => None,
-            false => Some(serialization::platform_value_from_object(js_definitions)?),
-        };
+        let js_definitions =
+            Reflect::get(&object, &JsValue::from_str("definitions")).unwrap_or(JsValue::UNDEFINED);
+        let definitions: Option<Value> =
+            match js_definitions.is_undefined() | js_definitions.is_null() {
+                true => None,
+                false => Some(serialization::platform_value_from_object(js_definitions)?),
+            };
 
         // Extract tokens (optional)
-        let js_tokens = Reflect::get(&object, &JsValue::from_str("tokens"))
-            .unwrap_or(JsValue::UNDEFINED);
+        let js_tokens =
+            Reflect::get(&object, &JsValue::from_str("tokens")).unwrap_or(JsValue::UNDEFINED);
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
             match js_tokens.is_undefined() | js_tokens.is_null() {
                 true => BTreeMap::new(),
@@ -360,26 +362,20 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(
-        &self,
-        platform_version: PlatformVersionLikeJs,
-    ) -> WasmDppResult<Vec<u8>> {
+    pub fn to_bytes(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<Vec<u8>> {
         self.to_bytes_internal(platform_version.into())
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(
-        &self,
-        platform_version: PlatformVersionLikeJs,
-    ) -> WasmDppResult<String> {
-        Ok(encode(self.to_bytes_internal(platform_version.into())?.as_slice(), Hex))
+    pub fn to_hex(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<String> {
+        Ok(encode(
+            self.to_bytes_internal(platform_version.into())?.as_slice(),
+            Hex,
+        ))
     }
 
     #[wasm_bindgen(js_name = "toBase64")]
-    pub fn to_base64(
-        &self,
-        platform_version: PlatformVersionLikeJs,
-    ) -> WasmDppResult<String> {
+    pub fn to_base64(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<String> {
         Ok(encode(
             self.to_bytes_internal(platform_version.into())?.as_slice(),
             Base64,
@@ -551,7 +547,8 @@ impl DataContractWasm {
     #[wasm_bindgen(setter = "tokens")]
     pub fn set_tokens(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Record<number, TokenConfiguration>")] tokens: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Record<number, TokenConfiguration>")]
+        tokens: &JsValue,
     ) -> WasmDppResult<()> {
         self.0
             .set_tokens(tokens_configuration_from_js_value(tokens)?);
@@ -665,5 +662,6 @@ impl DataContractWasm {
     }
 }
 
-impl_try_from_options!(DataContractWasm, "DataContract");
+impl_try_from_js_value!(DataContractWasm, "DataContract");
+impl_try_from_options!(DataContractWasm);
 impl_wasm_type_info!(DataContractWasm, DataContract);

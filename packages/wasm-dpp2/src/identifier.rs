@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
@@ -330,28 +331,9 @@ impl IdentifierWasm {
     pub fn to_slice(&self) -> [u8; 32] {
         *self.0.as_bytes()
     }
-
-    /// Try to extract an Identifier from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to an IdentifierWasm. Accepts Identifier, Uint8Array, or string (Base58/hex).
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let id_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if id_js.is_undefined() || id_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        IdentifierWasm::try_from(&id_js)
-    }
 }
 
+impl_try_from_options!(IdentifierWasm);
 impl_wasm_type_info!(IdentifierWasm, Identifier);
 
 /// Convert a JavaScript array of identifier-like values to a Vec of Identifiers.
@@ -365,7 +347,9 @@ pub fn identifiers_from_js_array(array: IdentifierLikeArrayJs) -> WasmDppResult<
         .map(|v| {
             IdentifierWasm::try_from(v)
                 .map(Identifier::from)
-                .map_err(|err| WasmDppError::invalid_argument(format!("Invalid identifier: {}", err)))
+                .map_err(|err| {
+                    WasmDppError::invalid_argument(format!("Invalid identifier: {}", err))
+                })
         })
         .collect()
 }

@@ -219,4 +219,7 @@ impl TokenConfigurationChangeItemWasm {
     }
 }
 
-impl_wasm_type_info!(TokenConfigurationChangeItemWasm, TokenConfigurationChangeItem);
+impl_wasm_type_info!(
+    TokenConfigurationChangeItemWasm,
+    TokenConfigurationChangeItem
+);

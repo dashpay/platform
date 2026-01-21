@@ -1,4 +1,5 @@
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppError;
+use crate::impl_try_from_options;
 use dpp::dashcore::Network;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -133,46 +134,9 @@ impl From<Network> for NetworkWasm {
     }
 }
 
+impl_try_from_options!(NetworkWasm);
+
 impl NetworkWasm {
-    /// Try to extract a Network from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a NetworkWasm. Accepts Network enum or string names.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let network_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if network_js.is_undefined() || network_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        NetworkWasm::try_from(&network_js)
-    }
-
-    /// Try to extract an optional Network from an options object field.
-    ///
-    /// Returns None if the field is undefined or null, otherwise attempts conversion.
-    pub fn try_from_options_optional(
-        options: &JsValue,
-        field_name: &str,
-    ) -> WasmDppResult<Option<Self>> {
-        let network_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Failed to get '{}'", field_name))
-            })?;
-
-        if network_js.is_undefined() || network_js.is_null() {
-            return Ok(None);
-        }
-
-        NetworkWasm::try_from(&network_js).map(Some)
-    }
-
     /// Get the network name as a lowercase string (for compatibility with existing code)
     pub fn as_str(&self) -> &'static str {
         match self {
