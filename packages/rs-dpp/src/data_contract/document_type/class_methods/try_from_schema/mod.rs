@@ -416,4 +416,61 @@ mod tests {
             "unexpected error: {message}"
         );
     }
+
+    #[test]
+    fn should_parse_refers_to_with_must_exist_false() {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identity",
+                        "mustExist": false
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("should parse");
+
+        let reference = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toUserId")
+            .and_then(|p| p.reference.clone())
+            .expect("reference should be present");
+
+        assert!(matches!(
+            reference.target,
+            DocumentPropertyReferenceTarget::Identity
+        ));
+        assert!(!reference.must_exist);
+    }
 }

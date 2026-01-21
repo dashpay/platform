@@ -1093,5 +1093,185 @@ mod tests {
                 )] if e.operation() == "replace" && e.property_path() == "/properties/test/type"
             );
         }
+
+        #[test]
+        fn should_return_invalid_result_when_refers_to_is_added() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema.clone(),
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "identity"
+                        }
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "add"
+                    && e.property_path() == "/properties/toUserId/refersTo"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_refers_to_is_modified() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "identity"
+                        }
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema.clone(),
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                        "refersTo": {
+                            "type": "identity",
+                            "mustExist": false
+                        }
+                    }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.operation() == "add"
+                    && e.property_path() == "/properties/toUserId/refersTo/mustExist"
+            );
+        }
     }
 }

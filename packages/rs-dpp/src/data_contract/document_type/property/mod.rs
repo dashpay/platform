@@ -2389,6 +2389,35 @@ impl DocumentPropertyType {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn should_serialize_reference_metadata() {
+        let property = DocumentProperty {
+            property_type: DocumentPropertyType::Identifier,
+            required: false,
+            transient: false,
+            reference: Some(DocumentPropertyReference {
+                target: DocumentPropertyReferenceTarget::Identity,
+                must_exist: false,
+            }),
+        };
+
+        let value = serde_json::to_value(&property).expect("serialization should succeed");
+
+        assert_eq!(
+            value.get("reference"),
+            Some(&json!({
+                "target": "identity",
+                "must_exist": false
+            }))
+        );
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DocumentPropertyTypeParsingOptions {
     pub sized_integer_types: bool,

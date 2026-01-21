@@ -140,3 +140,66 @@ lazy_static! {
         .expect("Invalid data contract schema");
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn should_accept_refers_to_in_document_schema() {
+        let schema = json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json",
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "identity",
+                        "mustExist": false
+                    }
+                }
+            },
+            "additionalProperties": false
+        });
+
+        assert!(
+            DOCUMENT_META_SCHEMA_V0.validate(&schema).is_ok(),
+            "expected schema to be valid"
+        );
+    }
+
+    #[test]
+    fn should_reject_refers_to_with_unknown_type() {
+        let schema = json!({
+            "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json",
+            "type": "object",
+            "properties": {
+                "toUserId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "unknown"
+                    }
+                }
+            },
+            "additionalProperties": false
+        });
+
+        let errors: Vec<_> = DOCUMENT_META_SCHEMA_V0
+            .validate(&schema)
+            .unwrap_err()
+            .collect();
+
+        assert!(!errors.is_empty(), "expected schema to be invalid");
+    }
+}
