@@ -14,27 +14,27 @@ before(async () => {
 describe('PublicKey', () => {
   describe('serialization / deserialization', () => {
     it('should generate public key from values with type ECDSA_SECP256K1', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       expect(pubKey.__wbg_ptr).to.not.equal(0);
     });
 
     it('should generate public key from values with type ECDSA_SECP256K1 and generate new from self bytes', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       const bytes = pubKey.toBytes();
 
@@ -47,7 +47,7 @@ describe('PublicKey', () => {
       expect(pubKey.purpose).to.equal(newPubKey.purpose);
       expect(pubKey.securityLevel).to.equal(newPubKey.securityLevel);
       expect(pubKey.keyType).to.equal(newPubKey.keyType);
-      expect(pubKey.readOnly).to.equal(newPubKey.readOnly);
+      expect(pubKey.isReadOnly).to.equal(newPubKey.isReadOnly);
       expect(pubKey.data).to.equal(newPubKey.data);
 
       expect(pubKey.toBytes()).to.deep.equal(newPubKey.toBytes());
@@ -57,14 +57,14 @@ describe('PublicKey', () => {
     });
 
     it('should return hash of key', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       const hash = pubKey.getPublicKeyHash();
 
@@ -73,32 +73,32 @@ describe('PublicKey', () => {
   });
   describe('getters', () => {
     it('should generate public key from values with type ECDSA_SECP256K1 and return all fields', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       expect(pubKey.keyId).to.equal(keyId);
       expect(pubKey.purpose).to.equal('AUTHENTICATION');
       expect(pubKey.securityLevel).to.equal('CRITICAL');
       expect(pubKey.keyType).to.equal('ECDSA_SECP256K1');
-      expect(pubKey.readOnly).to.equal(false);
+      expect(pubKey.isReadOnly).to.equal(false);
       expect(pubKey.data).to.equal(binaryData);
     });
 
     it('should allow to validate private key', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       const privateKey = wasm.PrivateKey.fromWIF(wif);
 
@@ -108,27 +108,27 @@ describe('PublicKey', () => {
 
   describe('setters', () => {
     it('should generate public key from values with type ECDSA_SECP256K1 and return all fields and set another fields', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       pubKey.keyId = keyIdSet;
       pubKey.purpose = purposeSet;
       pubKey.securityLevel = securityLevelSet;
       pubKey.keyType = keyTypeSet;
-      pubKey.readOnly = true;
+      pubKey.isReadOnly = true;
       pubKey.data = binaryDataSet;
 
       expect(pubKey.keyId).to.equal(keyIdSet);
       expect(pubKey.purpose).to.equal('ENCRYPTION');
       expect(pubKey.securityLevel).to.equal('HIGH');
       expect(pubKey.keyType).to.equal('ECDSA_HASH160');
-      expect(pubKey.readOnly).to.equal(true);
+      expect(pubKey.isReadOnly).to.equal(true);
       expect(pubKey.data).to.equal(binaryDataSet);
     });
   });

@@ -14,22 +14,22 @@ describe('ResourceVoteChoice', () => {
       const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
       const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
 
-      expect(choice.getType()).to.equal('TowardsIdentity');
-      expect(choice.getValue()).to.not.be.undefined;
+      expect(choice.voteType).to.equal('TowardsIdentity');
+      expect(choice.value).to.not.be.undefined;
     });
 
     it('should create Abstain choice', () => {
       const choice = wasm.ResourceVoteChoice.Abstain();
 
-      expect(choice.getType()).to.equal('Abstain');
-      expect(choice.getValue()).to.be.undefined;
+      expect(choice.voteType).to.equal('Abstain');
+      expect(choice.value).to.be.undefined;
     });
 
     it('should create Lock choice', () => {
       const choice = wasm.ResourceVoteChoice.Lock();
 
-      expect(choice.getType()).to.equal('Lock');
-      expect(choice.getValue()).to.be.undefined;
+      expect(choice.voteType).to.equal('Lock');
+      expect(choice.value).to.be.undefined;
     });
   });
 
@@ -50,7 +50,7 @@ describe('ResourceVoteChoice', () => {
       expect(json).to.be.an('object');
 
       const restored = wasm.ResourceVoteChoice.fromJSON(json);
-      expect(restored.getType()).to.equal(choice.getType());
+      expect(restored.voteType).to.equal(choice.voteType);
     });
 
     it('should round-trip Abstain via toJSON/fromJSON', () => {
@@ -61,7 +61,7 @@ describe('ResourceVoteChoice', () => {
       expect(json).to.equal('abstain');
 
       const restored = wasm.ResourceVoteChoice.fromJSON(json);
-      expect(restored.getType()).to.equal('Abstain');
+      expect(restored.voteType).to.equal('Abstain');
     });
 
     it('should round-trip Lock via toJSON/fromJSON', () => {
@@ -72,7 +72,7 @@ describe('ResourceVoteChoice', () => {
       expect(json).to.equal('lock');
 
       const restored = wasm.ResourceVoteChoice.fromJSON(json);
-      expect(restored.getType()).to.equal('Lock');
+      expect(restored.voteType).to.equal('Lock');
     });
 
     it('should round-trip TowardsIdentity via toObject/fromObject', () => {
@@ -85,8 +85,8 @@ describe('ResourceVoteChoice', () => {
       expect(obj.towardsIdentity).to.not.be.undefined;
 
       const restored = wasm.ResourceVoteChoice.fromObject(obj);
-      expect(restored.getType()).to.equal(choice.getType());
-      expect(restored.getValue().toBase58()).to.equal(identityId.toBase58());
+      expect(restored.voteType).to.equal(choice.voteType);
+      expect(restored.value.toBase58()).to.equal(identityId.toBase58());
     });
 
     it('should round-trip Abstain via toObject/fromObject', () => {
@@ -97,7 +97,7 @@ describe('ResourceVoteChoice', () => {
       expect(obj).to.equal('abstain');
 
       const restored = wasm.ResourceVoteChoice.fromObject(obj);
-      expect(restored.getType()).to.equal('Abstain');
+      expect(restored.voteType).to.equal('Abstain');
     });
 
     it('should round-trip Lock via toObject/fromObject', () => {
@@ -108,7 +108,7 @@ describe('ResourceVoteChoice', () => {
       expect(obj).to.equal('lock');
 
       const restored = wasm.ResourceVoteChoice.fromObject(obj);
-      expect(restored.getType()).to.equal('Lock');
+      expect(restored.voteType).to.equal('Lock');
     });
   });
 });

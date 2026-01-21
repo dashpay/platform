@@ -64,10 +64,10 @@ describe('IdentityCreateTransition', () => {
 
       // Verify they can be deserialized back
       const fromHex = wasm.IdentityCreateTransition.fromHex(hex);
-      expect(fromHex.getIdentifier().toBase58()).to.equal(transition.getIdentifier().toBase58());
+      expect(fromHex.identityId.toBase58()).to.equal(transition.identityId.toBase58());
 
       const fromBase64 = wasm.IdentityCreateTransition.fromBase64(base64);
-      expect(fromBase64.getIdentifier().toBase58()).to.equal(transition.getIdentifier().toBase58());
+      expect(fromBase64.identityId.toBase58()).to.equal(transition.identityId.toBase58());
     });
   });
 
@@ -87,7 +87,7 @@ describe('IdentityCreateTransition', () => {
     it('should allow to get Identifier', () => {
       const transition = wasm.IdentityCreateTransition.default(1);
 
-      expect(transition.getIdentifier().toBase58()).to.equal('11111111111111111111111111111111');
+      expect(transition.identityId.toBase58()).to.equal('11111111111111111111111111111111');
     });
 
     it('should allow to get PublicKeys', () => {

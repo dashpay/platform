@@ -71,7 +71,7 @@ describe('TokenPerpetualDistribution', () => {
       );
 
       expect(distribution.distributionRecipient.constructor.name).to.deep.equal('TokenDistributionRecipient');
-      expect(distribution.distributionRecipient.getType()).to.deep.equal('ContractOwner');
+      expect(distribution.distributionRecipient.recipientType).to.deep.equal('ContractOwner');
     });
   });
 
@@ -102,7 +102,7 @@ describe('TokenPerpetualDistribution', () => {
 
       expect(newDistribution.__wbg_ptr).to.not.equal(0);
       expect(distribution.distributionType.constructor.name).to.deep.equal('RewardDistributionType');
-      expect(distribution.distributionType.getDistribution().constructor.name).to.deep.equal('TimeBasedDistribution');
+      expect(distribution.distributionType.distribution.constructor.name).to.deep.equal('TimeBasedDistribution');
     });
 
     it('should allow to set distributionRecipient', () => {
@@ -128,7 +128,7 @@ describe('TokenPerpetualDistribution', () => {
 
       expect(newRecipient.__wbg_ptr).to.not.equal(0);
       expect(distribution.distributionRecipient.constructor.name).to.deep.equal('TokenDistributionRecipient');
-      expect(distribution.distributionRecipient.getType()).to.deep.equal('EvonodesByParticipation');
+      expect(distribution.distributionRecipient.recipientType).to.deep.equal('EvonodesByParticipation');
     });
   });
 });

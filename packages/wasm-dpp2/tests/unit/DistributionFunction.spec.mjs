@@ -135,7 +135,7 @@ describe('DistributionFunction', function () {
           BigInt(111)
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('FixedAmount')
+        expect(distributionFunction.functionName).to.deep.equal('FixedAmount')
       })
 
       it('Random', () => {
@@ -144,7 +144,7 @@ describe('DistributionFunction', function () {
           BigInt(113)
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('Random')
+        expect(distributionFunction.functionName).to.deep.equal('Random')
       })
 
       it('StepDecreasingAmount', () => {
@@ -159,7 +159,7 @@ describe('DistributionFunction', function () {
           BigInt(1)
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('StepDecreasingAmount')
+        expect(distributionFunction.functionName).to.deep.equal('StepDecreasingAmount')
       })
 
       it('Stepwise', () => {
@@ -169,7 +169,7 @@ describe('DistributionFunction', function () {
           }
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('Stepwise')
+        expect(distributionFunction.functionName).to.deep.equal('Stepwise')
       })
 
       it('Linear', () => {
@@ -182,7 +182,7 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('Linear')
+        expect(distributionFunction.functionName).to.deep.equal('Linear')
       })
 
       it('Polynomial', () => {
@@ -198,7 +198,7 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('Polynomial')
+        expect(distributionFunction.functionName).to.deep.equal('Polynomial')
       })
 
       it('Exponential', () => {
@@ -214,7 +214,7 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('Exponential')
+        expect(distributionFunction.functionName).to.deep.equal('Exponential')
       })
 
       it('Logarithmic', () => {
@@ -230,7 +230,7 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('Logarithmic')
+        expect(distributionFunction.functionName).to.deep.equal('Logarithmic')
       })
 
       it('InvertedLogarithmic', () => {
@@ -246,7 +246,7 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionName()).to.deep.equal('InvertedLogarithmic')
+        expect(distributionFunction.functionName).to.deep.equal('InvertedLogarithmic')
       })
     })
     describe('function value', function () {
@@ -255,7 +255,7 @@ describe('DistributionFunction', function () {
           BigInt(111)
         )
 
-        expect(distributionFunction.getFunctionValue().amount).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.amount).to.deep.equal(111n)
       })
 
       it('Random', () => {
@@ -264,8 +264,8 @@ describe('DistributionFunction', function () {
           BigInt(113)
         )
 
-        expect(distributionFunction.getFunctionValue().min).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().max).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.min).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.max).to.deep.equal(113n)
       })
 
       it('StepDecreasingAmount', () => {
@@ -280,14 +280,14 @@ describe('DistributionFunction', function () {
           BigInt(1)
         )
 
-        expect(distributionFunction.getFunctionValue().stepCount).to.deep.equal(11)
-        expect(distributionFunction.getFunctionValue().decreasePerIntervalNumerator).to.deep.equal(11)
-        expect(distributionFunction.getFunctionValue().decreasePerIntervalDenominator).to.deep.equal(11)
-        expect(distributionFunction.getFunctionValue().startDecreasingOffset).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().maxIntervalCount).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().distributionStartAmount).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().trailingDistributionIntervalAmount).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().minValue).to.deep.equal(1n)
+        expect(distributionFunction.functionValue.stepCount).to.deep.equal(11)
+        expect(distributionFunction.functionValue.decreasePerIntervalNumerator).to.deep.equal(11)
+        expect(distributionFunction.functionValue.decreasePerIntervalDenominator).to.deep.equal(11)
+        expect(distributionFunction.functionValue.startDecreasingOffset).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.maxIntervalCount).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.distributionStartAmount).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.trailingDistributionIntervalAmount).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.minValue).to.deep.equal(1n)
       })
 
       it('Stepwise', () => {
@@ -297,7 +297,7 @@ describe('DistributionFunction', function () {
           }
         )
 
-        expect(distributionFunction.getFunctionValue()).to.deep.equal({
+        expect(distributionFunction.functionValue).to.deep.equal({
           11111111121: BigInt(111)
         })
       })
@@ -312,12 +312,12 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionValue().a).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().d).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().startStep).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().startingAmount).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().minValue).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().maxValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.a).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.d).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.startStep).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.startingAmount).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.minValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined)
       })
 
       it('Polynomial', () => {
@@ -333,15 +333,15 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionValue().a).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().d).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().m).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().n).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().o).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().startMoment).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().b).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().minValue).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().maxValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.a).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.d).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.m).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.n).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.o).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.startMoment).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.b).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.minValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined)
       })
 
       it('Exponential', () => {
@@ -357,15 +357,15 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionValue().a).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().d).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().m).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().n).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().o).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().startMoment).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().b).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().minValue).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().maxValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.a).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.d).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.m).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.n).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.o).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.startMoment).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.b).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.minValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined)
       })
 
       it('Logarithmic', () => {
@@ -381,15 +381,15 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionValue().a).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().d).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().m).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().n).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().o).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().startMoment).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().b).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().minValue).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().maxValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.a).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.d).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.m).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.n).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.o).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.startMoment).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.b).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.minValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined)
       })
 
       it('InvertedLogarithmic', () => {
@@ -405,15 +405,15 @@ describe('DistributionFunction', function () {
           undefined
         )
 
-        expect(distributionFunction.getFunctionValue().a).to.deep.equal(111n)
-        expect(distributionFunction.getFunctionValue().d).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().m).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().n).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().o).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().startMoment).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().b).to.deep.equal(113n)
-        expect(distributionFunction.getFunctionValue().minValue).to.deep.equal(undefined)
-        expect(distributionFunction.getFunctionValue().maxValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.a).to.deep.equal(111n)
+        expect(distributionFunction.functionValue.d).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.m).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.n).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.o).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.startMoment).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.b).to.deep.equal(113n)
+        expect(distributionFunction.functionValue.minValue).to.deep.equal(undefined)
+        expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined)
       })
     })
   })

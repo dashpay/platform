@@ -21,19 +21,25 @@ describe('DataContract', () => {
 
   describe('serialization / deserialization', () => {
     it('should allows to create DataContract from schema without full validation', () => {
-      const identifier = new wasm.Identifier(object.ownerId);
-
-      // Constructor accepts object format (with BigInt for integers)
-      const dataContract = new wasm.DataContract(identifier, BigInt(2), object.documentSchemas, null, false);
+      const dataContract = new wasm.DataContract({
+        ownerId: object.ownerId,
+        identityNonce: BigInt(2),
+        schemas: object.documentSchemas,
+        definitions: null,
+        fullValidation: false,
+      });
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allows to create DataContract from schema with full validation', () => {
-      const identifier = new wasm.Identifier(object.ownerId);
-
-      // Constructor accepts object format (with BigInt for integers)
-      const dataContract = new wasm.DataContract(identifier, BigInt(2), object.documentSchemas, null, true);
+      const dataContract = new wasm.DataContract({
+        ownerId: object.ownerId,
+        identityNonce: BigInt(2),
+        schemas: object.documentSchemas,
+        definitions: null,
+        fullValidation: true,
+      });
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
@@ -116,7 +122,7 @@ describe('DataContract', () => {
     it('should allow to get schemas', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      const schemas = dataContract.getSchemas();
+      const schemas = dataContract.schemas;
 
       expect(schemas).to.deep.equal(object.documentSchemas);
     });
@@ -142,7 +148,7 @@ describe('DataContract', () => {
     it('should allow to get config', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      const config = dataContract.getConfig();
+      const config = dataContract.config;
 
       expect(config).to.deep.equal(object.config);
     });
@@ -176,13 +182,13 @@ describe('DataContract', () => {
     it('should allow to set config', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      const oldConfig = dataContract.getConfig();
+      const oldConfig = dataContract.config;
 
       const newConfig = { ...oldConfig, canBeDeleted: !oldConfig.canBeDeleted };
 
-      dataContract.setConfig(newConfig);
+      dataContract.setConfig(newConfig, PlatformVersion.PLATFORM_V1);
 
-      expect(dataContract.getConfig()).to.deep.equal(newConfig);
+      expect(dataContract.config).to.deep.equal(newConfig);
     });
 
     it('should allow to set schema', () => {
@@ -193,11 +199,11 @@ describe('DataContract', () => {
         pupup: json.documentSchemas.withdrawal,
       };
 
-      dataContract.setSchemas(newSchema);
+      dataContract.setSchemas(newSchema, null, true, PlatformVersion.PLATFORM_V1);
 
-      const schemas = dataContract.getSchemas();
+      const schemas = dataContract.schemas;
 
-      // getSchemas returns object format (BigInt), so compare with object fixture
+      // schemas returns object format (BigInt), so compare with object fixture
       const expectedSchema = {
         pupup: object.documentSchemas.withdrawal,
       };

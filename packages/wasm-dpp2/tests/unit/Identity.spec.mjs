@@ -55,7 +55,7 @@ describe('Identity', () => {
 
       expect(Array.from(restoredIdentity.toBytes())).to.deep.equal(Array.from(identity.toBytes()));
       expect(restoredIdentity.id.toBytes()).to.deep.equal(identity.id.toBytes());
-      expect(restoredIdentity.getPublicKeys().length).to.equal(identity.getPublicKeys().length);
+      expect(restoredIdentity.publicKeys.length).to.equal(identity.publicKeys.length);
     });
   });
 
@@ -81,41 +81,41 @@ describe('Identity', () => {
     it('should get public keys', () => {
       const identity = new wasm.Identity(identifier);
 
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
-      const pubKey2 = new wasm.IdentityPublicKey(
-        keyId + 1,
+      const pubKey2 = new wasm.IdentityPublicKey({
+        keyId: keyId + 1,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       identity.addPublicKey(pubKey);
       identity.addPublicKey(pubKey2);
 
-      expect(identity.getPublicKeys().length).to.equal(2);
+      expect(identity.publicKeys.length).to.equal(2);
     });
   });
 
   describe('setters', () => {
     it('should allows to set public key', () => {
-      const pubKey = new wasm.IdentityPublicKey(
+      const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
         securityLevel,
         keyType,
-        false,
-        binaryData,
-      );
+        isReadOnly: false,
+        data: binaryData,
+      });
 
       const identity = new wasm.Identity(identifier);
 

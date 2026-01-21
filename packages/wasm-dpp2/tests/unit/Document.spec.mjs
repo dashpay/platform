@@ -13,22 +13,28 @@ before(async () => {
 });
 
 describe('Document', () => {
+  // Helper to create a document with options object
+  function createDocument(options = {}) {
+    return new wasm.Document({
+      properties: options.properties ?? document,
+      documentTypeName: options.documentTypeName ?? documentTypeName,
+      dataContractId: options.dataContractId ?? dataContractId,
+      ownerId: options.ownerId ?? ownerId,
+      revision: options.revision ?? Number(revision),
+      id: options.id,
+      entropy: options.entropy,
+    });
+  }
+
   describe('serialization / deserialization', () => {
     it('should allows to create Document from values', () => {
-      const dataContractIdentifier = new wasm.Identifier(dataContractId);
-      const ownerIdentifier = new wasm.Identifier(ownerId);
-
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractIdentifier, ownerIdentifier);
+      const documentInstance = createDocument();
 
       expect(documentInstance.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allows to create Document from values with custom id', () => {
-      const dataContractIdentifier = new wasm.Identifier(dataContractId);
-      const ownerIdentifier = new wasm.Identifier(ownerId);
-      const identifier = new wasm.Identifier(id);
-
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractIdentifier, ownerIdentifier, identifier);
+      const documentInstance = createDocument({ id });
 
       expect(documentInstance.__wbg_ptr).to.not.equal(0);
     });
@@ -47,7 +53,7 @@ describe('Document', () => {
 
   describe('toObject / fromObject', () => {
     it('should convert to object with binary fields as Uint8Array', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const obj = documentInstance.toObject();
 
@@ -60,7 +66,7 @@ describe('Document', () => {
     });
 
     it('should roundtrip through toObject / fromObject', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const obj = documentInstance.toObject();
       const restored = wasm.Document.fromObject(obj);
@@ -75,7 +81,7 @@ describe('Document', () => {
 
   describe('toJSON / fromJSON', () => {
     it('should convert to JSON with identifiers as Base58 strings', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const json = documentInstance.toJSON();
 
@@ -87,7 +93,7 @@ describe('Document', () => {
     });
 
     it('should roundtrip through toJSON / fromJSON', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const json = documentInstance.toJSON();
       const restored = wasm.Document.fromJSON(json);
@@ -102,31 +108,31 @@ describe('Document', () => {
 
   describe('getters', () => {
     it('should return document id', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       expect(documentInstance.id.toBase58()).to.deep.equal(id);
     });
 
     it('should return owner id', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       expect(documentInstance.ownerId.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should return data contract id', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       expect(documentInstance.dataContractId.toBase58()).to.deep.equal(dataContractId);
     });
 
     it('should return properties', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       expect(documentInstance.properties).to.deep.equal(document);
     });
 
     it('should return revision', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       expect(documentInstance.revision).to.deep.equal(revision);
     });
@@ -134,7 +140,7 @@ describe('Document', () => {
 
   describe('setters', () => {
     it('should allow to set document id', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       documentInstance.id = ownerId;
 
@@ -142,7 +148,7 @@ describe('Document', () => {
     });
 
     it('should allow to set document owner id', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       documentInstance.ownerId = id;
 
@@ -150,7 +156,7 @@ describe('Document', () => {
     });
 
     it('should allow to set entropy', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const newEntropy = new Array(documentInstance.entropy.length).fill(0);
 
@@ -160,7 +166,7 @@ describe('Document', () => {
     });
 
     it('should allow to set properties', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       documentInstance.properties = document2;
 
@@ -168,7 +174,7 @@ describe('Document', () => {
     });
 
     it('should allow to set revision', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const newRevision = BigInt(1000);
 
@@ -178,7 +184,7 @@ describe('Document', () => {
     });
 
     it('should allow to set created at', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const createdAt = BigInt(new Date(1123).getTime());
 
@@ -188,7 +194,7 @@ describe('Document', () => {
     });
 
     it('should allow to set updated at', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const updatedAt = BigInt(new Date(1123).getTime());
 
@@ -198,7 +204,7 @@ describe('Document', () => {
     });
 
     it('should allow to set transferred at', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const transferredAt = BigInt(new Date(11231).getTime());
 
@@ -208,7 +214,7 @@ describe('Document', () => {
     });
 
     it('should allow to set create at Block Height', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const createdAtHeight = BigInt(9172);
 
@@ -218,7 +224,7 @@ describe('Document', () => {
     });
 
     it('should allow to set updated at Block Height', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const updatedAtHeight = BigInt(9172);
 
@@ -228,7 +234,7 @@ describe('Document', () => {
     });
 
     it('should allow to set transferred at Block Height', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const transferredAtHeight = BigInt(9172);
 
@@ -238,7 +244,7 @@ describe('Document', () => {
     });
 
     it('should allow to set create at core Block Height', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const createdAtHeight = 91721;
 
@@ -248,7 +254,7 @@ describe('Document', () => {
     });
 
     it('should allow to set updated at Block Height', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const updatedAtHeight = 91722;
 
@@ -258,7 +264,7 @@ describe('Document', () => {
     });
 
     it('should allow to set transferred at Block Height', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const transferredAtHeight = 91723;
 
@@ -268,7 +274,7 @@ describe('Document', () => {
     });
 
     it('should allow to set document type name', () => {
-      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+      const documentInstance = createDocument({ id });
 
       const newDocumentTypeName = 'bbbb';
 

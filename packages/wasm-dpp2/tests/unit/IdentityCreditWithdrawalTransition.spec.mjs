@@ -10,9 +10,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
   describe('serialization / deserialization', () => {
     it('Should allow to create IdentityCreditWithdrawalTransition', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(identifier.__wbg_ptr).to.not.equal(0);
       expect(script.__wbg_ptr).to.not.equal(0);
@@ -21,9 +29,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should convert IdentityCreditWithdrawalTransition to base64 and back', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       const base64 = transition.toBase64();
       const bytes = transition.toBytes();
@@ -39,72 +55,136 @@ describe('IdentityCreditWithdrawalTransition', () => {
   describe('getters', () => {
     it('Should allow to get outputScript', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.outputScript.toString()).to.deep.equal('dqkUAQEBAQEBAQEBAQEBAQEBAQEBAQGIrA==');
     });
 
     it('Should allow to get pooling', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.pooling).to.deep.equal('Never');
     });
 
     it('Should allow to get identityId', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.identityId.toBase58()).to.deep.equal(identifier.toBase58());
     });
 
     it('Should allow to get userFeeIncrease', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.userFeeIncrease).to.deep.equal(1);
     });
 
     it('Should allow to get nonce', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.nonce).to.deep.equal(BigInt(1));
     });
 
     it('Should allow to get amount', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.amount).to.deep.equal(BigInt(111));
     });
 
     it('Should allow to get signature', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.signature).to.deep.equal(Uint8Array.from([]));
     });
 
     it('Should allow to get signaturePublicKeyId', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       expect(transition.signaturePublicKeyId).to.deep.equal(0);
     });
@@ -113,11 +193,19 @@ describe('IdentityCreditWithdrawalTransition', () => {
   describe('setters', () => {
     it('Should allow to set outputScript', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
-      const script2 = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script2 = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
       transition.outputScript = script2;
 
@@ -126,9 +214,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to set pooling', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       transition.pooling = 'Standard';
 
@@ -137,9 +233,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to set identityId', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       const identifier2 = new wasm.Identifier('11SAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
 
@@ -150,9 +254,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to set userFeeIncrease', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       transition.userFeeIncrease = 999;
 
@@ -161,9 +273,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to set nonce', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       transition.nonce = BigInt(1111);
 
@@ -172,9 +292,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to get amount', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       transition.amount = BigInt(2222);
 
@@ -183,9 +311,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to get signature', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       transition.signature = Uint8Array.from([1, 2, 3]);
 
@@ -194,9 +330,17 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
     it('Should allow to get signaturePublicKeyId', () => {
       const identifier = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      const script = wasm.CoreScript.newP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
 
-      const transition = new wasm.IdentityCreditWithdrawalTransition(identifier, BigInt(111), 1, 'never', script, BigInt(1), 1);
+      const transition = new wasm.IdentityCreditWithdrawalTransition({
+        identityId: identifier,
+        amount: BigInt(111),
+        coreFeePerByte: 1,
+        pooling: 'never',
+        outputScript: script,
+        nonce: BigInt(1),
+        userFeeIncrease: 1,
+      });
 
       transition.signaturePublicKeyId = 11;
 

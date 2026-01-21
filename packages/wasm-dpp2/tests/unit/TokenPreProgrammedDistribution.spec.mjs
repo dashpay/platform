@@ -7,15 +7,31 @@ before(async () => {
 });
 
 describe('TokenPreProgrammedDistribution', () => {
+  // Helper to create an Identifier object for testing
+  function createIdentifier(base58String) {
+    return new wasm.Identifier(base58String);
+  }
+
+  // Helper to create distributions Map in the expected format
+  function createDistributionsMap(timestamp, identifierStr, amount) {
+    const innerMap = new Map();
+    innerMap.set(createIdentifier(identifierStr), amount);
+
+    const outerMap = new Map();
+    outerMap.set(timestamp.toString(), innerMap);
+
+    return outerMap;
+  }
+
   describe('serialization / deserialization', () => {
     it('should allow to create from values', () => {
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
-        {
-          1750140416485: {
-            PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
-          },
-        },
+      const distributions = createDistributionsMap(
+        '1750140416485',
+        'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
+        BigInt(10000)
       );
+
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(distributions);
 
       expect(preProgrammedDistribution.__wbg_ptr).to.not.equal(0);
     });
@@ -23,43 +39,46 @@ describe('TokenPreProgrammedDistribution', () => {
 
   describe('getters', () => {
     it('should allow to get distributions', () => {
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
-        {
-          1750140416485: {
-            PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10100),
-          },
-        },
+      const distributions = createDistributionsMap(
+        '1750140416485',
+        'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
+        BigInt(10100)
       );
 
-      expect(preProgrammedDistribution.distributions).to.deep.equal({
-        1750140416485: {
-          PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10100),
-        },
-      });
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(distributions);
+
+      // The getter returns a Map, check it has the expected structure
+      const result = preProgrammedDistribution.distributions;
+      expect(result instanceof Map).to.equal(true);
+      expect(result.has('1750140416485')).to.equal(true);
+
+      const innerMap = result.get('1750140416485');
+      expect(innerMap instanceof Map).to.equal(true);
+      expect(innerMap.size).to.equal(1);
     });
   });
 
   describe('setters', () => {
     it('should allow to set distributions', () => {
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
-        {
-          1750140416485: {
-            PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10100),
-          },
-        },
+      const distributions = createDistributionsMap(
+        '1750140416485',
+        'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
+        BigInt(10100)
       );
 
-      preProgrammedDistribution.distributions = {
-        1750140416415: {
-          PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(9999999),
-        },
-      };
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(distributions);
 
-      expect(preProgrammedDistribution.distributions).to.deep.equal({
-        1750140416415: {
-          PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(9999999),
-        },
-      });
+      const newDistributions = createDistributionsMap(
+        '1750140416415',
+        'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
+        BigInt(9999999)
+      );
+
+      preProgrammedDistribution.distributions = newDistributions;
+
+      const result = preProgrammedDistribution.distributions;
+      expect(result instanceof Map).to.equal(true);
+      expect(result.has('1750140416415')).to.equal(true);
     });
   });
 });

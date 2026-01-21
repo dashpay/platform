@@ -30,13 +30,13 @@ describe('OutPoint', () => {
     it('should allow to get txid', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
-      expect(outpoint.getTXID()).to.equal('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d');
+      expect(outpoint.txid).to.equal('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d');
     });
 
     it('should allow to get VOUT', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
-      expect(outpoint.getVOUT()).to.equal(1);
+      expect(outpoint.vout).to.equal(1);
     });
 
     it('should allow to get bytes', () => {

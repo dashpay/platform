@@ -80,7 +80,7 @@ describe('InstantLock', () => {
     it('should allow to get output as bytes', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      const output = instantLockProof.getOutput();
+      const output = instantLockProof.output;
       expect(output).to.be.instanceOf(Uint8Array);
       expect(output.length).to.be.greaterThan(0);
     });
@@ -88,7 +88,7 @@ describe('InstantLock', () => {
     it('should allow to convert to get OutPoint', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      expect(instantLockProof.getOutPoint().constructor.name).to.deep.equal('OutPoint');
+      expect(instantLockProof.outPoint.constructor.name).to.deep.equal('OutPoint');
     });
 
     it('should allow to get output index', () => {

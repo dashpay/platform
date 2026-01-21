@@ -165,8 +165,8 @@ describe('AssetLockProof', () => {
       const instantAssetLockProof = new wasm.AssetLockProof(instantLockProof);
       const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
 
-      expect(instantAssetLockProof.getLockType()).to.equal('Instant');
-      expect(chainLockProof.getLockType()).to.equal('Chain');
+      expect(instantAssetLockProof.lockTypeName).to.equal('Instant');
+      expect(chainLockProof.lockTypeName).to.equal('Chain');
     });
 
     it('should allow to get lock instances', () => {
@@ -176,8 +176,8 @@ describe('AssetLockProof', () => {
       const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
       const instantAssetLockProof = new wasm.AssetLockProof(instantLockProof);
 
-      expect(chainLockProof.getChainLockProof().constructor.name).to.equal('ChainAssetLockProof');
-      expect(instantAssetLockProof.getInstantLockProof().constructor.name).to.equal('InstantAssetLockProof');
+      expect(chainLockProof.chainLockProof.constructor.name).to.equal('ChainAssetLockProof');
+      expect(instantAssetLockProof.instantLockProof.constructor.name).to.equal('InstantAssetLockProof');
     });
 
     it('should allow to return object of lock', () => {

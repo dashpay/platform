@@ -14,8 +14,20 @@ let createTransition;
 let replaceTransition;
 
 describe('DocumentTransition', () => {
+  // Helper to create a document with options object
+  function createDocument(options = {}) {
+    return new wasm.Document({
+      properties: options.properties ?? document,
+      documentTypeName: options.documentTypeName ?? documentTypeName,
+      dataContractId: options.dataContractId ?? dataContractId,
+      ownerId: options.ownerId ?? ownerId,
+      revision: options.revision ?? Number(revision),
+      id: options.id ?? id,
+    });
+  }
+
   before(async () => {
-    documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+    documentInstance = createDocument();
     createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
     replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
   });

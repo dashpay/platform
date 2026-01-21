@@ -19,19 +19,19 @@ describe('InstantLock', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
       // In non-human-readable serde, txid is serialized as Uint8Array
-      const txidBytes = Buffer.from(outpoint.getTXID(), 'hex');
+      const txidBytes = Buffer.from(outpoint.txid, 'hex');
 
       const chainlock = wasm.ChainAssetLockProof.fromObject({
         coreChainLockedHeight: 11,
         outPoint: {
           txid: txidBytes,
-          vout: outpoint.getVOUT(),
+          vout: outpoint.vout,
         },
       });
 
       expect(chainlock.__wbg_ptr).to.not.equal(0);
       expect(chainlock.coreChainLockedHeight).to.equal(11);
-      expect(chainlock.outPoint.getVOUT()).to.equal(1);
+      expect(chainlock.outPoint.vout).to.equal(1);
     });
 
     it('should round-trip via object/json/bytes', () => {
@@ -98,7 +98,7 @@ describe('InstantLock', () => {
 
       chainlock.outPoint = newOutpoint;
 
-      expect(chainlock.outPoint.getVOUT()).to.equal(222);
+      expect(chainlock.outPoint.vout).to.equal(222);
       expect(newOutpoint.__wbg_ptr).to.not.equal(0);
     });
   });

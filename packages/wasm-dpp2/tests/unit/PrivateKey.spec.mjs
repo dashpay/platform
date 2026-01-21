@@ -33,7 +33,7 @@ describe('PrivateKey', () => {
     it('should allow to create PrivateKey from wif and read value in wif', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pkey.WIF()).to.equal(wif);
+      expect(pkey.toWIF()).to.equal(wif);
     });
 
     it('should allow to create PrivateKey from wif and write value in bytes', () => {
@@ -47,7 +47,7 @@ describe('PrivateKey', () => {
     it('should allow to get key wif', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pkey.WIF()).to.equal(wif);
+      expect(pkey.toWIF()).to.equal(wif);
     });
 
     it('should allow to get key bytes', () => {

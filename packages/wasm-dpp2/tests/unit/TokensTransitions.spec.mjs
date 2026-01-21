@@ -11,7 +11,12 @@ let baseTransition;
 
 describe('TokenTransitions', () => {
   before(async () => {
-    baseTransition = new wasm.TokenBaseTransition(BigInt(1), 1, dataContractId, ownerId);
+    baseTransition = new wasm.TokenBaseTransition({
+      identityContractNonce: BigInt(1),
+      tokenContractPosition: 1,
+      dataContractId: dataContractId,
+      tokenId: ownerId,
+    });
   });
 
   describe('serialize/deserialize', () => {
@@ -32,12 +37,12 @@ describe('TokenTransitions', () => {
     });
 
     it('should allow to create transfer transition', () => {
-      const transferTransition = new wasm.TokenTransferTransition(
-        baseTransition,
-        ownerId,
-        BigInt(11),
-        'bbbb',
-      );
+      const transferTransition = new wasm.TokenTransferTransition({
+        base: baseTransition,
+        recipientId: ownerId,
+        amount: BigInt(11),
+        publicNote: 'bbbb',
+      });
 
       expect(transferTransition.constructor.name).to.equal('TokenTransferTransition');
       expect(transferTransition.__wbg_ptr).to.not.equal(0);
@@ -47,13 +52,13 @@ describe('TokenTransitions', () => {
     it('should allow to create transfer transition with shared encrypted note', () => {
       const sharedEncryptedNote = new wasm.SharedEncryptedNote(0, 0, [0, 0, 0]);
 
-      const transferTransition = new wasm.TokenTransferTransition(
-        baseTransition,
-        ownerId,
-        BigInt(11),
-        'bbbb',
-        sharedEncryptedNote,
-      );
+      const transferTransition = new wasm.TokenTransferTransition({
+        base: baseTransition,
+        recipientId: ownerId,
+        amount: BigInt(11),
+        publicNote: 'bbbb',
+        sharedEncryptedNote: sharedEncryptedNote,
+      });
 
       expect(sharedEncryptedNote.constructor.name).to.equal('SharedEncryptedNote');
       expect(transferTransition.constructor.name).to.equal('TokenTransferTransition');
@@ -65,14 +70,13 @@ describe('TokenTransitions', () => {
     it('should allow to create transfer transition with private encrypted note', () => {
       const privateEncryptedNote = new wasm.PrivateEncryptedNote(0, 0, [0, 0, 0]);
 
-      const transferTransition = new wasm.TokenTransferTransition(
-        baseTransition,
-        ownerId,
-        BigInt(11),
-        'bbbb',
-        undefined,
-        privateEncryptedNote,
-      );
+      const transferTransition = new wasm.TokenTransferTransition({
+        base: baseTransition,
+        recipientId: ownerId,
+        amount: BigInt(11),
+        publicNote: 'bbbb',
+        privateEncryptedNote: privateEncryptedNote,
+      });
 
       expect(privateEncryptedNote.constructor.name).to.equal('PrivateEncryptedNote');
       expect(transferTransition.constructor.name).to.equal('TokenTransferTransition');
@@ -216,14 +220,14 @@ describe('TokenTransitions', () => {
       const sharedEncryptedNote = new wasm.SharedEncryptedNote(0, 0, [0, 0, 0]);
       const privateEncryptedNote = new wasm.PrivateEncryptedNote(0, 0, [0, 0, 0]);
 
-      const transferTransition = new wasm.TokenTransferTransition(
-        baseTransition,
-        ownerId,
-        BigInt(11),
-        'bbbb',
-        sharedEncryptedNote,
-        privateEncryptedNote,
-      );
+      const transferTransition = new wasm.TokenTransferTransition({
+        base: baseTransition,
+        recipientId: ownerId,
+        amount: BigInt(11),
+        publicNote: 'bbbb',
+        sharedEncryptedNote: sharedEncryptedNote,
+        privateEncryptedNote: privateEncryptedNote,
+      });
 
       expect(transferTransition.base.constructor.name).to.equal('TokenBaseTransition');
       expect(transferTransition.amount).to.equal(BigInt(11));
@@ -360,14 +364,14 @@ describe('TokenTransitions', () => {
       const sharedEncryptedNote = new wasm.SharedEncryptedNote(0, 0, [0, 0, 0]);
       const privateEncryptedNote = new wasm.PrivateEncryptedNote(0, 0, [0, 0, 0]);
 
-      const transferTransition = new wasm.TokenTransferTransition(
-        baseTransition,
-        ownerId,
-        BigInt(11),
-        'bbbb',
-        sharedEncryptedNote,
-        privateEncryptedNote,
-      );
+      const transferTransition = new wasm.TokenTransferTransition({
+        base: baseTransition,
+        recipientId: ownerId,
+        amount: BigInt(11),
+        publicNote: 'bbbb',
+        sharedEncryptedNote: sharedEncryptedNote,
+        privateEncryptedNote: privateEncryptedNote,
+      });
 
       const sharedEncryptedNote2 = new wasm.SharedEncryptedNote(0, 0, [0, 0, 0]);
       const privateEncryptedNote2 = new wasm.PrivateEncryptedNote(0, 0, [0, 0, 0]);

@@ -62,7 +62,7 @@ describe('RewardDistributionType', () => {
         distributionFunction,
       );
 
-      expect(distributionType.getDistribution().constructor.name).to.equal('BlockBasedDistribution');
+      expect(distributionType.distribution.constructor.name).to.equal('BlockBasedDistribution');
     });
 
     it('should allow return value TimeBasedDistribution', () => {
@@ -75,7 +75,7 @@ describe('RewardDistributionType', () => {
         distributionFunction,
       );
 
-      expect(distributionType.getDistribution().constructor.name).to.equal('TimeBasedDistribution');
+      expect(distributionType.distribution.constructor.name).to.equal('TimeBasedDistribution');
     });
 
     it('should allow return value EpochBasedDistribution', () => {
@@ -88,7 +88,7 @@ describe('RewardDistributionType', () => {
         distributionFunction,
       );
 
-      expect(distributionType.getDistribution().constructor.name).to.equal('EpochBasedDistribution');
+      expect(distributionType.distribution.constructor.name).to.equal('EpochBasedDistribution');
     });
   });
 });

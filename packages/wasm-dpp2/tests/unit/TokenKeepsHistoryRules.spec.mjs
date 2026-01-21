@@ -7,16 +7,21 @@ before(async () => {
 });
 
 describe('TokenKeepsHistoryRules', () => {
+  // Helper function to create TokenKeepsHistoryRules with default options
+  function createKeepsHistoryRules(options = {}) {
+    return new wasm.TokenKeepsHistoryRules({
+      isKeepingTransferHistory: options.isKeepingTransferHistory ?? true,
+      isKeepingFreezingHistory: options.isKeepingFreezingHistory ?? true,
+      isKeepingMintingHistory: options.isKeepingMintingHistory ?? true,
+      isKeepingBurningHistory: options.isKeepingBurningHistory ?? true,
+      isKeepingDirectPricingHistory: options.isKeepingDirectPricingHistory ?? true,
+      isKeepingDirectPurchaseHistory: options.isKeepingDirectPurchaseHistory ?? true,
+    });
+  }
+
   describe('serialization / deserialization', () => {
     it('should allow to create TokenKeepsHistoryRules from values', () => {
-      const keepHistory = new wasm.TokenKeepsHistoryRules(
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-      );
+      const keepHistory = createKeepsHistoryRules();
 
       expect(keepHistory.__wbg_ptr).to.not.equal(0);
     });
@@ -24,48 +29,34 @@ describe('TokenKeepsHistoryRules', () => {
 
   describe('getters', () => {
     it('should allow to get values', () => {
-      const keepHistory = new wasm.TokenKeepsHistoryRules(
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-      );
+      const keepHistory = createKeepsHistoryRules();
 
-      expect(keepHistory.keepsTransferHistory).to.equal(true);
-      expect(keepHistory.keepsFreezingHistory).to.equal(true);
-      expect(keepHistory.keepsMintingHistory).to.equal(true);
-      expect(keepHistory.keepsBurningHistory).to.equal(true);
-      expect(keepHistory.keepsDirectPricingHistory).to.equal(true);
-      expect(keepHistory.keepsDirectPurchaseHistory).to.equal(true);
+      expect(keepHistory.isKeepingTransferHistory).to.equal(true);
+      expect(keepHistory.isKeepingFreezingHistory).to.equal(true);
+      expect(keepHistory.isKeepingMintingHistory).to.equal(true);
+      expect(keepHistory.isKeepingBurningHistory).to.equal(true);
+      expect(keepHistory.isKeepingDirectPricingHistory).to.equal(true);
+      expect(keepHistory.isKeepingDirectPurchaseHistory).to.equal(true);
     });
   });
 
   describe('setters', () => {
     it('should allow to set values', () => {
-      const keepHistory = new wasm.TokenKeepsHistoryRules(
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-      );
+      const keepHistory = createKeepsHistoryRules();
 
-      keepHistory.keepsTransferHistory = false;
-      keepHistory.keepsFreezingHistory = false;
-      keepHistory.keepsMintingHistory = false;
-      keepHistory.keepsBurningHistory = false;
-      keepHistory.keepsDirectPricingHistory = false;
-      keepHistory.keepsDirectPurchaseHistory = false;
+      keepHistory.isKeepingTransferHistory = false;
+      keepHistory.isKeepingFreezingHistory = false;
+      keepHistory.isKeepingMintingHistory = false;
+      keepHistory.isKeepingBurningHistory = false;
+      keepHistory.isKeepingDirectPricingHistory = false;
+      keepHistory.isKeepingDirectPurchaseHistory = false;
 
-      expect(keepHistory.keepsTransferHistory).to.equal(false);
-      expect(keepHistory.keepsFreezingHistory).to.equal(false);
-      expect(keepHistory.keepsMintingHistory).to.equal(false);
-      expect(keepHistory.keepsBurningHistory).to.equal(false);
-      expect(keepHistory.keepsDirectPricingHistory).to.equal(false);
-      expect(keepHistory.keepsDirectPurchaseHistory).to.equal(false);
+      expect(keepHistory.isKeepingTransferHistory).to.equal(false);
+      expect(keepHistory.isKeepingFreezingHistory).to.equal(false);
+      expect(keepHistory.isKeepingMintingHistory).to.equal(false);
+      expect(keepHistory.isKeepingBurningHistory).to.equal(false);
+      expect(keepHistory.isKeepingDirectPricingHistory).to.equal(false);
+      expect(keepHistory.isKeepingDirectPurchaseHistory).to.equal(false);
     });
   });
 });

@@ -7,31 +7,28 @@ before(async () => {
 });
 
 describe('IdentityPublicKeyInCreation', () => {
+  // Helper function to create a public key in creation with options object
+  function createPublicKeyInCreation(options = {}) {
+    return new wasm.IdentityPublicKeyInCreation({
+      keyId: options.keyId ?? 0,
+      purpose: options.purpose ?? 'AUTHENTICATION',
+      securityLevel: options.securityLevel ?? 'master',
+      keyType: options.keyType ?? 'ECDSA_SECP256K1',
+      isReadOnly: options.isReadOnly ?? false,
+      data: options.data ?? Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
+      signature: options.signature ?? [],
+    });
+  }
+
   describe('serialization / deserialization', () => {
     it('should allow to create from values', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to create from values and convert to identity public key', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       const publicKey = publicKeyInCreation.toIdentityPublicKey();
 
@@ -42,99 +39,43 @@ describe('IdentityPublicKeyInCreation', () => {
 
   describe('getters', () => {
     it('should allow to get key id', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation.keyId).to.equal(0);
     });
 
     it('should allow to get purpose', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation.purpose).to.equal('AUTHENTICATION');
     });
 
     it('should allow to get security level', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation.securityLevel).to.equal('MASTER');
     });
 
     it('should allow to get key type', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation.keyType).to.equal('ECDSA_SECP256K1');
     });
 
     it('should allow to get read only', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
-      expect(publicKeyInCreation.readOnly).to.equal(false);
+      expect(publicKeyInCreation.isReadOnly).to.equal(false);
     });
 
     it('should allow to get data', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(Buffer.from(publicKeyInCreation.data)).to.deep.equal(Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'));
     });
 
     it('should allow to get signature', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       expect([...publicKeyInCreation.signature]).to.deep.equal([]);
     });
@@ -142,15 +83,7 @@ describe('IdentityPublicKeyInCreation', () => {
 
   describe('setters', () => {
     it('should allow to set key id', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.keyId = 123;
 
@@ -158,15 +91,7 @@ describe('IdentityPublicKeyInCreation', () => {
     });
 
     it('should allow to set purpose', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.purpose = 'OWNER';
 
@@ -174,15 +99,7 @@ describe('IdentityPublicKeyInCreation', () => {
     });
 
     it('should allow to set security level', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.securityLevel = 'critical';
 
@@ -190,15 +107,7 @@ describe('IdentityPublicKeyInCreation', () => {
     });
 
     it('should allow to set key type', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.keyType = 'ECDSA_HASH160';
 
@@ -206,31 +115,15 @@ describe('IdentityPublicKeyInCreation', () => {
     });
 
     it('should allow to set read only', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
-      publicKeyInCreation.readOnly = true;
+      publicKeyInCreation.isReadOnly = true;
 
-      expect(publicKeyInCreation.readOnly).to.equal(true);
+      expect(publicKeyInCreation.isReadOnly).to.equal(true);
     });
 
     it('should allow to set data', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.data = Buffer.from('333333333334001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex');
 
@@ -238,15 +131,7 @@ describe('IdentityPublicKeyInCreation', () => {
     });
 
     it('should allow to set signature', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.signature = [1, 2, 3, 4, 5, 6];
 
@@ -256,15 +141,7 @@ describe('IdentityPublicKeyInCreation', () => {
 
   describe('conversion methods', () => {
     it('should round-trip via toJSON/fromJSON', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       const json = publicKeyInCreation.toJSON();
       expect(json).to.be.an('object');
@@ -279,19 +156,11 @@ describe('IdentityPublicKeyInCreation', () => {
       expect(restored.purpose).to.equal(publicKeyInCreation.purpose);
       expect(restored.securityLevel).to.equal(publicKeyInCreation.securityLevel);
       expect(restored.keyType).to.equal(publicKeyInCreation.keyType);
-      expect(restored.readOnly).to.equal(publicKeyInCreation.readOnly);
+      expect(restored.isReadOnly).to.equal(publicKeyInCreation.isReadOnly);
     });
 
     it('should export toObject', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
-        0,
-        'AUTHENTICATION',
-        'master',
-        'ECDSA_SECP256K1',
-        false,
-        Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'),
-        [],
-      );
+      const publicKeyInCreation = createPublicKeyInCreation();
 
       const obj = publicKeyInCreation.toObject();
       // toObject exports with byte arrays which don't round-trip in serde_wasm_bindgen
