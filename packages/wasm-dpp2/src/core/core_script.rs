@@ -59,10 +59,7 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "toAddress")]
-    pub fn to_address(
-        &self,
-        network: NetworkLikeJs,
-    ) -> WasmDppResult<String> {
+    pub fn to_address(&self, network: NetworkLikeJs) -> WasmDppResult<String> {
         let network_wasm: NetworkWasm = network.try_into()?;
 
         let payload = Payload::from_script(self.0.as_script())
@@ -100,5 +97,4 @@ impl CoreScriptWasm {
 }
 
 impl_try_from_options!(CoreScriptWasm, "CoreScript");
-
 impl_wasm_type_info!(CoreScriptWasm, CoreScript);
