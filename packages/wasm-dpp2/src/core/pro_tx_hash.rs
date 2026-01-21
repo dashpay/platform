@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
@@ -121,54 +122,9 @@ impl ProTxHashWasm {
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid ProTxHash hex: {}", e)))?;
         Ok(ProTxHashWasm(hash))
     }
-
-    /// Try to extract a ProTxHash from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a ProTxHashWasm. Accepts hex string, Uint8Array, or ProTxHash object.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let hash_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if hash_js.is_undefined() || hash_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        ProTxHashWasm::try_from(&hash_js)
-    }
-
-    /// Try to extract an optional ProTxHash from an options object field.
-    ///
-    /// Returns None if the field is undefined, null, or an empty string/array.
-    /// Otherwise attempts conversion.
-    pub fn try_from_options_optional(
-        options: &JsValue,
-        field_name: &str,
-    ) -> WasmDppResult<Option<Self>> {
-        let hash_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Failed to get '{}'", field_name))
-            })?;
-
-        if hash_js.is_undefined() || hash_js.is_null() {
-            return Ok(None);
-        }
-
-        // Check for empty string
-        if let Some(s) = hash_js.as_string()
-            && s.is_empty()
-        {
-            return Ok(None);
-        }
-
-        ProTxHashWasm::try_from(&hash_js).map(Some)
-    }
 }
+
+impl_try_from_options!(ProTxHashWasm);
 
 impl TryFrom<JsValue> for ProTxHashWasm {
     type Error = WasmDppError;
