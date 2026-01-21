@@ -205,13 +205,16 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
 
 impl From<WasmDppError> for WasmSdkError {
     fn from(err: WasmDppError) -> Self {
-        // Map WasmDppError to appropriate WasmSdkError kind
-        Self::new(
-            WasmSdkErrorKind::SerializationError,
-            err.to_string(),
-            None,
-            false,
-        )
+        use wasm_dpp2::error::WasmDppErrorKind;
+        // Map WasmDppError kind to appropriate WasmSdkError kind
+        let kind = match err.kind() {
+            WasmDppErrorKind::Protocol => WasmSdkErrorKind::Protocol,
+            WasmDppErrorKind::InvalidArgument => WasmSdkErrorKind::InvalidArgument,
+            WasmDppErrorKind::Serialization => WasmSdkErrorKind::SerializationError,
+            WasmDppErrorKind::Conversion => WasmSdkErrorKind::SerializationError,
+            WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
+        };
+        Self::new(kind, err.to_string(), None, false)
     }
 }
 

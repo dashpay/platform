@@ -680,7 +680,7 @@ export default {
                 },
                 provider: {
                   type: 'string',
-                  enum: ['zerossl', 'self-signed', 'file'],
+                  enum: ['zerossl', 'letsencrypt', 'self-signed', 'file'],
                 },
                 providerConfigs: {
                   type: 'object',
@@ -698,6 +698,16 @@ export default {
                         },
                       },
                       required: ['apiKey', 'id'],
+                      additionalProperties: false,
+                    },
+                    letsencrypt: {
+                      type: ['object'],
+                      properties: {
+                        email: {
+                          type: ['string', 'null'],
+                        },
+                      },
+                      required: ['email'],
                       additionalProperties: false,
                     },
                   },

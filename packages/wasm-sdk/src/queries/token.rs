@@ -125,8 +125,8 @@ impl TokenTotalSupplyWasm {
     }
 }
 
-impl_wasm_serde_conversions!(TokenTotalSupplyWasm);
-impl_wasm_serde_conversions!(TokenPriceInfoWasm);
+impl_wasm_serde_conversions!(TokenTotalSupplyWasm, TokenTotalSupply);
+impl_wasm_serde_conversions!(TokenPriceInfoWasm, TokenPriceInfo);
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -911,9 +911,24 @@ impl WasmSdk {
         use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
-        use dash_sdk::platform::DataContract;
 
-        // Step 1: Fetch TokenContractInfo to get contract_id and position
+        // Step 1: Check trusted context is initialized before doing any network fetches
+        let network = self.network();
+        let context_initialized = match network {
+            Network::Dash => MAINNET_TRUSTED_CONTEXT.lock().unwrap().is_some(),
+            Network::Testnet => TESTNET_TRUSTED_CONTEXT.lock().unwrap().is_some(),
+            Network::Regtest => LOCAL_TRUSTED_CONTEXT.lock().unwrap().is_some(),
+            _ => false,
+        };
+
+        if !context_initialized {
+            return Err(WasmSdkError::generic(format!(
+                "Trusted context not initialized for network {:?}. Call prefetch methods first.",
+                network
+            )));
+        }
+
+        // Step 2: Fetch TokenContractInfo to get contract_id and position
         let token_contract_info = TokenContractInfo::fetch(self.as_ref(), token_id)
             .await?
             .ok_or_else(|| {
@@ -926,17 +941,10 @@ impl WasmSdk {
         let contract_id = token_contract_info.contract_id();
         let token_position = token_contract_info.token_contract_position();
 
-        // Step 2: Fetch the DataContract
-        let data_contract = DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| {
-                WasmSdkError::generic(format!(
-                    "Data contract not found for contract ID: {}",
-                    contract_id
-                ))
-            })?;
+        // Step 3: Fetch the DataContract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
-        // Step 3: Extract the TokenConfiguration from the contract
+        // Step 4: Extract the TokenConfiguration from the contract
         let token_configuration = data_contract
             .expected_token_configuration(token_position)
             .map_err(|e| {
@@ -947,45 +955,31 @@ impl WasmSdk {
             })?
             .clone();
 
-        // Step 4: Add the token configuration to the trusted context cache
-        let network = self.network();
+        // Step 5: Add the token configuration to the trusted context cache
+        // We already verified the context is initialized above, so unwrap is safe
         match network {
             Network::Dash => {
                 let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                let ctx = guard.as_ref().ok_or_else(|| {
-                    WasmSdkError::generic(format!(
-                        "Mainnet trusted context not initialized for token {}",
-                        token_id
-                    ))
-                })?;
-                ctx.add_known_token_configuration(token_id, token_configuration);
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .add_known_token_configuration(token_id, token_configuration);
             }
             Network::Testnet => {
                 let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                let ctx = guard.as_ref().ok_or_else(|| {
-                    WasmSdkError::generic(format!(
-                        "Testnet trusted context not initialized for token {}",
-                        token_id
-                    ))
-                })?;
-                ctx.add_known_token_configuration(token_id, token_configuration);
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .add_known_token_configuration(token_id, token_configuration);
             }
             Network::Regtest => {
                 let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                let ctx = guard.as_ref().ok_or_else(|| {
-                    WasmSdkError::generic(format!(
-                        "Local trusted context not initialized for token {}",
-                        token_id
-                    ))
-                })?;
-                ctx.add_known_token_configuration(token_id, token_configuration);
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .add_known_token_configuration(token_id, token_configuration);
             }
-            _ => {
-                return Err(WasmSdkError::generic(format!(
-                    "Token configuration caching not implemented for network {:?}",
-                    network
-                )));
-            }
+            _ => unreachable!(), // Already checked above
         }
 
         Ok(())

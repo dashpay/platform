@@ -1,10 +1,12 @@
+use crate::core::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
 use js_sys::Uint8Array;
 use serde::de::{self, Error, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::ser::Serializer;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 use wasm_bindgen::prelude::*;
 
@@ -102,9 +104,20 @@ impl TryFrom<&str> for PlatformAddressWasm {
     type Error = WasmDppError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        // Try parsing as bech32m string
-        PlatformAddress::from_bech32m_string(value)
-            .map(|(addr, _network)| PlatformAddressWasm(addr))
+        // Try parsing as bech32m string first (e.g., "dashevo1..." or "tdashevo1...")
+        if let Ok((addr, _network)) = PlatformAddress::from_bech32m_string(value) {
+            return Ok(PlatformAddressWasm(addr));
+        }
+
+        // Fall back to hex decoding for compatibility with serialized format
+        let bytes = hex::decode(value).map_err(|e| {
+            WasmDppError::invalid_argument(format!(
+                "Invalid PlatformAddress: not valid bech32m or hex: {}",
+                e
+            ))
+        })?;
+        PlatformAddress::from_bytes(&bytes)
+            .map(PlatformAddressWasm)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
     }
 }
@@ -164,16 +177,18 @@ impl<'de> Deserialize<'de> for PlatformAddressWasm {
     }
 }
 
-fn parse_network(network: &str) -> Result<Network, WasmDppError> {
-    match network.to_lowercase().as_str() {
-        "mainnet" | "dash" => Ok(Network::Dash),
-        "testnet" => Ok(Network::Testnet),
-        "devnet" => Ok(Network::Devnet),
-        "regtest" => Ok(Network::Regtest),
-        _ => Err(WasmDppError::invalid_argument(format!(
-            "Invalid network: {}. Expected 'mainnet', 'testnet', 'devnet', or 'regtest'",
-            network
-        ))),
+impl Serialize for PlatformAddressWasm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            // JSON, TOML, etc. - use hex string
+            serializer.serialize_str(&hex::encode(self.0.to_bytes()))
+        } else {
+            // Binary formats (bincode, MessagePack, etc.) - use raw bytes
+            serializer.serialize_bytes(&self.0.to_bytes())
+        }
     }
 }
 
@@ -204,11 +219,12 @@ impl PlatformAddressWasm {
     }
 
     /// Returns the bech32m-encoded address string for the specified network.
-    ///
-    /// @param network - "mainnet", "testnet", "devnet", or "regtest"
     #[wasm_bindgen(js_name = "toBech32m")]
-    pub fn to_bech32m(&self, network: &str) -> WasmDppResult<String> {
-        let net = parse_network(network)?;
+    pub fn to_bech32m(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+    ) -> WasmDppResult<String> {
+        let net: Network = NetworkWasm::try_from(&network)?.into();
         Ok(self.0.to_bech32m_string(net))
     }
 

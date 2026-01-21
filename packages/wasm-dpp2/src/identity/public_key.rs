@@ -1,8 +1,8 @@
+use crate::core::network::NetworkWasm;
 use crate::data_contract::contract_bounds::ContractBoundsWasm;
 use crate::enums::keys::key_type::KeyTypeWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
-use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::serialization;
@@ -104,7 +104,7 @@ impl IdentityPublicKeyWasm {
     pub fn validate_private_key(
         &self,
         js_private_key_bytes: Vec<u8>,
-        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
     ) -> WasmDppResult<bool> {
         let mut private_key_bytes = [0u8; 32];
         let len = js_private_key_bytes.len().min(32);
