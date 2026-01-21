@@ -88,6 +88,18 @@ pub enum DashSDKResultDataType {
     IdentityBalanceMap = 6,
     /// Public key handle
     ResultPublicKeyHandle = 7,
+    /// Address info (single address with balance and nonce)
+    AddressInfo = 8,
+    /// Map of addresses to their info
+    AddressInfoMap = 9,
+    /// Trunk state for address synchronization
+    TrunkState = 10,
+    /// Branch state for address synchronization
+    BranchState = 11,
+    /// Recent address balance changes
+    RecentBalanceChanges = 12,
+    /// Recent compacted address balance changes
+    CompactedBalanceChanges = 13,
 }
 
 /// Binary data container for results
@@ -115,6 +127,196 @@ pub struct DashSDKIdentityBalanceMap {
     pub entries: *mut DashSDKIdentityBalanceEntry,
     /// Number of entries
     pub count: usize,
+}
+
+/// Information about a Platform address including its nonce and balance
+#[repr(C)]
+pub struct DashSDKAddressInfo {
+    /// Address bytes (variable length, typically 20-32 bytes)
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Nonce associated with the address (u32::MAX means address not found)
+    pub nonce: u32,
+    /// Balance in credits (u64::MAX means address not found)
+    pub balance: u64,
+}
+
+/// Single entry in an address info map
+#[repr(C)]
+pub struct DashSDKAddressInfoEntry {
+    /// Address bytes (variable length, typically 20-32 bytes)
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Nonce associated with the address (u32::MAX means address not found)
+    pub nonce: u32,
+    /// Balance in credits (u64::MAX means address not found)
+    pub balance: u64,
+}
+
+/// Map of addresses to their info
+#[repr(C)]
+pub struct DashSDKAddressInfoMap {
+    /// Array of entries
+    pub entries: *mut DashSDKAddressInfoEntry,
+    /// Number of entries
+    pub count: usize,
+}
+
+/// Single element in trunk state (address with balance/nonce)
+#[repr(C)]
+pub struct DashSDKTrunkStateElement {
+    /// Address key bytes
+    pub key: *mut u8,
+    /// Length of key bytes
+    pub key_len: usize,
+    /// Nonce associated with the address
+    pub nonce: u32,
+    /// Balance in credits
+    pub balance: u64,
+}
+
+/// Leaf boundary in trunk state (subtree that needs further queries)
+#[repr(C)]
+pub struct DashSDKLeafBoundary {
+    /// Leaf key bytes
+    pub key: *mut u8,
+    /// Length of key bytes
+    pub key_len: usize,
+    /// Expected hash (32 bytes)
+    pub hash: [u8; 32],
+    /// Estimated element count in this subtree (0 if unknown)
+    pub estimated_count: u64,
+}
+
+/// Trunk state for address synchronization
+#[repr(C)]
+pub struct DashSDKTrunkState {
+    /// Array of elements (addresses with balances found at trunk level)
+    pub elements: *mut DashSDKTrunkStateElement,
+    /// Number of elements
+    pub elements_count: usize,
+    /// Array of leaf boundaries (subtrees needing branch queries)
+    pub leaf_boundaries: *mut DashSDKLeafBoundary,
+    /// Number of leaf boundaries
+    pub leaf_boundaries_count: usize,
+    /// Checkpoint height for consistency
+    pub checkpoint_height: u64,
+}
+
+/// Branch state for address synchronization (result of branch query)
+#[repr(C)]
+pub struct DashSDKBranchState {
+    /// Array of elements (addresses with balances found in this branch)
+    pub elements: *mut DashSDKTrunkStateElement,
+    /// Number of elements
+    pub elements_count: usize,
+    /// Array of leaf boundaries (deeper subtrees needing further queries)
+    pub leaf_boundaries: *mut DashSDKLeafBoundary,
+    /// Number of leaf boundaries
+    pub leaf_boundaries_count: usize,
+}
+
+/// Credit operation type
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum DashSDKCreditOperationType {
+    /// Setting credits to a value
+    SetCredits = 0,
+    /// Adding to credits
+    AddToCredits = 1,
+}
+
+/// A single balance change for an address
+#[repr(C)]
+pub struct DashSDKAddressBalanceChange {
+    /// Address bytes
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Operation type
+    pub operation_type: DashSDKCreditOperationType,
+    /// Credit amount
+    pub credits: u64,
+}
+
+/// Balance changes for a single block
+#[repr(C)]
+pub struct DashSDKBlockBalanceChanges {
+    /// Block height
+    pub block_height: u64,
+    /// Array of balance changes
+    pub changes: *mut DashSDKAddressBalanceChange,
+    /// Number of changes
+    pub changes_count: usize,
+}
+
+/// Recent address balance changes across multiple blocks
+#[repr(C)]
+pub struct DashSDKRecentBalanceChanges {
+    /// Array of block balance changes
+    pub blocks: *mut DashSDKBlockBalanceChanges,
+    /// Number of blocks
+    pub blocks_count: usize,
+}
+
+/// Block-aware credit operation type for compacted balance changes
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum DashSDKBlockAwareCreditOperationType {
+    /// Set credits to a final value
+    BlockAwareSetCredits = 0,
+    /// Add to credits with block height entries
+    BlockAwareAddToCreditsOperations = 1,
+}
+
+/// Entry for block height to credits mapping
+#[repr(C)]
+pub struct DashSDKBlockHeightCreditEntry {
+    /// Block height
+    pub block_height: u64,
+    /// Credit amount
+    pub credits: u64,
+}
+
+/// A compacted balance change for an address (supports block-aware operations)
+#[repr(C)]
+pub struct DashSDKCompactedAddressChange {
+    /// Address bytes
+    pub address: *mut u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Operation type
+    pub operation_type: DashSDKBlockAwareCreditOperationType,
+    /// For SetCredits: the final value; for AddToCreditsOperations: ignored (use entries)
+    pub set_credits_value: u64,
+    /// For AddToCreditsOperations: array of block height/credit entries
+    pub add_entries: *mut DashSDKBlockHeightCreditEntry,
+    /// Number of entries (0 for SetCredits)
+    pub add_entries_count: usize,
+}
+
+/// Compacted balance changes for a range of blocks
+#[repr(C)]
+pub struct DashSDKCompactedBlockRange {
+    /// Start block height of the range
+    pub start_block_height: u64,
+    /// End block height of the range
+    pub end_block_height: u64,
+    /// Array of address changes
+    pub changes: *mut DashSDKCompactedAddressChange,
+    /// Number of changes
+    pub changes_count: usize,
+}
+
+/// Recent compacted address balance changes across multiple ranges
+#[repr(C)]
+pub struct DashSDKCompactedBalanceChanges {
+    /// Array of compacted block ranges
+    pub ranges: *mut DashSDKCompactedBlockRange,
+    /// Number of ranges
+    pub ranges_count: usize,
 }
 
 /// Result type for FFI functions that return data
@@ -179,6 +381,60 @@ impl DashSDKResult {
         DashSDKResult {
             data_type: DashSDKResultDataType::IdentityBalanceMap,
             data: Box::into_raw(Box::new(map)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with address info
+    pub fn success_address_info(info: DashSDKAddressInfo) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::AddressInfo,
+            data: Box::into_raw(Box::new(info)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with an address info map
+    pub fn success_address_info_map(map: DashSDKAddressInfoMap) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::AddressInfoMap,
+            data: Box::into_raw(Box::new(map)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with trunk state
+    pub fn success_trunk_state(state: DashSDKTrunkState) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::TrunkState,
+            data: Box::into_raw(Box::new(state)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with branch state
+    pub fn success_branch_state(state: DashSDKBranchState) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::BranchState,
+            data: Box::into_raw(Box::new(state)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with recent balance changes
+    pub fn success_recent_balance_changes(changes: DashSDKRecentBalanceChanges) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::RecentBalanceChanges,
+            data: Box::into_raw(Box::new(changes)) as *mut c_void,
+            error: std::ptr::null_mut(),
+        }
+    }
+
+    /// Create a success result with compacted balance changes
+    pub fn success_compacted_balance_changes(changes: DashSDKCompactedBalanceChanges) -> Self {
+        DashSDKResult {
+            data_type: DashSDKResultDataType::CompactedBalanceChanges,
+            data: Box::into_raw(Box::new(changes)) as *mut c_void,
             error: std::ptr::null_mut(),
         }
     }
@@ -424,6 +680,193 @@ pub unsafe extern "C" fn dash_sdk_identity_balance_map_free(map: *mut DashSDKIde
     if !map.entries.is_null() && map.count > 0 {
         // Free the entries array
         let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+    }
+}
+
+/// Free an address info structure
+///
+/// # Safety
+/// - `info` must be a valid pointer to `DashSDKAddressInfo` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees the address bytes and the struct.
+/// - Do not access `info` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_address_info_free(info: *mut DashSDKAddressInfo) {
+    if info.is_null() {
+        return;
+    }
+
+    let info = Box::from_raw(info);
+    if !info.address.is_null() && info.address_len > 0 {
+        let _ = Vec::from_raw_parts(info.address, info.address_len, info.address_len);
+    }
+}
+
+/// Free an address info map
+///
+/// # Safety
+/// - `map` must be a valid, non-dangling pointer returned by this SDK.
+/// - It may be null (no-op). When non-null, this frees all entries, their address bytes, and the struct.
+/// - Using `map` after this function returns is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_address_info_map_free(map: *mut DashSDKAddressInfoMap) {
+    if map.is_null() {
+        return;
+    }
+
+    let map = Box::from_raw(map);
+    if !map.entries.is_null() && map.count > 0 {
+        let entries_slice = std::slice::from_raw_parts_mut(map.entries, map.count);
+        for entry in entries_slice.iter() {
+            if !entry.address.is_null() && entry.address_len > 0 {
+                let _ = Vec::from_raw_parts(entry.address, entry.address_len, entry.address_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+    }
+}
+
+/// Free a trunk state structure
+///
+/// # Safety
+/// - `state` must be a valid pointer to `DashSDKTrunkState` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all elements, leaf boundaries, and the struct.
+/// - Do not access `state` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_trunk_state_free(state: *mut DashSDKTrunkState) {
+    if state.is_null() {
+        return;
+    }
+
+    let state = Box::from_raw(state);
+    
+    // Free elements
+    if !state.elements.is_null() && state.elements_count > 0 {
+        let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
+        for element in elements_slice.iter() {
+            if !element.key.is_null() && element.key_len > 0 {
+                let _ = Vec::from_raw_parts(element.key, element.key_len, element.key_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
+    }
+    
+    // Free leaf boundaries
+    if !state.leaf_boundaries.is_null() && state.leaf_boundaries_count > 0 {
+        let boundaries_slice = std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
+        for boundary in boundaries_slice.iter() {
+            if !boundary.key.is_null() && boundary.key_len > 0 {
+                let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(state.leaf_boundaries, state.leaf_boundaries_count, state.leaf_boundaries_count);
+    }
+}
+
+/// Free a branch state structure
+///
+/// # Safety
+/// - `state` must be a valid pointer to `DashSDKBranchState` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all elements, leaf boundaries, and the struct.
+/// - Do not access `state` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchState) {
+    if state.is_null() {
+        return;
+    }
+
+    let state = Box::from_raw(state);
+    
+    // Free elements
+    if !state.elements.is_null() && state.elements_count > 0 {
+        let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
+        for element in elements_slice.iter() {
+            if !element.key.is_null() && element.key_len > 0 {
+                let _ = Vec::from_raw_parts(element.key, element.key_len, element.key_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
+    }
+    
+    // Free leaf boundaries
+    if !state.leaf_boundaries.is_null() && state.leaf_boundaries_count > 0 {
+        let boundaries_slice = std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
+        for boundary in boundaries_slice.iter() {
+            if !boundary.key.is_null() && boundary.key_len > 0 {
+                let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(state.leaf_boundaries, state.leaf_boundaries_count, state.leaf_boundaries_count);
+    }
+}
+
+/// Free a recent balance changes structure
+///
+/// # Safety
+/// - `changes` must be a valid pointer to `DashSDKRecentBalanceChanges` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all blocks, changes, addresses, and the struct.
+/// - Do not access `changes` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(changes: *mut DashSDKRecentBalanceChanges) {
+    if changes.is_null() {
+        return;
+    }
+
+    let changes = Box::from_raw(changes);
+    
+    // Free blocks
+    if !changes.blocks.is_null() && changes.blocks_count > 0 {
+        let blocks_slice = std::slice::from_raw_parts_mut(changes.blocks, changes.blocks_count);
+        for block in blocks_slice.iter() {
+            // Free changes within each block
+            if !block.changes.is_null() && block.changes_count > 0 {
+                let changes_slice = std::slice::from_raw_parts_mut(block.changes, block.changes_count);
+                for change in changes_slice.iter() {
+                    if !change.address.is_null() && change.address_len > 0 {
+                        let _ = Vec::from_raw_parts(change.address, change.address_len, change.address_len);
+                    }
+                }
+                let _ = Vec::from_raw_parts(block.changes, block.changes_count, block.changes_count);
+            }
+        }
+        let _ = Vec::from_raw_parts(changes.blocks, changes.blocks_count, changes.blocks_count);
+    }
+}
+
+/// Free a compacted balance changes structure
+///
+/// # Safety
+/// - `changes` must be a valid pointer to `DashSDKCompactedBalanceChanges` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees all ranges, changes, addresses, entries, and the struct.
+/// - Do not access `changes` after this call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_compacted_balance_changes_free(changes: *mut DashSDKCompactedBalanceChanges) {
+    if changes.is_null() {
+        return;
+    }
+
+    let changes = Box::from_raw(changes);
+    
+    // Free ranges
+    if !changes.ranges.is_null() && changes.ranges_count > 0 {
+        let ranges_slice = std::slice::from_raw_parts_mut(changes.ranges, changes.ranges_count);
+        for range in ranges_slice.iter() {
+            // Free changes within each range
+            if !range.changes.is_null() && range.changes_count > 0 {
+                let changes_slice = std::slice::from_raw_parts_mut(range.changes, range.changes_count);
+                for change in changes_slice.iter() {
+                    // Free address
+                    if !change.address.is_null() && change.address_len > 0 {
+                        let _ = Vec::from_raw_parts(change.address, change.address_len, change.address_len);
+                    }
+                    // Free add entries
+                    if !change.add_entries.is_null() && change.add_entries_count > 0 {
+                        let _ = Vec::from_raw_parts(change.add_entries, change.add_entries_count, change.add_entries_count);
+                    }
+                }
+                let _ = Vec::from_raw_parts(range.changes, range.changes_count, range.changes_count);
+            }
+        }
+        let _ = Vec::from_raw_parts(changes.ranges, changes.ranges_count, changes.ranges_count);
     }
 }
 

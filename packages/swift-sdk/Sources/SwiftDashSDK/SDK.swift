@@ -65,6 +65,9 @@ public final class SDK: @unchecked Sendable {
     /// Contracts operations  
     public lazy var contracts = Contracts(sdk: self)
     
+    /// Address operations (balance, nonce queries)
+    public lazy var addresses = Addresses(sdk: self)
+    
     /// Initialize the SDK library (call once at app startup)
     public static func initialize() {
         dash_sdk_init()
