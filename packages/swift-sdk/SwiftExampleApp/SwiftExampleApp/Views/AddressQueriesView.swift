@@ -78,7 +78,7 @@ struct AddressQueriesView: View {
                 .padding(.vertical, 4)
             }
         }
-        .navigationTitle("Address Queries")
+        .navigationTitle("Address Operations")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -1710,6 +1710,1956 @@ struct CompactedAddressChangeView: View {
         .background(Color.gray.opacity(0.05))
         .cornerRadius(8)
         .padding(.leading, 16)
+    }
+}
+
+// MARK: - Transfer Address Funds View
+
+struct TransferAddressFundsView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    // Input state
+    @State private var inputAddressHex: String = ""
+    @State private var inputAmount: String = ""
+    @State private var inputPrivateKeyHex: String = ""
+    
+    // Output state
+    @State private var outputAddressHex: String = ""
+    @State private var outputAmount: String = ""
+    
+    // Result state
+    @State private var isLoading = false
+    @State private var result: PlatformAddressInfosResult?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Transfer Address Funds")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Transfer credits between Platform addresses. This creates a state transition on-chain.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Text("⚠️ This is an on-chain transaction. Requires valid addresses with funds and correct private keys.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Input Address Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Input (Source)")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $inputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 1000000000", text: $inputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(inputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $inputPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Output Address Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Output (Destination)")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $outputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 500000000", text: $outputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(outputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Info about fees
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "info.circle")
+                        Text("Fee Info")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    
+                    Text("Network fees will be deducted from the input amount. The output amount should be less than input to cover fees.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Transfer Button
+                Button(action: executeTransfer) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.right.circle.fill")
+                        }
+                        Text(isLoading ? "Transferring..." : "Execute Transfer")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack(alignment: .top) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let result = result {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Transfer Successful!", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.headline)
+                                
+                                Text("Updated Balances:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                ForEach(Array(result.infos.values), id: \.addressHex) { info in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(info.addressHex.prefix(20) + "...")
+                                            .font(.caption)
+                                            .monospaced()
+                                        HStack {
+                                            Text("\(formatCredits(info.balance)) credits")
+                                            Text("•")
+                                            Text("\(formatDash(info.balance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                        .font(.caption)
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Transfer Funds")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard inputAddressHex.count == 42,
+              inputPrivateKeyHex.count == 64,
+              outputAddressHex.count == 42,
+              let inputAmt = UInt64(inputAmount), inputAmt > 0,
+              let outputAmt = UInt64(outputAmount), outputAmt > 0
+        else { return false }
+        
+        // Basic hex validation
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              outputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+        else { return false }
+        
+        return true
+    }
+    
+    private func executeTransfer() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let inputAddressData = Data(hexString: inputAddressHex),
+              let privateKeyData = Data(hexString: inputPrivateKeyHex),
+              let outputAddressData = Data(hexString: outputAddressHex),
+              let inputAmt = UInt64(inputAmount),
+              let outputAmt = UInt64(outputAmount)
+        else {
+            errorMessage = "Invalid input data"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let inputs = [
+                    Addresses.AddressTransferInput(
+                        addressBytes: inputAddressData,
+                        amount: inputAmt,
+                        nonce: 0,
+                        privateKey: privateKeyData
+                    )
+                ]
+                
+                let outputs = [
+                    Addresses.AddressTransferOutput(
+                        addressBytes: outputAddressData,
+                        amount: outputAmt
+                    )
+                ]
+                
+                let transferResult = try sdk.addresses.transferFunds(
+                    inputs: inputs,
+                    outputs: outputs,
+                    feeFromInputIndex: 0
+                )
+                
+                await MainActor.run {
+                    result = transferResult
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Withdraw Address Funds View
+
+struct WithdrawAddressFundsView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    // Input state
+    @State private var inputAddressHex: String = ""
+    @State private var inputAmount: String = ""
+    @State private var inputPrivateKeyHex: String = ""
+    
+    // Core address state
+    @State private var coreAddress: String = ""
+    
+    // Optional change address
+    @State private var changeAddressHex: String = ""
+    @State private var useChangeAddress: Bool = false
+    
+    // Advanced options
+    @State private var coreFeePerByte: String = "1"
+    @State private var poolingStrategy: Addresses.PoolingStrategy = .never
+    
+    // Result state
+    @State private var isLoading = false
+    @State private var result: PlatformAddressInfosResult?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Withdraw Address Funds")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Withdraw credits from Platform addresses to a Dash Core (L1) address. This creates a state transition on-chain.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Text("⚠️ This is an on-chain transaction. Requires valid Platform addresses with funds and correct private keys.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Input Address Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Input (Source Platform Address)")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $inputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 1000000000", text: $inputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(inputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $inputPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Core Address Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Core (L1) Address (Destination)")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Dash Core Address (base58)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., yP8A3...", text: $coreAddress)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        Text("Base58-encoded Dash Core address (L1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Optional Change Address
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Use Change Address", isOn: $useChangeAddress)
+                        .font(.headline)
+                    
+                    if useChangeAddress {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Change Address (hex, 42 chars)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("00...(21 bytes = 42 hex chars)", text: $changeAddressHex)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .monospaced()
+                            Text("Platform address to receive change (optional)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.gray.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Advanced Options
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Advanced Options")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Core Fee Per Byte")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 1", text: $coreFeePerByte)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        Text("0 means use default (1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Pooling Strategy")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Picker("Pooling", selection: $poolingStrategy) {
+                            Text("Never").tag(Addresses.PoolingStrategy.never)
+                            Text("If Available").tag(Addresses.PoolingStrategy.ifAvailable)
+                            Text("Standard").tag(Addresses.PoolingStrategy.standard)
+                        }
+                        .pickerStyle(SegmentedPickerStyle())
+                    }
+                }
+                .padding()
+                .background(Color.gray.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Info about fees
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "info.circle")
+                        Text("Fee Info")
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    
+                    Text("Network fees will be deducted from the input amount. Change (if any) will be sent to the change address if provided, otherwise it's lost.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Withdraw Button
+                Button(action: executeWithdrawal) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.down.circle.fill")
+                        }
+                        Text(isLoading ? "Withdrawing..." : "Execute Withdrawal")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.purple)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack(alignment: .top) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let result = result {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Withdrawal Successful!", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.headline)
+                                
+                                Text("Updated Balances:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                ForEach(Array(result.infos.values), id: \.addressHex) { info in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(info.addressHex.prefix(20) + "...")
+                                            .font(.caption)
+                                            .monospaced()
+                                        HStack {
+                                            Text("\(formatCredits(info.balance)) credits")
+                                            Text("•")
+                                            Text("\(formatDash(info.balance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                        .font(.caption)
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Withdraw Funds")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard inputAddressHex.count == 42,
+              inputPrivateKeyHex.count == 64,
+              !coreAddress.isEmpty,
+              let inputAmt = UInt64(inputAmount), inputAmt > 0
+        else { return false }
+        
+        // Basic hex validation
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+        else { return false }
+        
+        // Validate change address if used
+        if useChangeAddress {
+            guard changeAddressHex.count == 42,
+                  changeAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+            else { return false }
+        }
+        
+        return true
+    }
+    
+    private func executeWithdrawal() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let inputAddressData = Data(hexString: inputAddressHex),
+              let privateKeyData = Data(hexString: inputPrivateKeyHex),
+              let inputAmt = UInt64(inputAmount)
+        else {
+            errorMessage = "Invalid input data"
+            showResult = true
+            return
+        }
+        
+        let coreFee = UInt32(coreFeePerByte) ?? 0
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let inputs = [
+                    Addresses.AddressTransferInput(
+                        addressBytes: inputAddressData,
+                        amount: inputAmt,
+                        nonce: 0,
+                        privateKey: privateKeyData
+                    )
+                ]
+                
+                let changeAddressData: Data? = if useChangeAddress, let change = Data(hexString: changeAddressHex) {
+                    change
+                } else {
+                    nil
+                }
+                
+                let withdrawalResult = try sdk.addresses.withdrawFunds(
+                    inputs: inputs,
+                    coreAddress: coreAddress,
+                    coreFeePerByte: coreFee,
+                    pooling: poolingStrategy,
+                    feeFromInputIndex: 0,
+                    changeAddress: changeAddressData
+                )
+                
+                await MainActor.run {
+                    result = withdrawalResult
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Top Up Address From Asset Lock View
+
+struct TopUpAddressFromAssetLockView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    @State private var proofType: Addresses.AssetLockProofType = Addresses.AssetLockProofType.instant
+    @State private var outputAddressHex: String = ""
+    @State private var outputAmount: String = ""
+    @State private var assetLockPrivateKeyHex: String = ""
+    
+    // Instant lock fields
+    @State private var instantLockHex: String = ""
+    @State private var transactionHex: String = ""
+    @State private var outputIndex: String = "0"
+    
+    // Chain lock fields
+    @State private var coreChainLockedHeight: String = ""
+    @State private var outPointHex: String = ""
+    
+    @State private var isLoading = false
+    @State private var result: PlatformAddressInfosResult?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Top Up Address (Asset Lock)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Fund Platform addresses from a Dash Core asset lock (instant or chain lock).")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Text("⚠️ This requires proper asset lock proof data from Dash Core transactions.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Proof Type Selector
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Asset Lock Proof Type")
+                        .font(.headline)
+                    
+                    Picker("Proof Type", selection: $proofType) {
+                        Text("Instant Lock").tag(Addresses.AssetLockProofType.instant as Addresses.AssetLockProofType)
+                        Text("Chain Lock").tag(Addresses.AssetLockProofType.chain as Addresses.AssetLockProofType)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                }
+                .padding()
+                .background(Color.gray.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Proof-specific fields
+                if proofType == Addresses.AssetLockProofType.instant {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Instant Lock Proof")
+                            .font(.headline)
+                            .foregroundColor(.blue)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Instant Lock (hex)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("Instant lock bytes as hex", text: $instantLockHex)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .monospaced()
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Transaction (hex)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("Transaction bytes as hex", text: $transactionHex)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .monospaced()
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Output Index")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("0", text: $outputIndex)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .keyboardType(.numberPad)
+                        }
+                    }
+                    .padding()
+                    .background(Color.blue.opacity(0.05))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Chain Lock Proof")
+                            .font(.headline)
+                            .foregroundColor(.purple)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Core Chain Locked Height")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("Block height", text: $coreChainLockedHeight)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .keyboardType(.numberPad)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Out Point (hex, 72 chars)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("36 bytes = 72 hex chars (32 txid + 4 vout)", text: $outPointHex)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .monospaced()
+                        }
+                    }
+                    .padding()
+                    .background(Color.purple.opacity(0.05))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                }
+                
+                // Output Address
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Output (Platform Address)")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $outputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits, optional)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0 = SDK calculates", text: $outputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(outputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Private Key
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Asset Lock Private Key")
+                        .font(.headline)
+                        .foregroundColor(.red)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $assetLockPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding()
+                .background(Color.red.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Top Up Button
+                Button(action: executeTopUp) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.up.circle.fill")
+                        }
+                        Text(isLoading ? "Topping Up..." : "Execute Top Up")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack(alignment: .top) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let result = result {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Top Up Successful!", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.headline)
+                                
+                                Text("Updated Balances:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                ForEach(Array(result.infos.values), id: \.addressHex) { info in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(info.addressHex.prefix(20) + "...")
+                                            .font(.caption)
+                                            .monospaced()
+                                        HStack {
+                                            Text("\(formatCredits(info.balance)) credits")
+                                            Text("•")
+                                            Text("\(formatDash(info.balance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                        .font(.caption)
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Top Up Address")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard outputAddressHex.count == 42,
+              assetLockPrivateKeyHex.count == 64
+        else { return false }
+        
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard outputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              assetLockPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+        else { return false }
+        
+        if proofType == Addresses.AssetLockProofType.instant {
+            guard !instantLockHex.isEmpty,
+                  !transactionHex.isEmpty,
+                  UInt32(outputIndex) != nil
+            else { return false }
+        } else {
+            guard !coreChainLockedHeight.isEmpty,
+                  outPointHex.count == 72,
+                  UInt32(coreChainLockedHeight) != nil,
+                  outPointHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+            else { return false }
+        }
+        
+        return true
+    }
+    
+    private func executeTopUp() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let outputAddressData = Data(hexString: outputAddressHex),
+              let privateKeyData = Data(hexString: assetLockPrivateKeyHex)
+        else {
+            errorMessage = "Invalid input data"
+            showResult = true
+            return
+        }
+        
+        let outputAmountValue = UInt64(outputAmount) ?? 0
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task {
+            do {
+                let outputs = [
+                    Addresses.AddressTransferOutput(
+                        addressBytes: outputAddressData,
+                        amount: outputAmountValue
+                    )
+                ]
+                
+                let result: PlatformAddressInfosResult
+                
+                if proofType == Addresses.AssetLockProofType.instant {
+                    guard let instantLockData = Data(hexString: instantLockHex),
+                          let transactionData = Data(hexString: transactionHex),
+                          let outputIdx = UInt32(outputIndex)
+                    else {
+                        await MainActor.run {
+                            errorMessage = "Invalid instant lock data"
+                            showResult = true
+                            isLoading = false
+                        }
+                        return
+                    }
+                    
+                    result = try sdk.addresses.topUpAddressFromAssetLock(
+                        proofType: Addresses.AssetLockProofType.instant,
+                        instantLockData: instantLockData,
+                        transactionData: transactionData,
+                        outputIndex: outputIdx,
+                        coreChainLockedHeight: 0,
+                        outPoint: nil,
+                        assetLockPrivateKey: privateKeyData,
+                        outputs: outputs
+                    )
+                } else {
+                    guard let outPointData = Data(hexString: outPointHex),
+                          let height = UInt32(coreChainLockedHeight)
+                    else {
+                        await MainActor.run {
+                            errorMessage = "Invalid chain lock data"
+                            showResult = true
+                            isLoading = false
+                        }
+                        return
+                    }
+                    
+                    result = try sdk.addresses.topUpAddressFromAssetLock(
+                        proofType: Addresses.AssetLockProofType.chain,
+                        instantLockData: nil,
+                        transactionData: nil,
+                        outputIndex: 0,
+                        coreChainLockedHeight: height,
+                        outPoint: outPointData,
+                        assetLockPrivateKey: privateKeyData,
+                        outputs: outputs
+                    )
+                }
+                
+                await MainActor.run {
+                    self.result = result
+                    showResult = true
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    showResult = true
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Top Up Identity From Addresses View
+
+struct TopUpIdentityFromAddressesView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    @State private var identityId: String = ""
+    @State private var inputAddressHex: String = ""
+    @State private var inputAmount: String = ""
+    @State private var inputNonce: String = "0"
+    @State private var inputPrivateKeyHex: String = ""
+    
+    @State private var isLoading = false
+    @State private var result: (identityBalance: UInt64, addressInfos: PlatformAddressInfosResult)?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Top Up Identity (From Addresses)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Top up an identity using Platform address balances.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Identity ID
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Identity ID")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Base58-encoded Identity ID")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 5Xy...", text: $identityId)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Input Address
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Input Address")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $inputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0", text: $inputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(inputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Nonce (0 = auto-fetch)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0", text: $inputNonce)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $inputPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Execute Button
+                Button(action: executeTopUp) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.up.circle.fill")
+                        }
+                        Text(isLoading ? "Topping Up..." : "Execute Top Up")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack(alignment: .top) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let result = result {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Top Up Successful!", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.headline)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Identity Balance:")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    HStack {
+                                        Text("\(formatCredits(result.identityBalance)) credits")
+                                        Text("•")
+                                        Text("\(formatDash(result.identityBalance)) DASH")
+                                            .foregroundColor(.blue)
+                                    }
+                                    .font(.caption)
+                                }
+                                .padding(8)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(6)
+                                
+                                Text("Updated Address Balances:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                ForEach(Array(result.addressInfos.infos.values), id: \.addressHex) { info in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(info.addressHex.prefix(20) + "...")
+                                            .font(.caption)
+                                            .monospaced()
+                                        HStack {
+                                            Text("\(formatCredits(info.balance)) credits")
+                                            Text("•")
+                                            Text("\(formatDash(info.balance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                        .font(.caption)
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Top Up Identity")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard !identityId.isEmpty,
+              inputAddressHex.count == 42,
+              inputPrivateKeyHex.count == 64,
+              let amount = UInt64(inputAmount), amount > 0
+        else { return false }
+        
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+        else { return false }
+        
+        return true
+    }
+    
+    private func executeTopUp() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let inputAddressData = Data(hexString: inputAddressHex),
+              let privateKeyData = Data(hexString: inputPrivateKeyHex),
+              let amount = UInt64(inputAmount),
+              let nonce = UInt32(inputNonce)
+        else {
+            errorMessage = "Invalid input data"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task { @MainActor in
+            do {
+                let inputs = [
+                    Addresses.AddressTransferInput(
+                        addressBytes: inputAddressData,
+                        amount: amount,
+                        nonce: nonce,
+                        privateKey: privateKeyData
+                    )
+                ]
+                
+                let result = try await sdk.addresses.topUpIdentityFromAddresses(
+                    identityId: identityId,
+                    inputs: inputs
+                )
+                
+                self.result = result
+                showResult = true
+                isLoading = false
+            } catch {
+                errorMessage = error.localizedDescription
+                showResult = true
+                isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - Transfer Identity To Addresses View
+
+struct TransferIdentityToAddressesView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    @State private var identityId: String = ""
+    @State private var outputAddressHex: String = ""
+    @State private var outputAmount: String = ""
+    @State private var identityPrivateKeyHex: String = ""
+    @State private var publicKeyId: String = "0"
+    
+    @State private var isLoading = false
+    @State private var result: (identityBalance: UInt64, addressInfos: PlatformAddressInfosResult)?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Transfer Identity → Addresses")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Transfer credits from an identity to Platform addresses.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Identity ID
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Identity ID")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Base58-encoded Identity ID")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 5Xy...", text: $identityId)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Output Address
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Output Address")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $outputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0", text: $outputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(outputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Identity Private Key
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Identity Private Key")
+                        .font(.headline)
+                        .foregroundColor(.red)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $identityPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Public Key ID (0 = auto-select TRANSFER key)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0", text: $publicKeyId)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                    }
+                }
+                .padding()
+                .background(Color.red.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Execute Button
+                Button(action: executeTransfer) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "arrow.right.circle.fill")
+                        }
+                        Text(isLoading ? "Transferring..." : "Execute Transfer")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack(alignment: .top) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let result = result {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Transfer Successful!", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.headline)
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Identity Balance:")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    HStack {
+                                        Text("\(formatCredits(result.identityBalance)) credits")
+                                        Text("•")
+                                        Text("\(formatDash(result.identityBalance)) DASH")
+                                            .foregroundColor(.blue)
+                                    }
+                                    .font(.caption)
+                                }
+                                .padding(8)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(6)
+                                
+                                Text("Updated Address Balances:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                ForEach(Array(result.addressInfos.infos.values), id: \.addressHex) { info in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(info.addressHex.prefix(20) + "...")
+                                            .font(.caption)
+                                            .monospaced()
+                                        HStack {
+                                            Text("\(formatCredits(info.balance)) credits")
+                                            Text("•")
+                                            Text("\(formatDash(info.balance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                        .font(.caption)
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Transfer Identity → Addresses")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard !identityId.isEmpty,
+              outputAddressHex.count == 42,
+              identityPrivateKeyHex.count == 64,
+              let amount = UInt64(outputAmount), amount > 0
+        else { return false }
+        
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard outputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              identityPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+        else { return false }
+        
+        return true
+    }
+    
+    private func executeTransfer() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let outputAddressData = Data(hexString: outputAddressHex),
+              let privateKeyData = Data(hexString: identityPrivateKeyHex),
+              let amount = UInt64(outputAmount),
+              let pkId = UInt32(publicKeyId)
+        else {
+            errorMessage = "Invalid input data"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task { @MainActor in
+            do {
+                let outputs = [
+                    Addresses.AddressTransferOutput(
+                        addressBytes: outputAddressData,
+                        amount: amount
+                    )
+                ]
+                
+                let result = try await sdk.addresses.transferCreditsToAddresses(
+                    identityId: identityId,
+                    outputs: outputs,
+                    identityPrivateKey: privateKeyData,
+                    publicKeyId: pkId
+                )
+                
+                self.result = result
+                showResult = true
+                isLoading = false
+            } catch {
+                errorMessage = error.localizedDescription
+                showResult = true
+                isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - Create Identity From Addresses View
+
+struct CreateIdentityFromAddressesView: View {
+    @EnvironmentObject var appState: UnifiedAppState
+    
+    @State private var identityId: String = ""
+    @State private var inputAddressHex: String = ""
+    @State private var inputAmount: String = ""
+    @State private var inputNonce: String = "0"
+    @State private var inputPrivateKeyHex: String = ""
+    @State private var useChangeAddress: Bool = false
+    @State private var changeAddressHex: String = ""
+    @State private var changeAmount: String = ""
+    @State private var identityPrivateKeyHex: String = ""
+    
+    @State private var isLoading = false
+    @State private var result: (identityHandle: OpaquePointer, addressInfos: PlatformAddressInfosResult)?
+    @State private var errorMessage: String?
+    @State private var showResult = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Create Identity (From Addresses)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Create a new identity funded by Platform address balances.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                
+                // Identity ID
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Identity ID")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Base58-encoded Identity ID (must have public keys)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("e.g., 5Xy...", text: $identityId)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        Text("The identity must be prepared with public keys before creation.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Input Address
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Input Address (Funding)")
+                        .font(.headline)
+                        .foregroundColor(.green)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Address (hex, 42 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("00...(21 bytes = 42 hex chars)", text: $inputAddressHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Amount (credits)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0", text: $inputAmount)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                        if let amount = UInt64(inputAmount), amount > 0 {
+                            Text("\(formatDash(amount)) DASH")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Nonce (required)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        TextField("0", text: $inputNonce)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.numberPad)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $inputPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding()
+                .background(Color.green.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Change Address
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Use Change Address", isOn: $useChangeAddress)
+                        .font(.headline)
+                    
+                    if useChangeAddress {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Change Address (hex, 42 chars)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("00...(21 bytes = 42 hex chars)", text: $changeAddressHex)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .monospaced()
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Change Amount (credits, optional)")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            TextField("0 = SDK calculates", text: $changeAmount)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .keyboardType(.numberPad)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.purple.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Identity Private Key
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Identity Private Key")
+                        .font(.headline)
+                        .foregroundColor(.red)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Private Key (hex, 64 chars)")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        SecureField("32-byte private key as hex", text: $identityPrivateKeyHex)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .monospaced()
+                        Text("Keep your private key secure!")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding()
+                .background(Color.red.opacity(0.05))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                // Execute Button
+                Button(action: executeCreate) {
+                    HStack {
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        Text(isLoading ? "Creating..." : "Execute Create")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(isLoading || !isFormValid ? Color.gray : Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .disabled(isLoading || !isFormValid || appState.platformState.sdk == nil)
+                .padding(.horizontal)
+                
+                // Result
+                if showResult {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Result")
+                            .font(.headline)
+                        
+                        if let error = errorMessage {
+                            HStack(alignment: .top) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                Text(error)
+                                    .foregroundColor(.red)
+                            }
+                            .padding()
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if let result = result {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Identity Created Successfully!", systemImage: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.headline)
+                                
+                                Text("Identity handle created. Updated Address Balances:")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                
+                                ForEach(Array(result.addressInfos.infos.values), id: \.addressHex) { info in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(info.addressHex.prefix(20) + "...")
+                                            .font(.caption)
+                                            .monospaced()
+                                        HStack {
+                                            Text("\(formatCredits(info.balance)) credits")
+                                            Text("•")
+                                            Text("\(formatDash(info.balance)) DASH")
+                                                .foregroundColor(.blue)
+                                        }
+                                        .font(.caption)
+                                    }
+                                    .padding(8)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(6)
+                                }
+                                
+                                Text("⚠️ Note: Identity handle must be freed using dash_sdk_identity_destroy")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                            .padding()
+                            .background(Color.green.opacity(0.05))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+            }
+        }
+        .navigationTitle("Create Identity")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    private var isFormValid: Bool {
+        guard !identityId.isEmpty,
+              inputAddressHex.count == 42,
+              inputPrivateKeyHex.count == 64,
+              identityPrivateKeyHex.count == 64,
+              let amount = UInt64(inputAmount), amount > 0,
+              UInt32(inputNonce) != nil
+        else { return false }
+        
+        if useChangeAddress {
+            guard changeAddressHex.count == 42 else { return false }
+        }
+        
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
+              identityPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
+        else { return false }
+        
+        if useChangeAddress {
+            guard changeAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }) else { return false }
+        }
+        
+        return true
+    }
+    
+    private func executeCreate() {
+        guard let sdk = appState.platformState.sdk else { return }
+        
+        guard let inputAddressData = Data(hexString: inputAddressHex),
+              let inputPrivateKeyData = Data(hexString: inputPrivateKeyHex),
+              let identityPrivateKeyData = Data(hexString: identityPrivateKeyHex),
+              let amount = UInt64(inputAmount),
+              let nonce = UInt32(inputNonce)
+        else {
+            errorMessage = "Invalid input data"
+            showResult = true
+            return
+        }
+        
+        isLoading = true
+        errorMessage = nil
+        result = nil
+        showResult = false
+        
+        Task { @MainActor in
+            do {
+                let inputs = [
+                    Addresses.AddressTransferInput(
+                        addressBytes: inputAddressData,
+                        amount: amount,
+                        nonce: nonce,
+                        privateKey: inputPrivateKeyData
+                    )
+                ]
+                
+                var output: Addresses.AddressTransferOutput? = nil
+                if useChangeAddress, let changeAddressData = Data(hexString: changeAddressHex) {
+                    let changeAmt = UInt64(changeAmount) ?? 0
+                    output = Addresses.AddressTransferOutput(
+                        addressBytes: changeAddressData,
+                        amount: changeAmt
+                    )
+                }
+                
+                let result = try await sdk.addresses.createIdentityFromAddresses(
+                    identityId: identityId,
+                    inputs: inputs,
+                    output: output,
+                    identityPrivateKey: identityPrivateKeyData
+                )
+                
+                self.result = result
+                showResult = true
+                isLoading = false
+            } catch {
+                errorMessage = error.localizedDescription
+                showResult = true
+                isLoading = false
+            }
+        }
     }
 }
 
