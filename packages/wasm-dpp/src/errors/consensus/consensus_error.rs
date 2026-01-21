@@ -75,7 +75,6 @@ use dpp::consensus::state::document::document_contest_identity_already_contestan
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
-use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
 use dpp::consensus::state::identity::identity_for_token_configuration_not_found_error::IdentityInTokenConfigurationNotFoundError;
@@ -130,6 +129,7 @@ use crate::errors::consensus::state::document::{
     DocumentAlreadyPresentErrorWasm, DocumentNotFoundErrorWasm, DocumentOwnerIdMismatchErrorWasm,
     DocumentTimestampWindowViolationErrorWasm, DocumentTimestampsMismatchErrorWasm,
     DuplicateUniqueIndexErrorWasm, InvalidDocumentRevisionErrorWasm,
+    ReferencedEntityNotFoundErrorWasm,
 };
 use crate::errors::consensus::state::identity::{
     IdentityAlreadyExistsErrorWasm, IdentityPublicKeyIsDisabledErrorWasm,
@@ -445,7 +445,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             generic_consensus_error!(AddressInvalidNonceError, e).into()
         }
         StateError::ReferencedEntityNotFoundError(e) => {
-            generic_consensus_error!(ReferencedEntityNotFoundError, e).into()
+            ReferencedEntityNotFoundErrorWasm::from(e).into()
         }
     }
 }
@@ -925,7 +925,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             generic_consensus_error!(InvalidRemainderOutputCountError, e).into()
         }
         BasicError::ReferencedEntityNotFoundError(e) => {
-            generic_consensus_error!(ReferencedEntityNotFoundError, e).into()
+            ReferencedEntityNotFoundErrorWasm::from(e).into()
         }
     }
 }
