@@ -1,6 +1,7 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::prelude::Identifier;
 use dpp::voting::contender_structs::{
     ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
@@ -108,4 +109,9 @@ impl_wasm_conversions!(
     ContenderWithSerializedDocument,
     ContenderWithSerializedDocumentObjectJs,
     ContenderWithSerializedDocumentJSONJs
+);
+
+impl_wasm_type_info!(
+    ContenderWithSerializedDocumentWasm,
+    ContenderWithSerializedDocument
 );

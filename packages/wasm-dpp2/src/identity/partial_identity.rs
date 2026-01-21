@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, JsValueExt, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
@@ -275,6 +276,8 @@ impl PartialIdentityWasm {
         Ok(obj.unchecked_into())
     }
 }
+
+impl_wasm_type_info!(PartialIdentityWasm, PartialIdentity);
 
 pub fn value_to_loaded_public_keys(
     loaded_public_keys: &JsValue,

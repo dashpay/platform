@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use wasm_bindgen::prelude::*;
@@ -100,3 +101,5 @@ impl From<&BlockInfoWasm> for BlockInfo {
 }
 
 impl_wasm_conversions!(BlockInfoWasm, BlockInfo, BlockInfoObjectJs, BlockInfoJSONJs);
+
+impl_wasm_type_info!(BlockInfoWasm, BlockInfo);

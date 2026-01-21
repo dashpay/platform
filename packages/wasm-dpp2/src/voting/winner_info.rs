@@ -1,5 +1,6 @@
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -120,6 +121,11 @@ impl_wasm_conversions!(
     ContestedDocumentVotePollWinnerInfo,
     ContestedDocumentVotePollWinnerInfoObjectJs,
     ContestedDocumentVotePollWinnerInfoJSONJs
+);
+
+impl_wasm_type_info!(
+    ContestedDocumentVotePollWinnerInfoWasm,
+    ContestedDocumentVotePollWinnerInfo
 );
 
 impl ContestedDocumentVotePollWinnerInfoWasm {

@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -27,3 +28,5 @@ impl IdentityTokenInfoWasm {
         }
     }
 }
+
+impl_wasm_type_info!(IdentityTokenInfoWasm, IdentityTokenInfo);

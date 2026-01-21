@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
@@ -179,3 +180,5 @@ impl From<ProTxHash> for ProTxHashWasm {
         ProTxHashWasm(hash)
     }
 }
+
+impl_wasm_type_info!(ProTxHashWasm, ProTxHash);
