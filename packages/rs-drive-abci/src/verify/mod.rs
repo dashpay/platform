@@ -64,7 +64,7 @@ pub fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
 
     match result {
         Ok(data) => {
-            for result in data {
+            for result in &data {
                 tracing::warn!(?result, "grovedb verification")
             }
             tracing::info!("grovedb verification finished");
@@ -78,7 +78,14 @@ pub fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
                     );
                 }
             }
-            Ok(())
+            if data.is_empty() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "grovedb verification found {} issue(s)",
+                    data.len()
+                ))
+            }
         }
         Err(e) => {
             tracing::error!("grovedb verification failed: {}", e);
