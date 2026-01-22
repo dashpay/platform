@@ -22,7 +22,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 |---|-------|-------|----------|
 | ~~B1~~ | ~~Mixed `TryFrom<JsValue>` vs `TryFrom<&JsValue>` - standardized on `&JsValue` having logic~~ | ~~14 enum files~~ | ~~Done~~ ✓ |
 | ~~B2~~ | ~~Both variants now follow pattern: `TryFrom<&JsValue>` has logic, `TryFrom<JsValue>` delegates~~ | ~~Same files~~ | ~~Done~~ ✓ |
-| B3 | wasm-sdk: No `TryFrom` pattern used at all, uses ad-hoc deserialize functions | `state_transitions/*.rs` | Medium (out of scope) |
+| ~~B3~~ | ~~wasm-sdk: Uses serde-based deserialization for complex options objects~~ | ~~`state_transitions/*.rs`~~ | ~~N/A~~ (correct pattern for structs) |
 
 ---
 
@@ -137,3 +137,25 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
   - `TokenSetPriceResultWasm` - same pattern (with `#[serde(skip)]` for `TokenPricingScheduleWasm` field)
   - `TokenDirectPurchaseResultWasm` - same pattern (with manual getter for BigInt conversion)
   - Note: All types use `#[serde(skip)]` for `DocumentWasm` fields and manual getters for `u64` → `BigInt` conversions
+- [x] B1/B2: Standardized `TryFrom` pattern across 14 enum files:
+  - Pattern: `TryFrom<&JsValue>` contains conversion logic, `TryFrom<JsValue>` delegates via `Self::try_from(&value)` (avoids clone)
+  - Files updated:
+    - `enums/keys/security_level.rs`
+    - `enums/keys/key_type.rs`
+    - `enums/keys/purpose.rs`
+    - `enums/token/emergency_action.rs`
+    - `enums/token/distribution_type.rs`
+    - `enums/token/action_goal.rs`
+    - `enums/contested/vote_state_result_type.rs`
+    - `enums/batch/batch_enum.rs`
+    - `enums/batch/gas_fees_paid_by.rs`
+    - `enums/lock_types.rs`
+    - `identity/transitions/pooling.rs`
+    - `identity/transitions/public_key_in_creation.rs`
+    - `asset_lock_proof/outpoint.rs`
+    - `version.rs`
+- [x] B3: Reviewed - **N/A (different use case)**:
+  - wasm-sdk uses serde-based deserialization (`serde_wasm_bindgen::from_value`) for complex options objects
+  - This is the **correct pattern** for structs with multiple fields (vs `TryFrom` for simple enums)
+  - 19 `deserialize_*` functions are thin wrappers providing context-specific error messages
+  - No changes needed - already using idiomatic approach
