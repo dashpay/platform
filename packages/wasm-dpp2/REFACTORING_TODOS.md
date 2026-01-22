@@ -43,6 +43,11 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 | D1 | Functions returning bare `JsValue` without `Result` wrapper | `batched_transition.rs`, `token_transition.rs`, `voting/resource_vote_choice.rs`, `voting/contender.rs` | Medium |
 | D2 | Mixed typed return (`DocumentObjectJs`) vs generic (`JsValue`) | Various files | Low |
 
+**Note on `unchecked_return_type`**: The wasm-sdk uses `unchecked_return_type` for TypeScript generics like `ProofMetadataResponseTyped<T>`, `Map<K, V>`, and `Array<T>`. This is the correct pattern when:
+- TypeScript generics don't have Rust equivalents
+- JavaScript built-in types need specific type parameters
+For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the typed Rust struct directly.
+
 ---
 
 ## E. NAMING CONVENTIONS
@@ -51,7 +56,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 |---|-------|-------|----------|
 | E1 | Enum naming: mix of ALL_CAPS vs PascalCase | `version.rs` (ALL_CAPS), `network.rs` (PascalCase), `enums/keys/` (ALL_CAPS) | Low |
 | E2 | Inconsistent `js_name` attribute formatting (quoted vs unquoted, spacing) | Various files | Low |
-| E3 | wasm-sdk: Missing `Wasm` suffix on exposed types | `Dip14ExtendedPrivKey`, `HDKeyInfo`, `RegisterDpnsNameResult`, `DpnsUsernameInfo` | Medium |
+| ~~E3~~ | ~~wasm-sdk: Missing `Wasm` suffix on exposed types~~ | ~~`RegisterDpnsNameResult`, `DpnsUsernameInfo`~~ | ~~Done~~ ✓ |
 | E4 | wasm-sdk: Inconsistent getter attribute patterns | `getter_with_clone` vs `getter` + manual clone | Low |
 
 ---
@@ -93,7 +98,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 
 ### Medium Priority (should address):
 4. ~~**A2**~~/~~**A3**~~: Add missing macros to types without them ✓
-5. **E3**: Add `Wasm` suffix to wasm-sdk exposed types
+5. ~~**E3**~~: Add `Wasm` suffix to wasm-sdk exposed types ✓
 6. **C2/D1**: Use typed returns and wrap in `Result`
 7. **F2**: Ensure `is_human_readable()` checks in Serialize impls
 
@@ -137,3 +142,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
   - `TokenSetPriceResultWasm` - same pattern (with `#[serde(skip)]` for `TokenPricingScheduleWasm` field)
   - `TokenDirectPurchaseResultWasm` - same pattern (with manual getter for BigInt conversion)
   - Note: All types use `#[serde(skip)]` for `DocumentWasm` fields and manual getters for `u64` → `BigInt` conversions
+- [x] E3: Added `Wasm` suffix to wasm-sdk exposed WASM types:
+  - `RegisterDpnsNameResult` → `RegisterDpnsNameResultWasm`
+  - `DpnsUsernameInfo` → `DpnsUsernameInfoWasm`
+  - Note: `Dip14ExtendedPrivKey` and `HDKeyInfo` were NOT exposed to WASM (no `#[wasm_bindgen]`) so they correctly do NOT have the `Wasm` suffix - they are internal Rust types

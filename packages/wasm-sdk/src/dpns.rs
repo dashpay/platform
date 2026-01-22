@@ -29,7 +29,7 @@ use wasm_dpp2::IdentitySignerWasm;
 #[wasm_bindgen(js_name = "RegisterDpnsNameResult")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RegisterDpnsNameResult {
+pub struct RegisterDpnsNameResultWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "preorderDocumentId")]
     pub preorder_document_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "domainDocumentId")]
@@ -41,7 +41,7 @@ pub struct RegisterDpnsNameResult {
 #[wasm_bindgen(js_name = "DpnsUsernameInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DpnsUsernameInfo {
+pub struct DpnsUsernameInfoWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub username: String,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
@@ -51,7 +51,7 @@ pub struct DpnsUsernameInfo {
 }
 
 #[wasm_bindgen(js_class = DpnsUsernameInfo)]
-impl DpnsUsernameInfo {
+impl DpnsUsernameInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(username: String, identity_id: IdentifierWasm, document_id: IdentifierWasm) -> Self {
         Self {
@@ -62,8 +62,8 @@ impl DpnsUsernameInfo {
     }
 }
 
-impl_wasm_serde_conversions!(RegisterDpnsNameResult);
-impl_wasm_serde_conversions!(DpnsUsernameInfo);
+impl_wasm_serde_conversions!(RegisterDpnsNameResultWasm, RegisterDpnsNameResult);
+impl_wasm_serde_conversions!(DpnsUsernameInfoWasm, DpnsUsernameInfo);
 
 const DEFAULT_DPNS_USERNAMES_LIMIT: u32 = 10;
 
@@ -336,7 +336,7 @@ impl WasmSdk {
     pub async fn dpns_register_name(
         &self,
         options: DpnsRegisterNameOptionsJs,
-    ) -> Result<RegisterDpnsNameResult, WasmSdkError> {
+    ) -> Result<RegisterDpnsNameResultWasm, WasmSdkError> {
         let options_value: JsValue = options.into();
 
         // Extract label from options
@@ -405,7 +405,7 @@ impl WasmSdk {
             *cb.borrow_mut() = None;
         });
 
-        Ok(RegisterDpnsNameResult {
+        Ok(RegisterDpnsNameResultWasm {
             preorder_document_id: IdentifierWasm::from(result.preorder_document.id()),
             domain_document_id: IdentifierWasm::from(result.domain_document.id()),
             full_domain_name: result.full_domain_name,
@@ -431,7 +431,7 @@ impl WasmSdk {
     pub async fn get_dpns_username_by_name(
         &self,
         username: &str,
-    ) -> Result<Option<DpnsUsernameInfo>, WasmSdkError> {
+    ) -> Result<Option<DpnsUsernameInfoWasm>, WasmSdkError> {
         let parts: Vec<&str> = username.split('.').collect();
         if parts.len() != 2 {
             return Err(WasmSdkError::invalid_argument(
@@ -459,7 +459,7 @@ impl WasmSdk {
         let documents = Document::fetch_many(self.as_ref(), query).await?;
 
         if let Some((_, Some(document))) = documents.into_iter().next() {
-            Ok(Some(DpnsUsernameInfo {
+            Ok(Some(DpnsUsernameInfoWasm {
                 username: username.to_string(),
                 identity_id: IdentifierWasm::from(document.owner_id()),
                 document_id: IdentifierWasm::from(document.id()),
@@ -505,7 +505,7 @@ impl WasmSdk {
             Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         let data = if let Some((_, Some(document))) = documents.into_iter().next() {
-            let result = DpnsUsernameInfo {
+            let result = DpnsUsernameInfoWasm {
                 username: username.to_string(),
                 identity_id: IdentifierWasm::from(document.owner_id()),
                 document_id: IdentifierWasm::from(document.id()),
