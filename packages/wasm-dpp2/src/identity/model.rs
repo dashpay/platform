@@ -12,7 +12,6 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -167,13 +166,13 @@ impl IdentityWasm {
         // and outputs id as Uint8Array, publicKeys as plain objects
         let value = self.0.to_object()?;
         let js_value = serialization::platform_value_to_object(&value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<IdentityJSONJs> {
         let js_value = serialization::to_json(&self.0)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]

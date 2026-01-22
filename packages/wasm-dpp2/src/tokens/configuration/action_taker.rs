@@ -1,17 +1,26 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
 use js_sys::Array;
 use std::collections::BTreeSet;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const ACTION_TAKER_TYPES_TS: &'static str = r#"
 export type ActionTakerValue = IdentifierLike | IdentifierLike[];
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ActionTakerValue")]
+    pub type ActionTakerValueJs;
+}
+
+impl_from_for_extern_type!(ActionTakerValueJs, IdentifierWasm, Array);
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ActionTaker")]
@@ -75,9 +84,9 @@ impl ActionTakerWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn get_value(&self) -> JsValue {
+    pub fn get_value(&self) -> ActionTakerValueJs {
         match &self.0 {
-            ActionTaker::SingleIdentity(value) => JsValue::from(IdentifierWasm::from(*value)),
+            ActionTaker::SingleIdentity(value) => IdentifierWasm::from(*value).into(),
             ActionTaker::SpecifiedIdentities(value) => {
                 let array = Array::new();
                 for identifier in value.iter() {

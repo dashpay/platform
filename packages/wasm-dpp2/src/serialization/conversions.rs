@@ -44,7 +44,7 @@ fn try_call_to_json(value: &JsValue) -> Option<JsValue> {
         return None;
     }
 
-    let func: js_sys::Function = to_json_fn.unchecked_into();
+    let func: js_sys::Function = to_json_fn.into();
     func.call0(value).ok()
 }
 
@@ -100,7 +100,7 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
 
     // Convert BigInt to string (JSON doesn't support BigInt)
     if value.is_bigint() {
-        let bigint: js_sys::BigInt = value.clone().unchecked_into();
+        let bigint: js_sys::BigInt = value.clone().into();
         let bigint_str = bigint
             .to_string(10)
             .map(|s| s.into())
@@ -110,7 +110,7 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
 
     // Convert Uint8Array to plain array for JSON compatibility
     if value.is_instance_of::<js_sys::Uint8Array>() {
-        let uint8_array: js_sys::Uint8Array = value.clone().unchecked_into();
+        let uint8_array: js_sys::Uint8Array = value.clone().into();
         let plain_array = js_sys::Array::from(&uint8_array);
         return Ok(plain_array.into());
     }
@@ -181,7 +181,7 @@ fn map_key_to_string(key: &JsValue) -> String {
 
     // BigInt keys - convert to string
     if key.is_bigint() {
-        let bigint: js_sys::BigInt = key.clone().unchecked_into();
+        let bigint: js_sys::BigInt = key.clone().into();
         return bigint
             .to_string(10)
             .map(|s| s.into())
@@ -192,7 +192,7 @@ fn map_key_to_string(key: &JsValue) -> String {
     if let Ok(to_string_fn) = js_sys::Reflect::get(key, &JsValue::from_str("toString"))
         && to_string_fn.is_function()
     {
-        let func: js_sys::Function = to_string_fn.unchecked_into();
+        let func: js_sys::Function = to_string_fn.into();
         if let Ok(str_result) = func.call0(key)
             && let Some(s) = str_result.as_string()
         {
@@ -206,7 +206,7 @@ fn map_key_to_string(key: &JsValue) -> String {
 
 /// Convert a JavaScript Map to a plain object for JSON serialization.
 fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
-    let map: js_sys::Map = value.clone().unchecked_into();
+    let map: js_sys::Map = value.clone().into();
     let new_obj = Object::new();
 
     // We need to collect errors from the closure since for_each doesn't support Result
@@ -386,7 +386,7 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 
     // BigInt - convert to appropriate integer type
     if value.is_bigint() {
-        let bigint: js_sys::BigInt = value.clone().unchecked_into();
+        let bigint: js_sys::BigInt = value.clone().into();
         // Get string representation and parse
         let bigint_str: String = bigint
             .to_string(10)
@@ -419,7 +419,7 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 
     // Uint8Array - convert to bytes
     if value.is_instance_of::<js_sys::Uint8Array>() {
-        let uint8_array: js_sys::Uint8Array = value.clone().unchecked_into();
+        let uint8_array: js_sys::Uint8Array = value.clone().into();
         let bytes = uint8_array.to_vec();
         // Check for identifier (32 bytes)
         if bytes.len() == 32 {
@@ -537,7 +537,7 @@ macro_rules! impl_wasm_conversions {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toObject)]
             pub fn to_object(&self) -> Result<$object_type, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::to_object(&self.0)
-                    .map(wasm_bindgen::JsCast::unchecked_into)
+                    .map(Into::into)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
@@ -548,7 +548,7 @@ macro_rules! impl_wasm_conversions {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
             pub fn to_json(&self) -> Result<$json_type, $crate::error::WasmDppError> {
                 $crate::serialization::conversions::to_json(&self.0)
-                    .map(wasm_bindgen::JsCast::unchecked_into)
+                    .map(Into::into)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]

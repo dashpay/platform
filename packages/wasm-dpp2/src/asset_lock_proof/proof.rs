@@ -193,7 +193,7 @@ impl AssetLockProofWasm {
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(object.unchecked_into())
+        Ok(JsValue::from(object).into())
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
@@ -211,9 +211,9 @@ impl AssetLockProofWasm {
         })?;
 
         match type_num as u8 {
-            0 => InstantAssetLockProofWasm::from_object(js_value.unchecked_into())
+            0 => InstantAssetLockProofWasm::from_object(js_value.into())
                 .map(AssetLockProofWasm::from),
-            1 => ChainAssetLockProofWasm::from_object(js_value.unchecked_into())
+            1 => ChainAssetLockProofWasm::from_object(js_value.into())
                 .map(AssetLockProofWasm::from),
             _ => Err(WasmDppError::invalid_argument(format!(
                 "Unknown AssetLockProof type: {}",
@@ -246,7 +246,7 @@ impl AssetLockProofWasm {
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(object.unchecked_into())
+        Ok(JsValue::from(object).into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
@@ -263,9 +263,9 @@ impl AssetLockProofWasm {
         })?;
 
         match type_num as u8 {
-            0 => InstantAssetLockProofWasm::from_json(js_value.unchecked_into())
+            0 => InstantAssetLockProofWasm::from_json(js_value.into())
                 .map(AssetLockProofWasm::from),
-            1 => ChainAssetLockProofWasm::from_json(js_value.unchecked_into())
+            1 => ChainAssetLockProofWasm::from_json(js_value.into())
                 .map(AssetLockProofWasm::from),
             _ => Err(WasmDppError::invalid_argument(format!(
                 "Unknown AssetLockProof type: {}",

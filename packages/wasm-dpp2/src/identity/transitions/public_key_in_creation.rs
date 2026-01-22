@@ -253,9 +253,8 @@ impl IdentityPublicKeyInCreationWasm {
             .map_err(|e| WasmDppError::generic(format!("Failed to set contractBounds: {:?}", e)))?;
         }
 
-        use wasm_bindgen::JsCast;
         let js_value: JsValue = options.into();
-        let options_js: IdentityPublicKeyOptionsJs = js_value.unchecked_into();
+        let options_js: IdentityPublicKeyOptionsJs = js_value.into();
         IdentityPublicKeyWasm::constructor(options_js)
     }
 

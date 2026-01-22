@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_transitions::config_update::TokenConfigUpdateTransitionWasm;
 use crate::state_transitions::batch::token_transitions::direct_purchase::TokenDirectPurchaseTransitionWasm;
@@ -23,8 +24,8 @@ use dpp::state_transition::batch_transition::{
     TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition,
     TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition, TokenUnfreezeTransition,
 };
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_TRANSITION_TYPES_TS: &'static str = r#"
@@ -37,6 +38,21 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "TokenTransitionLike")]
     pub type TokenTransitionLikeJs;
 }
+
+impl_from_for_extern_type!(
+    TokenTransitionLikeJs,
+    TokenMintTransitionWasm,
+    TokenBurnTransitionWasm,
+    TokenTransferTransitionWasm,
+    TokenFreezeTransitionWasm,
+    TokenUnFreezeTransitionWasm,
+    TokenDestroyFrozenFundsTransitionWasm,
+    TokenClaimTransitionWasm,
+    TokenEmergencyActionTransitionWasm,
+    TokenConfigUpdateTransitionWasm,
+    TokenDirectPurchaseTransitionWasm,
+    TokenSetPriceForDirectPurchaseTransitionWasm,
+);
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenTransition)]
@@ -146,7 +162,7 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "transition")]
-    pub fn transition(&self) -> JsValue {
+    pub fn transition(&self) -> TokenTransitionLikeJs {
         match self.clone().0 {
             TokenTransition::Burn(token_transition) => {
                 TokenBurnTransitionWasm::from(token_transition).into()

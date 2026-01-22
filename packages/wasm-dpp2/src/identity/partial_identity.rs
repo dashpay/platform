@@ -11,7 +11,6 @@ use dpp::prelude::Revision;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -207,7 +206,7 @@ impl PartialIdentityWasm {
             .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
         // platform_value_to_json converts Identifier to base58, bytes to base64
         let js_value = serialization::platform_value_to_json(&value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toObject")]
@@ -217,7 +216,7 @@ impl PartialIdentityWasm {
             .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
         // platform_value_to_object keeps bytes as Uint8Array, u64 as BigInt
         let js_value = serialization::platform_value_to_object(&value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
@@ -454,7 +453,7 @@ pub fn value_to_loaded_public_keys_from_object(
         })?;
 
         // fromObject receives plain objects, use IdentityPublicKeyWasm::from_object
-        let pub_key = IdentityPublicKeyWasm::from_object(js_key.unchecked_into())?;
+        let pub_key = IdentityPublicKeyWasm::from_object(js_key.into())?;
         map.insert(key_id, IdentityPublicKey::from(pub_key));
     }
 
@@ -504,7 +503,7 @@ pub fn value_to_loaded_public_keys_from_json(
         })?;
 
         // fromJSON receives JSON objects, use IdentityPublicKeyWasm::from_json
-        let pub_key = IdentityPublicKeyWasm::from_json(js_key.unchecked_into())?;
+        let pub_key = IdentityPublicKeyWasm::from_json(js_key.into())?;
         map.insert(key_id, IdentityPublicKey::from(pub_key));
     }
 

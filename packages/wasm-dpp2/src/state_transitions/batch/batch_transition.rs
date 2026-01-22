@@ -20,7 +20,6 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionOwned,
     StateTransitionSingleSigned,
 };
-use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -58,6 +57,7 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "BatchTransitionJSON")]
     pub type BatchTransitionJSONJs;
 }
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=BatchTransition)]
 pub struct BatchTransitionWasm(BatchTransition);
@@ -208,12 +208,12 @@ impl BatchTransitionWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<BatchTransitionObjectJs> {
-        serialization::to_object(&self.0).map(JsCast::unchecked_into)
+        serialization::to_object(&self.0).map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<BatchTransitionJSONJs> {
-        serialization::to_json(&self.0).map(JsCast::unchecked_into)
+        serialization::to_json(&self.0).map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "toHex")]

@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::distribution_structs::{
     DistributionExponentialWasm, DistributionFixedAmountWasm, DistributionInvertedLogarithmicWasm,
@@ -11,13 +12,26 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use js_sys::{BigInt, Object, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "DistributionFixedAmount | DistributionRandom | DistributionStepDecreasingAmount | Record<string, bigint> | DistributionLinear | DistributionPolynomial | DistributionExponential | DistributionLogarithmic | DistributionInvertedLogarithmic")]
     pub type DistributionFunctionValue;
 }
+
+// Source types only (wasm_bindgen provides From<JsValue>)
+impl_from_for_extern_type!(DistributionFunctionValue,
+    DistributionFixedAmountWasm,
+    DistributionRandomWasm,
+    DistributionStepDecreasingAmountWasm,
+    DistributionLinearWasm,
+    DistributionPolynomialWasm,
+    DistributionExponentialWasm,
+    DistributionLogarithmicWasm,
+    DistributionInvertedLogarithmicWasm,
+    Object,
+);
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "DistributionFunction")]
@@ -402,7 +416,7 @@ impl DistributionFunctionWasm {
             }
             .into(),
         };
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 }
 

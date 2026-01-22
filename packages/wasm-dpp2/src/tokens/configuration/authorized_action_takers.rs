@@ -5,7 +5,7 @@ use dpp::data_contract::change_control_rules::authorized_action_takers::Authoriz
 use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::platform_value::string_encoding::encode;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen]
 extern "C" {
@@ -82,7 +82,7 @@ impl AuthorizedActionTakersWasm {
             AuthorizedActionTakers::MainGroup => JsValue::undefined(),
             AuthorizedActionTakers::Group(position) => JsValue::from(position),
         };
-        js_value.unchecked_into()
+        js_value.into()
     }
 }
 

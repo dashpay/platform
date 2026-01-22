@@ -403,3 +403,66 @@ macro_rules! impl_wasm_type_info {
         }
     };
 }
+
+/// Macro to implement `From` traits for wasm-bindgen extern types.
+///
+/// This macro helps convert Rust/WASM types to JavaScript extern types,
+/// which are typically used for union type returns in wasm-bindgen.
+///
+/// # Usage
+///
+/// Basic form - implements `From<JsValue>` for the extern type:
+/// ```ignore
+/// impl_from_for_extern_type!(MyExternTypeJs);
+/// ```
+///
+/// With source types - implements `From` for each source type:
+/// ```ignore
+/// impl_from_for_extern_type!(MyExternTypeJs, MyWasmType1, MyWasmType2);
+/// ```
+///
+/// Combined form - implements both `From<JsValue>` and `From` for source types:
+/// ```ignore
+/// impl_from_for_extern_type!(MyExternTypeJs; MyWasmType1, MyWasmType2);
+/// ```
+#[macro_export]
+macro_rules! impl_from_for_extern_type {
+    // Just the extern type - implements From<JsValue>
+    ($extern_type:ty) => {
+        impl From<wasm_bindgen::JsValue> for $extern_type {
+            fn from(value: wasm_bindgen::JsValue) -> Self {
+                wasm_bindgen::JsCast::unchecked_into(value)
+            }
+        }
+    };
+
+    // Extern type with source types (comma-separated) - implements From for each source only
+    ($extern_type:ty, $($source_type:ty),+ $(,)?) => {
+        $(
+            impl From<$source_type> for $extern_type {
+                fn from(value: $source_type) -> Self {
+                    let js_value: wasm_bindgen::JsValue = value.into();
+                    wasm_bindgen::JsCast::unchecked_into(js_value)
+                }
+            }
+        )+
+    };
+
+    // Combined form (semicolon-separated) - implements From<JsValue> AND From for source types
+    ($extern_type:ty; $($source_type:ty),+ $(,)?) => {
+        impl From<wasm_bindgen::JsValue> for $extern_type {
+            fn from(value: wasm_bindgen::JsValue) -> Self {
+                wasm_bindgen::JsCast::unchecked_into(value)
+            }
+        }
+
+        $(
+            impl From<$source_type> for $extern_type {
+                fn from(value: $source_type) -> Self {
+                    let js_value: wasm_bindgen::JsValue = value.into();
+                    wasm_bindgen::JsCast::unchecked_into(js_value)
+                }
+            }
+        )+
+    };
+}

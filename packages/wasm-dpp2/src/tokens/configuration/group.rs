@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
@@ -9,7 +10,7 @@ use dpp::prelude::Identifier;
 use js_sys::{Map, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
@@ -48,6 +49,8 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "GroupJSON")]
     pub type GroupJSONJs;
 }
+
+impl_from_for_extern_type!(GroupMembersMapJs, Map);
 
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "Group")]
@@ -132,7 +135,7 @@ impl GroupWasm {
             js_map.set(&identifier_wasm.into(), &JsValue::from(*v));
         }
 
-        Ok(js_map.unchecked_into())
+        Ok(js_map.into())
     }
 
     #[wasm_bindgen(getter = "requiredPower")]
@@ -167,7 +170,7 @@ impl GroupWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<GroupJSONJs> {
-        serialization::to_json(&self.0).map(JsCast::unchecked_into)
+        serialization::to_json(&self.0).map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
@@ -180,7 +183,7 @@ impl GroupWasm {
         // Use toJSON for serialization because it handles BTreeMap<Identifier, u32>
         // correctly (Identifier becomes base58 string in human-readable mode).
         // This ensures all fields are automatically included when new versions are added.
-        serialization::to_json(&self.0).map(JsCast::unchecked_into)
+        serialization::to_json(&self.0).map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]

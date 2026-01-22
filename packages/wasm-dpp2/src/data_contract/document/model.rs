@@ -22,7 +22,7 @@ use dpp::version::PlatformVersion;
 use js_sys::Reflect;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 /// TypeScript interface for Document constructor options
 #[wasm_bindgen(typescript_custom_section)]
@@ -493,7 +493,7 @@ impl DocumentWasm {
         let js_value = serialization::platform_value_to_object(&Value::Map(
             map.into_iter().map(|(k, v)| (Value::Text(k), v)).collect(),
         ))?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     /// Create a Document from a JS object.
@@ -562,7 +562,7 @@ impl DocumentWasm {
         }
 
         let js_value = serialization::json_to_js_value(&json_value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     /// Create a Document from a JSON object.

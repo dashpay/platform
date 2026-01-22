@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen]
 extern "C" {
@@ -70,7 +70,7 @@ impl TokenDistributionRecipientWasm {
                 IdentifierWasm::from(identifier).into()
             }
         };
-        js_value.unchecked_into()
+        js_value.into()
     }
 }
 

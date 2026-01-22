@@ -1,9 +1,9 @@
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::distribution_function::DistributionFunctionWasm;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType::{BlockBasedDistribution, EpochBasedDistribution, TimeBasedDistribution};
 use dpp::prelude::{BlockHeightInterval, EpochInterval, TimestampMillisInterval};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -16,6 +16,12 @@ export type RewardDistributionValue =
     | TimeBasedDistribution
     | EpochBasedDistribution;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "RewardDistributionValue")]
+    pub type RewardDistributionValueJs;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "RewardDistributionType")]
@@ -69,25 +75,28 @@ impl RewardDistributionTypeWasm {
     }
 
     #[wasm_bindgen(getter = "distribution")]
-    pub fn distribution(&self) -> JsValue {
+    pub fn distribution(&self) -> RewardDistributionValueJs {
         match self.0.clone() {
             RewardDistributionType::BlockBasedDistribution { interval, function } => {
-                JsValue::from(BlockBasedDistributionWasm {
+                BlockBasedDistributionWasm {
                     interval,
                     function: function.clone().into(),
-                })
+                }
+                .into()
             }
             RewardDistributionType::TimeBasedDistribution { interval, function } => {
-                JsValue::from(TimeBasedDistributionWasm {
+                TimeBasedDistributionWasm {
                     interval,
                     function: function.clone().into(),
-                })
+                }
+                .into()
             }
             RewardDistributionType::EpochBasedDistribution { interval, function } => {
-                JsValue::from(EpochBasedDistributionWasm {
+                EpochBasedDistributionWasm {
                     interval,
                     function: function.clone().into(),
-                })
+                }
+                .into()
             }
         }
     }
@@ -157,3 +166,10 @@ impl_wasm_type_info!(RewardDistributionTypeWasm, RewardDistributionType);
 impl_wasm_type_info!(BlockBasedDistributionWasm, BlockBasedDistribution);
 impl_wasm_type_info!(TimeBasedDistributionWasm, TimeBasedDistribution);
 impl_wasm_type_info!(EpochBasedDistributionWasm, EpochBasedDistribution);
+
+impl_from_for_extern_type!(
+    RewardDistributionValueJs,
+    BlockBasedDistributionWasm,
+    TimeBasedDistributionWasm,
+    EpochBasedDistributionWasm,
+);

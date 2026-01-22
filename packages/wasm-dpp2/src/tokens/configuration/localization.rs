@@ -8,7 +8,7 @@ use dpp::data_contract::associated_token::token_configuration_localization::acce
 };
 use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
@@ -107,7 +107,7 @@ impl TokenConfigurationLocalizationWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<TokenConfigurationLocalizationJSONJs> {
-        serialization::to_json(&self.0).map(JsCast::unchecked_into)
+        serialization::to_json(&self.0).map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
@@ -119,7 +119,7 @@ impl TokenConfigurationLocalizationWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<TokenConfigurationLocalizationObjectJs> {
-        serialization::to_object(&self.0).map(JsCast::unchecked_into)
+        serialization::to_object(&self.0).map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]

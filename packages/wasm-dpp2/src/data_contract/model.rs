@@ -33,7 +33,7 @@ use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -395,7 +395,7 @@ impl DataContractWasm {
 
         let value = self.0.clone().to_value(&platform_version.into())?;
         let js_value = serialization::platform_value_to_object(&value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "schemas")]
@@ -610,7 +610,7 @@ impl DataContractWasm {
 
         let json = self.0.to_json(&platform_version.into())?;
         let js_value = serialization::to_json(&json)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "generateId")]

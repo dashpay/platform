@@ -40,7 +40,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 
 | # | Issue | Files | Priority |
 |---|-------|-------|----------|
-| D1 | Functions returning bare `JsValue` without `Result` wrapper | `batched_transition.rs`, `token_transition.rs`, `voting/resource_vote_choice.rs`, `voting/contender.rs` | Medium |
+| ~~D1~~ | ~~Bare `JsValue` returns - added `unchecked_return_type` for unions~~ | ~~5 files~~ | ~~Done~~ ✓ |
 | D2 | Mixed typed return (`DocumentObjectJs`) vs generic (`JsValue`) | Various files | Low |
 
 **Note on `unchecked_return_type`**: The wasm-sdk uses `unchecked_return_type` for TypeScript generics like `ProofMetadataResponseTyped<T>`, `Map<K, V>`, and `Array<T>`. This is the correct pattern when:
@@ -180,6 +180,12 @@ For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the ty
     - `RewardDistributionValue` in `tokens/configuration/reward_distribution_type.rs`
   - Note: Remaining `-> JsValue` returns are for union types that already have TypeScript definitions (e.g., `BatchedTransitionLike`, `TokenTransitionLike`)
 - [x] C3: Reviewed - **N/A (same as B3)** - serde is correct pattern for complex options objects
+- [x] D1: Added extern types for union type returns with `From` implementations:
+  - `batched_transition.rs:to_transition()` → `BatchedTransitionLikeJs` (via `From<DocumentTransitionWasm>`, `From<TokenTransitionWasm>`)
+  - `token_transition.rs:transition()` → `TokenTransitionLikeJs` (via macro for all 11 token transition types)
+  - `action_taker.rs:get_value()` → `ActionTakerValueJs` (via `From<IdentifierWasm>`, `From<Array>`)
+  - `reward_distribution_type.rs:distribution()` → `RewardDistributionValueJs` (via `From` for 3 distribution types)
+  - `token_configuration_change_item.rs:item()` → `TokenConfigurationChangeItemValueJs` (uses `unchecked_into()` for heterogeneous primitives)
 - [x] E3: Added `Wasm` suffix to wasm-sdk exposed WASM types:
   - `RegisterDpnsNameResult` → `RegisterDpnsNameResultWasm`
   - `DpnsUsernameInfo` → `DpnsUsernameInfoWasm`

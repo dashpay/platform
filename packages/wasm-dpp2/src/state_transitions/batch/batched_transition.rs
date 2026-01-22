@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::token_transition::TokenTransitionWasm;
@@ -12,8 +13,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const BATCHED_TRANSITION_TYPES_TS: &'static str = r#"
@@ -26,6 +27,8 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "BatchedTransitionLike")]
     pub type BatchedTransitionLikeJs;
 }
+
+impl_from_for_extern_type!(BatchedTransitionLikeJs, DocumentTransitionWasm, TokenTransitionWasm);
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=BatchedTransition)]
@@ -74,7 +77,7 @@ impl BatchedTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "toTransition")]
-    pub fn to_transition(&self) -> JsValue {
+    pub fn to_transition(&self) -> BatchedTransitionLikeJs {
         match &self.0 {
             BatchedTransition::Document(document_transition) => {
                 DocumentTransitionWasm::from(document_transition.clone()).into()

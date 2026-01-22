@@ -5,8 +5,8 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::trade_mode::TokenTradeModeWasm;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_CONFIGURATION_CHANGE_ITEM_TS: &'static str = r#"
@@ -136,8 +136,8 @@ impl TokenConfigurationChangeItemWasm {
     }
 
     #[wasm_bindgen(getter = "item")]
-    pub fn item(&self) -> JsValue {
-        match self.0.clone() {
+    pub fn item(&self) -> TokenConfigurationChangeItemValueJs {
+        let js_value: JsValue = match self.0.clone() {
             TokenConfigurationChangeItem::TokenConfigurationNoChange => {
                 JsValue::from_str("TokenConfigurationNoChange")
             }
@@ -240,7 +240,8 @@ impl TokenConfigurationChangeItemWasm {
             TokenConfigurationChangeItem::MainControlGroup(group_contract_position) => {
                 JsValue::from(group_contract_position)
             }
-        }
+        };
+        js_value.into()
     }
 }
 

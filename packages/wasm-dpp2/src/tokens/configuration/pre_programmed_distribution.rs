@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::utils::try_to_u64;
 use dpp::balances::credits::TokenAmount;
@@ -10,7 +11,7 @@ use dpp::prelude::{Identifier, TimestampMillis};
 use js_sys::{BigInt, Map, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"
@@ -33,6 +34,9 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "DistributionAmountsMap")]
     pub type DistributionAmountsMapJs;
 }
+
+impl_from_for_extern_type!(PreProgrammedDistributionsMapJs, Map);
+impl_from_for_extern_type!(DistributionAmountsMapJs, Map);
 
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "TokenPreProgrammedDistribution")]
@@ -147,7 +151,7 @@ fn distribution_amounts_to_map(
         js_map.set(&identifier_wasm.into(), &BigInt::from(*amount).into());
     }
 
-    js_map.unchecked_into()
+    js_map.into()
 }
 
 fn distributions_to_map(
@@ -160,7 +164,7 @@ fn distributions_to_map(
         js_map.set(&JsValue::from(timestamp.to_string()), &amounts_map.into());
     }
 
-    js_map.unchecked_into()
+    js_map.into()
 }
 
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]

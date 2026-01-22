@@ -31,7 +31,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::from_value as serde_from_value;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -396,7 +396,7 @@ impl IdentityPublicKeyWasm {
     pub fn to_object(&self) -> WasmDppResult<IdentityPublicKeyObjectJs> {
         let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
         let js_value = serialization::platform_value_to_object(&value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     /// Deserialize from JS object (non-human-readable).
@@ -419,7 +419,7 @@ impl IdentityPublicKeyWasm {
     pub fn to_json(&self) -> WasmDppResult<IdentityPublicKeyJSONJs> {
         let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
         let js_value = serialization::to_json(&json_value)?;
-        Ok(js_value.unchecked_into())
+        Ok(js_value.into())
     }
 
     /// Deserialize from JSON-compatible JS object (human-readable).

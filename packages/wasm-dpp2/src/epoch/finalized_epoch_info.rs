@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::utils::try_to_u64;
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
@@ -9,7 +10,7 @@ use dpp::prelude::Identifier;
 use js_sys::{BigInt, Map, Object, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const FINALIZED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
@@ -84,6 +85,8 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "FinalizedEpochInfoJSON")]
     pub type FinalizedEpochInfoJSONJs;
 }
+
+impl_from_for_extern_type!(BlockProposersMapJs, Map);
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "FinalizedEpochInfo")]
@@ -168,7 +171,7 @@ fn block_proposers_to_map(map: &BTreeMap<Identifier, u64>) -> BlockProposersMapJ
         js_map.set(&identifier_wasm.into(), &BigInt::from(*value).into());
     }
 
-    js_map.unchecked_into()
+    js_map.into()
 }
 
 #[wasm_bindgen(js_class = FinalizedEpochInfo)]
