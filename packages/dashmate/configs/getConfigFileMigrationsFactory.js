@@ -1270,8 +1270,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
-            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
+            const isLocal = options.network === NETWORK_LOCAL || name === 'local' || options.group === 'local';
+            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet' || options.group === 'testnet';
 
             // --- ZMQ configuration ---
             if (!options.core.zmq) {
