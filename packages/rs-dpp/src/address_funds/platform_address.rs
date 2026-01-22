@@ -42,9 +42,9 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
 )]
 #[platform_serialize(unversioned)]
 pub enum PlatformAddress {
-    /// Pay to pubkey hash (type byte = 0)
+    /// Pay to pubkey hash (type byte = 0xb0)
     P2pkh([u8; 20]),
-    /// Pay to script hash (type byte = 1)
+    /// Pay to script hash (type byte = 0x80)
     P2sh([u8; 20]),
 }
 
