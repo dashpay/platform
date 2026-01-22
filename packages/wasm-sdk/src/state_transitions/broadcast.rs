@@ -12,6 +12,19 @@ use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::StateTransitionWasm;
 
+// TODO: Create proper WASM wrappers for StateTransitionProofResult variants.
+// Currently returns serde-serialized JSON. Should have typed wrappers like:
+// - VerifiedDataContractResult with DataContractWasm
+// - VerifiedIdentityResult with IdentityWasm
+// - VerifiedDocumentsResult with Map<Identifier, DocumentWasm>
+// etc.
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "unknown")]
+    pub type StateTransitionProofResultJs;
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     /// Broadcasts a state transition to the network.
@@ -49,13 +62,13 @@ impl WasmSdk {
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns JSON representation of the state transition result
+    /// @returns The verified state transition result
     #[wasm_bindgen(js_name = "waitForResponse")]
     pub async fn wait_for_response(
         &self,
         #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
         settings: Option<PutSettingsJs>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<StateTransitionProofResultJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
 
@@ -66,9 +79,9 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
             })?;
 
-        // Convert result to a JsValue representation
-        let result_str = format!("{:?}", result);
-        Ok(JsValue::from_str(&result_str))
+        serde_wasm_bindgen::to_value(&result)
+            .map(Into::into)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to serialize result: {}", e)))
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -80,13 +93,13 @@ impl WasmSdk {
     ///
     /// @param stateTransition - The state transition to broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns JSON representation of the state transition result
+    /// @returns The verified state transition result
     #[wasm_bindgen(js_name = "broadcastAndWait")]
     pub async fn broadcast_and_wait(
         &self,
         #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
         settings: Option<PutSettingsJs>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<StateTransitionProofResultJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
 
@@ -95,8 +108,8 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
-        // Convert result to a JsValue representation
-        let result_str = format!("{:?}", result);
-        Ok(JsValue::from_str(&result_str))
+        serde_wasm_bindgen::to_value(&result)
+            .map(Into::into)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to serialize result: {}", e)))
     }
 }

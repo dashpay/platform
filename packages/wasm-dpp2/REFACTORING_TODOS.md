@@ -41,7 +41,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 | # | Issue | Files | Priority |
 |---|-------|-------|----------|
 | ~~D1~~ | ~~Bare `JsValue` returns - added `unchecked_return_type` for unions~~ | ~~5 files~~ | ~~Done~~ ✓ |
-| D2 | Mixed typed return (`DocumentObjectJs`) vs generic (`JsValue`) | Various files | Low |
+| ~~D2~~ | ~~Mixed typed return (`DocumentObjectJs`) vs generic (`JsValue`)~~ | ~~Various files~~ | ~~Done~~ ✓ |
 
 **Note on `unchecked_return_type`**: The wasm-sdk uses `unchecked_return_type` for TypeScript generics like `ProofMetadataResponseTyped<T>`, `Map<K, V>`, and `Array<T>`. This is the correct pattern when:
 
@@ -190,3 +190,12 @@ For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the ty
   - `RegisterDpnsNameResult` → `RegisterDpnsNameResultWasm`
   - `DpnsUsernameInfo` → `DpnsUsernameInfoWasm`
   - Note: `Dip14ExtendedPrivKey` and `HDKeyInfo` were NOT exposed to WASM (no `#[wasm_bindgen]`) so they correctly do NOT have the `Wasm` suffix - they are internal Rust types
+- [x] D2: Replaced generic `JsValue` returns with typed extern types:
+  - `state_transition.rs`: `toBytes()` → `Vec<u8>` (becomes `Uint8Array`), `toHex()`/`toBase64()` → `String`
+  - `document/model.rs`: Added `DocumentPropertiesJs` for `properties()` return
+  - `data_contract/model.rs`: Added `DataContractSchemasJs`, `DataContractGroupsJs` for typed returns
+  - `create.rs`, `replace.rs`: Added `DocumentTransitionDataJs` for `get_data()` return
+  - `token_pricing_schedule.rs`: Added `TokenPricingScheduleValueJs` for `value()` return
+  - `configuration_convention.rs`: Added `TokenConfigurationLocalizationsJs` for `localizations()` return
+  - Replaced all `unchecked_into()` calls with `.into()` in `serialization/conversions.rs`
+  - All `impl_wasm_conversions!` macro usages now use 4-argument form (typed returns)

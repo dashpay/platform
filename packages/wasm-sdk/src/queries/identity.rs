@@ -544,12 +544,12 @@ impl WasmSdk {
         Ok(array)
     }
 
-    #[wasm_bindgen(js_name = "getIdentityNonce", unchecked_return_type = "bigint | null")]
+    #[wasm_bindgen(js_name = "getIdentityNonce")]
     pub async fn get_identity_nonce(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
         identity_id: IdentifierLikeJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Option<BigInt>, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityNonceFetcher;
 
@@ -558,10 +558,7 @@ impl WasmSdk {
 
         let nonce_result = IdentityNonceFetcher::fetch(self.as_ref(), id).await?;
 
-        match nonce_result {
-            Some(fetcher) => Ok(BigInt::from(fetcher.0).into()),
-            None => Ok(JsValue::NULL),
-        }
+        Ok(nonce_result.map(|fetcher| BigInt::from(fetcher.0)))
     }
 
     #[wasm_bindgen(
@@ -592,17 +589,14 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(
-        js_name = "getIdentityContractNonce",
-        unchecked_return_type = "bigint | null"
-    )]
+    #[wasm_bindgen(js_name = "getIdentityContractNonce")]
     pub async fn get_identity_contract_nonce(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
         identity_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "contractId")]
         contract_id: IdentifierLikeJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Option<BigInt>, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
@@ -614,10 +608,7 @@ impl WasmSdk {
         let nonce_result =
             IdentityContractNonceFetcher::fetch(self.as_ref(), (identity_id, contract_id)).await?;
 
-        match nonce_result {
-            Some(fetcher) => Ok(BigInt::from(fetcher.0).into()),
-            None => Ok(JsValue::NULL),
-        }
+        Ok(nonce_result.map(|fetcher| BigInt::from(fetcher.0)))
     }
 
     #[wasm_bindgen(
@@ -657,15 +648,12 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(
-        js_name = "getIdentityBalance",
-        unchecked_return_type = "bigint | null"
-    )]
+    #[wasm_bindgen(js_name = "getIdentityBalance")]
     pub async fn get_identity_balance(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
         identity_id: IdentifierLikeJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Option<BigInt>, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalance;
 
@@ -674,10 +662,7 @@ impl WasmSdk {
 
         let balance_result = IdentityBalance::fetch(self.as_ref(), identity_id).await?;
 
-        match balance_result {
-            Some(balance) => Ok(BigInt::from(balance).into()),
-            None => Ok(JsValue::NULL),
-        }
+        Ok(balance_result.map(BigInt::from))
     }
 
     #[wasm_bindgen(
@@ -713,15 +698,12 @@ impl WasmSdk {
         Ok(results_map)
     }
 
-    #[wasm_bindgen(
-        js_name = "getIdentityBalanceAndRevision",
-        unchecked_return_type = "IdentityBalanceAndRevision | null"
-    )]
+    #[wasm_bindgen(js_name = "getIdentityBalanceAndRevision")]
     pub async fn get_identity_balance_and_revision(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
         identity_id: IdentifierLikeJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Option<IdentityBalanceAndRevisionWasm>, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
@@ -730,22 +712,14 @@ impl WasmSdk {
 
         let result = IdentityBalanceAndRevision::fetch(self.as_ref(), id).await?;
 
-        match result {
-            Some((balance, revision)) => {
-                Ok(IdentityBalanceAndRevisionWasm::new(balance, revision).into())
-            }
-            None => Ok(JsValue::NULL),
-        }
+        Ok(result.map(|(balance, revision)| IdentityBalanceAndRevisionWasm::new(balance, revision)))
     }
 
-    #[wasm_bindgen(
-        js_name = "getIdentityByPublicKeyHash",
-        unchecked_return_type = "Identity | null"
-    )]
+    #[wasm_bindgen(js_name = "getIdentityByPublicKeyHash")]
     pub async fn get_identity_by_public_key_hash(
         &self,
         #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: PublicKeyHashLikeJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Option<IdentityWasm>, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         let hash_bytes: Vec<u8> = public_key_hash_from_js(public_key_hash)?;
         if hash_bytes.len() != 20 {
@@ -759,10 +733,7 @@ impl WasmSdk {
 
         let result = Identity::fetch(self.as_ref(), PublicKeyHash(hash_array)).await?;
 
-        match result {
-            Some(identity) => Ok(IdentityWasm::from(identity).into()),
-            None => Ok(JsValue::NULL),
-        }
+        Ok(result.map(IdentityWasm::from))
     }
 
     #[wasm_bindgen(

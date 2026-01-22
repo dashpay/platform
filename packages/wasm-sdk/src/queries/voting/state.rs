@@ -150,7 +150,7 @@ impl ContestedResourceContenderWasm {
     }
 
     #[wasm_bindgen(getter = serializedDocument)]
-    pub fn serialized_document(&self) -> JsValue {
+    pub fn serialized_document(&self) -> Option<js_sys::Uint8Array> {
         self.contender.serialized_document()
     }
 
