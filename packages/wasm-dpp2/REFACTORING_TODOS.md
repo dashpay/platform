@@ -43,6 +43,12 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 | D1 | Functions returning bare `JsValue` without `Result` wrapper | `batched_transition.rs`, `token_transition.rs`, `voting/resource_vote_choice.rs`, `voting/contender.rs` | Medium |
 | D2 | Mixed typed return (`DocumentObjectJs`) vs generic (`JsValue`) | Various files | Low |
 
+**Note on `unchecked_return_type`**: The wasm-sdk uses `unchecked_return_type` for TypeScript generics like `ProofMetadataResponseTyped<T>`, `Map<K, V>`, and `Array<T>`. This is the correct pattern when:
+
+- TypeScript generics don't have Rust equivalents
+- JavaScript built-in types need specific type parameters
+For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the typed Rust struct directly.
+
 ---
 
 ## E. NAMING CONVENTIONS
@@ -51,7 +57,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 |---|-------|-------|----------|
 | E1 | Enum naming: mix of ALL_CAPS vs PascalCase | `version.rs` (ALL_CAPS), `network.rs` (PascalCase), `enums/keys/` (ALL_CAPS) | Low |
 | E2 | Inconsistent `js_name` attribute formatting (quoted vs unquoted, spacing) | Various files | Low |
-| E3 | wasm-sdk: Missing `Wasm` suffix on exposed types | `Dip14ExtendedPrivKey`, `HDKeyInfo`, `RegisterDpnsNameResult`, `DpnsUsernameInfo` | Medium |
+| ~~E3~~ | ~~wasm-sdk: Missing `Wasm` suffix on exposed types~~ | ~~`RegisterDpnsNameResult`, `DpnsUsernameInfo`~~ | ~~Done~~ ✓ |
 | E4 | wasm-sdk: Inconsistent getter attribute patterns | `getter_with_clone` vs `getter` + manual clone | Low |
 
 ---
@@ -86,21 +92,24 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 
 ## Recommended Priority Order
 
-### High Priority (should fix):
+### High Priority (should fix)
+
 1. ~~**A1**: Add `impl_try_from_options!` to `ProTxHashWasm`~~ ✓
 2. ~~**B1/B2**: Standardize `TryFrom` pattern - `&JsValue` has logic, `JsValue` delegates~~ ✓
 3. ~~**A4/G2**: Refactor wasm-sdk state transitions to follow `system.rs` macro pattern~~ ✓
 
-### Medium Priority (should address):
-4. ~~**A2**~~/~~**A3**~~: Add missing macros to types without them ✓
-5. **E3**: Add `Wasm` suffix to wasm-sdk exposed types
-6. ~~**C2**~~: Use typed returns (optional returns fixed, union types N/A) ✓ / **D1**: Wrap in `Result`
-7. **F2**: Ensure `is_human_readable()` checks in Serialize impls
+### Medium Priority (should address)
 
-### Low Priority (nice to have):
-8. **E1/E2**: Standardize naming conventions
-9. **G3**: Create macro for enum `TryFrom` implementations
-10. **H1**: Document and enforce import ordering
+1. ~~**A2**~~/~~**A3**~~: Add missing macros to types without them ✓
+2. ~~**E3**~~: Add `Wasm` suffix to wasm-sdk exposed types ✓
+3. ~~**C2**~~: Use typed returns (optional returns fixed, union types N/A) ✓ / **D1**: Wrap in `Result`
+4. **F2**: Ensure `is_human_readable()` checks in Serialize impls
+
+### Low Priority (nice to have)
+
+1. **E1/E2**: Standardize naming conventions
+2. **G3**: Create macro for enum `TryFrom` implementations
+3. **H1**: Document and enforce import ordering
 
 ---
 
@@ -171,3 +180,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
     - `RewardDistributionValue` in `tokens/configuration/reward_distribution_type.rs`
   - Note: Remaining `-> JsValue` returns are for union types that already have TypeScript definitions (e.g., `BatchedTransitionLike`, `TokenTransitionLike`)
 - [x] C3: Reviewed - **N/A (same as B3)** - serde is correct pattern for complex options objects
+- [x] E3: Added `Wasm` suffix to wasm-sdk exposed WASM types:
+  - `RegisterDpnsNameResult` → `RegisterDpnsNameResultWasm`
+  - `DpnsUsernameInfo` → `DpnsUsernameInfoWasm`
+  - Note: `Dip14ExtendedPrivKey` and `HDKeyInfo` were NOT exposed to WASM (no `#[wasm_bindgen]`) so they correctly do NOT have the `Wasm` suffix - they are internal Rust types
