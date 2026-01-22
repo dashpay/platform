@@ -11,7 +11,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 | ~~A1~~ | ~~`ProTxHashWasm` has manual `try_from_options` instead of macro~~ | ~~`core/pro_tx_hash.rs`~~ | ~~Done~~ ✓ |
 | ~~A2~~ | ~~Types missing `impl_wasm_type_info!`~~ | ~~`identity/partial_identity.rs`, token types, `voting/`, `block.rs`, etc.~~ | ~~Done~~ ✓ |
 | ~~A3~~ | ~~Types have manual `toObject/toJSON` instead of `impl_wasm_conversions!`~~ | ~~`identity/partial_identity.rs` (fixed), `voting/contender.rs` (already has macro), `batched_transition.rs` (special case)~~ | ~~Done~~ ✓ |
-| A4 | wasm-sdk: State transition results use manual implementations, not macros | `state_transitions/token.rs` (10 types), `identity.rs`, `addresses.rs` | High |
+| ~~A4~~ | ~~wasm-sdk: State transition results use manual implementations, not macros~~ | ~~`state_transitions/token.rs` (10 types)~~ | ~~Done~~ ✓ |
 | A5 | wasm-sdk: Redundant dual implementations (From + macro) | `queries/mod.rs` (ResponseMetadataWasm, ProofInfoWasm) | Low |
 
 ---
@@ -70,7 +70,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 | # | Issue | Files | Priority |
 |---|-------|-------|----------|
 | G1 | Mix of newtype wrappers `Foo(Inner)` vs structs with fields | `document/model.rs`, `identity/signer.rs`, `platform_address/input_output.rs` | Low |
-| G2 | wasm-sdk: `system.rs` pattern (macro-based) not followed in state transitions | `state_transitions/*.rs` | High |
+| ~~G2~~ | ~~wasm-sdk: `system.rs` pattern (macro-based) not followed in state transitions~~ | ~~`state_transitions/token.rs`~~ | ~~Done~~ ✓ |
 | G3 | Enum `TryFrom` implementations have duplicate code pattern (could use macro) | All enum files in `enums/` | Low |
 
 ---
@@ -89,7 +89,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 ### High Priority (should fix):
 1. ~~**A1**: Add `impl_try_from_options!` to `ProTxHashWasm`~~ ✓
 2. **B1/B2**: Standardize on `TryFrom<&JsValue>` only, remove owned variants
-3. **A4/G2**: Refactor wasm-sdk state transitions to follow `system.rs` macro pattern
+3. ~~**A4/G2**: Refactor wasm-sdk state transitions to follow `system.rs` macro pattern~~ ✓
 
 ### Medium Priority (should address):
 4. ~~**A2**~~/~~**A3**~~: Add missing macros to types without them ✓
@@ -125,3 +125,15 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
   - `PartialIdentityWasm` - **cannot use macro** (serde can't serialize `BTreeMap<KeyID, _>` - integer keys cause "Map key is not a string" error; also `id` serializes as bytes not `IdentifierWasm`). Added unit tests to ensure manual implementation works correctly. Fixed bug in `value_to_loaded_public_keys` where Object.keys() returns strings but code expected numbers.
   - `ContenderWithSerializedDocumentWasm` - already had macro
   - `BatchedTransitionWasm` - special case (has `toTransition()` not serialization)
+- [x] A4/G2: Refactored wasm-sdk token result types to use macros:
+  - `TokenMintResultWasm` - uses `#[derive(Clone, Serialize, Deserialize)]`, `#[serde(rename_all = "camelCase")]`, `#[wasm_bindgen(getter_with_clone)]`, and `impl_wasm_serde_conversions!`
+  - `TokenBurnResultWasm` - same pattern
+  - `TokenTransferResultWasm` - same pattern
+  - `TokenFreezeResultWasm` - same pattern
+  - `TokenUnfreezeResultWasm` - same pattern
+  - `TokenDestroyFrozenResultWasm` - same pattern
+  - `TokenEmergencyActionResultWasm` - same pattern
+  - `TokenClaimResultWasm` - same pattern
+  - `TokenSetPriceResultWasm` - same pattern (with `#[serde(skip)]` for `TokenPricingScheduleWasm` field)
+  - `TokenDirectPurchaseResultWasm` - same pattern (with manual getter for BigInt conversion)
+  - Note: All types use `#[serde(skip)]` for `DocumentWasm` fields and manual getters for `u64` → `BigInt` conversions

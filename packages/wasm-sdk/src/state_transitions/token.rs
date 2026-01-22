@@ -3,6 +3,7 @@
 //! This module provides WASM bindings for token operations like mint, burn, transfer, etc.
 
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{extract_settings_from_options, get_user_fee_increase};
@@ -23,7 +24,7 @@ use dash_sdk::platform::tokens::transitions::{
     FreezeResult, MintResult, SetPriceResult, TransferResult, UnfreezeResult,
 };
 use js_sys::BigInt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
@@ -145,78 +146,63 @@ fn deserialize_token_mint_options(options: JsValue) -> Result<TokenMintOptionsIn
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenMintResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenMintResultWasm {
     /// For TokenBalance result - recipient identity ID
-    recipient_id: Option<IdentifierWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "recipientId")]
+    pub recipient_id: Option<IdentifierWasm>,
     /// For TokenBalance or GroupActionWithBalance - the new balance
     new_balance: Option<u64>,
     /// For group actions - accumulated group power
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// For GroupActionWithBalance - action status
-    group_action_status: Option<String>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupActionStatus")]
+    pub group_action_status: Option<String>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenMintResult)]
 impl TokenMintResultWasm {
-    /// The recipient's identity ID (for balance results).
-    #[wasm_bindgen(getter = "recipientId")]
-    pub fn recipient_id(&self) -> Option<IdentifierWasm> {
-        self.recipient_id
-    }
-
     /// The new token balance after minting.
     #[wasm_bindgen(getter = "newBalance")]
     pub fn new_balance(&self) -> Option<BigInt> {
         self.new_balance.map(BigInt::from)
     }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The group action status (for group actions).
-    #[wasm_bindgen(getter = "groupActionStatus")]
-    pub fn group_action_status(&self) -> Option<String> {
-        self.group_action_status.clone()
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
 }
+
+impl_wasm_serde_conversions!(TokenMintResultWasm, TokenMintResult);
 
 impl TokenMintResultWasm {
     /// Convert from SDK MintResult with the required contract context
-    fn from_result(result: MintResult, contract_id: Identifier) -> Self {
+    pub(crate) fn from_result(result: MintResult, contract_id: Identifier) -> Self {
         match result {
-            MintResult::TokenBalance(recipient_id, balance) => TokenMintResultWasm {
+            MintResult::TokenBalance(recipient_id, balance) => Self {
                 recipient_id: Some(recipient_id.into()),
                 new_balance: Some(balance),
                 group_power: None,
                 group_action_status: None,
                 document: None,
             },
-            MintResult::HistoricalDocument(doc) => TokenMintResultWasm {
+            MintResult::HistoricalDocument(doc) => Self {
                 recipient_id: None,
                 new_balance: None,
                 group_power: None,
                 group_action_status: None,
                 document: Some(document_to_wasm(doc, contract_id, "mint")),
             },
-            MintResult::GroupActionWithDocument(power, doc) => TokenMintResultWasm {
+            MintResult::GroupActionWithDocument(power, doc) => Self {
                 recipient_id: None,
                 new_balance: None,
                 group_power: Some(power),
                 group_action_status: None,
                 document: doc.map(|d| document_to_wasm(d, contract_id, "mint")),
             },
-            MintResult::GroupActionWithBalance(power, status, balance) => TokenMintResultWasm {
+            MintResult::GroupActionWithBalance(power, status, balance) => Self {
                 recipient_id: None,
                 new_balance: balance,
                 group_power: Some(power),
@@ -404,76 +390,61 @@ fn deserialize_token_burn_options(options: JsValue) -> Result<TokenBurnOptionsIn
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenBurnResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenBurnResultWasm {
     /// For TokenBalance result
-    owner_id: Option<IdentifierWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "ownerId")]
+    pub owner_id: Option<IdentifierWasm>,
     remaining_balance: Option<u64>,
     /// For group actions
-    group_power: Option<u32>,
-    group_action_status: Option<String>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupActionStatus")]
+    pub group_action_status: Option<String>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenBurnResult)]
 impl TokenBurnResultWasm {
-    /// The owner's identity ID (for balance results).
-    #[wasm_bindgen(getter = "ownerId")]
-    pub fn owner_id(&self) -> Option<IdentifierWasm> {
-        self.owner_id
-    }
-
     /// The remaining token balance after burning.
     #[wasm_bindgen(getter = "remainingBalance")]
     pub fn remaining_balance(&self) -> Option<BigInt> {
         self.remaining_balance.map(BigInt::from)
     }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The group action status (for group actions).
-    #[wasm_bindgen(getter = "groupActionStatus")]
-    pub fn group_action_status(&self) -> Option<String> {
-        self.group_action_status.clone()
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
 }
+
+impl_wasm_serde_conversions!(TokenBurnResultWasm, TokenBurnResult);
 
 impl TokenBurnResultWasm {
     /// Convert from SDK BurnResult with the required contract context
-    fn from_result(result: BurnResult, contract_id: Identifier) -> Self {
+    pub(crate) fn from_result(result: BurnResult, contract_id: Identifier) -> Self {
         match result {
-            BurnResult::TokenBalance(owner_id, balance) => TokenBurnResultWasm {
+            BurnResult::TokenBalance(owner_id, balance) => Self {
                 owner_id: Some(owner_id.into()),
                 remaining_balance: Some(balance),
                 group_power: None,
                 group_action_status: None,
                 document: None,
             },
-            BurnResult::HistoricalDocument(doc) => TokenBurnResultWasm {
+            BurnResult::HistoricalDocument(doc) => Self {
                 owner_id: None,
                 remaining_balance: None,
                 group_power: None,
                 group_action_status: None,
                 document: Some(document_to_wasm(doc, contract_id, "burn")),
             },
-            BurnResult::GroupActionWithDocument(power, doc) => TokenBurnResultWasm {
+            BurnResult::GroupActionWithDocument(power, doc) => Self {
                 owner_id: None,
                 remaining_balance: None,
                 group_power: Some(power),
                 group_action_status: None,
                 document: doc.map(|d| document_to_wasm(d, contract_id, "burn")),
             },
-            BurnResult::GroupActionWithBalance(power, status, balance) => TokenBurnResultWasm {
+            BurnResult::GroupActionWithBalance(power, status, balance) => Self {
                 owner_id: None,
                 remaining_balance: balance,
                 group_power: Some(power),
@@ -661,15 +632,20 @@ fn deserialize_token_transfer_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenTransferResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenTransferResultWasm {
     /// For IdentitiesBalances result - sender's new balance
     sender_balance: Option<u64>,
     /// For IdentitiesBalances result - recipient's new balance
     recipient_balance: Option<u64>,
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenTransferResult)]
@@ -685,23 +661,13 @@ impl TokenTransferResultWasm {
     pub fn recipient_balance(&self) -> Option<BigInt> {
         self.recipient_balance.map(BigInt::from)
     }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
 }
+
+impl_wasm_serde_conversions!(TokenTransferResultWasm, TokenTransferResult);
 
 impl TokenTransferResultWasm {
     /// Convert from SDK TransferResult with the required contract context
-    fn from_result(
+    pub(crate) fn from_result(
         result: TransferResult,
         contract_id: Identifier,
         sender_id: Identifier,
@@ -711,20 +677,20 @@ impl TokenTransferResultWasm {
             TransferResult::IdentitiesBalances(balances) => {
                 // Look up balances by their specific identity IDs
                 // (BTreeMap iteration order is by key, not insertion order)
-                TokenTransferResultWasm {
+                Self {
                     sender_balance: balances.get(&sender_id).copied(),
                     recipient_balance: balances.get(&recipient_id).copied(),
                     group_power: None,
                     document: None,
                 }
             }
-            TransferResult::HistoricalDocument(doc) => TokenTransferResultWasm {
+            TransferResult::HistoricalDocument(doc) => Self {
                 sender_balance: None,
                 recipient_balance: None,
                 group_power: None,
                 document: Some(document_to_wasm(doc, contract_id, "transfer")),
             },
-            TransferResult::GroupActionWithDocument(power, doc) => TokenTransferResultWasm {
+            TransferResult::GroupActionWithDocument(power, doc) => Self {
                 sender_balance: None,
                 recipient_balance: None,
                 group_power: Some(power),
@@ -918,56 +884,43 @@ fn deserialize_token_freeze_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenFreezeResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenFreezeResultWasm {
     /// For IdentityInfo result
-    frozen_identity_id: Option<IdentifierWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "frozenIdentityId")]
+    pub frozen_identity_id: Option<IdentifierWasm>,
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
-#[wasm_bindgen(js_class = TokenFreezeResult)]
-impl TokenFreezeResultWasm {
-    /// The identity ID that was frozen.
-    #[wasm_bindgen(getter = "frozenIdentityId")]
-    pub fn frozen_identity_id(&self) -> Option<IdentifierWasm> {
-        self.frozen_identity_id
-    }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
-}
+impl_wasm_serde_conversions!(TokenFreezeResultWasm, TokenFreezeResult);
 
 impl TokenFreezeResultWasm {
     /// Convert from SDK FreezeResult with the required contract context
-    fn from_result(result: FreezeResult, contract_id: Identifier) -> Self {
+    pub(crate) fn from_result(result: FreezeResult, contract_id: Identifier) -> Self {
         match result {
-            FreezeResult::IdentityInfo(frozen_id, _info) => TokenFreezeResultWasm {
+            FreezeResult::IdentityInfo(frozen_id, _info) => Self {
                 frozen_identity_id: Some(frozen_id.into()),
                 group_power: None,
                 document: None,
             },
-            FreezeResult::HistoricalDocument(doc) => TokenFreezeResultWasm {
+            FreezeResult::HistoricalDocument(doc) => Self {
                 frozen_identity_id: None,
                 group_power: None,
                 document: Some(document_to_wasm(doc, contract_id, "freeze")),
             },
-            FreezeResult::GroupActionWithDocument(power, doc) => TokenFreezeResultWasm {
+            FreezeResult::GroupActionWithDocument(power, doc) => Self {
                 frozen_identity_id: None,
                 group_power: Some(power),
                 document: doc.map(|d| document_to_wasm(d, contract_id, "freeze")),
             },
-            FreezeResult::GroupActionWithIdentityInfo(power, _info) => TokenFreezeResultWasm {
+            FreezeResult::GroupActionWithIdentityInfo(power, _info) => Self {
                 frozen_identity_id: None,
                 group_power: Some(power),
                 document: None,
@@ -1154,35 +1107,22 @@ fn deserialize_token_unfreeze_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenUnfreezeResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenUnfreezeResultWasm {
     /// For IdentityInfo result
-    unfrozen_identity_id: Option<IdentifierWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "unfrozenIdentityId")]
+    pub unfrozen_identity_id: Option<IdentifierWasm>,
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
-#[wasm_bindgen(js_class = TokenUnfreezeResult)]
-impl TokenUnfreezeResultWasm {
-    /// The identity ID that was unfrozen.
-    #[wasm_bindgen(getter = "unfrozenIdentityId")]
-    pub fn unfrozen_identity_id(&self) -> Option<IdentifierWasm> {
-        self.unfrozen_identity_id
-    }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
-}
+impl_wasm_serde_conversions!(TokenUnfreezeResultWasm, TokenUnfreezeResult);
 
 impl TokenUnfreezeResultWasm {
     /// Convert from SDK UnfreezeResult with the required contract context
@@ -1389,27 +1329,19 @@ fn deserialize_token_destroy_frozen_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenDestroyFrozenResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenDestroyFrozenResultWasm {
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
-#[wasm_bindgen(js_class = TokenDestroyFrozenResult)]
-impl TokenDestroyFrozenResultWasm {
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
-}
+impl_wasm_serde_conversions!(TokenDestroyFrozenResultWasm, TokenDestroyFrozenResult);
 
 impl TokenDestroyFrozenResultWasm {
     /// Convert from SDK DestroyFrozenFundsResult with the required contract context
@@ -1611,27 +1543,19 @@ fn deserialize_token_emergency_action_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenEmergencyActionResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenEmergencyActionResultWasm {
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// The document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
-#[wasm_bindgen(js_class = TokenEmergencyActionResult)]
-impl TokenEmergencyActionResultWasm {
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The document.
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
-}
+impl_wasm_serde_conversions!(TokenEmergencyActionResultWasm, TokenEmergencyActionResult);
 
 impl TokenEmergencyActionResultWasm {
     /// Convert from SDK EmergencyActionResult with the required contract context
@@ -1833,27 +1757,19 @@ fn deserialize_token_claim_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenClaimResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenClaimResultWasm {
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// The document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
-#[wasm_bindgen(js_class = TokenClaimResult)]
-impl TokenClaimResultWasm {
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The document.
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
-}
+impl_wasm_serde_conversions!(TokenClaimResultWasm, TokenClaimResult);
 
 impl TokenClaimResultWasm {
     /// Convert from SDK ClaimResult with the required contract context
@@ -2055,51 +1971,29 @@ fn deserialize_token_set_price_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenSetPriceResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenSetPriceResultWasm {
     /// For PricingSchedule - the identity that set the price
-    owner_id: Option<IdentifierWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "ownerId")]
+    pub owner_id: Option<IdentifierWasm>,
     /// For PricingSchedule or GroupActionWithPricingSchedule - the pricing schedule
-    pricing_schedule: Option<TokenPricingScheduleWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "pricingSchedule")]
+    #[serde(skip)]
+    pub pricing_schedule: Option<TokenPricingScheduleWasm>,
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// Group action status
-    group_action_status: Option<String>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupActionStatus")]
+    pub group_action_status: Option<String>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
-#[wasm_bindgen(js_class = TokenSetPriceResult)]
-impl TokenSetPriceResultWasm {
-    /// The identity that set the price (for standard tokens).
-    #[wasm_bindgen(getter = "ownerId")]
-    pub fn owner_id(&self) -> Option<IdentifierWasm> {
-        self.owner_id
-    }
-
-    /// The pricing schedule (for standard tokens or group actions without history).
-    #[wasm_bindgen(getter = "pricingSchedule")]
-    pub fn pricing_schedule(&self) -> Option<TokenPricingScheduleWasm> {
-        self.pricing_schedule.clone()
-    }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The group action status (for group actions).
-    #[wasm_bindgen(getter = "groupActionStatus")]
-    pub fn group_action_status(&self) -> Option<String> {
-        self.group_action_status.clone()
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
-}
+impl_wasm_serde_conversions!(TokenSetPriceResultWasm, TokenSetPriceResult);
 
 impl TokenSetPriceResultWasm {
     /// Convert from SDK SetPriceResult with the required contract context
@@ -2318,43 +2212,33 @@ fn deserialize_token_direct_purchase_options(
 ///
 /// Check which optional fields are present to determine the result type.
 #[wasm_bindgen(js_name = "TokenDirectPurchaseResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenDirectPurchaseResultWasm {
     /// For TokenBalance result
-    buyer_id: Option<IdentifierWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "buyerId")]
+    pub buyer_id: Option<IdentifierWasm>,
     /// New balance after purchase
     new_balance: Option<u64>,
     /// For group actions
-    group_power: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
     /// For HistoricalDocument or GroupActionWithDocument - the document
-    document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
 }
 
 #[wasm_bindgen(js_class = TokenDirectPurchaseResult)]
 impl TokenDirectPurchaseResultWasm {
-    /// The buyer's identity ID.
-    #[wasm_bindgen(getter = "buyerId")]
-    pub fn buyer_id(&self) -> Option<IdentifierWasm> {
-        self.buyer_id
-    }
-
     /// The buyer's new balance after purchase.
     #[wasm_bindgen(getter = "newBalance")]
     pub fn new_balance(&self) -> Option<BigInt> {
         self.new_balance.map(BigInt::from)
     }
-
-    /// The accumulated group power (for group actions).
-    #[wasm_bindgen(getter = "groupPower")]
-    pub fn group_power(&self) -> Option<u32> {
-        self.group_power
-    }
-
-    /// The historical document (for tokens with history tracking).
-    #[wasm_bindgen(getter)]
-    pub fn document(&self) -> Option<DocumentWasm> {
-        self.document.clone()
-    }
 }
+
+impl_wasm_serde_conversions!(TokenDirectPurchaseResultWasm, TokenDirectPurchaseResult);
 
 impl TokenDirectPurchaseResultWasm {
     /// Convert from SDK DirectPurchaseResult with the required contract context
