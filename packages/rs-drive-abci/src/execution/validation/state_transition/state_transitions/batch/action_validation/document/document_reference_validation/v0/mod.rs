@@ -109,7 +109,20 @@ fn validate_document_type_references_v0(
                     return Ok(validation_result);
                 }
             }
-            _ => continue,
+            DocumentPropertyReferenceTarget::Contract => {
+                let validation_result = validate_contract_reference_v0(
+                    document_data,
+                    path,
+                    reference.must_exist,
+                    platform,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )?;
+                if !validation_result.is_valid() {
+                    return Ok(validation_result);
+                }
+            }
         }
     }
 
@@ -167,6 +180,58 @@ fn validate_identity_reference_v0(
             )),
         ));
     };
+
+    Ok(SimpleConsensusValidationResult::new())
+}
+
+fn validate_contract_reference_v0(
+    document_data: &BTreeMap<String, Value>,
+    path: &str,
+    must_exist: bool,
+    platform: &PlatformStateRef,
+    transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    if !must_exist {
+        return Ok(SimpleConsensusValidationResult::new());
+    }
+
+    let contract_bytes = match document_data.get_optional_identifier_at_path(path) {
+        Ok(Some(contract_bytes)) => contract_bytes,
+        Ok(None) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(path.to_string(), "not set".to_string()).into(),
+            ))
+        }
+        Err(err) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+            ))
+        }
+    };
+
+    execution_context.add_operation(ValidationOperation::RetrieveContract);
+
+    let maybe_contract = platform
+        .drive
+        .fetch_contract(contract_bytes, None, None, transaction, platform_version)
+        .value?;
+
+    if maybe_contract.is_none() {
+        let missing_id =
+            Identifier::from_bytes(&contract_bytes).map_err(|e| Error::Protocol(e.into()))?;
+
+        return Ok(SimpleConsensusValidationResult::new_with_error(
+            ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(
+                ReferencedEntityNotFoundError::new(
+                    missing_id,
+                    DocumentPropertyReferenceTarget::Contract,
+                    path.to_string(),
+                ),
+            )),
+        ));
+    }
 
     Ok(SimpleConsensusValidationResult::new())
 }

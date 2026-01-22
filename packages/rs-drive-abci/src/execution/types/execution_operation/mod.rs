@@ -75,6 +75,7 @@ pub enum ValidationOperation {
     Protocol(ProtocolValidationOperation),
     RetrieveIdentityTokenBalance,
     RetrieveIdentity(RetrieveIdentityInfo),
+    RetrieveContract,
     RetrievePrefundedSpecializedBalance,
     RetrieveAddressNonceAndBalance(u16),
     PerformNetworkThresholdSigning,
@@ -195,6 +196,19 @@ impl ValidationOperation {
                     fee_result.processing_fee = fee_result
                         .processing_fee
                         .checked_add(operation_cost)
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::RetrieveContract => {
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(
+                            platform_version
+                                .fee_version
+                                .processing
+                                .fetch_contract_processing_cost,
+                        )
                         .ok_or(ExecutionError::Overflow(
                             "execution processing fee overflow error",
                         ))?;
