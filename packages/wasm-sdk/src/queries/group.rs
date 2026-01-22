@@ -24,14 +24,17 @@ use wasm_dpp2::tokens::GroupWasm;
 
 #[wasm_bindgen(js_name = "IdentityGroupInfo")]
 pub struct IdentityGroupInfoWasm {
-    data_contract_id: String,
-    group_contract_position: u32,
-    role: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "dataContractId")]
+    pub data_contract_id: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupContractPosition")]
+    pub group_contract_position: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub role: String,
     power: Option<GroupMemberPower>,
 }
 
 impl IdentityGroupInfoWasm {
-    fn new(
+    pub(crate) fn new(
         data_contract_id: String,
         group_contract_position: u32,
         role: String,
@@ -48,22 +51,7 @@ impl IdentityGroupInfoWasm {
 
 #[wasm_bindgen(js_class = IdentityGroupInfo)]
 impl IdentityGroupInfoWasm {
-    #[wasm_bindgen(getter = "dataContractId")]
-    pub fn data_contract_id(&self) -> String {
-        self.data_contract_id.clone()
-    }
-
-    #[wasm_bindgen(getter = "groupContractPosition")]
-    pub fn group_contract_position(&self) -> u32 {
-        self.group_contract_position
-    }
-
-    #[wasm_bindgen(getter = "role")]
-    pub fn role(&self) -> String {
-        self.role.clone()
-    }
-
-    #[wasm_bindgen(getter = "power")]
+    #[wasm_bindgen(getter)]
     pub fn power(&self) -> Option<BigInt> {
         self.power.map(|value| BigInt::from(value as u64))
     }

@@ -34,7 +34,7 @@ extern "C" {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenTransferTransition)]
+#[wasm_bindgen(js_name = "TokenTransferTransition")]
 pub struct TokenTransferTransitionWasm(TokenTransferTransition);
 
 impl From<TokenTransferTransition> for TokenTransferTransitionWasm {

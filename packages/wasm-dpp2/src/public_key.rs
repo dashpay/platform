@@ -116,7 +116,7 @@ impl PublicKeyWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(js_name = getPublicKeyHash)]
+    #[wasm_bindgen(js_name = "getPublicKeyHash")]
     pub fn get_public_key_hash(&self) -> String {
         self.0.pubkey_hash().to_hex()
     }

@@ -71,29 +71,18 @@ impl ProtocolVersionUpgradeStateWasm {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolVersionUpgradeVoteStatusWasm {
-    pro_tx_hash: String,
-    version: u32,
+    #[wasm_bindgen(getter_with_clone, js_name = "proTxHash")]
+    pub pro_tx_hash: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub version: u32,
 }
 
 impl ProtocolVersionUpgradeVoteStatusWasm {
-    fn new(pro_tx_hash: String, version: u32) -> Self {
+    pub(crate) fn new(pro_tx_hash: String, version: u32) -> Self {
         Self {
             pro_tx_hash,
             version,
         }
-    }
-}
-
-#[wasm_bindgen(js_class = ProtocolVersionUpgradeVoteStatus)]
-impl ProtocolVersionUpgradeVoteStatusWasm {
-    #[wasm_bindgen(getter = "proTxHash")]
-    pub fn pro_tx_hash(&self) -> String {
-        self.pro_tx_hash.clone()
-    }
-
-    #[wasm_bindgen(getter = "version")]
-    pub fn version(&self) -> u32 {
-        self.version
     }
 }
 

@@ -62,7 +62,7 @@ extern "C" {
 }
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = VotePoll)]
+#[wasm_bindgen(js_name = "VotePoll")]
 pub struct VotePollWasm(VotePoll);
 
 impl From<VotePoll> for VotePollWasm {

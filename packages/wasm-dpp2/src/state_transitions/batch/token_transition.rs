@@ -55,7 +55,7 @@ impl_from_for_extern_type!(
 );
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenTransition)]
+#[wasm_bindgen(js_name = "TokenTransition")]
 pub struct TokenTransitionWasm(TokenTransition);
 
 impl From<TokenTransition> for TokenTransitionWasm {

@@ -31,7 +31,7 @@ extern "C" {
 impl_from_for_extern_type!(BatchedTransitionLikeJs, DocumentTransitionWasm, TokenTransitionWasm);
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=BatchedTransition)]
+#[wasm_bindgen(js_name = "BatchedTransition")]
 pub struct BatchedTransitionWasm(BatchedTransition);
 
 impl From<BatchedTransition> for BatchedTransitionWasm {

@@ -20,7 +20,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// - Proposer: The identity proposing a new group action
 /// - OtherSigner: The identity signing/voting on an existing group action
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = GroupStateTransitionInfoStatus)]
+#[wasm_bindgen(js_name = "GroupStateTransitionInfoStatus")]
 pub struct GroupStateTransitionInfoStatusWasm(GroupStateTransitionInfoStatus);
 
 impl From<GroupStateTransitionInfoStatusWasm> for GroupStateTransitionInfoStatus {

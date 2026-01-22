@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenSetPriceForDirectPurchaseTransition)]
+#[wasm_bindgen(js_name = "TokenSetPriceForDirectPurchaseTransition")]
 pub struct TokenSetPriceForDirectPurchaseTransitionWasm(TokenSetPriceForDirectPurchaseTransition);
 
 impl From<TokenSetPriceForDirectPurchaseTransition>

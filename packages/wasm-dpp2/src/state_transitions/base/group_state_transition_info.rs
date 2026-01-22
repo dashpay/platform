@@ -6,7 +6,7 @@ use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=GroupStateTransitionInfo)]
+#[wasm_bindgen(js_name = "GroupStateTransitionInfo")]
 pub struct GroupStateTransitionInfoWasm(GroupStateTransitionInfo);
 
 impl From<GroupStateTransitionInfoWasm> for GroupStateTransitionInfo {

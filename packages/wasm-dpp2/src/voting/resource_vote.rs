@@ -36,7 +36,7 @@ extern "C" {
 }
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = ResourceVote)]
+#[wasm_bindgen(js_name = "ResourceVote")]
 pub struct ResourceVoteWasm(ResourceVote);
 
 impl From<ResourceVote> for ResourceVoteWasm {

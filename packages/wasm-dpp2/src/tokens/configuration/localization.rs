@@ -43,7 +43,7 @@ extern "C" {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = TokenConfigurationLocalization)]
+#[wasm_bindgen(js_name = "TokenConfigurationLocalization")]
 pub struct TokenConfigurationLocalizationWasm(TokenConfigurationLocalization);
 
 impl From<TokenConfigurationLocalization> for TokenConfigurationLocalizationWasm {

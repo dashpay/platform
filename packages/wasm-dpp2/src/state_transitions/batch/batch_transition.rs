@@ -59,7 +59,7 @@ extern "C" {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=BatchTransition)]
+#[wasm_bindgen(js_name = "BatchTransition")]
 pub struct BatchTransitionWasm(BatchTransition);
 
 impl From<BatchTransition> for BatchTransitionWasm {

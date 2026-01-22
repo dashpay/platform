@@ -28,7 +28,7 @@ impl TryFrom<SecurityLevelLikeJs> for SecurityLevel {
     }
 }
 
-#[wasm_bindgen(js_name = SecurityLevel)]
+#[wasm_bindgen(js_name = "SecurityLevel")]
 pub enum SecurityLevelWasm {
     MASTER = 0,
     CRITICAL = 1,

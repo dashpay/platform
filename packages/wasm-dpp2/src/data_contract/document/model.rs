@@ -92,7 +92,7 @@ export interface DocumentJSON {
 
 /// DocumentWasm wraps a Document and adds metadata fields that are not part of the core Document.
 #[derive(Clone, serde::Serialize, Deserialize)]
-#[wasm_bindgen(js_name = Document)]
+#[wasm_bindgen(js_name = "Document")]
 pub struct DocumentWasm {
     #[serde(skip_serializing, skip_deserializing, default = "default_document")]
     pub(crate) document: Document,
@@ -478,7 +478,7 @@ impl DocumentWasm {
     }
 
     /// Convert to a JS object with binary fields as Uint8Array.
-    #[wasm_bindgen(js_name = toObject)]
+    #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<DocumentObjectJs> {
         let mut map = self.document.to_map_value()?;
         // Add metadata fields not in core Document
@@ -501,7 +501,7 @@ impl DocumentWasm {
     }
 
     /// Create a Document from a JS object.
-    #[wasm_bindgen(js_name = fromObject)]
+    #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(value: DocumentObjectJs) -> WasmDppResult<DocumentWasm> {
         let platform_value = serialization::js_value_to_platform_value(&value.into())?;
 
@@ -546,7 +546,7 @@ impl DocumentWasm {
     }
 
     /// Convert to a JSON-compatible JS object with binary fields as strings.
-    #[wasm_bindgen(js_name = toJSON)]
+    #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<DocumentJSONJs> {
         // Get document fields as JSON
         let mut json_value = self.document.to_json(PlatformVersion::latest())?;
@@ -571,7 +571,7 @@ impl DocumentWasm {
 
     /// Create a Document from a JSON object.
     /// JSON format has identifiers as base58 strings.
-    #[wasm_bindgen(js_name = fromJSON)]
+    #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(value: DocumentJSONJs) -> WasmDppResult<DocumentWasm> {
         let mut json_value = serialization::js_value_to_json(&value.into())?;
 
@@ -593,7 +593,7 @@ impl DocumentWasm {
         Ok(wrapper)
     }
 
-    #[wasm_bindgen(js_name=toBytes)]
+    #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(
         &self,
         data_contract: &DataContractWasm,
@@ -602,7 +602,7 @@ impl DocumentWasm {
         self.to_bytes_internal(data_contract, platform_version.into())
     }
 
-    #[wasm_bindgen(js_name=toHex)]
+    #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(
         &self,
         data_contract: &DataContractWasm,
@@ -615,7 +615,7 @@ impl DocumentWasm {
         ))
     }
 
-    #[wasm_bindgen(js_name=toBase64)]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(
         &self,
         data_contract: &DataContractWasm,
@@ -628,7 +628,7 @@ impl DocumentWasm {
         ))
     }
 
-    #[wasm_bindgen(js_name=fromBytes)]
+    #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(
         bytes: Vec<u8>,
         data_contract: &DataContractWasm,
@@ -638,7 +638,7 @@ impl DocumentWasm {
         Self::from_bytes_internal(bytes, data_contract, type_name, platform_version.into())
     }
 
-    #[wasm_bindgen(js_name=fromHex)]
+    #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(
         hex: String,
         data_contract: &DataContractWasm,
@@ -655,7 +655,7 @@ impl DocumentWasm {
         )
     }
 
-    #[wasm_bindgen(js_name=fromBase64)]
+    #[wasm_bindgen(js_name = "fromBase64")]
     pub fn from_base64(
         base64: String,
         data_contract: &DataContractWasm,
@@ -672,7 +672,7 @@ impl DocumentWasm {
         )
     }
 
-    #[wasm_bindgen(js_name=generateId)]
+    #[wasm_bindgen(js_name = "generateId")]
     pub fn generate_id(
         document_type_name: &str,
         owner_id: IdentifierLikeJs,

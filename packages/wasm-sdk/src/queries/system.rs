@@ -298,15 +298,20 @@ impl_wasm_serde_conversions!(StateTransitionResultWasm, StateTransitionResult);
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuorumInfoWasm {
-    quorum_hash: String,
-    quorum_type: String,
-    member_count: u32,
-    threshold: u32,
-    is_verified: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "quorumHash")]
+    pub quorum_hash: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "quorumType")]
+    pub quorum_type: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "memberCount")]
+    pub member_count: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub threshold: u32,
+    #[wasm_bindgen(getter_with_clone, js_name = "isVerified")]
+    pub is_verified: bool,
 }
 
 impl QuorumInfoWasm {
-    fn new(
+    pub(crate) fn new(
         quorum_hash: String,
         quorum_type: String,
         member_count: u32,
@@ -320,34 +325,6 @@ impl QuorumInfoWasm {
             threshold,
             is_verified,
         }
-    }
-}
-
-#[wasm_bindgen(js_class = QuorumInfo)]
-impl QuorumInfoWasm {
-    #[wasm_bindgen(getter = "quorumHash")]
-    pub fn quorum_hash(&self) -> String {
-        self.quorum_hash.clone()
-    }
-
-    #[wasm_bindgen(getter = "quorumType")]
-    pub fn quorum_type(&self) -> String {
-        self.quorum_type.clone()
-    }
-
-    #[wasm_bindgen(getter = "memberCount")]
-    pub fn member_count(&self) -> u32 {
-        self.member_count
-    }
-
-    #[wasm_bindgen(getter = "threshold")]
-    pub fn threshold(&self) -> u32 {
-        self.threshold
-    }
-
-    #[wasm_bindgen(getter = "isVerified")]
-    pub fn is_verified(&self) -> bool {
-        self.is_verified
     }
 }
 
@@ -417,29 +394,25 @@ impl PrefundedSpecializedBalanceWasm {
 #[serde(rename_all = "camelCase")]
 pub struct PathElementWasm {
     path: Vec<String>,
-    value: Option<String>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub value: Option<String>,
 }
 
 impl PathElementWasm {
-    fn new(path: Vec<String>, value: Option<String>) -> Self {
+    pub(crate) fn new(path: Vec<String>, value: Option<String>) -> Self {
         Self { path, value }
     }
 }
 
 #[wasm_bindgen(js_class = PathElement)]
 impl PathElementWasm {
-    #[wasm_bindgen(getter = "path")]
+    #[wasm_bindgen(getter)]
     pub fn path(&self) -> Array {
         let array = Array::new();
         for segment in &self.path {
             array.push(&JsValue::from_str(segment));
         }
         array
-    }
-
-    #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> Option<String> {
-        self.value.clone()
     }
 }
 

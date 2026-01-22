@@ -23,36 +23,21 @@ use wasm_dpp2::tokens::{IdentityTokenInfoWasm, TokenContractInfoWasm, TokenStatu
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenPriceInfoWasm {
-    token_id: IdentifierWasm,
-    current_price: String,
-    base_price: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "tokenId")]
+    pub token_id: IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone, js_name = "currentPrice")]
+    pub current_price: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "basePrice")]
+    pub base_price: String,
 }
 
 impl TokenPriceInfoWasm {
-    fn new(token_id: IdentifierWasm, current_price: String, base_price: String) -> Self {
+    pub(crate) fn new(token_id: IdentifierWasm, current_price: String, base_price: String) -> Self {
         Self {
             token_id,
             current_price,
             base_price,
         }
-    }
-}
-
-#[wasm_bindgen(js_class = TokenPriceInfo)]
-impl TokenPriceInfoWasm {
-    #[wasm_bindgen(getter = "tokenId")]
-    pub fn token_id(&self) -> IdentifierWasm {
-        self.token_id
-    }
-
-    #[wasm_bindgen(getter = "currentPrice")]
-    pub fn current_price(&self) -> String {
-        self.current_price.clone()
-    }
-
-    #[wasm_bindgen(getter = "basePrice")]
-    pub fn base_price(&self) -> String {
-        self.base_price.clone()
     }
 }
 

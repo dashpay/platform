@@ -9,7 +9,7 @@ use dpp::state_transition::batch_transition::TokenDirectPurchaseTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenDirectPurchaseTransition)]
+#[wasm_bindgen(js_name = "TokenDirectPurchaseTransition")]
 pub struct TokenDirectPurchaseTransitionWasm(TokenDirectPurchaseTransition);
 
 impl From<TokenDirectPurchaseTransitionWasm> for TokenDirectPurchaseTransition {

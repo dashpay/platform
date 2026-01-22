@@ -69,7 +69,7 @@ extern "C" {
     pub type IdentityCreditTransferJSONJs;
 }
 
-#[wasm_bindgen(js_name = IdentityCreditTransfer)]
+#[wasm_bindgen(js_name = "IdentityCreditTransfer")]
 #[derive(Clone)]
 pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 

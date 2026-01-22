@@ -55,10 +55,10 @@ For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the ty
 
 | # | Issue | Files | Priority |
 |---|-------|-------|----------|
-| E1 | Enum naming: mix of ALL_CAPS vs PascalCase | `version.rs` (ALL_CAPS), `network.rs` (PascalCase), `enums/keys/` (ALL_CAPS) | Low |
-| E2 | Inconsistent `js_name` attribute formatting (quoted vs unquoted, spacing) | Various files | Low |
+| ~~E1~~ | ~~Enum naming: mix of ALL_CAPS vs PascalCase~~ | ~~`version.rs` (ALL_CAPS), `network.rs` (PascalCase), `enums/keys/` (ALL_CAPS)~~ | ~~N/A~~ (intentional - crypto types use ALL_CAPS) |
+| ~~E2~~ | ~~Inconsistent `js_name` attribute formatting (quoted vs unquoted, spacing)~~ | ~~Various files~~ | ~~Done~~ ✓ |
 | ~~E3~~ | ~~wasm-sdk: Missing `Wasm` suffix on exposed types~~ | ~~`RegisterDpnsNameResult`, `DpnsUsernameInfo`~~ | ~~Done~~ ✓ |
-| E4 | wasm-sdk: Inconsistent getter attribute patterns | `getter_with_clone` vs `getter` + manual clone | Low |
+| ~~E4~~ | ~~wasm-sdk: Inconsistent getter attribute patterns~~ | ~~`getter_with_clone` vs `getter` + manual clone~~ | ~~Done~~ ✓ |
 
 ---
 
@@ -107,7 +107,7 @@ For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the ty
 
 ### Low Priority (nice to have)
 
-1. **E1/E2**: Standardize naming conventions
+1. ~~**E1/E2/E4**~~: ~~Standardize naming conventions~~ ✓
 2. **G3**: Create macro for enum `TryFrom` implementations
 3. **H1**: Document and enforce import ordering
 
@@ -199,3 +199,17 @@ For concrete WASM struct returns (like `DpnsUsernameInfoWasm`), we return the ty
   - `configuration_convention.rs`: Added `TokenConfigurationLocalizationsJs` for `localizations()` return
   - Replaced all `unchecked_into()` calls with `.into()` in `serialization/conversions.rs`
   - All `impl_wasm_conversions!` macro usages now use 4-argument form (typed returns)
+- [x] E1: Reviewed enum naming - N/A (intentional: crypto types like `KeyTypeWasm`, `SecurityLevelWasm` use ALL_CAPS for standard names like `ECDSA_SECP256K1`, `MASTER`)
+- [x] E2: Standardized `js_name` attribute formatting to quoted strings with space around `=`:
+  - Fixed unquoted `js_name = Name` → `js_name = "Name"` in 25+ files
+  - Fixed missing space `js_name=Name` → `js_name = "Name"` in token transition files
+  - Updated `impl_wasm_conversions!` macro to use quoted strings
+- [x] E4: Replaced `getter` + manual `.clone()` with `getter_with_clone` on struct fields:
+  - `ProtocolVersionUpgradeVoteStatusWasm` - converted to public fields with `getter_with_clone`
+  - `TokenPriceInfoWasm` - converted to public fields
+  - `IdentityGroupInfoWasm` - converted to public fields (except `power` which needs conversion)
+  - `QuorumInfoWasm` - converted all fields to public with `getter_with_clone`
+  - `PathElementWasm` - converted `value` field
+  - `IdentityContractKeysWasm` - converted to public fields
+  - `ContestedResourceVoteWinnerWasm` - converted `info` and `block` fields
+  - `ContestedResourceContenderWasm` - converted `contender` field

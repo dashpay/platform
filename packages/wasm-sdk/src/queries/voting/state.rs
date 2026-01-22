@@ -90,12 +90,14 @@ extern "C" {
 #[wasm_bindgen(js_name = "ContestedResourceVoteWinner")]
 #[derive(Clone)]
 pub struct ContestedResourceVoteWinnerWasm {
-    info: ContestedDocumentVotePollWinnerInfoWasm,
-    block: BlockInfoWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub info: ContestedDocumentVotePollWinnerInfoWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub block: BlockInfoWasm,
 }
 
 impl ContestedResourceVoteWinnerWasm {
-    fn from_parts(info: ContestedDocumentVotePollWinnerInfo, block: BlockInfoWasm) -> Self {
+    pub(crate) fn from_parts(info: ContestedDocumentVotePollWinnerInfo, block: BlockInfoWasm) -> Self {
         Self {
             info: info.into(),
             block,
@@ -105,24 +107,14 @@ impl ContestedResourceVoteWinnerWasm {
 
 #[wasm_bindgen(js_class = ContestedResourceVoteWinner)]
 impl ContestedResourceVoteWinnerWasm {
-    #[wasm_bindgen(getter = kind)]
+    #[wasm_bindgen(getter)]
     pub fn kind(&self) -> String {
         self.info.kind()
     }
 
-    #[wasm_bindgen(getter = identityId)]
+    #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> Option<IdentifierWasm> {
         self.info.identity_id()
-    }
-
-    #[wasm_bindgen(getter = block)]
-    pub fn block(&self) -> BlockInfoWasm {
-        self.block.clone()
-    }
-
-    #[wasm_bindgen(getter = info)]
-    pub fn info(&self) -> ContestedDocumentVotePollWinnerInfoWasm {
-        self.info
     }
 }
 
@@ -130,11 +122,12 @@ impl ContestedResourceVoteWinnerWasm {
 #[derive(Clone)]
 pub struct ContestedResourceContenderWasm {
     identity_id: Identifier,
-    contender: ContenderWithSerializedDocumentWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub contender: ContenderWithSerializedDocumentWasm,
 }
 
 impl ContestedResourceContenderWasm {
-    fn from_parts(identity: Identifier, contender: ContenderWithSerializedDocument) -> Self {
+    pub(crate) fn from_parts(identity: Identifier, contender: ContenderWithSerializedDocument) -> Self {
         Self {
             identity_id: identity,
             contender: contender.into(),
@@ -144,24 +137,19 @@ impl ContestedResourceContenderWasm {
 
 #[wasm_bindgen(js_class = ContestedResourceContender)]
 impl ContestedResourceContenderWasm {
-    #[wasm_bindgen(getter = identityId)]
+    #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> IdentifierWasm {
         IdentifierWasm::from(self.identity_id)
     }
 
-    #[wasm_bindgen(getter = serializedDocument)]
+    #[wasm_bindgen(getter = "serializedDocument")]
     pub fn serialized_document(&self) -> Option<js_sys::Uint8Array> {
         self.contender.serialized_document()
     }
 
-    #[wasm_bindgen(getter = voteTally)]
+    #[wasm_bindgen(getter = "voteTally")]
     pub fn vote_tally(&self) -> Option<u32> {
         self.contender.vote_tally()
-    }
-
-    #[wasm_bindgen(getter = contender)]
-    pub fn contender(&self) -> ContenderWithSerializedDocumentWasm {
-        self.contender.clone()
     }
 }
 

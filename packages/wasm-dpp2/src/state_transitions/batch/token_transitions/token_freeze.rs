@@ -10,7 +10,7 @@ use dpp::state_transition::batch_transition::TokenFreezeTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenFreezeTransition)]
+#[wasm_bindgen(js_name = "TokenFreezeTransition")]
 pub struct TokenFreezeTransitionWasm(TokenFreezeTransition);
 
 impl From<TokenFreezeTransitionWasm> for TokenFreezeTransition {

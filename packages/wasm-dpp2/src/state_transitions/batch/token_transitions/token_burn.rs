@@ -8,7 +8,7 @@ use dpp::state_transition::batch_transition::TokenBurnTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenBurnTransition)]
+#[wasm_bindgen(js_name = "TokenBurnTransition")]
 pub struct TokenBurnTransitionWasm(TokenBurnTransition);
 
 impl From<TokenBurnTransition> for TokenBurnTransitionWasm {

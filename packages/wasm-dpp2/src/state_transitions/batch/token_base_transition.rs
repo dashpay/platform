@@ -30,7 +30,7 @@ extern "C" {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenBaseTransition)]
+#[wasm_bindgen(js_name = "TokenBaseTransition")]
 pub struct TokenBaseTransitionWasm(TokenBaseTransition);
 
 impl From<TokenBaseTransition> for TokenBaseTransitionWasm {

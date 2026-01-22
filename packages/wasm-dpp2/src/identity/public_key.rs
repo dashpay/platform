@@ -129,7 +129,7 @@ pub fn public_key_hash_from_js(value: PublicKeyHashLikeJs) -> WasmDppResult<Vec<
 }
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = IdentityPublicKey)]
+#[wasm_bindgen(js_name = "IdentityPublicKey")]
 pub struct IdentityPublicKeyWasm(IdentityPublicKey);
 
 impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
@@ -351,24 +351,24 @@ impl IdentityPublicKeyWasm {
         Ok(self.0.serialize_to_bytes()?)
     }
 
-    #[wasm_bindgen(js_name = hex)]
+    #[wasm_bindgen(js_name = "hex")]
     pub fn to_hex(&self) -> WasmDppResult<String> {
         Ok(encode(self.0.serialize_to_bytes()?.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = base64)]
+    #[wasm_bindgen(js_name = "base64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         Ok(encode(self.0.serialize_to_bytes()?.as_slice(), Base64))
     }
 
-    #[wasm_bindgen(js_name = fromBytes)]
+    #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityPublicKeyWasm> {
         let public_key = IdentityPublicKey::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(IdentityPublicKeyWasm(public_key))
     }
 
-    #[wasm_bindgen(js_name = fromHex)]
+    #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(hex: String) -> WasmDppResult<IdentityPublicKeyWasm> {
         let bytes =
             decode(&hex, Hex).map_err(|err| WasmDppError::serialization(err.to_string()))?;
@@ -378,7 +378,7 @@ impl IdentityPublicKeyWasm {
         Ok(IdentityPublicKeyWasm(public_key))
     }
 
-    #[wasm_bindgen(js_name = fromBase64)]
+    #[wasm_bindgen(js_name = "fromBase64")]
     pub fn from_base64(hex: String) -> WasmDppResult<IdentityPublicKeyWasm> {
         let bytes =
             decode(&hex, Base64).map_err(|err| WasmDppError::serialization(err.to_string()))?;

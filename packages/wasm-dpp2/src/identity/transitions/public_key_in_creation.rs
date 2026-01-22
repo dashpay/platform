@@ -202,7 +202,7 @@ impl IdentityPublicKeyInCreationWasm {
         ))
     }
 
-    #[wasm_bindgen(js_name = toIdentityPublicKey)]
+    #[wasm_bindgen(js_name = "toIdentityPublicKey")]
     pub fn to_identity_public_key(&self) -> WasmDppResult<IdentityPublicKeyWasm> {
         // Build options object for IdentityPublicKey constructor
         let options = Object::new();

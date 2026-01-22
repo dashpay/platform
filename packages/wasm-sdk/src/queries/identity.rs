@@ -25,26 +25,15 @@ use wasm_dpp2::{public_key_hash_from_js, PublicKeyHashLikeJs};
 
 #[wasm_bindgen(js_name = "IdentityContractKeys")]
 pub struct IdentityContractKeysWasm {
-    identity_id: IdentifierWasm,
-    keys: Vec<IdentityPublicKeyWasm>,
+    #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
+    pub identity_id: IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub keys: Vec<IdentityPublicKeyWasm>,
 }
 
 impl IdentityContractKeysWasm {
-    fn new(identity_id: IdentifierWasm, keys: Vec<IdentityPublicKeyWasm>) -> Self {
+    pub(crate) fn new(identity_id: IdentifierWasm, keys: Vec<IdentityPublicKeyWasm>) -> Self {
         IdentityContractKeysWasm { identity_id, keys }
-    }
-}
-
-#[wasm_bindgen(js_class = IdentityContractKeys)]
-impl IdentityContractKeysWasm {
-    #[wasm_bindgen(getter = "identityId")]
-    pub fn identity_id(&self) -> IdentifierWasm {
-        self.identity_id
-    }
-
-    #[wasm_bindgen(getter = "keys")]
-    pub fn keys(&self) -> Vec<IdentityPublicKeyWasm> {
-        self.keys.clone()
     }
 }
 
