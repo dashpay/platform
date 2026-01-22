@@ -2,8 +2,14 @@ use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Identifier | undefined")]
+    pub type TokenDistributionRecipientValue;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "TokenDistributionRecipient")]
@@ -56,14 +62,15 @@ impl TokenDistributionRecipientWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> JsValue {
-        match self.0 {
+    pub fn value(&self) -> TokenDistributionRecipientValue {
+        let js_value = match self.0 {
             TokenDistributionRecipient::EvonodesByParticipation => JsValue::undefined(),
             TokenDistributionRecipient::ContractOwner => JsValue::undefined(),
             TokenDistributionRecipient::Identity(identifier) => {
                 IdentifierWasm::from(identifier).into()
             }
-        }
+        };
+        js_value.unchecked_into()
     }
 }
 

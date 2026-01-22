@@ -4,8 +4,14 @@ use crate::impl_wasm_type_info;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::platform_value::string_encoding::encode;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Identifier | number | undefined")]
+    pub type AuthorizedActionTakersValue;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "AuthorizedActionTakers")]
@@ -66,8 +72,8 @@ impl AuthorizedActionTakersWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> JsValue {
-        match self.0 {
+    pub fn value(&self) -> AuthorizedActionTakersValue {
+        let js_value = match self.0 {
             AuthorizedActionTakers::NoOne => JsValue::undefined(),
             AuthorizedActionTakers::ContractOwner => JsValue::undefined(),
             AuthorizedActionTakers::Identity(identifier) => {
@@ -75,7 +81,8 @@ impl AuthorizedActionTakersWasm {
             }
             AuthorizedActionTakers::MainGroup => JsValue::undefined(),
             AuthorizedActionTakers::Group(position) => JsValue::from(position),
-        }
+        };
+        js_value.unchecked_into()
     }
 }
 

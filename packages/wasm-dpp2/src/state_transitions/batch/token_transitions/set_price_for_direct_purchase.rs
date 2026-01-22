@@ -71,11 +71,8 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "price")]
-    pub fn get_price(&self) -> JsValue {
-        match self.0.price() {
-            None => JsValue::null(),
-            Some(price) => JsValue::from(TokenPricingScheduleWasm::from(price.clone())),
-        }
+    pub fn get_price(&self) -> Option<TokenPricingScheduleWasm> {
+        self.0.price().map(|p| p.clone().into())
     }
 
     #[wasm_bindgen(setter = "base")]
