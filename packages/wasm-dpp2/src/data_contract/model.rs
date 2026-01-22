@@ -32,8 +32,8 @@ use dpp::version::PlatformVersion;
 use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,6 +117,12 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DataContractConfig")]
     pub type DataContractConfigJs;
+
+    #[wasm_bindgen(typescript_type = "Record<string, object>")]
+    pub type DataContractSchemasJs;
+
+    #[wasm_bindgen(typescript_type = "Record<number, Group>")]
+    pub type DataContractGroupsJs;
 }
 
 #[wasm_bindgen(js_name = "DataContract")]
@@ -399,8 +405,9 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(getter = "schemas")]
-    pub fn schemas(&self) -> WasmDppResult<JsValue> {
-        serialization::to_object(&self.0.document_schemas())
+    pub fn schemas(&self) -> WasmDppResult<DataContractSchemasJs> {
+        let js_value = serialization::to_object(&self.0.document_schemas())?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "version")]
@@ -419,8 +426,9 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(getter = "config")]
-    pub fn config(&self) -> WasmDppResult<JsValue> {
-        serialization::to_object(self.0.config())
+    pub fn config(&self) -> WasmDppResult<DataContractConfigJs> {
+        let js_value = serialization::to_object(self.0.config())?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "tokens")]
@@ -446,7 +454,7 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(getter = "groups")]
-    pub fn get_groups(&self) -> WasmDppResult<JsValue> {
+    pub fn get_groups(&self) -> WasmDppResult<DataContractGroupsJs> {
         let groups_object = Object::new();
 
         for (key, value) in self.0.groups().iter() {
@@ -464,7 +472,7 @@ impl DataContractWasm {
             })?;
         }
 
-        Ok(groups_object.into())
+        Ok(JsValue::from(groups_object).into())
     }
 
     #[wasm_bindgen(setter = "id")]

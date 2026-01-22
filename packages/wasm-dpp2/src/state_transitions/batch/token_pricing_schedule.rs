@@ -9,6 +9,12 @@ use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "bigint | Record<string, number>")]
+    pub type TokenPricingScheduleValueJs;
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "TokenPricingSchedule")]
 pub struct TokenPricingScheduleWasm(TokenPricingSchedule);
@@ -70,10 +76,10 @@ impl TokenPricingScheduleWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> WasmDppResult<JsValue> {
-        match &self.0 {
+    pub fn value(&self) -> WasmDppResult<TokenPricingScheduleValueJs> {
+        let js_value = match &self.0 {
             TokenPricingSchedule::SinglePrice(credits) => {
-                Ok(JsValue::bigint_from_str(&credits.to_string()))
+                JsValue::bigint_from_str(&credits.to_string())
             }
             TokenPricingSchedule::SetPrices(prices) => {
                 let price_object = Object::new();
@@ -93,9 +99,10 @@ impl TokenPricingScheduleWasm {
                     })?;
                 }
 
-                Ok(price_object.into())
+                price_object.into()
             }
-        }
+        };
+        Ok(js_value.into())
     }
 }
 

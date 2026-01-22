@@ -13,6 +13,12 @@ use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Record<string, TokenConfigurationLocalization>")]
+    pub type TokenConfigurationLocalizationsJs;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenConfigurationConvention")]
 pub struct TokenConfigurationConventionWasm(TokenConfigurationConvention);
@@ -53,7 +59,7 @@ impl TokenConfigurationConventionWasm {
     }
 
     #[wasm_bindgen(getter = "localizations")]
-    pub fn localizations(&self) -> WasmDppResult<JsValue> {
+    pub fn localizations(&self) -> WasmDppResult<TokenConfigurationLocalizationsJs> {
         let object = Object::new();
 
         for (key, value) in &self.0.localizations().clone() {
@@ -71,7 +77,7 @@ impl TokenConfigurationConventionWasm {
             })?;
         }
 
-        Ok(object.into())
+        Ok(JsValue::from(object).into())
     }
 
     #[wasm_bindgen(setter = "decimals")]

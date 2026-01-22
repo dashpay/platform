@@ -21,8 +21,8 @@ use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
 use js_sys::Reflect;
 use serde::Deserialize;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 /// TypeScript interface for Document constructor options
 #[wasm_bindgen(typescript_custom_section)]
@@ -166,6 +166,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "DocumentJSON")]
     pub type DocumentJSONJs;
+
+    #[wasm_bindgen(typescript_type = "Record<string, unknown>")]
+    pub type DocumentPropertiesJs;
 }
 
 #[wasm_bindgen(js_class = Document)]
@@ -291,7 +294,7 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(getter = properties)]
-    pub fn properties(&self) -> WasmDppResult<JsValue> {
+    pub fn properties(&self) -> WasmDppResult<DocumentPropertiesJs> {
         let properties_value = Value::Map(
             self.document
                 .properties()
@@ -299,7 +302,8 @@ impl DocumentWasm {
                 .map(|(k, v)| (Value::Text(k.clone()), v.clone()))
                 .collect(),
         );
-        serialization::platform_value_to_object(&properties_value)
+        let js_value = serialization::platform_value_to_object(&properties_value)?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = revision)]

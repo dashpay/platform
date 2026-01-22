@@ -16,6 +16,12 @@ use dpp::state_transition::batch_transition::DocumentCreateTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Record<string, unknown>")]
+    pub type DocumentTransitionDataJs;
+}
+
 #[wasm_bindgen(js_name = "DocumentCreateTransition")]
 #[derive(Clone)]
 pub struct DocumentCreateTransitionWasm(DocumentCreateTransition);
@@ -53,8 +59,9 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "data")]
-    pub fn get_data(&self) -> WasmDppResult<JsValue> {
-        serialization::to_object(self.0.data())
+    pub fn get_data(&self) -> WasmDppResult<DocumentTransitionDataJs> {
+        let js_value = serialization::to_object(self.0.data())?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "base")]

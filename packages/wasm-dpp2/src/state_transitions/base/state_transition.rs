@@ -220,24 +220,20 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> WasmDppResult<JsValue> {
-        let bytes = self.0.serialize_to_bytes()?;
-
-        Ok(JsValue::from(bytes.clone()))
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> WasmDppResult<JsValue> {
+    pub fn to_hex(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
-
-        Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Hex)))
+        Ok(encode(bytes.as_slice(), Encoding::Hex))
     }
 
     #[wasm_bindgen(js_name = "toBase64")]
-    pub fn to_base64(&self) -> WasmDppResult<JsValue> {
+    pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
-
-        Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Base64)))
+        Ok(encode(bytes.as_slice(), Encoding::Base64))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
