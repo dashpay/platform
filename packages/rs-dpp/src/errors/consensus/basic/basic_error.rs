@@ -274,9 +274,6 @@ pub enum BasicError {
     #[error(transparent)]
     MaxDocumentsTransitionsExceededError(MaxDocumentsTransitionsExceededError),
 
-    #[error(transparent)]
-    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
-
     // Identity
     #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyBasicError),
@@ -657,6 +654,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     OutputAddressAlsoInputError(OutputAddressAlsoInputError),
+
+    #[error(transparent)]
+    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -111,9 +111,6 @@ pub enum StateError {
     DocumentTimestampWindowViolationError(DocumentTimestampWindowViolationError),
 
     #[error(transparent)]
-    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
-
-    #[error(transparent)]
     DuplicateUniqueIndexError(DuplicateUniqueIndexError),
 
     #[error(transparent)]
@@ -338,6 +335,9 @@ pub enum StateError {
 
     #[error(transparent)]
     AddressInvalidNonceError(AddressInvalidNonceError),
+
+    #[error(transparent)]
+    ReferencedEntityNotFoundError(ReferencedEntityNotFoundError),
 }
 
 impl From<StateError> for ConsensusError {
