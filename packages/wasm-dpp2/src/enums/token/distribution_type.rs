@@ -30,10 +30,10 @@ impl From<TokenDistributionType> for TokenDistributionTypeWasm {
     }
 }
 
-impl TryFrom<JsValue> for TokenDistributionTypeWasm {
+impl TryFrom<&JsValue> for TokenDistributionTypeWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<TokenDistributionTypeWasm, Self::Error> {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "preprogrammed" => Ok(TokenDistributionTypeWasm::PreProgrammed),
@@ -53,6 +53,14 @@ impl TryFrom<JsValue> for TokenDistributionTypeWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from distribution type enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for TokenDistributionTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

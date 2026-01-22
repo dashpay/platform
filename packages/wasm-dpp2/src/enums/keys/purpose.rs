@@ -39,9 +39,10 @@ pub enum PurposeWasm {
     OWNER = 6,
 }
 
-impl TryFrom<JsValue> for PurposeWasm {
+impl TryFrom<&JsValue> for PurposeWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "authentication" => Ok(PurposeWasm::AUTHENTICATION),
@@ -77,6 +78,14 @@ impl TryFrom<JsValue> for PurposeWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from purpose enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for PurposeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

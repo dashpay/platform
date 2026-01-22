@@ -51,12 +51,21 @@ impl From<OutPointWasm> for OutPoint {
     }
 }
 
-impl TryFrom<JsValue> for OutPointWasm {
+impl TryFrom<&JsValue> for OutPointWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         let value = value.to_wasm::<OutPointWasm>("OutPoint")?;
 
         Ok(value.clone())
+    }
+}
+
+impl TryFrom<JsValue> for OutPointWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

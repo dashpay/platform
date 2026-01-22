@@ -102,13 +102,22 @@ impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
     }
 }
 
-impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
+impl TryFrom<&JsValue> for IdentityPublicKeyInCreationWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         let value =
             value.to_wasm::<IdentityPublicKeyInCreationWasm>("IdentityPublicKeyInCreation")?;
 
         Ok(value.clone())
+    }
+}
+
+impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

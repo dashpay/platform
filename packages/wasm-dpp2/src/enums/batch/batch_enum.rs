@@ -14,9 +14,10 @@ pub enum BatchTypeWasm {
     IgnoreWhileBumpingRevision,
 }
 
-impl TryFrom<JsValue> for BatchTypeWasm {
+impl TryFrom<&JsValue> for BatchTypeWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
@@ -55,6 +56,14 @@ impl TryFrom<JsValue> for BatchTypeWasm {
                 },
             },
         }
+    }
+}
+
+impl TryFrom<JsValue> for BatchTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

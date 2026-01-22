@@ -36,9 +36,10 @@ pub enum SecurityLevelWasm {
     MEDIUM = 3,
 }
 
-impl TryFrom<JsValue> for SecurityLevelWasm {
+impl TryFrom<&JsValue> for SecurityLevelWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "master" => Ok(SecurityLevelWasm::MASTER),
@@ -68,6 +69,14 @@ impl TryFrom<JsValue> for SecurityLevelWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from security level enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for SecurityLevelWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

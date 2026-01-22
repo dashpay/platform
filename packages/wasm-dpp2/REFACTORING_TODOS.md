@@ -20,9 +20,9 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 
 | # | Issue | Files | Priority |
 |---|-------|-------|----------|
-| B1 | Mixed `TryFrom<JsValue>` vs `TryFrom<&JsValue>` - should standardize on `&JsValue` | `pro_tx_hash.rs`, `network.rs`, `identifier.rs` | High |
-| B2 | Some types have BOTH variants (redundant) | Same files | Medium |
-| B3 | wasm-sdk: No `TryFrom` pattern used at all, uses ad-hoc deserialize functions | `state_transitions/*.rs` | Medium |
+| ~~B1~~ | ~~Mixed `TryFrom<JsValue>` vs `TryFrom<&JsValue>` - standardized on `&JsValue` having logic~~ | ~~14 enum files~~ | ~~Done~~ ✓ |
+| ~~B2~~ | ~~Both variants now follow pattern: `TryFrom<&JsValue>` has logic, `TryFrom<JsValue>` delegates~~ | ~~Same files~~ | ~~Done~~ ✓ |
+| B3 | wasm-sdk: No `TryFrom` pattern used at all, uses ad-hoc deserialize functions | `state_transitions/*.rs` | Medium (out of scope) |
 
 ---
 
@@ -88,7 +88,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 
 ### High Priority (should fix):
 1. ~~**A1**: Add `impl_try_from_options!` to `ProTxHashWasm`~~ ✓
-2. **B1/B2**: Standardize on `TryFrom<&JsValue>` only, remove owned variants
+2. ~~**B1/B2**: Standardize `TryFrom` pattern - `&JsValue` has logic, `JsValue` delegates~~ ✓
 3. ~~**A4/G2**: Refactor wasm-sdk state transitions to follow `system.rs` macro pattern~~ ✓
 
 ### Medium Priority (should address):

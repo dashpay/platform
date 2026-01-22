@@ -8,19 +8,10 @@ pub enum AssetLockProofTypeWasm {
     Chain = 1,
 }
 
-impl From<AssetLockProofTypeWasm> for String {
-    fn from(value: AssetLockProofTypeWasm) -> Self {
-        match value {
-            AssetLockProofTypeWasm::Instant => String::from("Instant"),
-            AssetLockProofTypeWasm::Chain => String::from("Chain"),
-        }
-    }
-}
-
-impl TryFrom<JsValue> for AssetLockProofTypeWasm {
+impl TryFrom<&JsValue> for AssetLockProofTypeWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
@@ -48,6 +39,23 @@ impl TryFrom<JsValue> for AssetLockProofTypeWasm {
                     ))),
                 },
             },
+        }
+    }
+}
+
+impl TryFrom<JsValue> for AssetLockProofTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+impl From<AssetLockProofTypeWasm> for String {
+    fn from(value: AssetLockProofTypeWasm) -> Self {
+        match value {
+            AssetLockProofTypeWasm::Instant => String::from("Instant"),
+            AssetLockProofTypeWasm::Chain => String::from("Chain"),
         }
     }
 }
