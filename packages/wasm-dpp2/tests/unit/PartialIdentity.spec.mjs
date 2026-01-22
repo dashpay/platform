@@ -59,6 +59,7 @@ describe('PartialIdentity', () => {
 
       expect(json.id).to.equal(identifier);
       expect(json.loadedPublicKeys).to.deep.equal({});
+      // JSON uses null for missing optional fields (JSON standard)
       expect(json.balance).to.equal(null);
       expect(json.revision).to.equal(null);
       expect(json.notFoundPublicKeys).to.deep.equal([]);
@@ -108,8 +109,8 @@ describe('PartialIdentity', () => {
       expect(obj.id.constructor.name).to.equal('Uint8Array');
       expect(Array.from(obj.id)).to.deep.equal(identifierBytes);
       expect(obj.loadedPublicKeys).to.deep.equal({});
-      expect(obj.balance).to.equal(null);
-      expect(obj.revision).to.equal(null);
+      expect(obj.balance).to.equal(undefined);
+      expect(obj.revision).to.equal(undefined);
       expect(Array.from(obj.notFoundPublicKeys)).to.deep.equal([]);
     });
 
