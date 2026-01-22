@@ -38,7 +38,13 @@ impl TransportClient for PlatformGrpcClient {
                 &uri,
                 Some(settings),
                 || match create_channel(uri.clone(), Some(settings)) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => {
+                        let mut client = Self::new(channel);
+                        if let Some(max_size) = settings.max_decoding_message_size {
+                            client = client.max_decoding_message_size(max_size);
+                        }
+                        Ok(client.into())
+                    }
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
@@ -75,7 +81,13 @@ impl TransportClient for CoreGrpcClient {
                 &uri,
                 Some(settings),
                 || match create_channel(uri.clone(), Some(settings)) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => {
+                        let mut client = Self::new(channel);
+                        if let Some(max_size) = settings.max_decoding_message_size {
+                            client = client.max_decoding_message_size(max_size);
+                        }
+                        Ok(client.into())
+                    }
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
@@ -234,6 +246,7 @@ impl_transport_request_grpc!(
         retries: Some(0),
         ban_failed_address: None,
         connect_timeout: None,
+        max_decoding_message_size: None,
     },
     wait_for_state_transition_result
 );
@@ -474,6 +487,7 @@ impl_transport_request_grpc!(
         ban_failed_address: None,
         connect_timeout: None,
         retries: None,
+        max_decoding_message_size: None,
     },
     subscribe_to_transactions_with_proofs
 );
@@ -674,6 +688,11 @@ impl_transport_request_grpc!(
     platform_proto::GetRecentCompactedAddressBalanceChangesRequest,
     platform_proto::GetRecentCompactedAddressBalanceChangesResponse,
     PlatformGrpcClient,
-    RequestSettings::default(),
+    RequestSettings {
+        // GetRecentCompactedAddressBalanceChangesResponse can have 100 values * 2048 addresses * ~44  bytes each = ~9MB
+        // We set it to 16MB to be safe
+        max_decoding_message_size: Some(16 * 1024 * 1024),
+        ..RequestSettings::default()
+    },
     get_recent_compacted_address_balance_changes
 );

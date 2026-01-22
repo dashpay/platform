@@ -67,6 +67,7 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     timeout: None,
     ban_failed_address: None,
     connect_timeout: None,
+    max_decoding_message_size: None,
 };
 
 /// a type to represent staleness in seconds
