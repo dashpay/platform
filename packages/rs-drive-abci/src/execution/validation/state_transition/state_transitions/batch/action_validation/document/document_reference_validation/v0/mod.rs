@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
+use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -128,11 +129,18 @@ fn validate_identity_reference_v0(
         return Ok(SimpleConsensusValidationResult::new());
     }
 
-    let Some(identity_bytes) = document_data
-        .get_optional_identifier_at_path(path)
-        .map_err(|e| Error::Protocol(e.into()))?
-    else {
-        return Ok(SimpleConsensusValidationResult::new());
+    let identity_bytes = match document_data.get_optional_identifier_at_path(path) {
+        Ok(Some(identity_bytes)) => identity_bytes,
+        Ok(None) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(path.to_string(), "not set".to_string()).into(),
+            ))
+        }
+        Err(err) => {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentifierError::new(path.to_string(), err.to_string()).into(),
+            ))
+        }
     };
 
     execution_context.add_operation(ValidationOperation::RetrieveIdentity(
