@@ -31,7 +31,7 @@ use crate::version::ProtocolVersion;
 pub const PROTOCOL_VERSION_12: ProtocolVersion = 12;
 
 /// This version introduces document reference validation in document state validation.
-/// Intruduced in Platform release 3.1.0.
+/// Introduced in Platform release 3.1.0.
 pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
     drive: DRIVE_VERSION_V6,

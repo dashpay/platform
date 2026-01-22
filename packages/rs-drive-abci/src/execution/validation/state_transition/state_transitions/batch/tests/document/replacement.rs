@@ -2249,7 +2249,7 @@ mod replacement_tests {
     }
 
     #[test]
-    fn test_document_replace_fails_when_referenced_identity_missing() {
+    fn should_document_replace_fail_when_referenced_identity_missing() {
         let (result, _) = run_reference_validation_replace_with_contract(
             REFERENCE_VALIDATION_CONTRACT_PATH,
             |_, _| Identifier::random(),
@@ -2266,7 +2266,7 @@ mod replacement_tests {
     }
 
     #[test]
-    fn test_document_replace_succeeds_when_must_exist_false() {
+    fn should_document_replace_succeed_when_must_exist_false() {
         let (result, _) = run_reference_validation_replace_with_contract(
             "tests/supporting_files/contract/reference-validation/reference-validation-contract-must-exist-false.json",
             |_, _| Identifier::random(),
@@ -2280,7 +2280,7 @@ mod replacement_tests {
     }
 
     #[test]
-    fn test_document_replace_validates_only_changed_fields() {
+    fn should_document_replace_validate_only_changed_fields() {
         let (_, fee_without_reference) = run_reference_validation_replace_with_contract(
             REFERENCE_VALIDATION_CONTRACT_PATH,
             |identity_id, _| identity_id,
@@ -2300,7 +2300,7 @@ mod replacement_tests {
     }
 
     #[test]
-    fn test_document_replace_fails_when_reference_field_changed_to_missing_identity() {
+    fn should_document_replace_fail_when_reference_field_changed_to_missing_identity() {
         let (result, _) = run_reference_validation_replace_with_contract(
             REFERENCE_VALIDATION_CONTRACT_PATH,
             |_, _| Identifier::random(),
