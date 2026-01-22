@@ -99,7 +99,13 @@ pub enum DashSDKResultDataType {
     /// Recent address balance changes
     RecentBalanceChanges = 12,
     /// Recent compacted address balance changes
-    CompactedBalanceChanges = 13,
+    CompactedBalanceChanges = 16,
+    /// Identity top-up from addresses result
+    IdentityTopUpFromAddressesResult = 13,
+    /// Identity transfer to addresses result
+    IdentityTransferToAddressesResult = 14,
+    /// Identity create from addresses result
+    IdentityCreateFromAddressesResult = 15,
 }
 
 /// Binary data container for results
@@ -317,6 +323,56 @@ pub struct DashSDKCompactedBalanceChanges {
     pub ranges: *mut DashSDKCompactedBlockRange,
     /// Number of ranges
     pub ranges_count: usize,
+}
+
+// MARK: - Address State Transition Types
+
+/// Input entry for address transfer (address with amount and private key)
+#[repr(C)]
+pub struct DashSDKAddressTransferInput {
+    /// Address bytes (variable length, typically 21 bytes: 1 type + 20 hash)
+    pub address: *const u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Amount to spend from this address
+    pub amount: u64,
+    /// Nonce for this address (0 = auto-fetch)
+    pub nonce: u32,
+    /// Private key for signing (32 bytes)
+    pub private_key: *const u8,
+}
+
+/// Output entry for address transfer (address with amount)
+#[repr(C)]
+pub struct DashSDKAddressTransferOutput {
+    /// Address bytes (variable length, typically 21 bytes: 1 type + 20 hash)
+    pub address: *const u8,
+    /// Length of address bytes
+    pub address_len: usize,
+    /// Amount to receive at this address
+    pub amount: u64,
+}
+
+/// Pooling strategy for withdrawals
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashSDKPooling {
+    /// Never pool withdrawals
+    Never = 0,
+    /// Pool if available
+    IfAvailable = 1,
+    /// Standard pooling
+    Standard = 2,
+}
+
+/// Asset lock proof type
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashSDKAssetLockProofType {
+    /// Instant lock proof
+    Instant = 0,
+    /// Chain lock proof
+    Chain = 1,
 }
 
 /// Result type for FFI functions that return data

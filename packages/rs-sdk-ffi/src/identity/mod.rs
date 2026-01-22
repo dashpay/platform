@@ -1,6 +1,7 @@
 //! Identity operations
 
 mod create;
+mod create_from_addresses;
 mod create_from_components;
 mod get_public_key;
 mod helpers;
@@ -12,7 +13,9 @@ mod put;
 mod queries;
 mod test_transfer;
 mod topup;
+mod top_up_from_addresses;
 mod transfer;
+mod transfer_to_addresses;
 mod withdraw;
 
 // Re-export all public functions for convenient access
@@ -35,6 +38,21 @@ pub use put::{
 pub use test_transfer::dash_sdk_test_identity_transfer_crash;
 pub use topup::{
     dash_sdk_identity_topup_with_instant_lock, dash_sdk_identity_topup_with_instant_lock_and_wait,
+};
+pub use top_up_from_addresses::{
+    dash_sdk_identity_top_up_from_addresses,
+    dash_sdk_identity_top_up_from_addresses_result_free,
+    DashSDKIdentityTopUpFromAddressesResult,
+};
+pub use transfer_to_addresses::{
+    dash_sdk_identity_transfer_credits_to_addresses,
+    dash_sdk_identity_transfer_to_addresses_result_free,
+    DashSDKIdentityTransferToAddressesResult,
+};
+pub use create_from_addresses::{
+    dash_sdk_identity_create_from_addresses,
+    dash_sdk_identity_create_from_addresses_result_free,
+    DashSDKIdentityCreateFromAddressesResult,
 };
 pub use transfer::{
     dash_sdk_identity_transfer_credits, dash_sdk_transfer_credits_result_free,
