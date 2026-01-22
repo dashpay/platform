@@ -25,7 +25,7 @@ fn main() -> Result<(), PlatformWalletError> {
     {
         use key_wallet_manager::wallet_manager::WalletManager;
 
-        let _wallet_manager = WalletManager::<PlatformWalletInfo>::new();
+        let _wallet_manager = WalletManager::<PlatformWalletInfo>::new(network);
         println!("Platform wallet successfully integrated with wallet managers!");
     }
 
