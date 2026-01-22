@@ -1,10 +1,21 @@
 use crate::impl_wasm_type_info;
+use crate::tokens::configuration::distribution_function::DistributionFunctionWasm;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType::{BlockBasedDistribution, EpochBasedDistribution, TimeBasedDistribution};
 use dpp::prelude::{BlockHeightInterval, EpochInterval, TimestampMillisInterval};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::tokens::configuration::distribution_function::DistributionFunctionWasm;
+
+#[wasm_bindgen(typescript_custom_section)]
+const REWARD_DISTRIBUTION_TS: &'static str = r#"
+/**
+ * Union type for reward distribution variants.
+ */
+export type RewardDistributionValue =
+    | BlockBasedDistribution
+    | TimeBasedDistribution
+    | EpochBasedDistribution;
+"#;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "RewardDistributionType")]

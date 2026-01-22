@@ -7,7 +7,6 @@ use dpp::voting::contender_structs::{
     ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
 };
 use js_sys::Uint8Array;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -17,7 +16,7 @@ const TS_TYPES: &'static str = r#"
  */
 export interface ContenderWithSerializedDocumentObject {
     identityId: Uint8Array;
-    serializedDocument: Uint8Array | null;
+    serializedDocument?: Uint8Array;
     voteTally: number | null;
 }
 
@@ -26,7 +25,7 @@ export interface ContenderWithSerializedDocumentObject {
  */
 export interface ContenderWithSerializedDocumentJSON {
     identityId: string;
-    serializedDocument: string | null;
+    serializedDocument?: string;
     voteTally: number | null;
 }
 "#;
@@ -81,11 +80,11 @@ impl ContenderWithSerializedDocumentWasm {
     }
 
     #[wasm_bindgen(getter = serializedDocument)]
-    pub fn serialized_document(&self) -> JsValue {
-        match self.0.serialized_document() {
-            Some(bytes) => Uint8Array::from(bytes.as_slice()).into(),
-            None => JsValue::NULL,
-        }
+    pub fn serialized_document(&self) -> Option<Uint8Array> {
+        self.0
+            .serialized_document()
+            .as_ref()
+            .map(|bytes| Uint8Array::from(bytes.as_slice()))
     }
 
     #[wasm_bindgen(getter = voteTally)]

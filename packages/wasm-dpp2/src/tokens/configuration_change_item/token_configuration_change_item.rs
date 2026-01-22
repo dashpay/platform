@@ -8,6 +8,31 @@ use dpp::data_contract::associated_token::token_configuration_item::TokenConfigu
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_CONFIGURATION_CHANGE_ITEM_TS: &'static str = r#"
+/**
+ * Union type for token configuration change item values.
+ * Use `itemName` getter to determine which variant it is.
+ */
+export type TokenConfigurationChangeItemValue =
+    | "TokenConfigurationNoChange"
+    | TokenConfigurationConvention
+    | AuthorizedActionTakers
+    | bigint
+    | TokenPerpetualDistribution
+    | Identifier
+    | boolean
+    | TokenTradeMode
+    | number
+    | null;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenConfigurationChangeItemValue")]
+    pub type TokenConfigurationChangeItemValueJs;
+}
+
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenConfigurationChangeItem")]
 pub struct TokenConfigurationChangeItemWasm(pub(crate) TokenConfigurationChangeItem);

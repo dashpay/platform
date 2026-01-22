@@ -14,7 +14,6 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -83,11 +82,10 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "optionalAssetLockProof")]
-    pub fn optional_asset_lock_proof(&self) -> JsValue {
-        match self.0.optional_asset_lock_proof() {
-            Some(asset_lock) => JsValue::from(AssetLockProofWasm::from(asset_lock.clone())),
-            None => JsValue::null(),
-        }
+    pub fn optional_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
+        self.0
+            .optional_asset_lock_proof()
+            .map(|asset_lock| AssetLockProofWasm::from(asset_lock.clone()))
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]

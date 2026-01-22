@@ -30,9 +30,9 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 
 | # | Issue | Files | Priority |
 |---|-------|-------|----------|
-| C1 | ~~Raw `JsValue` used where `PlatformVersionLikeJs` should be~~ | ~~`data_contract/model.rs:653`~~ | ~~Fixed~~ ✓ |
-| C2 | Methods returning `JsValue` instead of typed result | `document/model.rs` (properties), transition files | Medium |
-| C3 | wasm-sdk: Manual JsValue deserialization instead of typed alternatives | `state_transitions/token.rs` (10+ deserialize functions) | Medium |
+| ~~C1~~ | ~~Raw `JsValue` used where `PlatformVersionLikeJs` should be~~ | ~~`data_contract/model.rs:653`~~ | ~~Fixed~~ ✓ |
+| ~~C2~~ | ~~Methods returning `JsValue` - fixed optional returns, union types acceptable~~ | ~~3 transition files fixed~~ | ~~Partial~~ ✓ |
+| ~~C3~~ | ~~wasm-sdk: Uses serde-based deserialization (correct pattern for complex objects)~~ | ~~`state_transitions/*.rs`~~ | ~~N/A~~ |
 
 ---
 
@@ -94,7 +94,7 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
 ### Medium Priority (should address):
 4. ~~**A2**~~/~~**A3**~~: Add missing macros to types without them ✓
 5. **E3**: Add `Wasm` suffix to wasm-sdk exposed types
-6. **C2/D1**: Use typed returns and wrap in `Result`
+6. ~~**C2**~~: Use typed returns (optional returns fixed, union types N/A) ✓ / **D1**: Wrap in `Result`
 7. **F2**: Ensure `is_human_readable()` checks in Serialize impls
 
 ### Low Priority (nice to have):
@@ -159,3 +159,15 @@ This document tracks inconsistencies found in wasm-dpp2 and wasm-sdk that should
   - This is the **correct pattern** for structs with multiple fields (vs `TryFrom` for simple enums)
   - 19 `deserialize_*` functions are thin wrappers providing context-specific error messages
   - No changes needed - already using idiomatic approach
+- [x] C2: Fixed methods returning `JsValue` where typed alternatives exist:
+  - Changed `optional_asset_lock_proof` to return `Option<AssetLockProofWasm>`:
+    - `identity/transitions/credit_withdrawal_transition.rs`
+    - `identity/transitions/top_up_transition.rs`
+    - `identity/transitions/update_transition.rs`
+  - Changed `resource_vote_choice.value()` to return `Option<IdentifierWasm>`
+  - Changed `contender.serialized_document()` to return `Option<Uint8Array>`
+  - Added TypeScript union types for documentation:
+    - `TokenConfigurationChangeItemValue` in `tokens/configuration_change_item/token_configuration_change_item.rs`
+    - `RewardDistributionValue` in `tokens/configuration/reward_distribution_type.rs`
+  - Note: Remaining `-> JsValue` returns are for union types that already have TypeScript definitions (e.g., `BatchedTransitionLike`, `TokenTransitionLike`)
+- [x] C3: Reviewed - **N/A (same as B3)** - serde is correct pattern for complex options objects

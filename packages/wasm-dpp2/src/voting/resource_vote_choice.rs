@@ -4,7 +4,6 @@ use crate::{
     impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
 };
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -71,11 +70,11 @@ impl ResourceVoteChoiceWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> JsValue {
+    pub fn value(&self) -> Option<IdentifierWasm> {
         match self.0 {
-            ResourceVoteChoice::TowardsIdentity(id) => JsValue::from(IdentifierWasm::from(id)),
-            ResourceVoteChoice::Abstain => JsValue::undefined(),
-            ResourceVoteChoice::Lock => JsValue::undefined(),
+            ResourceVoteChoice::TowardsIdentity(id) => Some(IdentifierWasm::from(id)),
+            ResourceVoteChoice::Abstain => None,
+            ResourceVoteChoice::Lock => None,
         }
     }
 
