@@ -1270,12 +1270,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            const isLocal = options.network === NETWORK_LOCAL || name === 'local' || options.group === 'local';
-            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet' || options.group === 'testnet';
+            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
+            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
 
             // --- ZMQ configuration ---
             if (!options.core.zmq) {
               options.core.zmq = lodash.cloneDeep(defaultConfig.get('core.zmq'));
+            } else {
+              options.core.zmq = lodash.cloneDeep(options.core.zmq);
             }
 
             if (typeof options.core.zmq.port === 'undefined') {
