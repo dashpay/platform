@@ -473,4 +473,60 @@ mod tests {
         ));
         assert!(!reference.must_exist);
     }
+
+    #[test]
+    fn should_parse_refers_to_with_contract_target() {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "toContractId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": {
+                        "type": "contract"
+                    }
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("should parse");
+
+        let reference = document_type
+            .as_ref()
+            .flattened_properties()
+            .get("toContractId")
+            .and_then(|p| p.reference.clone())
+            .expect("reference should be present");
+
+        assert!(matches!(
+            reference.target,
+            DocumentPropertyReferenceTarget::Contract
+        ));
+        assert!(reference.must_exist);
+    }
 }

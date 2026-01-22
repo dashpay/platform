@@ -56,6 +56,8 @@ mod creation_tests {
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-must-exist-false.json";
     const REFERENCE_VALIDATION_NESTED_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-nested.json";
+    const REFERENCE_VALIDATION_CONTRACT_REFERENCE_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-refers-to-contract.json";
 
     // Helper to run document creation with custom reference mutations.
     fn run_reference_validation_creation_with_mutator<F>(
@@ -106,6 +108,103 @@ mod creation_tests {
             .expect("expected a random document");
 
         mutator(&mut document, identity.id(), other_identity.id());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                message,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        processing_result
+            .execution_results()
+            .first()
+            .expect("expected one execution result")
+            .clone()
+    }
+
+    fn run_contract_reference_creation_with_mutator<F>(
+        contract_path: &str,
+        mutator: F,
+    ) -> StateTransitionExecutionResult
+    where
+        F: FnOnce(&mut Document, Identifier, Identifier, Identifier),
+    {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (other_identity, ..) = setup_identity(&mut platform, 959, dash_to_credits!(0.1));
+
+        let contract = setup_contract(
+            &platform.drive,
+            contract_path,
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        mutator(&mut document, identity.id(), other_identity.id(), contract.id());
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(
@@ -4105,6 +4204,39 @@ mod creation_tests {
                 document.set("toUserId", owner_id.into());
                 document.set("otherUserId", other_id.into());
                 document.set("meta.nestedUserId", Identifier::random().into());
+            },
+        );
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(_)),
+                ..
+            }
+        );
+    }
+
+    #[test]
+    fn test_document_creation_succeeds_when_referenced_contract_exists() {
+        let result = run_contract_reference_creation_with_mutator(
+            REFERENCE_VALIDATION_CONTRACT_REFERENCE_PATH,
+            |document, _, _, contract_id| {
+                document.set("toContractId", contract_id.into());
+            },
+        );
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[test]
+    fn test_document_creation_fails_when_referenced_contract_missing() {
+        let result = run_contract_reference_creation_with_mutator(
+            REFERENCE_VALIDATION_CONTRACT_REFERENCE_PATH,
+            |document, _, _, _| {
+                document.set("toContractId", Identifier::random().into());
             },
         );
 
