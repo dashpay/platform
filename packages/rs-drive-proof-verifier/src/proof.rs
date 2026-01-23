@@ -1024,7 +1024,9 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             }
         };
 
-        let limit = Some(100u16); // Same limit as in query handler
+        // Ensure it is the same limit as in query handler; see
+        // packages/rs-drive-abci/src/query/address_funds/recent_compacted_address_balance_changes/v0/mod.rs
+        let limit = Some(25u16);
 
         let (root_hash, verified_changes) = Drive::verify_compacted_address_balance_changes(
             &proof.grovedb_proof,
