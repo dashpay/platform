@@ -8,7 +8,9 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_fixed_bytes};
+use crate::utils::{
+    IntoWasm, get_optional_property_with, get_required_property, try_to_fixed_bytes,
+};
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::identity::contract_bounds::ContractBounds;
@@ -171,18 +173,11 @@ impl IdentityPublicKeyWasm {
         let key_type = KeyTypeWasm::try_from(js_key_type)?;
 
         // Extract contractBounds (optional)
-        let js_contract_bounds = get_optional_property(&object, "contractBounds");
         let contract_bounds: Option<ContractBounds> =
-            if js_contract_bounds.is_undefined() || js_contract_bounds.is_null() {
-                None
-            } else {
-                Some(
-                    js_contract_bounds
-                        .to_wasm::<ContractBoundsWasm>("ContractBounds")?
-                        .clone()
-                        .into(),
-                )
-            };
+            get_optional_property_with(&object, "contractBounds", |v| {
+                v.to_wasm::<ContractBoundsWasm>("ContractBounds")
+                    .map(|cb| cb.clone().into())
+            })?;
 
         // Extract simple fields via serde
         let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options)

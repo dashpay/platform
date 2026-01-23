@@ -1,5 +1,4 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use anyhow::{anyhow, bail};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
@@ -143,48 +142,128 @@ pub fn get_required_property(
     Ok(value)
 }
 
-/// Extract an optional property from a JS object.
+/// Extract an optional property from a JS object and convert it using TryFrom.
 ///
-/// Returns `JsValue::UNDEFINED` if the property doesn't exist or if `Reflect::get` fails.
-/// This is useful for optional fields where absence should not cause an error.
-pub fn get_optional_property(object: &js_sys::Object, property_name: &str) -> JsValue {
-    js_sys::Reflect::get(object, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED)
-}
+/// Returns `Ok(None)` if the property is undefined or null.
+/// Returns `Ok(Some(T))` if the property exists and conversion succeeds.
+/// Returns `Err` if the property exists but conversion fails.
+///
+/// This function works with types that implement `TryFrom<JsValue>`.
+///
+/// # Example
+///
+/// ```ignore
+/// let id: Option<IdentifierWasm> = get_optional_property(&obj, "id")?;
+/// ```
+pub fn get_optional_property<T>(
+    object: &js_sys::Object,
+    property_name: &str,
+) -> WasmDppResult<Option<T>>
+where
+    T: TryFrom<JsValue>,
+    T::Error: Into<WasmDppError>,
+{
+    let value =
+        js_sys::Reflect::get(object, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
 
-/// Convert a JS Number or BigInt to u64
-pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
-    if value.is_bigint() {
-        js_sys::BigInt::new(&value)
-            .map_err(|e| anyhow!("unable to create bigInt: {}", e.to_string()))?
-            .try_into()
-            .map_err(|e| anyhow!("conversion of BigInt to u64 failed: {:#}", e))
-    } else if value.as_f64().is_some() {
-        let number = js_sys::Number::from(value);
-        convert_number_to_u64(number)
+    if value.is_undefined() || value.is_null() {
+        Ok(None)
     } else {
-        bail!("supported types are Number or BigInt")
+        T::try_from(value).map(Some).map_err(Into::into)
     }
 }
 
-/// Convert a JS Number to u64 with validation
-fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {
-    if let Some(float_number) = js_number.as_f64() {
-        if float_number.is_nan() || float_number.is_infinite() {
-            bail!("received an invalid number: the number is either NaN or Inf")
-        }
-        if float_number < 0. {
-            bail!("received an invalid number: the number is negative");
-        }
-        if float_number.fract() != 0. {
-            bail!("received an invalid number: the number is fractional")
-        }
-        if float_number > u64::MAX as f64 {
-            bail!("received an invalid number: the number is > u64::max")
+/// Extract an optional property from a JS object and convert it with a custom converter.
+///
+/// Returns `Ok(None)` if the property is undefined or null.
+/// Returns `Ok(Some(T))` if the property exists and conversion succeeds.
+/// Returns `Err` if the property exists but conversion fails.
+///
+/// Use this for primitive types (u64, etc.) that don't have TryFrom<JsValue>.
+///
+/// # Example
+///
+/// ```ignore
+/// let balance: Option<u64> = get_optional_property_with(&obj, "balance", |v| {
+///     try_to_u64(v, "balance")
+/// })?;
+/// ```
+pub fn get_optional_property_with<T, F>(
+    object: &js_sys::Object,
+    property_name: &str,
+    converter: F,
+) -> WasmDppResult<Option<T>>
+where
+    F: FnOnce(JsValue) -> WasmDppResult<T>,
+{
+    let value =
+        js_sys::Reflect::get(object, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+
+    if value.is_undefined() || value.is_null() {
+        Ok(None)
+    } else {
+        converter(value).map(Some)
+    }
+}
+
+/// Convert a JS Number or BigInt to u64 with validation.
+///
+/// Validates that the value is:
+/// - A BigInt that fits in u64 range, OR
+/// - A finite number (not NaN or Infinity)
+/// - An integer (no fractional part)
+/// - Non-negative
+/// - Within u64 range
+pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
+    if value.is_bigint() {
+        let bigint = js_sys::BigInt::new(&value).map_err(|_| {
+            WasmDppError::invalid_argument(format!("'{}' is not a valid BigInt", field_name))
+        })?;
+        bigint.try_into().map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'{}' BigInt value is out of u64 range",
+                field_name
+            ))
+        })
+    } else if let Some(num) = value.as_f64() {
+        if num.is_nan() || num.is_infinite() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be a finite number, got {}",
+                field_name,
+                if num.is_nan() { "NaN" } else { "Infinity" }
+            )));
         }
 
-        return Ok(float_number as u64);
+        if num.fract() != 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be an integer, got {}",
+                field_name, num
+            )));
+        }
+
+        if num < 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be non-negative, got {}",
+                field_name, num
+            )));
+        }
+
+        if num > u64::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be at most {}, got {}",
+                field_name,
+                u64::MAX,
+                num
+            )));
+        }
+
+        Ok(num as u64)
+    } else {
+        Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a number or BigInt",
+            field_name
+        )))
     }
-    bail!("the value is not a number")
 }
 
 /// Convert a JS value to Object with validation.

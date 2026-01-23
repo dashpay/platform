@@ -4,7 +4,7 @@ use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, JsValueExt, get_optional_property, get_required_property, try_to_array,
+    IntoWasm, JsValueExt, get_optional_property_with, get_required_property, try_to_array,
     try_to_object, try_to_u64,
 };
 use dpp::fee::Credits;
@@ -84,29 +84,18 @@ impl PartialIdentityWasm {
         let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
         let loaded_public_keys = value_to_loaded_public_keys(&loaded_public_keys_js)?;
 
-        let balance_js = get_optional_property(&options_obj, "balance");
-        let balance: Option<Credits> = if balance_js.is_undefined() {
-            None
-        } else {
-            Some(try_to_u64(balance_js)?)
-        };
+        let balance: Option<Credits> = get_optional_property_with(&options_obj, "balance", |v| {
+            try_to_u64(v, "balance")
+        })?;
 
-        let revision_js = get_optional_property(&options_obj, "revision");
-        let revision: Option<Revision> = if revision_js.is_undefined() {
-            None
-        } else {
-            Some(try_to_u64(revision_js)?)
-        };
+        let revision: Option<Revision> = get_optional_property_with(&options_obj, "revision", |v| {
+            try_to_u64(v, "revision")
+        })?;
 
-        let not_found_public_keys_js = get_optional_property(&options_obj, "notFoundPublicKeys");
-        let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
-            None
-        } else {
-            Some(try_to_array(
-                not_found_public_keys_js,
-                "notFoundPublicKeys",
-            )?)
-        };
+        let not_found_public_keys: Option<Array> =
+            get_optional_property_with(&options_obj, "notFoundPublicKeys", |v| {
+                try_to_array(v, "notFoundPublicKeys")
+            })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
@@ -234,31 +223,20 @@ impl PartialIdentityWasm {
         let loaded_public_keys = value_to_loaded_public_keys_from_object(&loaded_public_keys_js)?;
 
         // balance - can be BigInt, number, or undefined
-        let balance_js = get_optional_property(&options_obj, "balance");
-        let balance: Option<Credits> = if balance_js.is_undefined() || balance_js.is_null() {
-            None
-        } else {
-            Some(try_to_u64(balance_js)?)
-        };
+        let balance: Option<Credits> = get_optional_property_with(&options_obj, "balance", |v| {
+            try_to_u64(v, "balance")
+        })?;
 
         // revision - can be BigInt, number, or undefined
-        let revision_js = get_optional_property(&options_obj, "revision");
-        let revision: Option<Revision> = if revision_js.is_undefined() || revision_js.is_null() {
-            None
-        } else {
-            Some(try_to_u64(revision_js)?)
-        };
+        let revision: Option<Revision> = get_optional_property_with(&options_obj, "revision", |v| {
+            try_to_u64(v, "revision")
+        })?;
 
         // notFoundPublicKeys
-        let not_found_public_keys_js = get_optional_property(&options_obj, "notFoundPublicKeys");
-        let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
-            None
-        } else {
-            Some(try_to_array(
-                not_found_public_keys_js,
-                "notFoundPublicKeys",
-            )?)
-        };
+        let not_found_public_keys: Option<Array> =
+            get_optional_property_with(&options_obj, "notFoundPublicKeys", |v| {
+                try_to_array(v, "notFoundPublicKeys")
+            })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
@@ -284,31 +262,20 @@ impl PartialIdentityWasm {
         let loaded_public_keys = value_to_loaded_public_keys_from_json(&loaded_public_keys_js)?;
 
         // balance - number or null
-        let balance_js = get_optional_property(&options_obj, "balance");
-        let balance: Option<Credits> = if balance_js.is_undefined() || balance_js.is_null() {
-            None
-        } else {
-            Some(try_to_u64(balance_js)?)
-        };
+        let balance: Option<Credits> = get_optional_property_with(&options_obj, "balance", |v| {
+            try_to_u64(v, "balance")
+        })?;
 
         // revision - number or null
-        let revision_js = get_optional_property(&options_obj, "revision");
-        let revision: Option<Revision> = if revision_js.is_undefined() || revision_js.is_null() {
-            None
-        } else {
-            Some(try_to_u64(revision_js)?)
-        };
+        let revision: Option<Revision> = get_optional_property_with(&options_obj, "revision", |v| {
+            try_to_u64(v, "revision")
+        })?;
 
         // notFoundPublicKeys
-        let not_found_public_keys_js = get_optional_property(&options_obj, "notFoundPublicKeys");
-        let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
-            None
-        } else {
-            Some(try_to_array(
-                not_found_public_keys_js,
-                "notFoundPublicKeys",
-            )?)
-        };
+        let not_found_public_keys: Option<Array> =
+            get_optional_property_with(&options_obj, "notFoundPublicKeys", |v| {
+                try_to_array(v, "notFoundPublicKeys")
+            })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {

@@ -6,7 +6,9 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
-use crate::utils::{IntoWasm, JsValueExt, get_optional_property, get_required_property};
+use crate::utils::{
+    IntoWasm, JsValueExt, get_optional_property, get_optional_property_with, get_required_property,
+};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
@@ -192,30 +194,19 @@ impl DataContractWasm {
         let schema: Value = serialization::platform_value_from_object(js_schema)?;
 
         // Extract definitions (optional)
-        let js_definitions = get_optional_property(&object, "definitions");
         let definitions: Option<Value> =
-            if js_definitions.is_undefined() || js_definitions.is_null() {
-                None
-            } else {
-                Some(serialization::platform_value_from_object(js_definitions)?)
-            };
+            get_optional_property_with(&object, "definitions", serialization::platform_value_from_object)?;
 
         // Extract tokens (optional)
-        let js_tokens = get_optional_property(&object, "tokens");
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
-            if js_tokens.is_undefined() || js_tokens.is_null() {
-                BTreeMap::new()
-            } else {
-                tokens_configuration_from_js_value(&js_tokens)?
-            };
+            get_optional_property_with(&object, "tokens", |v| tokens_configuration_from_js_value(&v))?
+                .unwrap_or_default();
 
         // Extract platformVersion (optional)
-        let js_platform_version = get_optional_property(&object, "platformVersion");
-        let platform_version: PlatformVersion = if js_platform_version.is_undefined() {
-            PlatformVersionWasm::default().into()
-        } else {
-            PlatformVersionWasm::try_from(js_platform_version)?.into()
-        };
+        let platform_version: PlatformVersion =
+            get_optional_property::<PlatformVersionWasm>(&object, "platformVersion")?
+                .map(Into::into)
+                .unwrap_or_else(|| PlatformVersionWasm::default().into());
 
         // Extract simple fields via serde
         let opts: DataContractOptions = serde_wasm_bindgen::from_value(options)

@@ -4,7 +4,9 @@ use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
-use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u64};
+use crate::utils::{
+    IntoWasm, get_optional_property_with, get_required_property, try_to_object, try_to_u64,
+};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
@@ -64,40 +66,25 @@ impl TokenTransferTransitionWasm {
         let recipient_id_js = get_required_property(&options_obj, "recipientId")?;
         let recipient_id: Identifier = IdentifierWasm::try_from(&recipient_id_js)?.into();
 
-        let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
+        let amount = try_to_u64(get_required_property(&options_obj, "amount")?, "amount")?;
 
-        let public_note_js = get_optional_property(&options_obj, "publicNote");
-        let public_note: Option<String> = if public_note_js.is_undefined() {
-            None
-        } else {
-            public_note_js.as_string()
-        };
+        let public_note: Option<String> =
+            get_optional_property_with(&options_obj, "publicNote", |v| {
+                v.as_string()
+                    .ok_or_else(|| crate::error::WasmDppError::invalid_argument("publicNote must be a string"))
+            })?;
 
-        let js_shared_encrypted_note = get_optional_property(&options_obj, "sharedEncryptedNote");
         let shared_encrypted_note: Option<SharedEncryptedNote> =
-            if js_shared_encrypted_note.is_undefined() {
-                None
-            } else {
-                Some(
-                    js_shared_encrypted_note
-                        .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
-                        .clone()
-                        .into(),
-                )
-            };
+            get_optional_property_with(&options_obj, "sharedEncryptedNote", |v| {
+                v.to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")
+                    .map(|n| n.clone().into())
+            })?;
 
-        let js_private_encrypted_note = get_optional_property(&options_obj, "privateEncryptedNote");
         let private_encrypted_note: Option<PrivateEncryptedNote> =
-            if js_private_encrypted_note.is_undefined() {
-                None
-            } else {
-                Some(
-                    js_private_encrypted_note
-                        .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
-                        .clone()
-                        .into(),
-                )
-            };
+            get_optional_property_with(&options_obj, "privateEncryptedNote", |v| {
+                v.to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")
+                    .map(|n| n.clone().into())
+            })?;
 
         Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
             TokenTransferTransitionV0 {

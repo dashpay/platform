@@ -6,7 +6,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property, get_required_property, try_to_bytes, try_to_object,
+    IntoWasm, get_optional_property_with, get_required_property, try_to_bytes, try_to_object,
     try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
@@ -106,21 +106,19 @@ impl MasternodeVoteTransitionWasm {
         let vote_js = get_required_property(&options_obj, "vote")?;
         let vote = vote_js.to_wasm::<VoteWasm>("Vote")?.clone();
 
-        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
+        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?, "nonce")?;
 
-        let signature_public_key_js = get_optional_property(&options_obj, "signaturePublicKeyId");
-        let signature_public_key_id: KeyID = if signature_public_key_js.is_undefined() {
-            0
-        } else {
-            try_to_u32(signature_public_key_js, "signaturePublicKeyId")?
-        };
+        let signature_public_key_id: KeyID =
+            get_optional_property_with(&options_obj, "signaturePublicKeyId", |v| {
+                try_to_u32(v, "signaturePublicKeyId")
+            })?
+            .unwrap_or(0);
 
-        let signature_js = get_optional_property(&options_obj, "signature");
-        let signature: Vec<u8> = if signature_js.is_undefined() {
-            Vec::new()
-        } else {
-            try_to_bytes(signature_js, "signature")?
-        };
+        let signature: Vec<u8> =
+            get_optional_property_with(&options_obj, "signature", |v| {
+                try_to_bytes(v, "signature")
+            })?
+            .unwrap_or_default();
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {

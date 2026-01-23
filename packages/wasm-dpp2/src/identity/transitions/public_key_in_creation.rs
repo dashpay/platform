@@ -6,7 +6,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, get_optional_property, get_required_property};
+use crate::utils::{IntoWasm, get_optional_property_with, get_required_property};
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -165,18 +165,11 @@ impl IdentityPublicKeyInCreationWasm {
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))?;
 
         // Extract contractBounds (optional)
-        let js_contract_bounds = get_optional_property(&object, "contractBounds");
         let contract_bounds: Option<ContractBounds> =
-            if js_contract_bounds.is_undefined() || js_contract_bounds.is_null() {
-                None
-            } else {
-                Some(
-                    js_contract_bounds
-                        .to_wasm::<ContractBoundsWasm>("ContractBounds")?
-                        .clone()
-                        .into(),
-                )
-            };
+            get_optional_property_with(&object, "contractBounds", |v| {
+                v.to_wasm::<ContractBoundsWasm>("ContractBounds")
+                    .map(|cb| cb.clone().into())
+            })?;
 
         // Extract simple fields via serde
         let opts: IdentityPublicKeyInCreationOptions = serde_wasm_bindgen::from_value(options)

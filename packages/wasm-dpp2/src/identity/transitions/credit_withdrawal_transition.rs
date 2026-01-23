@@ -8,8 +8,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u32,
-    try_to_u64,
+    IntoWasm, get_optional_property_with, get_required_property, try_to_object, try_to_u16,
+    try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -100,7 +100,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let identity_id_js = get_required_property(&options_obj, "identityId")?;
         let identity_id: Identifier = IdentifierWasm::try_from(&identity_id_js)?.into();
 
-        let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
+        let amount = try_to_u64(get_required_property(&options_obj, "amount")?, "amount")?;
 
         let core_fee_per_byte_js = get_required_property(&options_obj, "coreFeePerByte")?;
         let core_fee_per_byte = try_to_u32(core_fee_per_byte_js, "coreFeePerByte")?;
@@ -108,31 +108,21 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let pooling_js = get_required_property(&options_obj, "pooling")?;
         let pooling = PoolingWasm::try_from(pooling_js)?;
 
-        let output_script_js = get_optional_property(&options_obj, "outputScript");
-        let output_script: Option<CoreScript> = if output_script_js.is_undefined() {
-            None
-        } else {
-            Some(
-                output_script_js
-                    .to_wasm::<CoreScriptWasm>("CoreScript")?
-                    .clone()
-                    .into(),
-            )
-        };
+        let output_script: Option<CoreScript> =
+            get_optional_property_with(&options_obj, "outputScript", |v| {
+                v.to_wasm::<CoreScriptWasm>("CoreScript")
+                    .map(|cs| cs.clone().into())
+            })?;
 
-        let nonce_js = get_optional_property(&options_obj, "nonce");
-        let nonce: IdentityNonce = if nonce_js.is_undefined() {
-            0
-        } else {
-            try_to_u64(nonce_js)?
-        };
+        let nonce: IdentityNonce =
+            get_optional_property_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?
+                .unwrap_or(0);
 
-        let user_fee_increase_js = get_optional_property(&options_obj, "userFeeIncrease");
-        let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
-            0
-        } else {
-            try_to_u16(user_fee_increase_js, "userFeeIncrease")?
-        };
+        let user_fee_increase: UserFeeIncrease =
+            get_optional_property_with(&options_obj, "userFeeIncrease", |v| {
+                try_to_u16(v, "userFeeIncrease")
+            })?
+            .unwrap_or(0);
 
         Ok(IdentityCreditWithdrawalTransitionWasm(
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {

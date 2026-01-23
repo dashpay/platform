@@ -3,7 +3,8 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u64,
+    IntoWasm, get_optional_property_with, get_required_property, try_to_object, try_to_u16,
+    try_to_u64,
 };
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
@@ -56,7 +57,7 @@ impl TokenBaseTransitionWasm {
 
         let identity_contract_nonce_js =
             get_required_property(&options_obj, "identityContractNonce")?;
-        let identity_contract_nonce = try_to_u64(identity_contract_nonce_js)?;
+        let identity_contract_nonce = try_to_u64(identity_contract_nonce_js, "identityContractNonce")?;
 
         let token_contract_position_js =
             get_required_property(&options_obj, "tokenContractPosition")?;
@@ -69,17 +70,11 @@ impl TokenBaseTransitionWasm {
         let token_id_js = get_required_property(&options_obj, "tokenId")?;
         let token_id = IdentifierWasm::try_from(&token_id_js)?.into();
 
-        let using_group_info_js = get_optional_property(&options_obj, "usingGroupInfo");
-        let group_info: Option<GroupStateTransitionInfo> = if using_group_info_js.is_undefined() {
-            None
-        } else {
-            Some(
-                using_group_info_js
-                    .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
-                    .clone()
-                    .into(),
-            )
-        };
+        let group_info: Option<GroupStateTransitionInfo> =
+            get_optional_property_with(&options_obj, "usingGroupInfo", |v| {
+                v.to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")
+                    .map(|gi| gi.clone().into())
+            })?;
 
         Ok(TokenBaseTransitionWasm(TokenBaseTransition::V0(
             TokenBaseTransitionV0 {

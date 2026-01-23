@@ -2,7 +2,7 @@ use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWa
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
-use crate::utils::get_optional_property;
+use crate::utils::{get_optional_property, get_optional_property_with};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
@@ -66,25 +66,16 @@ impl TokenPaymentInfoWasm {
         let object = Object::from(options.clone());
 
         // Extract paymentTokenContractId (optional, can be null/undefined)
-        let js_payment_token_contract_id = get_optional_property(&object, "paymentTokenContractId");
         let payment_token_contract_id: Option<Identifier> =
-            if js_payment_token_contract_id.is_null() || js_payment_token_contract_id.is_undefined()
-            {
-                None
-            } else {
-                Some(IdentifierWasm::try_from(&js_payment_token_contract_id)?.into())
-            };
+            get_optional_property::<IdentifierWasm>(&object, "paymentTokenContractId")?
+                .map(Into::into);
 
         // Extract gasFeesPaidBy (optional)
-        let js_gas_fees_paid_by = get_optional_property(&object, "gasFeesPaidBy");
-        let gas_fees_paid_by =
-            if js_gas_fees_paid_by.is_undefined() || js_gas_fees_paid_by.is_null() {
-                GasFeesPaidBy::default()
-            } else {
-                GasFeesPaidByWasm::try_from(js_gas_fees_paid_by)?
-                    .clone()
-                    .into()
-            };
+        let gas_fees_paid_by: GasFeesPaidBy =
+            get_optional_property_with(&object, "gasFeesPaidBy", |v| {
+                GasFeesPaidByWasm::try_from(v).map(|g| g.into())
+            })?
+            .unwrap_or_default();
 
         // Extract simple fields via serde
         let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options)

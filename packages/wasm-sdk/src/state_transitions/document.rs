@@ -612,9 +612,7 @@ impl WasmSdk {
         // Extract price from options
         let options_obj = try_to_object(options_value.clone(), "options")?;
         let price_js = get_required_property(&options_obj, "price")?;
-        let price: Credits = try_to_u64(price_js).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e))
-        })?;
+        let price: Credits = try_to_u64(price_js, "price")?;
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -729,9 +727,7 @@ impl WasmSdk {
         // Extract price from options
         let options_obj = try_to_object(options_value.clone(), "options")?;
         let price_js = get_required_property(&options_obj, "price")?;
-        let price: Credits = try_to_u64(price_js).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e))
-        })?;
+        let price: Credits = try_to_u64(price_js, "price")?;
 
         // Extract identity key from options
         let identity_key_wasm =

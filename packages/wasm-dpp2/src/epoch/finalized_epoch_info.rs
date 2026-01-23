@@ -150,12 +150,7 @@ fn block_proposers_from_map(js_map: &Map) -> WasmDppResult<BTreeMap<Identifier, 
             })?
             .into();
 
-        let credits = try_to_u64(value).map_err(|err| {
-            WasmDppError::invalid_argument(format!(
-                "block proposer value is not a valid u64: {:#}",
-                err
-            ))
-        })?;
+        let credits = try_to_u64(value, "blockProposerCredits")?;
 
         map.insert(identifier, credits);
     }
@@ -183,13 +178,13 @@ impl FinalizedEpochInfoWasm {
         let options_obj = try_to_object(options.into(), "options")?;
 
         let first_block_time_js = get_required_property(&options_obj, "firstBlockTime")?;
-        let first_block_time = try_to_u64(first_block_time_js)?;
+        let first_block_time = try_to_u64(first_block_time_js, "firstBlockTime")?;
 
         let first_block_height_js = get_required_property(&options_obj, "firstBlockHeight")?;
-        let first_block_height = try_to_u64(first_block_height_js)?;
+        let first_block_height = try_to_u64(first_block_height_js, "firstBlockHeight")?;
 
         let total_blocks_in_epoch_js = get_required_property(&options_obj, "totalBlocksInEpoch")?;
-        let total_blocks_in_epoch = try_to_u64(total_blocks_in_epoch_js)?;
+        let total_blocks_in_epoch = try_to_u64(total_blocks_in_epoch_js, "totalBlocksInEpoch")?;
 
         let first_core_block_height_js =
             get_required_property(&options_obj, "firstCoreBlockHeight")?;
@@ -204,18 +199,20 @@ impl FinalizedEpochInfoWasm {
         )?;
 
         let total_processing_fees_js = get_required_property(&options_obj, "totalProcessingFees")?;
-        let total_processing_fees = try_to_u64(total_processing_fees_js)?;
+        let total_processing_fees = try_to_u64(total_processing_fees_js, "totalProcessingFees")?;
 
         let total_distributed_storage_fees_js =
             get_required_property(&options_obj, "totalDistributedStorageFees")?;
-        let total_distributed_storage_fees = try_to_u64(total_distributed_storage_fees_js)?;
+        let total_distributed_storage_fees =
+            try_to_u64(total_distributed_storage_fees_js, "totalDistributedStorageFees")?;
 
         let total_created_storage_fees_js =
             get_required_property(&options_obj, "totalCreatedStorageFees")?;
-        let total_created_storage_fees = try_to_u64(total_created_storage_fees_js)?;
+        let total_created_storage_fees =
+            try_to_u64(total_created_storage_fees_js, "totalCreatedStorageFees")?;
 
         let core_block_rewards_js = get_required_property(&options_obj, "coreBlockRewards")?;
-        let core_block_rewards = try_to_u64(core_block_rewards_js)?;
+        let core_block_rewards = try_to_u64(core_block_rewards_js, "coreBlockRewards")?;
 
         let block_proposers_js = get_required_property(&options_obj, "blockProposers")?;
         if !block_proposers_js.is_instance_of::<Map>() {
@@ -228,7 +225,7 @@ impl FinalizedEpochInfoWasm {
 
         let fee_multiplier_permille_js =
             get_required_property(&options_obj, "feeMultiplierPermille")?;
-        let fee_multiplier_permille = try_to_u64(fee_multiplier_permille_js)?;
+        let fee_multiplier_permille = try_to_u64(fee_multiplier_permille_js, "feeMultiplierPermille")?;
 
         let protocol_version_js = get_required_property(&options_obj, "protocolVersion")?;
         let protocol_version = try_to_u32(protocol_version_js, "protocolVersion")?;

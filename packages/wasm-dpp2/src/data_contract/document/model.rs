@@ -6,7 +6,8 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    ToSerdeJSONExt, get_optional_property, get_required_property, try_to_fixed_bytes,
+    ToSerdeJSONExt, get_optional_property, get_optional_property_with, get_required_property,
+    try_to_fixed_bytes, try_to_u64,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -195,42 +196,39 @@ impl DocumentWasm {
             IdentifierWasm::try_from(&get_required_property(&options_obj, "ownerId")?)?.into();
 
         // Extract optional properties
-        let revision_js = get_optional_property(&options_obj, "revision");
-        let revision = if revision_js.is_undefined() {
-            Revision::from(1u64)
-        } else {
-            Revision::from(
-                revision_js
-                    .as_f64()
-                    .ok_or_else(|| WasmDppError::invalid_argument("'revision' must be a number"))?
-                    as u64,
-            )
-        };
+        let revision = get_optional_property_with(&options_obj, "revision", |v| {
+            try_to_u64(v, "revision").map(Revision::from)
+        })?
+        .unwrap_or(Revision::from(1u64));
 
-        let id_js = get_optional_property(&options_obj, "id");
+        let id: Option<IdentifierWasm> = get_optional_property(&options_obj, "id")?;
 
-        let entropy_js = get_optional_property(&options_obj, "entropy");
+        let entropy: Option<[u8; 32]> = get_optional_property_with(&options_obj, "entropy", |v| {
+            try_to_fixed_bytes::<32>(v, "entropy")
+        })?;
 
         let properties = properties_js.with_serde_to_platform_value_map()?;
 
-        let entropy: [u8; 32] = if entropy_js.is_undefined() || entropy_js.is_null() {
-            entropy_generator::DefaultEntropyGenerator
-                .generate()
-                .map_err(|err| WasmDppError::serialization(err.to_string()))?
-        } else {
-            try_to_fixed_bytes::<32>(entropy_js, "entropy")?
-        };
+        let entropy: [u8; 32] = entropy.map_or_else(
+            || {
+                entropy_generator::DefaultEntropyGenerator
+                    .generate()
+                    .map_err(|err| WasmDppError::serialization(err.to_string()))
+            },
+            Ok,
+        )?;
 
-        let doc_id: Identifier = if id_js.is_undefined() || id_js.is_null() {
-            crate::utils::generate_document_id_v0(
-                &data_contract_id,
-                &owner_id,
-                &document_type_name,
-                &entropy,
-            )?
-        } else {
-            IdentifierWasm::try_from(&id_js)?.into()
-        };
+        let doc_id: Identifier = id.map_or_else(
+            || {
+                crate::utils::generate_document_id_v0(
+                    &data_contract_id,
+                    &owner_id,
+                    &document_type_name,
+                    &entropy,
+                )
+            },
+            |id| Ok(id.into()),
+        )?;
 
         let document = Document::V0(DocumentV0 {
             id: doc_id,

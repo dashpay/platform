@@ -114,8 +114,7 @@ impl DistributionFunctionWasm {
                 ))
             })?;
 
-            let amount = try_to_u64(amount_js)
-                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+            let amount = try_to_u64(amount_js, &format!("step[{}]", key_str))?;
 
             steps_with_amount.insert(step, amount);
         }

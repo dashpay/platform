@@ -85,8 +85,7 @@ fn distribution_amounts_from_map(
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid identifier: {}", e)))?
             .into();
 
-        let token_amount =
-            try_to_u64(value).map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        let token_amount = try_to_u64(value, "tokenAmount")?;
 
         amounts.insert(identifier, token_amount);
     }

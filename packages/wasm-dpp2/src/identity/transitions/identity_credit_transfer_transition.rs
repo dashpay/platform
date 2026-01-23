@@ -4,7 +4,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u64,
+    get_optional_property_with, get_required_property, try_to_object, try_to_u16, try_to_u64,
 };
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -81,7 +81,7 @@ impl IdentityCreditTransferWasm {
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
+        let amount = try_to_u64(get_required_property(&options_obj, "amount")?, "amount")?;
 
         let sender_js = get_required_property(&options_obj, "senderId")?;
         let sender: Identifier = IdentifierWasm::try_from(&sender_js)?.into();
@@ -89,14 +89,13 @@ impl IdentityCreditTransferWasm {
         let recipient_js = get_required_property(&options_obj, "recipientId")?;
         let recipient: Identifier = IdentifierWasm::try_from(&recipient_js)?.into();
 
-        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
+        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?, "nonce")?;
 
-        let user_fee_increase_js = get_optional_property(&options_obj, "userFeeIncrease");
-        let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
-            0
-        } else {
-            try_to_u16(user_fee_increase_js, "userFeeIncrease")?
-        };
+        let user_fee_increase: UserFeeIncrease =
+            get_optional_property_with(&options_obj, "userFeeIncrease", |v| {
+                try_to_u16(v, "userFeeIncrease")
+            })?
+            .unwrap_or(0);
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
