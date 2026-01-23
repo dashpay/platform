@@ -15,7 +15,7 @@
     "console-table-printer": "^2.11.0",
     "dash": "workspace:*",
     "dotenv-safe": "^8.2.0",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "mathjs": "^10.4.3",
     "mocha": "^11.1.0"
   },

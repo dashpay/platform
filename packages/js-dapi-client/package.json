@@ -34,7 +34,7 @@
     "bs58": "^4.0.1",
     "cbor": "^8.0.0",
     "google-protobuf": "^3.12.2",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "node-fetch": "^2.6.7",
     "node-inspect-extracted": "^1.0.8",
     "wasm-x11-hash": "~0.0.2",
