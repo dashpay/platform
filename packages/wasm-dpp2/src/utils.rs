@@ -271,10 +271,31 @@ pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
             ))
         })
     } else if let Some(num) = value.as_f64() {
-        if num < 0.0 || num > u64::MAX as f64 {
+        if num.is_nan() || num.is_infinite() {
             return Err(WasmDppError::invalid_argument(format!(
-                "'{}' number value is out of u64 range",
-                field_name
+                "'{}' must be a finite number, got {}",
+                field_name,
+                if num.is_nan() { "NaN" } else { "Infinity" }
+            )));
+        }
+        if num.fract() != 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be an integer, got {}",
+                field_name, num
+            )));
+        }
+        if num < 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be non-negative, got {}",
+                field_name, num
+            )));
+        }
+        if num > u64::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be at most {}, got {}",
+                field_name,
+                u64::MAX,
+                num
             )));
         }
         Ok(num as u64)
