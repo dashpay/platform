@@ -48,7 +48,10 @@ impl PlatformAddressSignerWasm {
     /// @param privateKey - The PrivateKey object
     /// @returns The derived Platform address
     #[wasm_bindgen(js_name = "addKey")]
-    pub fn add_key(&mut self, private_key: &PrivateKeyWasm) -> WasmDppResult<PlatformAddressWasm> {
+    pub fn add_key(
+        &mut self,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+    ) -> WasmDppResult<PlatformAddressWasm> {
         let platform_address =
             PlatformAddressWasm::from(PlatformAddress::from(private_key.inner()));
         self.private_keys

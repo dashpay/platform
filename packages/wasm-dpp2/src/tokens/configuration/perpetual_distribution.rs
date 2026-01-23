@@ -26,7 +26,7 @@ impl From<TokenPerpetualDistribution> for TokenPerpetualDistributionWasm {
 impl TokenPerpetualDistributionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        distribution_type: &RewardDistributionTypeWasm,
+        #[wasm_bindgen(js_name = "distributionType")] distribution_type: &RewardDistributionTypeWasm,
         recipient: &TokenDistributionRecipientWasm,
     ) -> Self {
         TokenPerpetualDistributionWasm(TokenPerpetualDistribution::V0(
@@ -48,13 +48,13 @@ impl TokenPerpetualDistributionWasm {
     }
 
     #[wasm_bindgen(setter = distributionType)]
-    pub fn set_distribution_type(&mut self, distribution_type: &RewardDistributionTypeWasm) {
+    pub fn set_distribution_type(&mut self, #[wasm_bindgen(js_name = "distributionType")] distribution_type: &RewardDistributionTypeWasm) {
         self.0
             .set_distribution_type(distribution_type.clone().into());
     }
 
     #[wasm_bindgen(setter = distributionRecipient)]
-    pub fn set_recipient(&mut self, distribution_recipient: &TokenDistributionRecipientWasm) {
+    pub fn set_recipient(&mut self, #[wasm_bindgen(js_name = "distributionRecipient")] distribution_recipient: &TokenDistributionRecipientWasm) {
         self.0
             .set_distribution_recipient(distribution_recipient.clone().into());
     }

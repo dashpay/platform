@@ -33,9 +33,9 @@ impl DocumentTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
-        recipient_owner_id: IdentifierLikeJs,
-        token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
+        #[wasm_bindgen(js_name = "recipientOwnerId")] recipient_owner_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
     ) -> WasmDppResult<DocumentTransferTransitionWasm> {
         let rs_transfer_transition = generate_transfer_transition(
             document,
@@ -66,7 +66,7 @@ impl DocumentTransferTransitionWasm {
     #[wasm_bindgen(setter = "recipientId")]
     pub fn set_recipient_owner_id(
         &mut self,
-        recipient_owner_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "recipientOwnerId")] recipient_owner_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         self.0
             .set_recipient_owner_id(recipient_owner_id.try_into()?);

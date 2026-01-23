@@ -400,46 +400,70 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=createdAt)]
-    pub fn set_created_at(&mut self, created_at: Option<u64>) {
+    pub fn set_created_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "createdAt")] created_at: Option<u64>,
+    ) {
         self.document.set_created_at(created_at);
     }
 
     #[wasm_bindgen(setter=updatedAt)]
-    pub fn set_updated_at(&mut self, updated_at: Option<u64>) {
+    pub fn set_updated_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "updatedAt")] updated_at: Option<u64>,
+    ) {
         self.document.set_updated_at(updated_at);
     }
 
     #[wasm_bindgen(setter=transferredAt)]
-    pub fn set_transferred_at(&mut self, transferred_at: Option<u64>) {
+    pub fn set_transferred_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "transferredAt")] transferred_at: Option<u64>,
+    ) {
         self.document.set_transferred_at(transferred_at);
     }
 
     #[wasm_bindgen(setter=createdAtBlockHeight)]
-    pub fn set_created_at_block_height(&mut self, created_at_block_height: Option<u64>) {
+    pub fn set_created_at_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "createdAtBlockHeight")] created_at_block_height: Option<u64>,
+    ) {
         self.document
             .set_created_at_block_height(created_at_block_height);
     }
 
     #[wasm_bindgen(setter=updatedAtBlockHeight)]
-    pub fn set_updated_at_block_height(&mut self, updated_at_block_height: Option<u64>) {
+    pub fn set_updated_at_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "updatedAtBlockHeight")] updated_at_block_height: Option<u64>,
+    ) {
         self.document
             .set_updated_at_block_height(updated_at_block_height);
     }
 
     #[wasm_bindgen(setter=transferredAtBlockHeight)]
-    pub fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>) {
+    pub fn set_transferred_at_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "transferredAtBlockHeight")] transferred_at_block_height: Option<u64>,
+    ) {
         self.document
             .set_transferred_at_block_height(transferred_at_block_height);
     }
 
     #[wasm_bindgen(setter=createdAtCoreBlockHeight)]
-    pub fn set_created_at_core_block_height(&mut self, created_at_core_block_height: Option<u32>) {
+    pub fn set_created_at_core_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "createdAtCoreBlockHeight")] created_at_core_block_height: Option<u32>,
+    ) {
         self.document
             .set_created_at_core_block_height(created_at_core_block_height);
     }
 
     #[wasm_bindgen(setter=updatedAtCoreBlockHeight)]
-    pub fn set_updated_at_core_block_height(&mut self, updated_at_core_block_height: Option<u32>) {
+    pub fn set_updated_at_core_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "updatedAtCoreBlockHeight")] updated_at_core_block_height: Option<u32>,
+    ) {
         self.document
             .set_updated_at_core_block_height(updated_at_core_block_height);
     }
@@ -447,14 +471,17 @@ impl DocumentWasm {
     #[wasm_bindgen(setter=transferredAtCoreBlockHeight)]
     pub fn set_transferred_at_core_block_height(
         &mut self,
-        transferred_at_core_block_height: Option<u32>,
+        #[wasm_bindgen(js_name = "transferredAtCoreBlockHeight")] transferred_at_core_block_height: Option<u32>,
     ) {
         self.document
             .set_transferred_at_core_block_height(transferred_at_core_block_height);
     }
 
     #[wasm_bindgen(setter=documentTypeName)]
-    pub fn set_document_type_name(&mut self, document_type_name: &str) {
+    pub fn set_document_type_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: &str,
+    ) {
         self.document_type_name = document_type_name.to_string();
     }
 
@@ -612,9 +639,9 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(
         bytes: Vec<u8>,
-        data_contract: &DataContractWasm,
-        type_name: String,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "typeName")] type_name: String,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentWasm> {
         Self::from_bytes_internal(bytes, data_contract, type_name, platform_version.into())
     }
@@ -622,9 +649,9 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(
         hex: String,
-        data_contract: &DataContractWasm,
-        type_name: String,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "typeName")] type_name: String,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentWasm> {
         use dpp::platform_value::string_encoding::decode;
         Self::from_bytes_internal(
@@ -639,9 +666,9 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name = "fromBase64")]
     pub fn from_base64(
         base64: String,
-        data_contract: &DataContractWasm,
-        type_name: String,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "typeName")] type_name: String,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentWasm> {
         use dpp::platform_value::string_encoding::decode;
         Self::from_bytes_internal(
@@ -655,9 +682,9 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name = "generateId")]
     pub fn generate_id(
-        document_type_name: &str,
-        owner_id: IdentifierLikeJs,
-        data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: &str,
+        #[wasm_bindgen(js_name = "ownerId")] owner_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         entropy: Option<Vec<u8>>,
     ) -> WasmDppResult<Vec<u8>> {
         let owner_id: Identifier = owner_id.try_into()?;

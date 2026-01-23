@@ -415,8 +415,8 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(js_name = "calculateTokenId")]
     pub fn calculate_token_id(
-        contract_id: IdentifierLikeJs,
-        token_pos: TokenContractPosition,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenPos")] token_pos: TokenContractPosition,
     ) -> WasmDppResult<IdentifierWasm> {
         let contract_id: Identifier = contract_id.try_into()?;
 

@@ -279,7 +279,10 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(&mut self, key_id: u32) {
+    pub fn set_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: u32,
+    ) {
         self.0.set_id(key_id)
     }
 
@@ -291,26 +294,38 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = securityLevel)]
-    pub fn set_security_level(&mut self, security_level: SecurityLevelLikeJs) -> WasmDppResult<()> {
+    pub fn set_security_level(
+        &mut self,
+        #[wasm_bindgen(js_name = "securityLevel")] security_level: SecurityLevelLikeJs,
+    ) -> WasmDppResult<()> {
         let security_level: SecurityLevel = security_level.try_into()?;
         self.0.set_security_level(security_level);
         Ok(())
     }
 
     #[wasm_bindgen(setter = keyType)]
-    pub fn set_key_type(&mut self, key_type: KeyTypeLikeJs) -> WasmDppResult<()> {
+    pub fn set_key_type(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyType")] key_type: KeyTypeLikeJs,
+    ) -> WasmDppResult<()> {
         let key_type: KeyType = key_type.try_into()?;
         self.0.set_key_type(key_type);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "isReadOnly")]
-    pub fn set_is_read_only(&mut self, is_read_only: bool) {
+    pub fn set_is_read_only(
+        &mut self,
+        #[wasm_bindgen(js_name = "isReadOnly")] is_read_only: bool,
+    ) {
         self.0.set_read_only(is_read_only)
     }
 
     #[wasm_bindgen(setter = data)]
-    pub fn set_data(&mut self, binary_data: &str) -> WasmDppResult<()> {
+    pub fn set_data(
+        &mut self,
+        #[wasm_bindgen(js_name = "binaryData")] binary_data: &str,
+    ) -> WasmDppResult<()> {
         let data = BinaryData::from_string(binary_data, Hex)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
@@ -319,7 +334,10 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = disabledAt)]
-    pub fn set_disabled_at(&mut self, disabled_at: u64) {
+    pub fn set_disabled_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "disabledAt")] disabled_at: u64,
+    ) {
         self.0.set_disabled_at(disabled_at)
     }
 

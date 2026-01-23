@@ -25,9 +25,9 @@ impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWasm {
 impl GroupStateTransitionInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        group_contract_position: u16,
-        action_id: IdentifierLikeJs,
-        action_is_proposer: bool,
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
+        #[wasm_bindgen(js_name = "actionId")] action_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "actionIsProposer")] action_is_proposer: bool,
     ) -> WasmDppResult<GroupStateTransitionInfoWasm> {
         let action_id: Identifier = action_id.try_into()?;
 
@@ -39,18 +39,27 @@ impl GroupStateTransitionInfoWasm {
     }
 
     #[wasm_bindgen(setter = "groupContractPosition")]
-    pub fn set_group_contract_position(&mut self, group_contract_position: u16) {
+    pub fn set_group_contract_position(
+        &mut self,
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
+    ) {
         self.0.group_contract_position = group_contract_position;
     }
 
     #[wasm_bindgen(setter = "actionId")]
-    pub fn set_action_id(&mut self, action_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_action_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "actionId")] action_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.action_id = action_id.try_into()?;
         Ok(())
     }
 
     #[wasm_bindgen(setter = "isActionProposer")]
-    pub fn set_is_action_proposer(&mut self, is_action_proposer: bool) {
+    pub fn set_is_action_proposer(
+        &mut self,
+        #[wasm_bindgen(js_name = "isActionProposer")] is_action_proposer: bool,
+    ) {
         self.0.action_is_proposer = is_action_proposer;
     }
 

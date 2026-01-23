@@ -62,9 +62,9 @@ impl From<TokenConfigurationLocalizationWasm> for TokenConfigurationLocalization
 impl TokenConfigurationLocalizationWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        should_capitalize: bool,
-        singular_form: String,
-        plural_form: String,
+        #[wasm_bindgen(js_name = "shouldCapitalize")] should_capitalize: bool,
+        #[wasm_bindgen(js_name = "singularForm")] singular_form: String,
+        #[wasm_bindgen(js_name = "pluralForm")] plural_form: String,
     ) -> TokenConfigurationLocalizationWasm {
         TokenConfigurationLocalizationWasm(TokenConfigurationLocalization::V0(
             TokenConfigurationLocalizationV0 {

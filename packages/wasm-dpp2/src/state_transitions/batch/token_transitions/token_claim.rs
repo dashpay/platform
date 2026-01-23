@@ -30,8 +30,8 @@ impl TokenClaimTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        distribution_type: &JsValue,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "distributionType")] distribution_type: &JsValue,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> WasmDppResult<TokenClaimTransitionWasm> {
         let distribution_type = if distribution_type.is_undefined() {
             TokenDistributionTypeWasm::default()

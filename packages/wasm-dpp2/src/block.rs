@@ -45,10 +45,10 @@ pub struct BlockInfoWasm(BlockInfo);
 impl BlockInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        time_ms: u64,
+        #[wasm_bindgen(js_name = "timeMs")] time_ms: u64,
         height: u64,
-        core_height: u32,
-        epoch_index: u16,
+        #[wasm_bindgen(js_name = "coreHeight")] core_height: u32,
+        #[wasm_bindgen(js_name = "epochIndex")] epoch_index: u16,
     ) -> WasmDppResult<BlockInfoWasm> {
         let epoch =
             Epoch::new(epoch_index).map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;

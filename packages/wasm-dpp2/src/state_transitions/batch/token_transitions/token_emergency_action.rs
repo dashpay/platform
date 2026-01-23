@@ -28,8 +28,8 @@ impl TokenEmergencyActionTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        emergency_action: TokenEmergencyActionWasm,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "emergencyAction")] emergency_action: TokenEmergencyActionWasm,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> TokenEmergencyActionTransitionWasm {
         TokenEmergencyActionTransitionWasm(TokenEmergencyActionTransition::V0(
             TokenEmergencyActionTransitionV0 {

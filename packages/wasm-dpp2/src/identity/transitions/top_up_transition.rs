@@ -56,9 +56,9 @@ pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        asset_lock_proof: &AssetLockProofWasm,
-        identity_id: IdentifierLikeJs,
-        user_fee_increase: Option<UserFeeIncrease>,
+        #[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: &AssetLockProofWasm,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
         let identity_id: Identifier = identity_id.try_into()?;
 
@@ -104,14 +104,17 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+    pub fn set_user_fee_increase(
+        &mut self,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
+    ) {
         self.0.set_user_fee_increase(user_fee_increase);
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
     pub fn set_identity_identifier(
         &mut self,
-        identity_identifier: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityIdentifier")] identity_identifier: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         self.0.set_identity_id(identity_identifier.try_into()?);
         Ok(())
@@ -120,7 +123,7 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(setter = "assetLockProof")]
     pub fn set_asset_lock_proof(
         &mut self,
-        asset_lock_proof: &AssetLockProofWasm,
+        #[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: &AssetLockProofWasm,
     ) -> WasmDppResult<()> {
         self.0
             .set_asset_lock_proof(asset_lock_proof.clone().into())?;

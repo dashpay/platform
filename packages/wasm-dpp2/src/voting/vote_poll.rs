@@ -164,7 +164,10 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "contractId")]
-    pub fn set_contract_id(&mut self, contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_contract_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         let contract_id = contract_id.try_into()?;
 
         self.0 = match self.0.clone() {
@@ -179,7 +182,10 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "documentTypeName")]
-    pub fn set_document_type_name(&mut self, document_type_name: String) {
+    pub fn set_document_type_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.document_type_name = document_type_name;
@@ -190,7 +196,10 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexName")]
-    pub fn set_index_name(&mut self, index_name: String) {
+    pub fn set_index_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "indexName")] index_name: String,
+    ) {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.index_name = index_name;
@@ -201,7 +210,10 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexValues")]
-    pub fn set_index_values(&mut self, index_values: js_sys::Array) -> WasmDppResult<()> {
+    pub fn set_index_values(
+        &mut self,
+        #[wasm_bindgen(js_name = "indexValues")] index_values: js_sys::Array,
+    ) -> WasmDppResult<()> {
         let js_value: JsValue = index_values.into();
         let values = js_value
             .with_serde_to_platform_value()?

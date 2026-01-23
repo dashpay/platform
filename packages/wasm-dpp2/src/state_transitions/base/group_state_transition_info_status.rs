@@ -43,7 +43,9 @@ impl GroupStateTransitionInfoStatusWasm {
     /// @param groupContractPosition - The position of the group in the contract
     /// @returns GroupStateTransitionInfoStatus for a proposer
     #[wasm_bindgen(js_name = "proposer")]
-    pub fn proposer(group_contract_position: u16) -> GroupStateTransitionInfoStatusWasm {
+    pub fn proposer(
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
+    ) -> GroupStateTransitionInfoStatusWasm {
         GroupStateTransitionInfoStatusWasm(
             GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                 group_contract_position,
@@ -60,8 +62,8 @@ impl GroupStateTransitionInfoStatusWasm {
     /// @returns GroupStateTransitionInfoStatus for an other signer
     #[wasm_bindgen(js_name = "otherSigner")]
     pub fn other_signer(
-        group_contract_position: u16,
-        action_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
+        #[wasm_bindgen(js_name = "actionId")] action_id: IdentifierLikeJs,
     ) -> WasmDppResult<GroupStateTransitionInfoStatusWasm> {
         let action_id: Identifier = action_id.try_into()?;
 

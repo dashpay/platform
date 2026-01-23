@@ -56,8 +56,8 @@ impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
 impl ChainAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        core_chain_locked_height: u32,
-        out_point: &OutPointWasm,
+        #[wasm_bindgen(js_name = "coreChainLockedHeight")] core_chain_locked_height: u32,
+        #[wasm_bindgen(js_name = "outPoint")] out_point: &OutPointWasm,
     ) -> WasmDppResult<ChainAssetLockProofWasm> {
         Ok(ChainAssetLockProofWasm(ChainAssetLockProof {
             core_chain_locked_height,
@@ -66,7 +66,10 @@ impl ChainAssetLockProofWasm {
     }
 
     #[wasm_bindgen(setter = "coreChainLockedHeight")]
-    pub fn set_core_chain_locked_height(&mut self, core_chain_locked_height: u32) {
+    pub fn set_core_chain_locked_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "coreChainLockedHeight")] core_chain_locked_height: u32,
+    ) {
         self.0.core_chain_locked_height = core_chain_locked_height;
     }
 

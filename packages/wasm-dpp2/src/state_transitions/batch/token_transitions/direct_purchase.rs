@@ -29,8 +29,8 @@ impl TokenDirectPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        token_count: TokenAmount,
-        total_agreed_price: Credits,
+        #[wasm_bindgen(js_name = "tokenCount")] token_count: TokenAmount,
+        #[wasm_bindgen(js_name = "totalAgreedPrice")] total_agreed_price: Credits,
     ) -> Self {
         TokenDirectPurchaseTransitionWasm(TokenDirectPurchaseTransition::V0(
             TokenDirectPurchaseTransitionV0 {
@@ -62,12 +62,18 @@ impl TokenDirectPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = tokenCount)]
-    pub fn set_token_count(&mut self, token_count: TokenAmount) {
+    pub fn set_token_count(
+        &mut self,
+        #[wasm_bindgen(js_name = "tokenCount")] token_count: TokenAmount,
+    ) {
         self.0.set_token_count(token_count)
     }
 
     #[wasm_bindgen(setter = totalAgreedPrice)]
-    pub fn set_total_agreed_price(&mut self, total_agreed_price: Credits) {
+    pub fn set_total_agreed_price(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalAgreedPrice")] total_agreed_price: Credits,
+    ) {
         self.0.set_total_agreed_price(total_agreed_price)
     }
 }

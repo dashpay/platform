@@ -166,7 +166,10 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce) {
+    pub fn set_identity_contract_nonce(
+        &mut self,
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
+    ) {
         self.0.set_identity_contract_nonce(identity_contract_nonce)
     }
 }

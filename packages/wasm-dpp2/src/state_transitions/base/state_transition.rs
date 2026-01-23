@@ -71,8 +71,8 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "sign")]
     pub fn sign(
         &mut self,
-        private_key: &PrivateKeyWasm,
-        public_key: &IdentityPublicKeyWasm,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
     ) -> WasmDppResult<Vec<u8>> {
         self.0.sign(
             &public_key.clone().into(),
@@ -101,9 +101,9 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "signByPrivateKey")]
     pub fn sign_by_private_key(
         &mut self,
-        private_key: &PrivateKeyWasm,
-        key_id: Option<KeyID>,
-        key_type: JsValue,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<KeyID>,
+        #[wasm_bindgen(js_name = "keyType")] key_type: JsValue,
     ) -> WasmDppResult<Vec<u8>> {
         let key_type = if key_type.is_undefined() {
             KeyTypeWasm::ECDSA_SECP256K1
@@ -127,9 +127,9 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "verifyPublicKey")]
     pub fn verify_public_key(
         &self,
-        public_key: &IdentityPublicKeyWasm,
-        allow_signing_with_any_security_level: Option<bool>,
-        allow_signing_with_any_purpose: Option<bool>,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
+        #[wasm_bindgen(js_name = "allowSigningWithAnySecurityLevel")] allow_signing_with_any_security_level: Option<bool>,
+        #[wasm_bindgen(js_name = "allowSigningWithAnyPurpose")] allow_signing_with_any_purpose: Option<bool>,
     ) -> WasmDppResult<()> {
         let allow_signing_with_any_security_level =
             allow_signing_with_any_security_level.unwrap_or(false);
@@ -264,7 +264,10 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "hash")]
-    pub fn get_hash(&self, skip_signature: bool) -> WasmDppResult<String> {
+    pub fn get_hash(
+        &self,
+        #[wasm_bindgen(js_name = "skipSignature")] skip_signature: bool,
+    ) -> WasmDppResult<String> {
         let payload = if skip_signature {
             self.0.signable_bytes()?
         } else {
@@ -413,17 +416,26 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, key_id: KeyID) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: KeyID,
+    ) {
         self.0.set_signature_public_key_id(key_id)
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+    pub fn set_user_fee_increase(
+        &mut self,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
+    ) {
         self.0.set_user_fee_increase(user_fee_increase)
     }
 
     #[wasm_bindgen(js_name = "setOwnerId")]
-    pub fn set_owner_id(&mut self, owner_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_owner_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "ownerId")] owner_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         use dpp::state_transition::StateTransition::*;
         let owner_id_value: JsValue = owner_id.into();
         let owner_id: Identifier = IdentifierWasm::try_from(&owner_id_value)?.into();

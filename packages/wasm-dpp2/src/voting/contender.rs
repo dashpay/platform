@@ -63,9 +63,9 @@ impl From<ContenderWithSerializedDocumentWasm> for ContenderWithSerializedDocume
 impl ContenderWithSerializedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        identity_id: IdentifierLikeJs,
-        serialized_document: Option<Vec<u8>>,
-        vote_tally: Option<u32>,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "serializedDocument")] serialized_document: Option<Vec<u8>>,
+        #[wasm_bindgen(js_name = "voteTally")] vote_tally: Option<u32>,
     ) -> WasmDppResult<Self> {
         let identity: Identifier = identity_id.try_into()?;
 

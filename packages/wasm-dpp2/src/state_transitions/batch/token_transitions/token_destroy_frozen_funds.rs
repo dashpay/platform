@@ -30,8 +30,8 @@ impl TokenDestroyFrozenFundsTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        frozen_identity_id: IdentifierLikeJs,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "frozenIdentityId")] frozen_identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> WasmDppResult<TokenDestroyFrozenFundsTransitionWasm> {
         let frozen_identity_id: Identifier = frozen_identity_id.try_into()?;
 
@@ -72,7 +72,7 @@ impl TokenDestroyFrozenFundsTransitionWasm {
     #[wasm_bindgen(setter = "frozenIdentityId")]
     pub fn set_frozen_identity_id(
         &mut self,
-        frozen_identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "frozenIdentityId")] frozen_identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         self.0
             .set_frozen_identity_id(frozen_identity_id.try_into()?);

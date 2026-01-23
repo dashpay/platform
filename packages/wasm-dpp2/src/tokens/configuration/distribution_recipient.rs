@@ -36,7 +36,7 @@ impl TokenDistributionRecipientWasm {
 
     #[wasm_bindgen(js_name = "Identity")]
     pub fn identity(
-        identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<TokenDistributionRecipientWasm> {
         Ok(TokenDistributionRecipientWasm(
             TokenDistributionRecipient::Identity(identity_id.try_into()?),

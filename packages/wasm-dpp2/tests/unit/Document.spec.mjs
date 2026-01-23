@@ -20,7 +20,7 @@ describe('Document', () => {
       documentTypeName: options.documentTypeName ?? documentTypeName,
       dataContractId: options.dataContractId ?? dataContractId,
       ownerId: options.ownerId ?? ownerId,
-      revision: options.revision ?? Number(revision),
+      revision: options.revision ?? BigInt(revision),
       id: options.id,
       entropy: options.entropy,
     });

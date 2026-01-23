@@ -25,7 +25,7 @@ impl PublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         compressed: bool,
-        public_key_bytes: Vec<u8>,
+        #[wasm_bindgen(js_name = "publicKeyBytes")] public_key_bytes: Vec<u8>,
     ) -> WasmDppResult<PublicKeyWasm> {
         let inner = if compressed {
             if public_key_bytes.len() != constants::PUBLIC_KEY_SIZE {

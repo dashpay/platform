@@ -326,7 +326,9 @@ impl PlatformAddressWasm {
 
     /// Creates a PlatformAddress from a hex-encoded string.
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex_string: &str) -> WasmDppResult<PlatformAddressWasm> {
+    pub fn from_hex(
+        #[wasm_bindgen(js_name = "hexString")] hex_string: &str,
+    ) -> WasmDppResult<PlatformAddressWasm> {
         let bytes = hex::decode(hex_string)
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid hex: {}", e)))?;
         PlatformAddress::from_bytes(&bytes)

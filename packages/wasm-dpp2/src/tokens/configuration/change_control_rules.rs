@@ -133,14 +133,14 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(setter = "authorizedToMakeChange")]
     pub fn set_authorized_to_make_change(
         &mut self,
-        authorized_to_make_change: &AuthorizedActionTakersWasm,
+        #[wasm_bindgen(js_name = "authorizedToMakeChange")] authorized_to_make_change: &AuthorizedActionTakersWasm,
     ) {
         self.0
             .set_authorized_to_make_change_action_takers(authorized_to_make_change.clone().into());
     }
 
     #[wasm_bindgen(setter = "adminActionTakers")]
-    pub fn set_admin_action_takers(&mut self, admin_action_takers: &AuthorizedActionTakersWasm) {
+    pub fn set_admin_action_takers(&mut self, #[wasm_bindgen(js_name = "adminActionTakers")] admin_action_takers: &AuthorizedActionTakersWasm) {
         self.0
             .set_admin_action_takers(admin_action_takers.clone().into());
     }
@@ -148,7 +148,7 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(setter = "isChangingAuthorizedActionTakersToNoOneAllowed")]
     pub fn set_is_changing_authorized_action_takers_to_no_one_allowed(
         &mut self,
-        is_changing_authorized_action_takers_to_no_one_allowed: bool,
+        #[wasm_bindgen(js_name = "isChangingAuthorizedActionTakersToNoOneAllowed")] is_changing_authorized_action_takers_to_no_one_allowed: bool,
     ) {
         let v0 = match self.0.clone() {
             ChangeControlRules::V0(mut v0) => {
@@ -164,7 +164,7 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(setter = "isChangingAdminActionTakersToNoOneAllowed")]
     pub fn set_is_changing_admin_action_takers_to_no_one_allowed(
         &mut self,
-        is_changing_admin_action_takers_to_no_one_allowed: bool,
+        #[wasm_bindgen(js_name = "isChangingAdminActionTakersToNoOneAllowed")] is_changing_admin_action_takers_to_no_one_allowed: bool,
     ) {
         let v0 = match self.0.clone() {
             ChangeControlRules::V0(mut v0) => {
@@ -180,7 +180,7 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(setter = "isSelfChangingAdminActionTakersAllowed")]
     pub fn set_is_self_changing_admin_action_takers_allowed(
         &mut self,
-        is_self_changing_admin_action_takers_allowed: bool,
+        #[wasm_bindgen(js_name = "isSelfChangingAdminActionTakersAllowed")] is_self_changing_admin_action_takers_allowed: bool,
     ) {
         let v0 = match self.0.clone() {
             ChangeControlRules::V0(mut v0) => {
@@ -196,11 +196,11 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(js_name = "canChangeAdminActionTakers")]
     pub fn can_change_admin_action_takers(
         &self,
-        admin_action_takers: &AuthorizedActionTakersWasm,
-        contract_owner_id: IdentifierLikeJs,
-        main_group: Option<GroupContractPosition>,
-        groups_value: &JsValue,
-        action_taker: &ActionTakerWasm,
+        #[wasm_bindgen(js_name = "adminActionTakers")] admin_action_takers: &AuthorizedActionTakersWasm,
+        #[wasm_bindgen(js_name = "contractOwnerId")] contract_owner_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "mainGroup")] main_group: Option<GroupContractPosition>,
+        #[wasm_bindgen(js_name = "groupsValue")] groups_value: &JsValue,
+        #[wasm_bindgen(js_name = "actionTaker")] action_taker: &ActionTakerWasm,
         goal: &JsValue,
     ) -> WasmDppResult<bool> {
         let contract_owner_id: Identifier = contract_owner_id.try_into()?;

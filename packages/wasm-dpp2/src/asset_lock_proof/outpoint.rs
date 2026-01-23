@@ -72,7 +72,10 @@ impl TryFrom<JsValue> for OutPointWasm {
 #[wasm_bindgen(js_class = OutPoint)]
 impl OutPointWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(txid_hex: String, vout: u32) -> WasmDppResult<OutPointWasm> {
+    pub fn constructor(
+        #[wasm_bindgen(js_name = "txidHex")] txid_hex: String,
+        vout: u32,
+    ) -> WasmDppResult<OutPointWasm> {
         let out_point = Txid::from_hex(&txid_hex)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 

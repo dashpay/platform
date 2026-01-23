@@ -261,12 +261,12 @@ impl PartialIdentityWasm {
             value_to_loaded_public_keys_from_json(&v)
         })?;
 
-        // balance - number or null
+        // balance - can be BigInt, number, or string (JSON doesn't support BigInt natively)
         let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
             try_to_u64(v, "balance")
         })?;
 
-        // revision - number or null
+        // revision - can be BigInt, number, or string (JSON doesn't support BigInt natively)
         let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
             try_to_u64(v, "revision")
         })?;

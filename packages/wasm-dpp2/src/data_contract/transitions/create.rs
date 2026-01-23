@@ -62,9 +62,9 @@ pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
 impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        data_contract: &DataContractWasm,
-        identity_nonce: IdentityNonce,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "identityNonce")] identity_nonce: IdentityNonce,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractCreateTransitionWasm> {
         let rs_data_contract: DataContract = data_contract.clone().into();
 
@@ -142,7 +142,7 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name = "verifyProtocolVersion")]
     pub fn verify_protocol_version(
         &self,
-        protocol_version: ProtocolVersion,
+        #[wasm_bindgen(js_name = "protocolVersion")] protocol_version: ProtocolVersion,
     ) -> WasmDppResult<bool> {
         self.0
             .verify_protocol_version(protocol_version)
@@ -152,8 +152,8 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name = "setDataContract")]
     pub fn set_data_contract(
         &mut self,
-        data_contract: &DataContractWasm,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
         let platform_version: JsValue = platform_version.into();
         let platform_version = if platform_version.is_undefined() {
@@ -181,8 +181,8 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name = "getDataContract")]
     pub fn get_data_contract(
         &self,
-        platform_version: PlatformVersionLikeJs,
-        full_validation: Option<bool>,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "fullValidation")] full_validation: Option<bool>,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version: JsValue = platform_version.into();
         let platform_version = if platform_version.is_undefined() {
@@ -214,7 +214,7 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        state_transition: &StateTransitionWasm,
+        #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
     ) -> WasmDppResult<DataContractCreateTransitionWasm> {
         let rs_transition = StateTransition::from(state_transition.clone());
 

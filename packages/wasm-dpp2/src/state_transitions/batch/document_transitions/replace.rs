@@ -41,8 +41,8 @@ impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
-        token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
         let rs_update_transition = generate_replace_transition(
             document,

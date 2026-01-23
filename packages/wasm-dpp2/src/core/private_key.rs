@@ -59,7 +59,10 @@ impl PrivateKeyWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex_key: &str, network: NetworkLikeJs) -> WasmDppResult<Self> {
+    pub fn from_hex(
+        #[wasm_bindgen(js_name = "hexKey")] hex_key: &str,
+        network: NetworkLikeJs,
+    ) -> WasmDppResult<Self> {
         let network_wasm: NetworkWasm = network.try_into()?;
 
         let bytes = Vec::from_hex(hex_key)

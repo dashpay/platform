@@ -147,12 +147,18 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "documentTypeName")]
-    pub fn set_document_type_name(&mut self, document_type_name: String) {
+    pub fn set_document_type_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) {
         self.0.set_document_type_name(document_type_name)
     }
 
     #[wasm_bindgen(setter = "tokenPaymentInfo")]
-    pub fn set_token_payment_info(&mut self, token_payment_info: &TokenPaymentInfoWasm) {
+    pub fn set_token_payment_info(
+        &mut self,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: &TokenPaymentInfoWasm,
+    ) {
         self.0
             .set_token_payment_info(token_payment_info.clone().into())
     }

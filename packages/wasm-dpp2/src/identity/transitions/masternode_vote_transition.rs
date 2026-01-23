@@ -163,7 +163,10 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = proTxHash)]
-    pub fn set_pro_tx_hash(&mut self, pro_tx_hash: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_pro_tx_hash(
+        &mut self,
+        #[wasm_bindgen(js_name = "proTxHash")] pro_tx_hash: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_pro_tx_hash(pro_tx_hash.try_into()?);
         Ok(())
     }
@@ -171,7 +174,7 @@ impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(setter = voterIdentityId)]
     pub fn set_voter_identity_id(
         &mut self,
-        voter_identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "voterIdentityId")] voter_identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         self.0.set_voter_identity_id(voter_identity_id.try_into()?);
         Ok(())
@@ -194,7 +197,10 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter=signaturePublicKeyId)]
-    pub fn set_signature_public_key_id(&mut self, signature_public_key_id: KeyID) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: KeyID,
+    ) {
         self.0.set_signature_public_key_id(signature_public_key_id)
     }
 

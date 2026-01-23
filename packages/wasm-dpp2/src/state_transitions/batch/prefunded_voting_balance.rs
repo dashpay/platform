@@ -27,7 +27,10 @@ impl From<PrefundedVotingBalanceWasm> for (String, Credits) {
 #[wasm_bindgen(js_class = PrefundedVotingBalance)]
 impl PrefundedVotingBalanceWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(index_name: String, credits: Credits) -> PrefundedVotingBalanceWasm {
+    pub fn constructor(
+        #[wasm_bindgen(js_name = "indexName")] index_name: String,
+        credits: Credits,
+    ) -> PrefundedVotingBalanceWasm {
         PrefundedVotingBalanceWasm {
             index_name,
             credits,

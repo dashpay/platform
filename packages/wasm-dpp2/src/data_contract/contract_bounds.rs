@@ -56,8 +56,8 @@ impl From<ContractBoundsWasm> for ContractBounds {
 impl ContractBoundsWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        contract_id: IdentifierLikeJs,
-        document_type_name: Option<String>,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: Option<String>,
     ) -> WasmDppResult<ContractBoundsWasm> {
         let contract_id: Identifier = contract_id.try_into()?;
 
@@ -71,7 +71,9 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(js_name = "SingleContract")]
-    pub fn single_contract(contract_id: IdentifierLikeJs) -> WasmDppResult<ContractBoundsWasm> {
+    pub fn single_contract(
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<ContractBoundsWasm> {
         let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(ContractBounds::SingleContract {
@@ -81,8 +83,8 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "SingleContractDocumentType")]
     pub fn single_contract_document_type_name(
-        contract_id: IdentifierLikeJs,
-        document_type_name: String,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
     ) -> WasmDppResult<ContractBoundsWasm> {
         let contract_id: Identifier = contract_id.try_into()?;
 
@@ -115,7 +117,10 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(setter = "identifier")]
-    pub fn set_id(&mut self, contract_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         let contract_id: Identifier = contract_id.try_into()?;
 
         self.0 = match self.clone().0 {
@@ -134,7 +139,10 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(setter = "documentTypeName")]
-    pub fn set_document_type_name(&mut self, document_type_name: String) {
+    pub fn set_document_type_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) {
         self.0 = match self.clone().0 {
             ContractBounds::SingleContract { .. } => self.clone().0,
             ContractBounds::SingleContractDocumentType { id, .. } => {

@@ -94,9 +94,9 @@ fn convert_array_to_vec_batched(
 impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromBatchedTransitions")]
     pub fn from_batched_transitions(
-        batched_transitions: &js_sys::Array,
-        owner_id: IdentifierLikeJs,
-        user_fee_increase: UserFeeIncrease,
+        #[wasm_bindgen(js_name = "batchedTransitions")] batched_transitions: &js_sys::Array,
+        #[wasm_bindgen(js_name = "ownerId")] owner_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
     ) -> WasmDppResult<BatchTransitionWasm> {
         let transitions = convert_array_to_vec_batched(batched_transitions)?;
 
@@ -120,7 +120,10 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "transitions")]
-    pub fn set_transitions(&mut self, batched_transitions: &js_sys::Array) -> WasmDppResult<()> {
+    pub fn set_transitions(
+        &mut self,
+        #[wasm_bindgen(js_name = "batchedTransitions")] batched_transitions: &js_sys::Array,
+    ) -> WasmDppResult<()> {
         let transitions = convert_array_to_vec_batched(batched_transitions)?;
 
         self.0.set_transitions(transitions);
@@ -171,7 +174,10 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, key_id: KeyID) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: KeyID,
+    ) {
         self.0.set_signature_public_key_id(key_id)
     }
 

@@ -31,9 +31,9 @@ impl TokenMintTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        issued_to_identity_id: IdentifierLikeOrUndefinedJs,
+        #[wasm_bindgen(js_name = "issuedToIdentityId")] issued_to_identity_id: IdentifierLikeOrUndefinedJs,
         amount: u64,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> WasmDppResult<TokenMintTransitionWasm> {
         let issued_to_identity_id: Option<Identifier> = issued_to_identity_id.try_into()?;
 

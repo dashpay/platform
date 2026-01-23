@@ -130,7 +130,7 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "default")]
     pub fn default(
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
         let platform_version: JsValue = platform_version.into();
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
@@ -203,7 +203,10 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "publicKeys")]
-    pub fn set_public_keys(&mut self, public_keys: &js_sys::Array) -> WasmDppResult<()> {
+    pub fn set_public_keys(
+        &mut self,
+        #[wasm_bindgen(js_name = "publicKeys")] public_keys: &js_sys::Array,
+    ) -> WasmDppResult<()> {
         let public_keys_vec: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(public_keys)?;
 

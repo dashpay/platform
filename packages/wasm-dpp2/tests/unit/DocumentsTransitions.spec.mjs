@@ -17,7 +17,7 @@ describe('DocumentsTransitions', () => {
       documentTypeName: options.documentTypeName ?? documentTypeName,
       dataContractId: options.dataContractId ?? dataContractId,
       ownerId: options.ownerId ?? ownerId,
-      revision: options.revision ?? Number(revision),
+      revision: options.revision ?? BigInt(revision),
       id: options.id ?? id,
     });
   }
@@ -73,15 +73,15 @@ describe('DocumentsTransitions', () => {
 
         expect(deserializedTransitions.length).to.equal(2);
 
-        const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().createTransition;
+        const deserializedCreateTransition = deserializedTransitions[0].toTransition().createTransition;
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
         expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
-        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(st).to.be.an.instanceof(wasm.StateTransition);
         expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
-        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(deserializedCreateTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
       });
     });
 
@@ -135,15 +135,15 @@ describe('DocumentsTransitions', () => {
 
         expect(deserializedTransitions.length).to.equal(2);
 
-        const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().deleteTransition;
+        const deserializedDeleteTransition = deserializedTransitions[0].toTransition().deleteTransition;
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
         expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
-        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(st).to.be.an.instanceof(wasm.StateTransition);
         expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
-        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(deserializedDeleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
       });
     });
 
@@ -197,15 +197,15 @@ describe('DocumentsTransitions', () => {
 
         expect(deserializedTransitions.length).to.equal(2);
 
-        const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().replaceTransition;
+        const deserializedReplaceTransition = deserializedTransitions[0].toTransition().replaceTransition;
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
         expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
-        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(st).to.be.an.instanceof(wasm.StateTransition);
         expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
-        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(deserializedReplaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
       });
     });
 
@@ -259,15 +259,15 @@ describe('DocumentsTransitions', () => {
 
         expect(deserializedTransitions.length).to.equal(2);
 
-        const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().transferTransition;
+        const deserializedTransferTransition = deserializedTransitions[0].toTransition().transferTransition;
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
         expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
-        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(st).to.be.an.instanceof(wasm.StateTransition);
         expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
-        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(deserializedTransferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
       });
     });
 
@@ -321,15 +321,15 @@ describe('DocumentsTransitions', () => {
 
         expect(deserializedTransitions.length).to.equal(2);
 
-        const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().updatePriceTransition;
+        const deserializedUpdatePriceTransition = deserializedTransitions[0].toTransition().updatePriceTransition;
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
         expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
-        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(st).to.be.an.instanceof(wasm.StateTransition);
         expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
-        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(deserializedUpdatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
       });
     });
 
@@ -389,7 +389,7 @@ describe('DocumentsTransitions', () => {
         expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
         expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
-        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(st).to.be.an.instanceof(wasm.StateTransition);
         expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
         expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });

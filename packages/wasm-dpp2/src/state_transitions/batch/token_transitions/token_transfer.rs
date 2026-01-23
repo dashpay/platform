@@ -136,7 +136,10 @@ impl TokenTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = recipientId)]
-    pub fn set_recipient_id(&mut self, recipient_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_recipient_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "recipientId")] recipient_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_recipient_id(recipient_id.try_into()?);
         Ok(())
     }
@@ -159,7 +162,7 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(setter = "sharedEncryptedNote")]
     pub fn set_shared_encrypted_note(
         &mut self,
-        shared_encrypted_note: &JsValue,
+        #[wasm_bindgen(js_name = "sharedEncryptedNote")] shared_encrypted_note: &JsValue,
     ) -> WasmDppResult<()> {
         let shared_encrypted_note: Option<SharedEncryptedNote> =
             if shared_encrypted_note.is_undefined() {
@@ -180,7 +183,7 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(setter = "privateEncryptedNote")]
     pub fn set_private_encrypted_note(
         &mut self,
-        private_encrypted_note: &JsValue,
+        #[wasm_bindgen(js_name = "privateEncryptedNote")] private_encrypted_note: &JsValue,
     ) -> WasmDppResult<()> {
         let private_encrypted_note: Option<PrivateEncryptedNote> =
             if private_encrypted_note.is_undefined() {

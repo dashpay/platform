@@ -28,8 +28,8 @@ impl TokenBurnTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        burn_amount: u64,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "burnAmount")] burn_amount: u64,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> WasmDppResult<TokenBurnTransitionWasm> {
         Ok(TokenBurnTransitionWasm(TokenBurnTransition::V0(
             TokenBurnTransitionV0 {

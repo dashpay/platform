@@ -59,7 +59,10 @@ impl IdentitySignerWasm {
     ///
     /// @param privateKey - The PrivateKey object
     #[wasm_bindgen(js_name = "addKey")]
-    pub fn add_key(&mut self, private_key: &PrivateKeyWasm) -> WasmDppResult<()> {
+    pub fn add_key(
+        &mut self,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+    ) -> WasmDppResult<()> {
         let private_key_bytes: [u8; 32] = private_key
             .to_bytes()
             .try_into()

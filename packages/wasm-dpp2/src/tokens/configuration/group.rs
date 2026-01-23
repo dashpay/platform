@@ -115,7 +115,7 @@ impl GroupWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         members: GroupMembersMapJs,
-        required_power: GroupRequiredPower,
+        #[wasm_bindgen(js_name = "requiredPower")] required_power: GroupRequiredPower,
     ) -> WasmDppResult<GroupWasm> {
         let members = members_map_to_btree(&Map::from(JsValue::from(members)))?;
 
@@ -154,7 +154,7 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(setter = "requiredPower")]
-    pub fn set_required_power(&mut self, required_power: GroupRequiredPower) {
+    pub fn set_required_power(&mut self, #[wasm_bindgen(js_name = "requiredPower")] required_power: GroupRequiredPower) {
         self.0.set_required_power(required_power);
     }
 
@@ -162,7 +162,7 @@ impl GroupWasm {
     pub fn set_member_required_power(
         &mut self,
         member: IdentifierLikeJs,
-        member_required_power: GroupRequiredPower,
+        #[wasm_bindgen(js_name = "memberRequiredPower")] member_required_power: GroupRequiredPower,
     ) -> WasmDppResult<()> {
         self.0
             .set_member_power(member.try_into()?, member_required_power);

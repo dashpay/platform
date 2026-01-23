@@ -137,24 +137,33 @@ impl TokenPaymentInfoWasm {
     }
 
     #[wasm_bindgen(setter = "tokenContractPosition")]
-    pub fn set_token_contract_position(&mut self, token_contract_position: TokenContractPosition) {
+    pub fn set_token_contract_position(
+        &mut self,
+        #[wasm_bindgen(js_name = "tokenContractPosition")] token_contract_position: TokenContractPosition,
+    ) {
         self.0.set_token_contract_position(token_contract_position)
     }
 
     #[wasm_bindgen(setter = "minimumTokenCost")]
-    pub fn set_minimum_token_cost(&mut self, minimum_cost: Option<TokenAmount>) {
+    pub fn set_minimum_token_cost(
+        &mut self,
+        #[wasm_bindgen(js_name = "minimumCost")] minimum_cost: Option<TokenAmount>,
+    ) {
         self.0.set_maximum_token_cost(minimum_cost);
     }
 
     #[wasm_bindgen(setter = "maximumTokenCost")]
-    pub fn set_maximum_token_cost(&mut self, maximum_cost: Option<TokenAmount>) {
+    pub fn set_maximum_token_cost(
+        &mut self,
+        #[wasm_bindgen(js_name = "maximumCost")] maximum_cost: Option<TokenAmount>,
+    ) {
         self.0.set_maximum_token_cost(maximum_cost)
     }
 
     #[wasm_bindgen(setter = "gasFeesPaidBy")]
     pub fn set_gas_fees_paid_by(
         &mut self,
-        gas_fees_paid_by: GasFeesPaidByLikeJs,
+        #[wasm_bindgen(js_name = "gasFeesPaidBy")] gas_fees_paid_by: GasFeesPaidByLikeJs,
     ) -> WasmDppResult<()> {
         let value: JsValue = gas_fees_paid_by.into();
         let gas_fees_paid_by = if value.is_undefined() || value.is_null() {

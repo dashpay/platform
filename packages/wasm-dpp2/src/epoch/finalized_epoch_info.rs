@@ -323,57 +323,81 @@ impl FinalizedEpochInfoWasm {
     }
 
     #[wasm_bindgen(setter = "firstBlockTime")]
-    pub fn set_first_block_time(&mut self, first_block_time: u64) {
+    pub fn set_first_block_time(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstBlockTime")] first_block_time: u64,
+    ) {
         self.v0_mut().first_block_time = first_block_time;
     }
 
     #[wasm_bindgen(setter = "firstBlockHeight")]
-    pub fn set_first_block_height(&mut self, first_block_height: u64) {
+    pub fn set_first_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstBlockHeight")] first_block_height: u64,
+    ) {
         self.v0_mut().first_block_height = first_block_height;
     }
 
     #[wasm_bindgen(setter = "totalBlocksInEpoch")]
-    pub fn set_total_blocks_in_epoch(&mut self, total_blocks_in_epoch: u64) {
+    pub fn set_total_blocks_in_epoch(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalBlocksInEpoch")] total_blocks_in_epoch: u64,
+    ) {
         self.v0_mut().total_blocks_in_epoch = total_blocks_in_epoch;
     }
 
     #[wasm_bindgen(setter = "firstCoreBlockHeight")]
-    pub fn set_first_core_block_height(&mut self, first_core_block_height: u32) {
+    pub fn set_first_core_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstCoreBlockHeight")] first_core_block_height: u32,
+    ) {
         self.v0_mut().first_core_block_height = first_core_block_height;
     }
 
     #[wasm_bindgen(setter = "nextEpochStartCoreBlockHeight")]
     pub fn set_next_epoch_start_core_block_height(
         &mut self,
-        next_epoch_start_core_block_height: u32,
+        #[wasm_bindgen(js_name = "nextEpochStartCoreBlockHeight")] next_epoch_start_core_block_height: u32,
     ) {
         self.v0_mut().next_epoch_start_core_block_height = next_epoch_start_core_block_height;
     }
 
     #[wasm_bindgen(setter = "totalProcessingFees")]
-    pub fn set_total_processing_fees(&mut self, total_processing_fees: u64) {
+    pub fn set_total_processing_fees(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalProcessingFees")] total_processing_fees: u64,
+    ) {
         self.v0_mut().total_processing_fees = total_processing_fees;
     }
 
     #[wasm_bindgen(setter = "totalDistributedStorageFees")]
-    pub fn set_total_distributed_storage_fees(&mut self, total_distributed_storage_fees: u64) {
+    pub fn set_total_distributed_storage_fees(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalDistributedStorageFees")] total_distributed_storage_fees: u64,
+    ) {
         self.v0_mut().total_distributed_storage_fees = total_distributed_storage_fees;
     }
 
     #[wasm_bindgen(setter = "totalCreatedStorageFees")]
-    pub fn set_total_created_storage_fees(&mut self, total_created_storage_fees: u64) {
+    pub fn set_total_created_storage_fees(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalCreatedStorageFees")] total_created_storage_fees: u64,
+    ) {
         self.v0_mut().total_created_storage_fees = total_created_storage_fees;
     }
 
     #[wasm_bindgen(setter = "coreBlockRewards")]
-    pub fn set_core_block_rewards(&mut self, core_block_rewards: u64) {
+    pub fn set_core_block_rewards(
+        &mut self,
+        #[wasm_bindgen(js_name = "coreBlockRewards")] core_block_rewards: u64,
+    ) {
         self.v0_mut().core_block_rewards = core_block_rewards;
     }
 
     #[wasm_bindgen(setter = "blockProposers")]
     pub fn set_block_proposers(
         &mut self,
-        block_proposers: BlockProposersMapJs,
+        #[wasm_bindgen(js_name = "blockProposers")] block_proposers: BlockProposersMapJs,
     ) -> WasmDppResult<()> {
         let block_proposers_map =
             block_proposers_from_map(&Map::from(JsValue::from(block_proposers)))?;
@@ -382,12 +406,18 @@ impl FinalizedEpochInfoWasm {
     }
 
     #[wasm_bindgen(setter = "feeMultiplierPermille")]
-    pub fn set_fee_multiplier_permille(&mut self, fee_multiplier_permille: u64) {
+    pub fn set_fee_multiplier_permille(
+        &mut self,
+        #[wasm_bindgen(js_name = "feeMultiplierPermille")] fee_multiplier_permille: u64,
+    ) {
         self.v0_mut().fee_multiplier_permille = fee_multiplier_permille;
     }
 
     #[wasm_bindgen(setter = "protocolVersion")]
-    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+    pub fn set_protocol_version(
+        &mut self,
+        #[wasm_bindgen(js_name = "protocolVersion")] protocol_version: u32,
+    ) {
         self.v0_mut().protocol_version = protocol_version;
     }
 }

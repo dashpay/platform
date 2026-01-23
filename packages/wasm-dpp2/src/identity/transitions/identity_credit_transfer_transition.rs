@@ -180,7 +180,10 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, public_key_id: u32) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "publicKeyId")] public_key_id: u32,
+    ) {
         self.0.set_signature_public_key_id(public_key_id)
     }
 

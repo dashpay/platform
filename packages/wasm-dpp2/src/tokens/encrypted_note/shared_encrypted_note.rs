@@ -23,8 +23,8 @@ impl From<SharedEncryptedNoteWasm> for SharedEncryptedNote {
 impl SharedEncryptedNoteWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        sender_key_index: SenderKeyIndex,
-        recipient_key_index: RecipientKeyIndex,
+        #[wasm_bindgen(js_name = "senderKeyIndex")] sender_key_index: SenderKeyIndex,
+        #[wasm_bindgen(js_name = "recipientKeyIndex")] recipient_key_index: RecipientKeyIndex,
         value: Vec<u8>,
     ) -> Self {
         SharedEncryptedNoteWasm((sender_key_index, recipient_key_index, value))

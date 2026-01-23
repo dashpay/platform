@@ -218,13 +218,19 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityId")]
-    pub fn set_identity_id(&mut self, identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_identity_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_identity_id(identity_id.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+    pub fn set_user_fee_increase(
+        &mut self,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
+    ) {
         self.0.set_user_fee_increase(user_fee_increase);
     }
 
@@ -239,7 +245,10 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "coreFeePerByte")]
-    pub fn set_core_fee_per_byte(&mut self, fee_per_byte: u32) {
+    pub fn set_core_fee_per_byte(
+        &mut self,
+        #[wasm_bindgen(js_name = "feePerByte")] fee_per_byte: u32,
+    ) {
         self.0.set_core_fee_per_byte(fee_per_byte)
     }
 
@@ -269,7 +278,10 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, signature_public_key_id: KeyID) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: KeyID,
+    ) {
         self.0.set_signature_public_key_id(signature_public_key_id)
     }
 

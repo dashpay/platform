@@ -89,7 +89,10 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "addPublicKey")]
-    pub fn add_public_key(&mut self, public_key: &IdentityPublicKeyWasm) {
+    pub fn add_public_key(
+        &mut self,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
+    ) {
         self.0.add_public_key(public_key.clone().into());
     }
 
@@ -111,7 +114,10 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyById")]
-    pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<IdentityPublicKeyWasm> {
+    pub fn get_public_key_by_id(
+        &self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: KeyID,
+    ) -> Option<IdentityPublicKeyWasm> {
         self.0
             .get_public_key_by_id(key_id)
             .map(|key| IdentityPublicKeyWasm::from(key.clone()))

@@ -37,7 +37,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
         price: &JsValue,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> WasmDppResult<TokenSetPriceForDirectPurchaseTransitionWasm> {
         let price: Option<TokenPricingSchedule> = if price.is_undefined() {
             None

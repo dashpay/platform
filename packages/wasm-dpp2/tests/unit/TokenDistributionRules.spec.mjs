@@ -139,7 +139,7 @@ describe('TokenDistributionRules', () => {
       expect(distributionRules.preProgrammedDistribution.constructor.name).to.deep.equal('TokenPreProgrammedDistribution');
       expect(distributionRules.newTokensDestinationIdentity.constructor.name).to.deep.equal('Identifier');
       expect(distributionRules.newTokensDestinationIdentityRules.constructor.name).to.deep.equal('ChangeControlRules');
-      expect(distributionRules.isMintingAllowingChoosingDestination).to.deep.equal(true);
+      expect(distributionRules.mintingAllowChoosingDestination).to.deep.equal(true);
       expect(distributionRules.mintingAllowChoosingDestinationRules.constructor.name).to.deep.equal('ChangeControlRules');
       expect(distributionRules.changeDirectPurchasePricingRules.constructor.name).to.deep.equal('ChangeControlRules');
     });
@@ -195,9 +195,9 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set mintingAllowChoosingDestination', () => {
-      distributionRules.isMintingAllowingChoosingDestination = false;
+      distributionRules.mintingAllowChoosingDestination = false;
 
-      expect(distributionRules.isMintingAllowingChoosingDestination).to.deep.equal(false);
+      expect(distributionRules.mintingAllowChoosingDestination).to.deep.equal(false);
     });
 
     it('should allow to set changeDirectPurchasePricingRules', () => {

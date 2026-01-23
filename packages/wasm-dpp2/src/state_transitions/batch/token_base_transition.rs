@@ -115,7 +115,10 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = identityContractNonce)]
-    pub fn set_identity_contract_nonce(&mut self, identity_contract_nonce: IdentityNonce) {
+    pub fn set_identity_contract_nonce(
+        &mut self,
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
+    ) {
         self.0.set_identity_contract_nonce(identity_contract_nonce)
     }
 
@@ -127,7 +130,7 @@ impl TokenBaseTransitionWasm {
     #[wasm_bindgen(setter = dataContractId)]
     pub fn set_data_contract_id(
         &mut self,
-        data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         let id_value: JsValue = data_contract_id.into();
         self.0
@@ -136,7 +139,10 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = tokenId)]
-    pub fn set_token_id(&mut self, token_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_token_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         let id_value: JsValue = token_id.into();
         self.0
             .set_token_id(IdentifierWasm::try_from(&id_value)?.into());

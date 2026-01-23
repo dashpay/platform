@@ -33,9 +33,9 @@ impl DocumentPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
         amount: Credits,
-        token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
     ) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
         let rs_purchase_transition = generate_purchase_transition(
             document,

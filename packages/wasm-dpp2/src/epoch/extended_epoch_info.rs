@@ -163,27 +163,42 @@ impl ExtendedEpochInfoWasm {
     }
 
     #[wasm_bindgen(setter = "firstBlockTime")]
-    pub fn set_first_block_time(&mut self, first_block_time: u64) {
+    pub fn set_first_block_time(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstBlockTime")] first_block_time: u64,
+    ) {
         self.v0_mut().first_block_time = first_block_time;
     }
 
     #[wasm_bindgen(setter = "firstBlockHeight")]
-    pub fn set_first_block_height(&mut self, first_block_height: u64) {
+    pub fn set_first_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstBlockHeight")] first_block_height: u64,
+    ) {
         self.v0_mut().first_block_height = first_block_height;
     }
 
     #[wasm_bindgen(setter = "firstCoreBlockHeight")]
-    pub fn set_first_core_block_height(&mut self, first_core_block_height: u32) {
+    pub fn set_first_core_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstCoreBlockHeight")] first_core_block_height: u32,
+    ) {
         self.v0_mut().first_core_block_height = first_core_block_height;
     }
 
     #[wasm_bindgen(setter = "feeMultiplierPermille")]
-    pub fn set_fee_multiplier_permille(&mut self, fee_multiplier_permille: u64) {
+    pub fn set_fee_multiplier_permille(
+        &mut self,
+        #[wasm_bindgen(js_name = "feeMultiplierPermille")] fee_multiplier_permille: u64,
+    ) {
         self.v0_mut().fee_multiplier_permille = fee_multiplier_permille;
     }
 
     #[wasm_bindgen(setter = "protocolVersion")]
-    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+    pub fn set_protocol_version(
+        &mut self,
+        #[wasm_bindgen(js_name = "protocolVersion")] protocol_version: u32,
+    ) {
         self.v0_mut().protocol_version = protocol_version;
     }
 }

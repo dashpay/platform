@@ -250,13 +250,15 @@ where
     }
 }
 
-/// Convert a JS BigInt to u64 with validation.
+/// Convert a JS value to u64 with validation.
 ///
-/// Only accepts BigInt values to avoid precision loss with large numbers.
-/// Use `BigInt(value)` in JavaScript to convert numbers to BigInt.
+/// Accepts:
+/// - BigInt: Native JavaScript BigInt values
+/// - Number: JavaScript numbers (note: precision loss for values > 2^53-1)
+/// - String: Numeric strings (useful for JSON serialization of large numbers)
 ///
-/// Validates that the value is:
-/// - A BigInt that fits in u64 range (0 to 2^64-1)
+/// This flexibility is needed because JSON doesn't support BigInt natively.
+/// Large numbers may be serialized as strings to preserve precision.
 pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
     if value.is_bigint() {
         let bigint = js_sys::BigInt::new(&value).map_err(|_| {
@@ -268,9 +270,24 @@ pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
                 field_name
             ))
         })
+    } else if let Some(num) = value.as_f64() {
+        if num < 0.0 || num > u64::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' number value is out of u64 range",
+                field_name
+            )));
+        }
+        Ok(num as u64)
+    } else if let Some(s) = value.as_string() {
+        s.parse::<u64>().map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'{}' string value '{}' is not a valid u64",
+                field_name, s
+            ))
+        })
     } else {
         Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be a BigInt, use BigInt(value) to convert",
+            "'{}' must be a BigInt, number, or numeric string",
             field_name
         )))
     }

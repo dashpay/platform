@@ -210,7 +210,10 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
-    pub fn set_identity_identifier(&mut self, identity_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_identity_identifier(
+        &mut self,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         let id_value: JsValue = identity_id.into();
         let identity_id = IdentifierWasm::try_from(&id_value)?.into();
         self.0.set_identity_id(identity_id);
@@ -220,7 +223,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(setter = "publicKeyIdsToAdd")]
     pub fn set_public_key_ids_to_add(
         &mut self,
-        add_public_keys: &js_sys::Array,
+        #[wasm_bindgen(js_name = "addPublicKeys")] add_public_keys: &js_sys::Array,
     ) -> WasmDppResult<()> {
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(add_public_keys)?;
@@ -233,12 +236,18 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "publicKeyIdsToDisable")]
-    pub fn set_public_key_ids_to_disable(&mut self, public_keys: Vec<KeyID>) {
+    pub fn set_public_key_ids_to_disable(
+        &mut self,
+        #[wasm_bindgen(js_name = "publicKeys")] public_keys: Vec<KeyID>,
+    ) {
         self.0.set_public_key_ids_to_disable(public_keys)
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+    pub fn set_user_fee_increase(
+        &mut self,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
+    ) {
         self.0.set_user_fee_increase(user_fee_increase)
     }
 
@@ -263,7 +272,10 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, signature_public_key_id: KeyID) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: KeyID,
+    ) {
         self.0.set_signature_public_key_id(signature_public_key_id)
     }
 

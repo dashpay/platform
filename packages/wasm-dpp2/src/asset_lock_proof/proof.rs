@@ -89,7 +89,7 @@ impl From<AssetLockProof> for InstantAssetLockProofWasm {
 impl AssetLockProofWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "ChainAssetLockProof | InstantAssetLockProof")]
+        #[wasm_bindgen(unchecked_param_type = "ChainAssetLockProof | InstantAssetLockProof", js_name = "assetLockProof")]
         asset_lock_proof: &JsValue,
     ) -> WasmDppResult<AssetLockProofWasm> {
         match get_class_type(asset_lock_proof)?.as_str() {
@@ -115,17 +115,17 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "createInstantAssetLockProof")]
     pub fn new_instant_asset_lock_proof(
-        instant_lock: Vec<u8>,
+        #[wasm_bindgen(js_name = "instantLock")] instant_lock: Vec<u8>,
         transaction: Vec<u8>,
-        output_index: u32,
+        #[wasm_bindgen(js_name = "outputIndex")] output_index: u32,
     ) -> WasmDppResult<AssetLockProofWasm> {
         Ok(InstantAssetLockProofWasm::constructor(instant_lock, transaction, output_index)?.into())
     }
 
     #[wasm_bindgen(js_name = "createChainAssetLockProof")]
     pub fn new_chain_asset_lock_proof(
-        core_chain_locked_height: u32,
-        out_point: &OutPointWasm,
+        #[wasm_bindgen(js_name = "coreChainLockedHeight")] core_chain_locked_height: u32,
+        #[wasm_bindgen(js_name = "outPoint")] out_point: &OutPointWasm,
     ) -> WasmDppResult<AssetLockProofWasm> {
         Ok(ChainAssetLockProofWasm::constructor(core_chain_locked_height, out_point)?.into())
     }
@@ -263,7 +263,7 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(asset_lock_proof: String) -> WasmDppResult<AssetLockProofWasm> {
+    pub fn from_hex(#[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: String) -> WasmDppResult<AssetLockProofWasm> {
         let bytes = hex::decode(asset_lock_proof)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())

@@ -27,9 +27,9 @@ impl DocumentUpdatePriceTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
         price: Credits,
-        token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
     ) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
         let rs_document_update_price_transition = generate_update_price_transition(
             document,

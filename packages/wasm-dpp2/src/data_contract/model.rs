@@ -359,12 +359,18 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<Vec<u8>> {
+    pub fn to_bytes(
+        &self,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<Vec<u8>> {
         self.to_bytes_internal(platform_version.into())
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<String> {
+    pub fn to_hex(
+        &self,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<String> {
         Ok(encode(
             self.to_bytes_internal(platform_version.into())?.as_slice(),
             Hex,
@@ -372,7 +378,10 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name = "toBase64")]
-    pub fn to_base64(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<String> {
+    pub fn to_base64(
+        &self,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<String> {
         Ok(encode(
             self.to_bytes_internal(platform_version.into())?.as_slice(),
             Base64,
@@ -382,7 +391,7 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(
         &self,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractObjectJs> {
         let platform_version: JsValue = platform_version.into();
         let platform_version = if platform_version.is_undefined() {
@@ -474,7 +483,10 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "ownerId")]
-    pub fn set_owner_id(&mut self, owner_id: IdentifierLikeJs) -> WasmDppResult<()> {
+    pub fn set_owner_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "ownerId")] owner_id: IdentifierLikeJs,
+    ) -> WasmDppResult<()> {
         self.0.set_owner_id(owner_id.try_into()?);
         Ok(())
     }
@@ -488,7 +500,7 @@ impl DataContractWasm {
     pub fn set_config(
         &mut self,
         config: DataContractConfigJs,
-        platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
         let config: JsValue = config.into();
         let platform_version: JsValue = platform_version.into();

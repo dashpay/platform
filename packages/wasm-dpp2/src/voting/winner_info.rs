@@ -56,7 +56,7 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         kind: &str,
-        identity_id: Option<IdentifierWasm>,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: Option<IdentifierWasm>,
     ) -> Result<ContestedDocumentVotePollWinnerInfoWasm, JsValue> {
         match kind {
             "NoWinner" | "noWinner" | "no_winner" | "none" | "NO_WINNER" => {

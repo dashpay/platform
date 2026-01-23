@@ -58,9 +58,9 @@ impl From<InstantAssetLockProof> for InstantAssetLockProofWasm {
 impl InstantAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        instant_lock: Vec<u8>,
+        #[wasm_bindgen(js_name = "instantLock")] instant_lock: Vec<u8>,
         transaction: Vec<u8>,
-        output_index: u32,
+        #[wasm_bindgen(js_name = "outputIndex")] output_index: u32,
     ) -> WasmDppResult<InstantAssetLockProofWasm> {
         let instant_lock: InstantLock = deserialize(instant_lock.as_slice())
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
@@ -95,12 +95,18 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(setter = "outputIndex")]
-    pub fn set_output_index(&mut self, output_index: u32) {
+    pub fn set_output_index(
+        &mut self,
+        #[wasm_bindgen(js_name = "outputIndex")] output_index: u32,
+    ) {
         self.0.output_index = output_index;
     }
 
     #[wasm_bindgen(setter = "instantLock")]
-    pub fn set_instant_lock(&mut self, instant_lock: Vec<u8>) -> WasmDppResult<()> {
+    pub fn set_instant_lock(
+        &mut self,
+        #[wasm_bindgen(js_name = "instantLock")] instant_lock: Vec<u8>,
+    ) -> WasmDppResult<()> {
         self.0.instant_lock = deserialize(instant_lock.as_slice())
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
         Ok(())

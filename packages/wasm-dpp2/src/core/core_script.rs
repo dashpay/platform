@@ -33,7 +33,9 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "fromP2PKH")]
-    pub fn from_p2pkh(key_hash: Vec<u8>) -> WasmDppResult<CoreScriptWasm> {
+    pub fn from_p2pkh(
+        #[wasm_bindgen(js_name = "keyHash")] key_hash: Vec<u8>,
+    ) -> WasmDppResult<CoreScriptWasm> {
         if key_hash.len() != 20 {
             return Err(WasmDppError::invalid_argument(format!(
                 "P2PKH key hash must be exactly 20 bytes, got {}",
@@ -47,7 +49,9 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "fromP2SH")]
-    pub fn from_p2sh(script_hash: Vec<u8>) -> WasmDppResult<CoreScriptWasm> {
+    pub fn from_p2sh(
+        #[wasm_bindgen(js_name = "scriptHash")] script_hash: Vec<u8>,
+    ) -> WasmDppResult<CoreScriptWasm> {
         if script_hash.len() != 20 {
             return Err(WasmDppError::invalid_argument(format!(
                 "P2SH script hash must be exactly 20 bytes, got {}",
