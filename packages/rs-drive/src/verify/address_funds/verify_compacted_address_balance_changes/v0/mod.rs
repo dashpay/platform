@@ -18,20 +18,30 @@ use std::collections::BTreeMap;
 use super::VerifiedCompactedAddressBalanceChanges;
 
 /// Extract KV entries from merk proof bytes using the proper decoder.
-fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+#[allow(clippy::type_complexity)]
+fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Error> {
     let mut entries = Vec::new();
 
-    for op in MerkProofDecoder::new(merk_proof).flatten() {
+    let decoder = MerkProofDecoder::new(merk_proof);
+
+    for op in decoder {
         match op {
-            MerkProofOp::Push(MerkProofNode::KV(key, value))
-            | MerkProofOp::PushInverted(MerkProofNode::KV(key, value)) => {
+            Ok(MerkProofOp::Push(MerkProofNode::KV(key, value)))
+            | Ok(MerkProofOp::PushInverted(MerkProofNode::KV(key, value))) => {
                 entries.push((key, value));
+            }
+            Err(e) => {
+                tracing::error!(%e, "merk proof decode error");
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "failed to decode merk proof op: {}",
+                    e
+                ))));
             }
             _ => {}
         }
     }
 
-    entries
+    Ok(entries)
 }
 
 impl Drive {
@@ -81,6 +91,7 @@ impl Drive {
         // if there's a containing range for start_block_height
         let kv_entries = compacted_layer
             .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
+            .transpose()?
             .unwrap_or_default();
 
         // Look for a KV entry where the range contains start_block_height

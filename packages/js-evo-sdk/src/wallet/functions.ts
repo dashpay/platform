@@ -1,4 +1,5 @@
 import * as wasm from '../wasm.js';
+import type { NetworkLike } from '../wasm.js';
 
 export namespace wallet {
   export async function generateMnemonic(params?: wasm.GenerateMnemonicParams): Promise<string> {
@@ -76,12 +77,12 @@ export namespace wallet {
     return wasm.WasmSdk.xprvToXpub(xprv);
   }
 
-  export async function generateKeyPair(network: string): Promise<wasm.KeyPair> {
+  export async function generateKeyPair(network: NetworkLike): Promise<wasm.KeyPair> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.generateKeyPair(network);
   }
 
-  export async function generateKeyPairs(network: string, count: number): Promise<wasm.KeyPair[]> {
+  export async function generateKeyPairs(network: NetworkLike, count: number): Promise<wasm.KeyPair[]> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.generateKeyPairs(network, count);
   }
@@ -91,17 +92,17 @@ export namespace wallet {
     return wasm.WasmSdk.keyPairFromWif(privateKeyWif);
   }
 
-  export async function keyPairFromHex(privateKeyHex: string, network: string): Promise<wasm.KeyPair> {
+  export async function keyPairFromHex(privateKeyHex: string, network: NetworkLike): Promise<wasm.KeyPair> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.keyPairFromHex(privateKeyHex, network);
   }
 
-  export async function pubkeyToAddress(pubkeyHex: string, network: string): Promise<string> {
+  export async function pubkeyToAddress(pubkeyHex: string, network: NetworkLike): Promise<string> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.pubkeyToAddress(pubkeyHex, network);
   }
 
-  export async function validateAddress(address: string, network: string): Promise<boolean> {
+  export async function validateAddress(address: string, network: NetworkLike): Promise<boolean> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.validateAddress(address, network);
   }

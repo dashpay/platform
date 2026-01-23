@@ -754,7 +754,7 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::transition::top_up_address::TopUpAddress;
         use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
-        use wasm_dpp2::private_key::PrivateKeyWasm;
+        use wasm_dpp2::PrivateKeyWasm;
 
         let options_value: JsValue = options.into();
 

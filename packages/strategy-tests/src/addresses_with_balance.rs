@@ -76,6 +76,67 @@ impl AddressesWithBalance {
         }
     }
 
+    /// Returns the total balance across all tracked addresses.
+    ///
+    /// This sums the effective balance of each address (staged if present,
+    /// otherwise committed).
+    pub fn total_balance(&self) -> Credits {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut total: Credits = 0;
+
+        // Sum staged balances
+        for (addr, (_, balance)) in &self.addresses_in_block_with_new_balance {
+            total = total.saturating_add(*balance);
+            seen.insert(addr);
+        }
+
+        // Sum committed balances for addresses not in staged
+        for (addr, (_, balance)) in &self.addresses_with_balance {
+            if !seen.contains(addr) {
+                total = total.saturating_add(*balance);
+            }
+        }
+
+        total
+    }
+
+    /// Returns the total balance of committed addresses only.
+    pub fn committed_balance(&self) -> Credits {
+        self.addresses_with_balance
+            .values()
+            .map(|(_, balance)| *balance)
+            .fold(0, |acc, b| acc.saturating_add(b))
+    }
+
+    /// Returns the number of committed addresses.
+    pub fn committed_count(&self) -> usize {
+        self.addresses_with_balance.len()
+    }
+
+    /// Returns the number of staged (in-block) addresses.
+    pub fn staged_count(&self) -> usize {
+        self.addresses_in_block_with_new_balance.len()
+    }
+
+    /// Returns the number of committed addresses available for spending
+    /// (not already used this block).
+    pub fn available_for_spending_count(&self) -> usize {
+        self.addresses_with_balance
+            .keys()
+            .filter(|addr| !self.addresses_in_block_with_new_balance.contains_key(*addr))
+            .count()
+    }
+
+    /// Returns the maximum balance among addresses available for spending.
+    pub fn max_available_balance(&self) -> Credits {
+        self.addresses_with_balance
+            .iter()
+            .filter(|(addr, _)| !self.addresses_in_block_with_new_balance.contains_key(*addr))
+            .map(|(_, (_, balance))| *balance)
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Commits all staged (in-block) updates into the committed map.
     ///
     /// Call this after a block has been successfully processed. All addresses
@@ -428,6 +489,42 @@ impl AddressesWithBalance {
     pub fn register_new_address(&mut self, address: PlatformAddress, balance: Credits) {
         self.addresses_in_block_with_new_balance
             .insert(address, (0, balance));
+    }
+
+    /// Registers a new address and keeps only the top N addresses by balance.
+    ///
+    /// Use this when creating many addresses but you only want to track the highest
+    /// balance ones (e.g., for memory efficiency in stress tests).
+    ///
+    /// After inserting the new address, if the total count of staged addresses
+    /// exceeds `keep_top_n`, the lowest balance addresses are removed until
+    /// only `keep_top_n` remain.
+    ///
+    /// Note: This only affects the staged map (`addresses_in_block_with_new_balance`),
+    /// not the committed map.
+    pub fn register_new_address_keep_only_highest(
+        &mut self,
+        address: PlatformAddress,
+        balance: Credits,
+        keep_top_n: Option<u32>,
+    ) {
+        self.addresses_in_block_with_new_balance
+            .insert(address, (0, balance));
+
+        if let Some(keep_top_n) = keep_top_n {
+            // If we exceed the limit, keep only the top N by balance
+            if self.addresses_in_block_with_new_balance.len() > keep_top_n as usize {
+                // Take the map and sort by balance descending
+                let mut entries: Vec<_> = mem::take(&mut self.addresses_in_block_with_new_balance)
+                    .into_iter()
+                    .collect();
+                entries.sort_by(|a, b| b.1 .1.cmp(&a.1 .1)); // Sort by balance descending
+                entries.truncate(keep_top_n as usize);
+
+                // Rebuild the map with only top N
+                self.addresses_in_block_with_new_balance = entries.into_iter().collect();
+            }
+        }
     }
 
     /// Resets an address's nonce to a specific value, preserving its current balance.
