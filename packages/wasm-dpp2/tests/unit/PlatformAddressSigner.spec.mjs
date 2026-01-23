@@ -86,7 +86,7 @@ describe('PlatformAddressSigner', () => {
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
 
       const derivedAddr = signer.addKey(privateKey);
-      expect(signer.hasKey(derivedAddr)).to.be.true;
+      expect(signer.hasKey(derivedAddr)).to.be.true();
     });
 
     it('should return false for unknown address', () => {
@@ -94,7 +94,7 @@ describe('PlatformAddressSigner', () => {
       const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const addr = wasm.PlatformAddress.fromBytes(addressBytes);
 
-      expect(signer.hasKey(addr)).to.be.false;
+      expect(signer.hasKey(addr)).to.be.false();
     });
 
     it('should accept derived address as bech32m string', () => {
@@ -103,7 +103,7 @@ describe('PlatformAddressSigner', () => {
 
       const derivedAddr = signer.addKey(privateKey);
       const bech32m = derivedAddr.toBech32m('testnet');
-      expect(signer.hasKey(bech32m)).to.be.true;
+      expect(signer.hasKey(bech32m)).to.be.true();
     });
   });
 

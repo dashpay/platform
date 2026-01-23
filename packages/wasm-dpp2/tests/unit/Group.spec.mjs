@@ -106,7 +106,7 @@ describe('Group', () => {
       const obj = group.toObject();
       // toObject exports as Map type in serde_wasm_bindgen which doesn't round-trip
       // but it should at least be defined
-      expect(obj).to.not.be.undefined;
+      expect(obj).to.not.be.undefined();
     });
 
     it('should round-trip Group with multiple members via toJSON/fromJSON', () => {

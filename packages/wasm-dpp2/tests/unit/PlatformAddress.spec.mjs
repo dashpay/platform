@@ -13,8 +13,8 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromBytes(p2pkhBytes);
       expect(addr).to.exist;
       expect(addr.addressType).to.equal('P2PKH');
-      expect(addr.isP2pkh).to.be.true;
-      expect(addr.isP2sh).to.be.false;
+      expect(addr.isP2pkh).to.be.true();
+      expect(addr.isP2sh).to.be.false();
     });
 
     it('should create P2SH address from bytes', () => {
@@ -22,8 +22,8 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromBytes(p2shBytes);
       expect(addr).to.exist;
       expect(addr.addressType).to.equal('P2SH');
-      expect(addr.isP2pkh).to.be.false;
-      expect(addr.isP2sh).to.be.true;
+      expect(addr.isP2pkh).to.be.false();
+      expect(addr.isP2sh).to.be.true();
     });
 
     it('should reject invalid address type', () => {
@@ -54,7 +54,7 @@ describe('PlatformAddress', () => {
       const originalAddr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = originalAddr.toBech32m('testnet');
 
-      expect(bech32m.startsWith('tdashevo1')).to.be.true;
+      expect(bech32m.startsWith('tdashevo1')).to.be.true();
 
       // Parse it back
       const parsedAddr = wasm.PlatformAddress.fromBech32m(bech32m);
@@ -67,7 +67,7 @@ describe('PlatformAddress', () => {
       const originalAddr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = originalAddr.toBech32m('mainnet');
 
-      expect(bech32m.startsWith('dashevo1')).to.be.true;
+      expect(bech32m.startsWith('dashevo1')).to.be.true();
 
       const parsedAddr = wasm.PlatformAddress.fromBech32m(bech32m);
       expect(parsedAddr).to.exist;
@@ -108,7 +108,7 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromP2pkhHash(hash);
       expect(addr).to.exist;
       expect(addr.addressType).to.equal('P2PKH');
-      expect(addr.isP2pkh).to.be.true;
+      expect(addr.isP2pkh).to.be.true();
     });
 
     it('should reject wrong hash length', () => {
@@ -128,7 +128,7 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromP2shHash(hash);
       expect(addr).to.exist;
       expect(addr.addressType).to.equal('P2SH');
-      expect(addr.isP2sh).to.be.true;
+      expect(addr.isP2sh).to.be.true();
     });
 
     it('should reject wrong hash length', () => {
@@ -215,7 +215,7 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = addr.toBech32m('testnet');
       expect(bech32m).to.be.a('string');
-      expect(bech32m.startsWith('tdashevo1')).to.be.true;
+      expect(bech32m.startsWith('tdashevo1')).to.be.true();
     });
 
     it('should convert to mainnet bech32m', () => {
@@ -223,7 +223,7 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = addr.toBech32m('mainnet');
       expect(bech32m).to.be.a('string');
-      expect(bech32m.startsWith('dashevo1')).to.be.true;
+      expect(bech32m.startsWith('dashevo1')).to.be.true();
     });
 
     it('should roundtrip through bech32m', () => {

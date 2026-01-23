@@ -14,10 +14,10 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
       expect(info.kind).to.equal('NoWinner');
-      expect(info.identityId).to.be.null;
-      expect(info.isNoWinner).to.be.true;
-      expect(info.isWonByIdentity).to.be.false;
-      expect(info.isLocked).to.be.false;
+      expect(info.identityId).to.be.undefined();
+      expect(info.isNoWinner).to.be.true();
+      expect(info.isWonByIdentity).to.be.false();
+      expect(info.isLocked).to.be.false();
     });
 
     it('should create WonByIdentity info', () => {
@@ -26,33 +26,33 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('WonByIdentity', identityId);
 
       expect(info.kind).to.equal('WonByIdentity');
-      expect(info.identityId).to.not.be.null;
+      expect(info.identityId).to.not.be.undefined();
       expect(info.identityId.toBase58()).to.equal(identityIdBase58);
-      expect(info.isNoWinner).to.be.false;
-      expect(info.isWonByIdentity).to.be.true;
-      expect(info.isLocked).to.be.false;
+      expect(info.isNoWinner).to.be.false();
+      expect(info.isWonByIdentity).to.be.true();
+      expect(info.isLocked).to.be.false();
     });
 
     it('should create Locked info', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('Locked');
 
       expect(info.kind).to.equal('Locked');
-      expect(info.identityId).to.be.null;
-      expect(info.isNoWinner).to.be.false;
-      expect(info.isWonByIdentity).to.be.false;
-      expect(info.isLocked).to.be.true;
+      expect(info.identityId).to.be.undefined();
+      expect(info.isNoWinner).to.be.false();
+      expect(info.isWonByIdentity).to.be.false();
+      expect(info.isLocked).to.be.true();
     });
 
     it('should accept alternative kind names', () => {
       const noWinner = new wasm.ContestedDocumentVotePollWinnerInfo('noWinner');
-      expect(noWinner.isNoWinner).to.be.true;
+      expect(noWinner.isNoWinner).to.be.true();
 
       const locked = new wasm.ContestedDocumentVotePollWinnerInfo('LOCKED');
-      expect(locked.isLocked).to.be.true;
+      expect(locked.isLocked).to.be.true();
 
       const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
       const identity = new wasm.ContestedDocumentVotePollWinnerInfo('Identity', identityId);
-      expect(identity.isWonByIdentity).to.be.true;
+      expect(identity.isWonByIdentity).to.be.true();
     });
   });
 
@@ -66,7 +66,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
 
       const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(json);
       expect(restored.kind).to.equal(info.kind);
-      expect(restored.isNoWinner).to.be.true;
+      expect(restored.isNoWinner).to.be.true();
     });
 
     it('should round-trip WonByIdentity via toJSON/fromJSON', () => {
@@ -92,7 +92,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
 
       const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(json);
       expect(restored.kind).to.equal(info.kind);
-      expect(restored.isLocked).to.be.true;
+      expect(restored.isLocked).to.be.true();
     });
 
     it('should round-trip NoWinner via toObject/fromObject', () => {
@@ -113,7 +113,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const obj = info.toObject();
       expect(obj).to.be.an('object');
       // Serde serializes tuple variants as { VariantName: value }
-      expect(obj.WonByIdentity).to.not.be.undefined;
+      expect(obj.WonByIdentity).to.not.be.undefined();
 
       const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject(obj);
       expect(restored.kind).to.equal(info.kind);

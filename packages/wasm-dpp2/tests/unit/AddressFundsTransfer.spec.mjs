@@ -11,28 +11,28 @@ describe('FeeStrategyStep', () => {
     it('should create deductFromInput step', () => {
       const step = wasm.FeeStrategyStep.deductFromInput(0);
       expect(step).to.exist;
-      expect(step.isDeductFromInput).to.be.true;
-      expect(step.isReduceOutput).to.be.false;
+      expect(step.isDeductFromInput).to.be.true();
+      expect(step.isReduceOutput).to.be.false();
       expect(step.index).to.equal(0);
     });
 
     it('should create deductFromInput step with non-zero index', () => {
       const step = wasm.FeeStrategyStep.deductFromInput(5);
-      expect(step.isDeductFromInput).to.be.true;
+      expect(step.isDeductFromInput).to.be.true();
       expect(step.index).to.equal(5);
     });
 
     it('should create reduceOutput step', () => {
       const step = wasm.FeeStrategyStep.reduceOutput(0);
       expect(step).to.exist;
-      expect(step.isDeductFromInput).to.be.false;
-      expect(step.isReduceOutput).to.be.true;
+      expect(step.isDeductFromInput).to.be.false();
+      expect(step.isReduceOutput).to.be.true();
       expect(step.index).to.equal(0);
     });
 
     it('should create reduceOutput step with non-zero index', () => {
       const step = wasm.FeeStrategyStep.reduceOutput(3);
-      expect(step.isReduceOutput).to.be.true;
+      expect(step.isReduceOutput).to.be.true();
       expect(step.index).to.equal(3);
     });
   });

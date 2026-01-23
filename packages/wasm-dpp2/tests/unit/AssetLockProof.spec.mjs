@@ -28,7 +28,7 @@ describe('AssetLockProof', () => {
         // eslint-disable-next-line
         new wasm.AssetLockProof('chain')
       } catch (e) {
-        expect(true).to.be.ok;
+        expect(true).to.be.ok();
         return;
       }
       expect.fail('Expected an error to be thrown');

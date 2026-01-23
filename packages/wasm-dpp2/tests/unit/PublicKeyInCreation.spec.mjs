@@ -165,7 +165,7 @@ describe('IdentityPublicKeyInCreation', () => {
       const obj = publicKeyInCreation.toObject();
       // toObject exports with byte arrays which don't round-trip in serde_wasm_bindgen
       // but it should at least be defined
-      expect(obj).to.not.be.undefined;
+      expect(obj).to.not.be.undefined();
       expect(obj).to.be.an('object');
     });
   });

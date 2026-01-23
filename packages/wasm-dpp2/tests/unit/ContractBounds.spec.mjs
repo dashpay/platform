@@ -17,7 +17,7 @@ describe('ContractBounds', () => {
 
       // contractBoundsType returns the serde string representation from rs-dpp
       expect(bounds.contractBoundsType).to.equal('singleContract');
-      expect(bounds.documentTypeName).to.be.null;
+      expect(bounds.documentTypeName).to.be.undefined();
     });
 
     it('should create SingleContractDocumentType bounds with document type', () => {
