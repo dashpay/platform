@@ -936,13 +936,17 @@ impl SdkBuilder {
     /// Used mainly for testing purposes and local networks.
     ///
     /// If not set, uses standard system CA certificates.
+    ///
+    /// ## Parameters
+    ///
+    /// - `pem_certificate`: PEM-encoded CA certificate. User must ensure that the certificate is valid.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, pem_certificate: Certificate) -> Self {
         self.ca_certificate = Some(pem_certificate);
         self
     }
 
-    /// Load CA certificate from file.
+    /// Load CA certificate from a PEM-encoded file.
     ///
     /// This is a convenience method that reads the certificate from a file and sets it using
     /// [SdkBuilder::with_ca_certificate()].
@@ -952,19 +956,8 @@ impl SdkBuilder {
         certificate_file_path: impl AsRef<Path>,
     ) -> std::io::Result<Self> {
         let pem = std::fs::read(certificate_file_path)?;
-
-        // parse the certificate and check if it's valid
-        let mut verified_pem = std::io::BufReader::new(pem.as_slice());
-        rustls_pemfile::certs(&mut verified_pem)
-            .next()
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "No valid certificates found in the file",
-                )
-            })??;
-
         let cert = Certificate::from_pem(pem);
+
         Ok(self.with_ca_certificate(cert))
     }
 
