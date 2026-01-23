@@ -269,6 +269,16 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetAddressesBranchStateRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetAddressesBranchStateResponse.FromString,
                 )
+        self.getRecentAddressBalanceChanges = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getRecentAddressBalanceChanges',
+                request_serializer=platform__pb2.GetRecentAddressBalanceChangesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetRecentAddressBalanceChangesResponse.FromString,
+                )
+        self.getRecentCompactedAddressBalanceChanges = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getRecentCompactedAddressBalanceChanges',
+                request_serializer=platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -585,6 +595,18 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getRecentAddressBalanceChanges(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getRecentCompactedAddressBalanceChanges(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -842,6 +864,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getAddressesBranchState,
                     request_deserializer=platform__pb2.GetAddressesBranchStateRequest.FromString,
                     response_serializer=platform__pb2.GetAddressesBranchStateResponse.SerializeToString,
+            ),
+            'getRecentAddressBalanceChanges': grpc.unary_unary_rpc_method_handler(
+                    servicer.getRecentAddressBalanceChanges,
+                    request_deserializer=platform__pb2.GetRecentAddressBalanceChangesRequest.FromString,
+                    response_serializer=platform__pb2.GetRecentAddressBalanceChangesResponse.SerializeToString,
+            ),
+            'getRecentCompactedAddressBalanceChanges': grpc.unary_unary_rpc_method_handler(
+                    servicer.getRecentCompactedAddressBalanceChanges,
+                    request_deserializer=platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.FromString,
+                    response_serializer=platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1717,5 +1749,39 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getAddressesBranchState',
             platform__pb2.GetAddressesBranchStateRequest.SerializeToString,
             platform__pb2.GetAddressesBranchStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getRecentAddressBalanceChanges(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentAddressBalanceChanges',
+            platform__pb2.GetRecentAddressBalanceChangesRequest.SerializeToString,
+            platform__pb2.GetRecentAddressBalanceChangesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getRecentCompactedAddressBalanceChanges(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentCompactedAddressBalanceChanges',
+            platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.SerializeToString,
+            platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

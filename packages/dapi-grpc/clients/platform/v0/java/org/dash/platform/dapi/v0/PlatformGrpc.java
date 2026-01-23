@@ -1596,6 +1596,68 @@ public final class PlatformGrpc {
     return getGetAddressesBranchStateMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse> getGetRecentAddressBalanceChangesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getRecentAddressBalanceChanges",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse> getGetRecentAddressBalanceChangesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse> getGetRecentAddressBalanceChangesMethod;
+    if ((getGetRecentAddressBalanceChangesMethod = PlatformGrpc.getGetRecentAddressBalanceChangesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetRecentAddressBalanceChangesMethod = PlatformGrpc.getGetRecentAddressBalanceChangesMethod) == null) {
+          PlatformGrpc.getGetRecentAddressBalanceChangesMethod = getGetRecentAddressBalanceChangesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getRecentAddressBalanceChanges"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getRecentAddressBalanceChanges"))
+              .build();
+        }
+      }
+    }
+    return getGetRecentAddressBalanceChangesMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse> getGetRecentCompactedAddressBalanceChangesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getRecentCompactedAddressBalanceChanges",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse> getGetRecentCompactedAddressBalanceChangesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse> getGetRecentCompactedAddressBalanceChangesMethod;
+    if ((getGetRecentCompactedAddressBalanceChangesMethod = PlatformGrpc.getGetRecentCompactedAddressBalanceChangesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetRecentCompactedAddressBalanceChangesMethod = PlatformGrpc.getGetRecentCompactedAddressBalanceChangesMethod) == null) {
+          PlatformGrpc.getGetRecentCompactedAddressBalanceChangesMethod = getGetRecentCompactedAddressBalanceChangesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getRecentCompactedAddressBalanceChanges"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getRecentCompactedAddressBalanceChanges"))
+              .build();
+        }
+      }
+    }
+    return getGetRecentCompactedAddressBalanceChangesMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -2016,6 +2078,20 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetAddressesBranchStateMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getRecentAddressBalanceChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetRecentAddressBalanceChangesMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getRecentCompactedAddressBalanceChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetRecentCompactedAddressBalanceChangesMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -2375,6 +2451,20 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse>(
                   this, METHODID_GET_ADDRESSES_BRANCH_STATE)))
+          .addMethod(
+            getGetRecentAddressBalanceChangesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse>(
+                  this, METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES)))
+          .addMethod(
+            getGetRecentCompactedAddressBalanceChangesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse>(
+                  this, METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES)))
           .build();
     }
   }
@@ -2815,6 +2905,22 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetAddressesBranchStateMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getRecentAddressBalanceChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetRecentAddressBalanceChangesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getRecentCompactedAddressBalanceChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetRecentCompactedAddressBalanceChangesMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -3201,6 +3307,20 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse getAddressesBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetAddressesBranchStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse getRecentAddressBalanceChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetRecentAddressBalanceChangesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse getRecentCompactedAddressBalanceChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetRecentCompactedAddressBalanceChangesMethod(), getCallOptions(), request);
     }
   }
 
@@ -3640,6 +3760,22 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetAddressesBranchStateMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse> getRecentAddressBalanceChanges(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetRecentAddressBalanceChangesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse> getRecentCompactedAddressBalanceChanges(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetRecentCompactedAddressBalanceChangesMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -3693,6 +3829,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_ADDRESSES_INFOS = 48;
   private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 49;
   private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 50;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 51;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 52;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -3915,6 +4053,14 @@ public final class PlatformGrpc {
           serviceImpl.getAddressesBranchState((org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetAddressesBranchStateResponse>) responseObserver);
           break;
+        case METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES:
+          serviceImpl.getRecentAddressBalanceChanges((org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentAddressBalanceChangesResponse>) responseObserver);
+          break;
+        case METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES:
+          serviceImpl.getRecentCompactedAddressBalanceChanges((org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedAddressBalanceChangesResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -4027,6 +4173,8 @@ public final class PlatformGrpc {
               .addMethod(getGetAddressesInfosMethod())
               .addMethod(getGetAddressesTrunkStateMethod())
               .addMethod(getGetAddressesBranchStateMethod())
+              .addMethod(getGetRecentAddressBalanceChangesMethod())
+              .addMethod(getGetRecentCompactedAddressBalanceChangesMethod())
               .build();
         }
       }
