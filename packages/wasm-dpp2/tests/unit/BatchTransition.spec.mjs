@@ -44,10 +44,10 @@ describe('BatchTransition', () => {
 
         const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(createTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batch.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batch).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create from v1 transition', () => {
@@ -60,11 +60,11 @@ describe('BatchTransition', () => {
 
         const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(createTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchedTransition.__wbg_ptr).to.not.equal(0);
-        expect(batch.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchedTransition).to.be.an.instanceof(wasm.BatchedTransition);
+        expect(batch).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to convert batch transition to base64 and back', () => {
@@ -122,11 +122,11 @@ describe('BatchTransition', () => {
 
         const batch = wasm.BatchTransition.fromBatchedTransitions([batchedTransition, batchedTransition], ownerId, 1);
 
-        expect(baseTransition.__wbg_ptr).to.not.equal(0);
-        expect(mintTransition.__wbg_ptr).to.not.equal(0);
-        expect(transition.__wbg_ptr).to.not.equal(0);
-        expect(batchedTransition.__wbg_ptr).to.not.equal(0);
-        expect(batch.__wbg_ptr).to.not.equal(0);
+        expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
+        expect(mintTransition).to.be.an.instanceof(wasm.TokenMintTransition);
+        expect(transition).to.be.an.instanceof(wasm.TokenTransition);
+        expect(batchedTransition).to.be.an.instanceof(wasm.BatchedTransition);
+        expect(batch).to.be.an.instanceof(wasm.BatchTransition);
       });
     });
   });

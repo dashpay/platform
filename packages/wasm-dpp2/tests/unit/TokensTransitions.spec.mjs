@@ -24,16 +24,16 @@ describe('TokenTransitions', () => {
       const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
 
       expect(burnTransition.constructor.name).to.equal('TokenBurnTransition');
-      expect(burnTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(burnTransition).to.be.an.instanceof(wasm.TokenBurnTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create mint transition', () => {
       const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
 
       expect(mintTransition.constructor.name).to.equal('TokenMintTransition');
-      expect(mintTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(mintTransition).to.be.an.instanceof(wasm.TokenMintTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create transfer transition', () => {
@@ -45,8 +45,8 @@ describe('TokenTransitions', () => {
       });
 
       expect(transferTransition.constructor.name).to.equal('TokenTransferTransition');
-      expect(transferTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(transferTransition).to.be.an.instanceof(wasm.TokenTransferTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create transfer transition with shared encrypted note', () => {
@@ -62,9 +62,9 @@ describe('TokenTransitions', () => {
 
       expect(sharedEncryptedNote.constructor.name).to.equal('SharedEncryptedNote');
       expect(transferTransition.constructor.name).to.equal('TokenTransferTransition');
-      expect(transferTransition.__wbg_ptr).to.not.equal(0);
-      expect(sharedEncryptedNote.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(transferTransition).to.be.an.instanceof(wasm.TokenTransferTransition);
+      expect(sharedEncryptedNote).to.be.an.instanceof(wasm.SharedEncryptedNote);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create transfer transition with private encrypted note', () => {
@@ -80,9 +80,9 @@ describe('TokenTransitions', () => {
 
       expect(privateEncryptedNote.constructor.name).to.equal('PrivateEncryptedNote');
       expect(transferTransition.constructor.name).to.equal('TokenTransferTransition');
-      expect(transferTransition.__wbg_ptr).to.not.equal(0);
-      expect(privateEncryptedNote.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(transferTransition).to.be.an.instanceof(wasm.TokenTransferTransition);
+      expect(privateEncryptedNote).to.be.an.instanceof(wasm.PrivateEncryptedNote);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create freeze transition', () => {
@@ -93,8 +93,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(freezeTransition.constructor.name).to.equal('TokenFreezeTransition');
-      expect(freezeTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(freezeTransition).to.be.an.instanceof(wasm.TokenFreezeTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create unfreeze transition', () => {
@@ -105,8 +105,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(unfreezeTransition.constructor.name).to.equal('TokenUnFreezeTransition');
-      expect(unfreezeTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(unfreezeTransition).to.be.an.instanceof(wasm.TokenUnFreezeTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create destroy frozen funds transition', () => {
@@ -117,8 +117,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(tokenDestroyFrozenFundsTransition.constructor.name).to.equal('TokenDestroyFrozenFundsTransition');
-      expect(tokenDestroyFrozenFundsTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(tokenDestroyFrozenFundsTransition).to.be.an.instanceof(wasm.TokenDestroyFrozenFundsTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create claim transition', () => {
@@ -129,8 +129,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(claimTransition.constructor.name).to.equal('TokenClaimTransition');
-      expect(claimTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(claimTransition).to.be.an.instanceof(wasm.TokenClaimTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create claim transition without distribution type', () => {
@@ -139,8 +139,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(claimTransition.constructor.name).to.equal('TokenClaimTransition');
-      expect(claimTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(claimTransition).to.be.an.instanceof(wasm.TokenClaimTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create emergency action transition', () => {
@@ -151,8 +151,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(emergencyActionTransition.constructor.name).to.equal('TokenEmergencyActionTransition');
-      expect(emergencyActionTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(emergencyActionTransition).to.be.an.instanceof(wasm.TokenEmergencyActionTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create config update transition', () => {
@@ -165,9 +165,9 @@ describe('TokenTransitions', () => {
       );
 
       expect(configUpdateTransition.constructor.name).to.equal('TokenConfigUpdateTransition');
-      expect(configUpdateTransition.__wbg_ptr).to.not.equal(0);
-      expect(tradeMode.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(configUpdateTransition).to.be.an.instanceof(wasm.TokenConfigUpdateTransition);
+      expect(tradeMode).to.be.an.instanceof(wasm.TokenTradeMode);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create direct purchase transition', () => {
@@ -178,8 +178,8 @@ describe('TokenTransitions', () => {
       );
 
       expect(directPurchaseTransition.constructor.name).to.equal('TokenDirectPurchaseTransition');
-      expect(directPurchaseTransition.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(directPurchaseTransition).to.be.an.instanceof(wasm.TokenDirectPurchaseTransition);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
 
     it('should allow to create set price direct purchase transition', () => {
@@ -193,9 +193,9 @@ describe('TokenTransitions', () => {
 
       expect(price.constructor.name).to.equal('TokenPricingSchedule');
       expect(setPriceDirectPurchaseTransition.constructor.name).to.equal('TokenSetPriceForDirectPurchaseTransition');
-      expect(setPriceDirectPurchaseTransition.__wbg_ptr).to.not.equal(0);
-      expect(price.__wbg_ptr).to.not.equal(0);
-      expect(baseTransition.__wbg_ptr).to.not.equal(0);
+      expect(setPriceDirectPurchaseTransition).to.be.an.instanceof(wasm.TokenSetPriceForDirectPurchaseTransition);
+      expect(price).to.be.an.instanceof(wasm.TokenPricingSchedule);
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
   });
 
@@ -386,8 +386,8 @@ describe('TokenTransitions', () => {
       expect(transferTransition.publicNote).to.equal('aaaa');
       expect(transferTransition.sharedEncryptedNote.constructor.name).to.equal('SharedEncryptedNote');
       expect(transferTransition.privateEncryptedNote.constructor.name).to.equal('PrivateEncryptedNote');
-      expect(sharedEncryptedNote2.__wbg_ptr).to.not.equal(0);
-      expect(privateEncryptedNote2.__wbg_ptr).to.not.equal(0);
+      expect(sharedEncryptedNote2).to.be.an.instanceof(wasm.SharedEncryptedNote);
+      expect(privateEncryptedNote2).to.be.an.instanceof(wasm.PrivateEncryptedNote);
     });
 
     it('should allow to set values freeze transition', () => {

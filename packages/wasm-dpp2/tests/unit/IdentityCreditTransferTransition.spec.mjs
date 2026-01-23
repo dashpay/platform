@@ -16,7 +16,7 @@ describe('IdentityCreditTransferTransition', () => {
         nonce: BigInt(199),
       });
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityCreditTransfer);
     });
 
     it('Should create IdentityCreditTransferTransition with non empty platform version', async () => {
@@ -30,9 +30,9 @@ describe('IdentityCreditTransferTransition', () => {
         nonce: BigInt(199),
       });
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
-      expect(sender.__wbg_ptr).to.not.equal(0);
-      expect(recipient.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityCreditTransfer);
+      expect(sender).to.be.an.instanceof(wasm.Identifier);
+      expect(recipient).to.be.an.instanceof(wasm.Identifier);
     });
 
     it('Should convert IdentityCreditTransferTransition to base64 and back', () => {
@@ -151,7 +151,7 @@ describe('IdentityCreditTransferTransition', () => {
       transition.recipientId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 
       expect(transition.recipientId.toBase58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
-      expect(recipient.__wbg_ptr).to.not.equal(0);
+      expect(recipient).to.be.an.instanceof(wasm.Identifier);
     });
 
     it('Should return senderId', async () => {
@@ -170,7 +170,7 @@ describe('IdentityCreditTransferTransition', () => {
 
       transition.senderId = '11111111111111111111111111111111';
 
-      expect(sender.__wbg_ptr).to.not.equal(0);
+      expect(sender).to.be.an.instanceof(wasm.Identifier);
       expect(transition.senderId.toBase58()).to.deep.equal('11111111111111111111111111111111');
     });
 

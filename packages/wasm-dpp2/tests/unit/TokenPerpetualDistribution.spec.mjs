@@ -25,10 +25,10 @@ describe('TokenPerpetualDistribution', () => {
         recipient,
       );
 
-      expect(recipient.__wbg_ptr).to.not.equal(0);
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0);
-      expect(distributionType.__wbg_ptr).to.not.equal(0);
-      expect(distribution.__wbg_ptr).to.not.equal(0);
+      expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
+      expect(distributionType).to.be.an.instanceof(wasm.RewardDistributionType);
+      expect(distribution).to.be.an.instanceof(wasm.TokenPerpetualDistribution);
     });
   });
 
@@ -100,7 +100,7 @@ describe('TokenPerpetualDistribution', () => {
 
       distribution.distributionType = newDistribution;
 
-      expect(newDistribution.__wbg_ptr).to.not.equal(0);
+      expect(newDistribution).to.be.an.instanceof(wasm.RewardDistributionType);
       expect(distribution.distributionType.constructor.name).to.deep.equal('RewardDistributionType');
       expect(distribution.distributionType.distribution.constructor.name).to.deep.equal('TimeBasedDistribution');
     });
@@ -126,7 +126,7 @@ describe('TokenPerpetualDistribution', () => {
 
       distribution.distributionRecipient = newRecipient;
 
-      expect(newRecipient.__wbg_ptr).to.not.equal(0);
+      expect(newRecipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
       expect(distribution.distributionRecipient.constructor.name).to.deep.equal('TokenDistributionRecipient');
       expect(distribution.distributionRecipient.recipientType).to.deep.equal('EvonodesByParticipation');
     });

@@ -17,8 +17,8 @@ describe('DataContract Create Transition', () => {
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
 
-      expect(dataContractTransition.__wbg_ptr).to.not.equal(0);
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(dataContractTransition).to.be.an.instanceof(wasm.DataContractCreateTransition);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
     it('should allow to convert document_transitions to bytes and create from bytes', () => {
@@ -31,9 +31,9 @@ describe('DataContract Create Transition', () => {
       const newDataContractTransition = wasm.DataContractCreateTransition.fromBytes(bytes);
 
       expect(newDataContractTransition.toBytes()).to.deep.equal(bytes);
-      expect(newDataContractTransition.__wbg_ptr).to.not.equal(0);
-      expect(dataContractTransition.__wbg_ptr).to.not.equal(0);
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(newDataContractTransition).to.be.an.instanceof(wasm.DataContractCreateTransition);
+      expect(dataContractTransition).to.be.an.instanceof(wasm.DataContractCreateTransition);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
     it('should allow to convert data contract transition to state document_transitions and create data contract transition from state transition', () => {

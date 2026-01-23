@@ -18,9 +18,9 @@ describe('AssetLockProof', () => {
       const chainAssetLock = new wasm.AssetLockProof(chainlock);
 
       expect(instantAssetLock.constructor.name).to.equal('AssetLockProof');
-      expect(instantAssetLock.__wbg_ptr).to.not.equal(0);
+      expect(instantAssetLock).to.be.an.instanceof(wasm.AssetLockProof);
       expect(chainAssetLock.constructor.name).to.equal('AssetLockProof');
-      expect(chainAssetLock.__wbg_ptr).to.not.equal(0);
+      expect(chainAssetLock).to.be.an.instanceof(wasm.AssetLockProof);
     });
 
     it('shouldn\'t allow to get chain lock proof via constructor', () => {

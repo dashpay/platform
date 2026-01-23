@@ -23,7 +23,7 @@ describe('PublicKey', () => {
         data: binaryData,
       });
 
-      expect(pubKey.__wbg_ptr).to.not.equal(0);
+      expect(pubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
     });
 
     it('should generate public key from values with type ECDSA_SECP256K1 and generate new from self bytes', () => {
@@ -40,8 +40,8 @@ describe('PublicKey', () => {
 
       const newPubKey = wasm.IdentityPublicKey.fromBytes(Array.from(bytes));
 
-      expect(pubKey.__wbg_ptr).to.not.equal(0);
-      expect(newPubKey.__wbg_ptr).to.not.equal(0);
+      expect(pubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
+      expect(newPubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
 
       expect(pubKey.keyId).to.equal(newPubKey.keyId);
       expect(pubKey.purpose).to.equal(newPubKey.purpose);
@@ -52,8 +52,8 @@ describe('PublicKey', () => {
 
       expect(pubKey.toBytes()).to.deep.equal(newPubKey.toBytes());
 
-      expect(pubKey.__wbg_ptr).to.not.equal(0);
-      expect(newPubKey.__wbg_ptr).to.not.equal(0);
+      expect(pubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
+      expect(newPubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
     });
 
     it('should return hash of key', () => {

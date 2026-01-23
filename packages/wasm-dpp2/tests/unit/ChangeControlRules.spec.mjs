@@ -24,8 +24,8 @@ describe('ChangeControlRules', () => {
 
       const changeRules = createChangeControlRules(noOne, noOne);
 
-      expect(noOne.__wbg_ptr).to.not.equal(0);
-      expect(changeRules.__wbg_ptr).to.not.equal(0);
+      expect(noOne).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules).to.be.an.instanceof(wasm.ChangeControlRules);
     });
   });
 
@@ -83,7 +83,7 @@ describe('ChangeControlRules', () => {
 
       expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakers');
       expect(changeRules.authorizedToMakeChange.takerType).to.deep.equal('ContractOwner');
-      expect(newActionTaker.__wbg_ptr).to.not.equal(0);
+      expect(newActionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
     });
 
     it('should allow to set adminActionTakers', () => {
@@ -97,7 +97,7 @@ describe('ChangeControlRules', () => {
 
       expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakers');
       expect(changeRules.adminActionTakers.takerType).to.deep.equal('ContractOwner');
-      expect(newActionTaker.__wbg_ptr).to.not.equal(0);
+      expect(newActionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
     });
 
     it('should allow to set changingAuthorizedActionTakersToNoOneAllowed', () => {

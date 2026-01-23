@@ -12,7 +12,7 @@ describe('InstantLock', () => {
     it('should allow to create InstantLock from values', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      expect(instantLockProof.__wbg_ptr).to.not.equal(0);
+      expect(instantLockProof).to.be.an.instanceof(wasm.InstantAssetLockProof);
     });
 
     it('should allow to convert to object', () => {
@@ -36,7 +36,7 @@ describe('InstantLock', () => {
 
       const instantLockProof = wasm.InstantAssetLockProof.fromObject(lockObject);
 
-      expect(instantLockProof.__wbg_ptr).to.not.equal(0);
+      expect(instantLockProof).to.be.an.instanceof(wasm.InstantAssetLockProof);
     });
 
     it('should round-trip via toJSON/fromJSON', () => {

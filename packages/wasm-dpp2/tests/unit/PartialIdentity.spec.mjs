@@ -18,7 +18,7 @@ describe('PartialIdentity', () => {
         loadedPublicKeys: {},
       });
 
-      expect(partialIdentity.__wbg_ptr).to.not.equal(0);
+      expect(partialIdentity).to.be.an.instanceof(wasm.PartialIdentity);
       expect(partialIdentity.id.toBase58()).to.equal(identifier);
     });
 
@@ -40,7 +40,7 @@ describe('PartialIdentity', () => {
         notFoundPublicKeys: [10, 20],
       });
 
-      expect(partialIdentity.__wbg_ptr).to.not.equal(0);
+      expect(partialIdentity).to.be.an.instanceof(wasm.PartialIdentity);
       expect(partialIdentity.id.toBase58()).to.equal(identifier);
       expect(partialIdentity.balance).to.equal(BigInt(1000));
       expect(partialIdentity.revision).to.equal(BigInt(5));

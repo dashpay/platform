@@ -46,8 +46,8 @@ describe('TokenDistributionRules', () => {
         changeDirectPurchasePricingRules: changeRules,
       });
 
-      expect(distributionRules.__wbg_ptr).to.not.equal(0);
-      expect(changeRules.__wbg_ptr).to.not.equal(0);
+      expect(distributionRules).to.be.an.instanceof(wasm.TokenDistributionRules);
+      expect(changeRules).to.be.an.instanceof(wasm.ChangeControlRules);
     });
 
     it('should allow to create without undefined values', () => {
@@ -88,10 +88,10 @@ describe('TokenDistributionRules', () => {
         changeDirectPurchasePricingRules: changeRules,
       });
 
-      expect(distributionRules.__wbg_ptr).to.not.equal(0);
-      expect(perpetualDistribution.__wbg_ptr).to.not.equal(0);
-      expect(preProgrammedDistribution.__wbg_ptr).to.not.equal(0);
-      expect(changeRules.__wbg_ptr).to.not.equal(0);
+      expect(distributionRules).to.be.an.instanceof(wasm.TokenDistributionRules);
+      expect(perpetualDistribution).to.be.an.instanceof(wasm.TokenPerpetualDistribution);
+      expect(preProgrammedDistribution).to.be.an.instanceof(wasm.TokenPreProgrammedDistribution);
+      expect(changeRules).to.be.an.instanceof(wasm.ChangeControlRules);
     });
   });
 
@@ -209,7 +209,7 @@ describe('TokenDistributionRules', () => {
 
       distributionRules.changeDirectPurchasePricingRules = newRules;
 
-      expect(newRules.__wbg_ptr).to.not.equal(0);
+      expect(newRules).to.be.an.instanceof(wasm.ChangeControlRules);
       expect(distributionRules.changeDirectPurchasePricingRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(false);
       expect(distributionRules.changeDirectPurchasePricingRules.isChangingAdminActionTakersToNoOneAllowed).to.deep.equal(false);
       expect(distributionRules.changeDirectPurchasePricingRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
@@ -224,7 +224,7 @@ describe('TokenDistributionRules', () => {
 
       distributionRules.mintingAllowChoosingDestinationRules = newRules;
 
-      expect(newRules.__wbg_ptr).to.not.equal(0);
+      expect(newRules).to.be.an.instanceof(wasm.ChangeControlRules);
       expect(distributionRules.mintingAllowChoosingDestinationRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(false);
       expect(distributionRules.mintingAllowChoosingDestinationRules.isChangingAdminActionTakersToNoOneAllowed).to.deep.equal(false);
       expect(distributionRules.mintingAllowChoosingDestinationRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
@@ -239,7 +239,7 @@ describe('TokenDistributionRules', () => {
 
       distributionRules.newTokensDestinationIdentityRules = newRules;
 
-      expect(newRules.__wbg_ptr).to.not.equal(0);
+      expect(newRules).to.be.an.instanceof(wasm.ChangeControlRules);
       expect(distributionRules.newTokensDestinationIdentityRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(false);
       expect(distributionRules.newTokensDestinationIdentityRules.isChangingAdminActionTakersToNoOneAllowed).to.deep.equal(false);
       expect(distributionRules.newTokensDestinationIdentityRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
@@ -260,7 +260,7 @@ describe('TokenDistributionRules', () => {
 
       distributionRules.preProgrammedDistribution = newPreProgrammedDistribution;
 
-      expect(newPreProgrammedDistribution.__wbg_ptr).to.not.equal(0);
+      expect(newPreProgrammedDistribution).to.be.an.instanceof(wasm.TokenPreProgrammedDistribution);
       // Just check it's a map-like structure
       expect(distributionRules.preProgrammedDistribution.distributions).to.not.equal(undefined);
     });
@@ -274,7 +274,7 @@ describe('TokenDistributionRules', () => {
 
       distributionRules.perpetualDistributionRules = newPerpetualDistributionRules;
 
-      expect(newPerpetualDistributionRules.__wbg_ptr).to.not.equal(0);
+      expect(newPerpetualDistributionRules).to.be.an.instanceof(wasm.ChangeControlRules);
       expect(distributionRules.perpetualDistributionRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
     });
 
@@ -288,7 +288,7 @@ describe('TokenDistributionRules', () => {
 
       distributionRules.perpetualDistribution = newPerpetualDistribution;
 
-      expect(newPerpetualDistribution.__wbg_ptr).to.not.equal(0);
+      expect(newPerpetualDistribution).to.be.an.instanceof(wasm.TokenPerpetualDistribution);
       expect(distributionRules.perpetualDistribution.distributionRecipient.recipientType).to.deep.equal('EvonodesByParticipation');
     });
   });

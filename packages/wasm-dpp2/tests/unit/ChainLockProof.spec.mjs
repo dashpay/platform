@@ -12,7 +12,7 @@ describe('InstantLock', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
       const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
-      expect(chainlock.__wbg_ptr).to.not.equal(0);
+      expect(chainlock).to.be.an.instanceof(wasm.ChainAssetLockProof);
     });
 
     it('should allow to create chain lock proof from object', () => {
@@ -29,7 +29,7 @@ describe('InstantLock', () => {
         },
       });
 
-      expect(chainlock.__wbg_ptr).to.not.equal(0);
+      expect(chainlock).to.be.an.instanceof(wasm.ChainAssetLockProof);
       expect(chainlock.coreChainLockedHeight).to.equal(11);
       expect(chainlock.outPoint.vout).to.equal(1);
     });
@@ -99,7 +99,7 @@ describe('InstantLock', () => {
       chainlock.outPoint = newOutpoint;
 
       expect(chainlock.outPoint.vout).to.equal(222);
-      expect(newOutpoint.__wbg_ptr).to.not.equal(0);
+      expect(newOutpoint).to.be.an.instanceof(wasm.OutPoint);
     });
   });
 });

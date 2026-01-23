@@ -13,7 +13,7 @@ describe('DistributionFunction', function () {
         BigInt(111)
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create Random', () => {
@@ -22,7 +22,7 @@ describe('DistributionFunction', function () {
         BigInt(113)
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create StepDecreasingAmount', () => {
@@ -37,7 +37,7 @@ describe('DistributionFunction', function () {
         BigInt(1)
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create Stepwise', () => {
@@ -47,7 +47,7 @@ describe('DistributionFunction', function () {
         }
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create Linear', () => {
@@ -60,7 +60,7 @@ describe('DistributionFunction', function () {
         undefined
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create Polynomial', () => {
@@ -76,7 +76,7 @@ describe('DistributionFunction', function () {
         undefined
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create Exponential', () => {
@@ -92,7 +92,7 @@ describe('DistributionFunction', function () {
         undefined
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create Logarithmic', () => {
@@ -108,7 +108,7 @@ describe('DistributionFunction', function () {
         undefined
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
 
     it('should allow to create InvertedLogarithmic', () => {
@@ -124,7 +124,7 @@ describe('DistributionFunction', function () {
         undefined
       )
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0)
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction)
     })
   })
 

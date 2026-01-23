@@ -11,7 +11,7 @@ describe('TokenConfigurationLocalization', () => {
     it('should allow to create from values', () => {
       const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
 
-      expect(localization.__wbg_ptr).to.not.equal(0);
+      expect(localization).to.be.an.instanceof(wasm.TokenConfigurationLocalization);
     });
 
     it('should recreate localization from JSON', () => {

@@ -29,7 +29,7 @@ describe('DataContract', () => {
         fullValidation: false,
       });
 
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
     it('should allows to create DataContract from schema with full validation', () => {
@@ -41,13 +41,13 @@ describe('DataContract', () => {
         fullValidation: true,
       });
 
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
     it('should allows to create DataContract from value with full validation and without platform version', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
     it('should allows to convert DataContract to bytes and from bytes', () => {
@@ -59,7 +59,7 @@ describe('DataContract', () => {
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(dataContract.toBytes(), false, PlatformVersion.PLATFORM_V1);
 
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
 
       expect(dataContractFromBytes.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
     });

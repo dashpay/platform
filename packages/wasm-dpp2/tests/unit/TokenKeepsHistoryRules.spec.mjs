@@ -23,7 +23,7 @@ describe('TokenKeepsHistoryRules', () => {
     it('should allow to create TokenKeepsHistoryRules from values', () => {
       const keepHistory = createKeepsHistoryRules();
 
-      expect(keepHistory.__wbg_ptr).to.not.equal(0);
+      expect(keepHistory).to.be.an.instanceof(wasm.TokenKeepsHistoryRules);
     });
   });
 

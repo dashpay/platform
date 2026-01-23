@@ -30,13 +30,13 @@ describe('Document', () => {
     it('should allows to create Document from values', () => {
       const documentInstance = createDocument();
 
-      expect(documentInstance.__wbg_ptr).to.not.equal(0);
+      expect(documentInstance).to.be.an.instanceof(wasm.Document);
     });
 
     it('should allows to create Document from values with custom id', () => {
       const documentInstance = createDocument({ id });
 
-      expect(documentInstance.__wbg_ptr).to.not.equal(0);
+      expect(documentInstance).to.be.an.instanceof(wasm.Document);
     });
 
     it('should allows to create Document from bytes and convert to bytes', () => {
@@ -47,7 +47,7 @@ describe('Document', () => {
 
       expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());
       expect(bytes).to.deep.equal(fromHexString(documentBytes));
-      expect(dataContract.__wbg_ptr).to.not.equal(0);
+      expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
   });
 

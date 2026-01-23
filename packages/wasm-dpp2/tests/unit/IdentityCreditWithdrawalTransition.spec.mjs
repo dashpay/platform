@@ -22,9 +22,9 @@ describe('IdentityCreditWithdrawalTransition', () => {
         userFeeIncrease: 1,
       });
 
-      expect(identifier.__wbg_ptr).to.not.equal(0);
-      expect(script.__wbg_ptr).to.not.equal(0);
-      expect(transition.__wbg_ptr).to.not.equal(0);
+      expect(identifier).to.be.an.instanceof(wasm.Identifier);
+      expect(script).to.be.an.instanceof(wasm.CoreScript);
+      expect(transition).to.be.an.instanceof(wasm.IdentityCreditWithdrawalTransition);
     });
 
     it('Should convert IdentityCreditWithdrawalTransition to base64 and back', () => {

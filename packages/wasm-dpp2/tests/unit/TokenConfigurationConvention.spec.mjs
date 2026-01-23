@@ -17,7 +17,7 @@ describe('TokenConfigurationConvention', () => {
         1,
       );
 
-      expect(convention.__wbg_ptr).to.not.equal(0);
+      expect(convention).to.be.an.instanceof(wasm.TokenConfigurationConvention);
     });
   });
 
@@ -98,7 +98,7 @@ describe('TokenConfigurationConvention', () => {
         singularForm: 'singularForm',
         pluralForm: 'pluralForm',
       });
-      expect(localization.__wbg_ptr).to.not.equal(0);
+      expect(localization).to.be.an.instanceof(wasm.TokenConfigurationLocalization);
     });
   });
 });

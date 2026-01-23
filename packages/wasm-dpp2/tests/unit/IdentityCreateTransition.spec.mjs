@@ -10,7 +10,7 @@ describe('IdentityCreateTransition', () => {
     it('should allow to create transition', () => {
       const transition = wasm.IdentityCreateTransition.default(1);
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityCreateTransition);
     });
 
     it('should allow to serialize to bytes', () => {
@@ -26,7 +26,7 @@ describe('IdentityCreateTransition', () => {
 
       const transition = wasm.IdentityCreateTransition.fromBytes(bytes);
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityCreateTransition);
     });
 
     it('should serialize to JSON', () => {
@@ -81,7 +81,7 @@ describe('IdentityCreateTransition', () => {
     it('should allow to get AssetLock', () => {
       const transition = wasm.IdentityCreateTransition.default(1);
 
-      expect(transition.assetLock.__wbg_ptr).to.not.equal(0);
+      expect(transition.assetLock).to.be.an.instanceof(wasm.AssetLockProof);
     });
 
     it('should allow to get Identifier', () => {

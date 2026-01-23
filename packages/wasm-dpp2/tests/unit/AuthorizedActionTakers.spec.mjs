@@ -12,35 +12,35 @@ describe('AuthorizedActionTakers', () => {
     it('should allows to create AuthorizedActionTakers with NoOne', () => {
       const actionTaker = wasm.AuthorizedActionTakers.NoOne();
 
-      expect(actionTaker.__wbg_ptr).to.not.equal(0);
+      expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('NoOne');
     });
 
     it('should allows to create AuthorizedActionTakers with ContractOwner', () => {
       const actionTaker = wasm.AuthorizedActionTakers.ContractOwner();
 
-      expect(actionTaker.__wbg_ptr).to.not.equal(0);
+      expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('ContractOwner');
     });
 
     it('should allows to create AuthorizedActionTakers with Identity', () => {
       const actionTaker = wasm.AuthorizedActionTakers.Identity(identifier);
 
-      expect(actionTaker.__wbg_ptr).to.not.equal(0);
+      expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal(`Identity(${identifier})`);
     });
 
     it('should allows to create AuthorizedActionTakers with MainGroup', () => {
       const actionTaker = wasm.AuthorizedActionTakers.MainGroup();
 
-      expect(actionTaker.__wbg_ptr).to.not.equal(0);
+      expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('MainGroup');
     });
 
     it('should allows to create AuthorizedActionTakers with Group', () => {
       const actionTaker = wasm.AuthorizedActionTakers.Group(12);
 
-      expect(actionTaker.__wbg_ptr).to.not.equal(0);
+      expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('Group(12)');
     });
   });

@@ -20,8 +20,8 @@ describe('IdentityTopUpTransition', () => {
 
       const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
-      expect(assetLockProof.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityTopUpTransition);
+      expect(assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);
     });
 
     it('should convert IdentityTopUpTransition to base64 and back', () => {

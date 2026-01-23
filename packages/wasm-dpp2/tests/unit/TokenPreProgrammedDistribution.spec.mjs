@@ -33,7 +33,7 @@ describe('TokenPreProgrammedDistribution', () => {
 
       const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(distributions);
 
-      expect(preProgrammedDistribution.__wbg_ptr).to.not.equal(0);
+      expect(preProgrammedDistribution).to.be.an.instanceof(wasm.TokenPreProgrammedDistribution);
     });
   });
 

@@ -24,7 +24,7 @@ describe('IdentityPublicKeyInCreation', () => {
     it('should allow to create from values', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
-      expect(publicKeyInCreation.__wbg_ptr).to.not.equal(0);
+      expect(publicKeyInCreation).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
     });
 
     it('should allow to create from values and convert to identity public key', () => {
@@ -32,7 +32,7 @@ describe('IdentityPublicKeyInCreation', () => {
 
       const publicKey = publicKeyInCreation.toIdentityPublicKey();
 
-      expect(publicKeyInCreation.__wbg_ptr).to.not.equal(0);
+      expect(publicKeyInCreation).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
       expect(publicKey.constructor.name).to.equal('IdentityPublicKey');
     });
   });

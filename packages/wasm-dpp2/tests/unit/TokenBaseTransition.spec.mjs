@@ -22,7 +22,7 @@ describe('TokenBaseTransition', function () {
     it('should allow to create from values', () => {
       const baseTransition = createBaseTransition();
 
-      expect(baseTransition.__wbg_ptr).to.not.equal(0)
+      expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition)
     })
   })
 
@@ -56,7 +56,7 @@ describe('TokenBaseTransition', function () {
 
       const baseTransition = createBaseTransition({ usingGroupInfo: groupStInfo });
 
-      expect(groupStInfo.__wbg_ptr).to.not.equal(0)
+      expect(groupStInfo).to.be.an.instanceof(wasm.GroupStateTransitionInfo)
       expect(baseTransition.usingGroupInfo.constructor.name).to.deep.equal('GroupStateTransitionInfo')
     })
   })
@@ -103,7 +103,7 @@ describe('TokenBaseTransition', function () {
 
       baseTransition.usingGroupInfo = groupStInfo
 
-      expect(groupStInfo.__wbg_ptr).to.not.equal(0)
+      expect(groupStInfo).to.be.an.instanceof(wasm.GroupStateTransitionInfo)
       expect(baseTransition.usingGroupInfo.constructor.name).to.deep.equal('GroupStateTransitionInfo')
     })
   })

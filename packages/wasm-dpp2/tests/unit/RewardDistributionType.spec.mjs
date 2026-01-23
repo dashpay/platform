@@ -18,8 +18,8 @@ describe('RewardDistributionType', () => {
         distributionFunction,
       );
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0);
-      expect(distributionType.__wbg_ptr).to.not.equal(0);
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
+      expect(distributionType).to.be.an.instanceof(wasm.RewardDistributionType);
     });
 
     it('should allow to create TimeBasedDistribution', () => {
@@ -32,8 +32,8 @@ describe('RewardDistributionType', () => {
         distributionFunction,
       );
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0);
-      expect(distributionType.__wbg_ptr).to.not.equal(0);
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
+      expect(distributionType).to.be.an.instanceof(wasm.RewardDistributionType);
     });
 
     it('should allow to create EpochBasedDistribution', () => {
@@ -46,8 +46,8 @@ describe('RewardDistributionType', () => {
         distributionFunction,
       );
 
-      expect(distributionFunction.__wbg_ptr).to.not.equal(0);
-      expect(distributionType.__wbg_ptr).to.not.equal(0);
+      expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
+      expect(distributionType).to.be.an.instanceof(wasm.RewardDistributionType);
     });
   });
 

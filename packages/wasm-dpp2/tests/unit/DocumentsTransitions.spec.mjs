@@ -28,8 +28,8 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(createTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
       });
 
       it('should allow to create Document Transition from Create transition', () => {
@@ -38,9 +38,9 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = createTransition.toDocumentTransition();
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(createTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
 
       it('should allow to create Document Batch Transition from Document Transitions', () => {
@@ -51,10 +51,10 @@ describe('DocumentsTransitions', () => {
 
         const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(createTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create state document_transitions from document and convert state transition to document batch', () => {
@@ -75,13 +75,13 @@ describe('DocumentsTransitions', () => {
 
         const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().createTransition;
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(createTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
-        expect(st.__wbg_ptr).to.not.equal(0);
-        expect(deserializedBatch.__wbg_ptr).to.not.equal(0);
-        expect(deserializedPurchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
+        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
+        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
     });
 
@@ -90,8 +90,8 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const deleteTransition = new wasm.DocumentDeleteTransition(documentInstance, BigInt(1));
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(deleteTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
       });
 
       it('should allow to create Document Transition from Delete transition', () => {
@@ -100,9 +100,9 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(deleteTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
 
       it('should allow to create Document Batch Transition from Document Transitions', () => {
@@ -113,10 +113,10 @@ describe('DocumentsTransitions', () => {
 
         const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(deleteTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create state document_transitions from document and convert state transition to document batch', () => {
@@ -137,13 +137,13 @@ describe('DocumentsTransitions', () => {
 
         const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().deleteTransition;
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(deleteTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
-        expect(st.__wbg_ptr).to.not.equal(0);
-        expect(deserializedBatch.__wbg_ptr).to.not.equal(0);
-        expect(deserializedPurchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
+        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
+        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
     });
 
@@ -152,8 +152,8 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(replaceTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
       });
 
       it('should allow to create Document Transition from Replace transition', () => {
@@ -162,9 +162,9 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
-        expect(replaceTransition.__wbg_ptr).to.not.equal(0);
-        expect(replaceTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
+        expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
+        expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
 
       it('should allow to create Document Batch Transition from Document Transitions', () => {
@@ -175,10 +175,10 @@ describe('DocumentsTransitions', () => {
 
         const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(replaceTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create state document_transitions from document and convert state transition to document batch', () => {
@@ -199,13 +199,13 @@ describe('DocumentsTransitions', () => {
 
         const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().replaceTransition;
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(replaceTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
-        expect(st.__wbg_ptr).to.not.equal(0);
-        expect(deserializedBatch.__wbg_ptr).to.not.equal(0);
-        expect(deserializedPurchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
+        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
+        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
     });
 
@@ -214,8 +214,8 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(transferTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
       });
 
       it('should allow to create Document Transition from Replace transition', () => {
@@ -224,9 +224,9 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = transferTransition.toDocumentTransition();
 
-        expect(transferTransition.__wbg_ptr).to.not.equal(0);
-        expect(transferTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
+        expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
+        expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
 
       it('should allow to create Document Batch Transition from Document Transitions', () => {
@@ -237,10 +237,10 @@ describe('DocumentsTransitions', () => {
 
         const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(transferTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create state document_transitions from document and convert state transition to document batch', () => {
@@ -261,13 +261,13 @@ describe('DocumentsTransitions', () => {
 
         const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().transferTransition;
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(transferTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
-        expect(st.__wbg_ptr).to.not.equal(0);
-        expect(deserializedBatch.__wbg_ptr).to.not.equal(0);
-        expect(deserializedPurchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
+        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
+        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
     });
 
@@ -276,8 +276,8 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const updatePriceTransition = new wasm.DocumentUpdatePriceTransition(documentInstance, BigInt(1), BigInt(100));
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(updatePriceTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
       });
 
       it('should allow to create Document Transition from UpdatePrice transition', () => {
@@ -286,9 +286,9 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(updatePriceTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
 
       it('should allow to create Document Batch Transition from Document Transitions', () => {
@@ -299,10 +299,10 @@ describe('DocumentsTransitions', () => {
 
         const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(updatePriceTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create state document_transitions from document and convert state transition to document batch', () => {
@@ -323,13 +323,13 @@ describe('DocumentsTransitions', () => {
 
         const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().updatePriceTransition;
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(updatePriceTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
-        expect(st.__wbg_ptr).to.not.equal(0);
-        expect(deserializedBatch.__wbg_ptr).to.not.equal(0);
-        expect(deserializedPurchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
+        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
+        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
     });
 
@@ -338,8 +338,8 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(purchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
 
       it('should allow to create Document Transition from PurchaseTransition transition', () => {
@@ -348,9 +348,9 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(purchaseTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
 
       it('should allow to create Document Batch Transition from Document Transitions', () => {
@@ -361,10 +361,10 @@ describe('DocumentsTransitions', () => {
 
         const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(purchaseTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
       });
 
       it('should allow to create state document_transitions from document and convert state transition to document batch', () => {
@@ -385,13 +385,13 @@ describe('DocumentsTransitions', () => {
 
         const deserializedPurchaseTransition = deserializedTransitions[0].toTransition().purchaseTransition;
 
-        expect(documentInstance.__wbg_ptr).to.not.equal(0);
-        expect(purchaseTransition.__wbg_ptr).to.not.equal(0);
-        expect(documentTransition.__wbg_ptr).to.not.equal(0);
-        expect(batchTransition.__wbg_ptr).to.not.equal(0);
-        expect(st.__wbg_ptr).to.not.equal(0);
-        expect(deserializedBatch.__wbg_ptr).to.not.equal(0);
-        expect(deserializedPurchaseTransition.__wbg_ptr).to.not.equal(0);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
+        expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
+        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
+        expect(batchTransition).to.be.an.instanceof(wasm.BatchTransition);
+        expect(st).to.be.an.instanceof(wasm.BatchStateTransition);
+        expect(deserializedBatch).to.be.an.instanceof(wasm.BatchTransition);
+        expect(deserializedPurchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
       });
     });
   });
@@ -534,7 +534,7 @@ describe('DocumentsTransitions', () => {
         createTransition.base = newBase;
 
         expect(createTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
-        expect(newBase.__wbg_ptr).to.not.equal(0);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
       it('set entropy', () => {
@@ -576,7 +576,7 @@ describe('DocumentsTransitions', () => {
         deleteTransition.base = newBase;
 
         expect(deleteTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
-        expect(newBase.__wbg_ptr).to.not.equal(0);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
     });
 
@@ -606,7 +606,7 @@ describe('DocumentsTransitions', () => {
         replaceTransition.base = newBase;
 
         expect(replaceTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
-        expect(newBase.__wbg_ptr).to.not.equal(0);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
       it('set revision', () => {
@@ -634,7 +634,7 @@ describe('DocumentsTransitions', () => {
         transferTransition.base = newBase;
 
         expect(transferTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
-        expect(newBase.__wbg_ptr).to.not.equal(0);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
       it('set recipient', () => {
@@ -664,7 +664,7 @@ describe('DocumentsTransitions', () => {
         updatePriceTransition.base = newBase;
 
         expect(updatePriceTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
-        expect(newBase.__wbg_ptr).to.not.equal(0);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
       it('set price', () => {
@@ -692,7 +692,7 @@ describe('DocumentsTransitions', () => {
         purchaseTransition.base = newBase;
 
         expect(purchaseTransition.base.identityContractNonce).to.equal(newBase.identityContractNonce);
-        expect(newBase.__wbg_ptr).to.not.equal(0);
+        expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
       it('set price', () => {

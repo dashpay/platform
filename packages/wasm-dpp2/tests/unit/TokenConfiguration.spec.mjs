@@ -102,7 +102,7 @@ describe('TokenConfiguration', () => {
         description: 'note',
       });
 
-      expect(config.__wbg_ptr).to.not.equal(0);
+      expect(config).to.be.an.instanceof(wasm.TokenConfiguration);
     });
   });
 

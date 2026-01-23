@@ -36,7 +36,7 @@ describe('DocumentTransition', () => {
     it('should allow to create from documents document_transitions', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
-      expect(documentTransition.__wbg_ptr).to.not.equal(0);
+      expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
     });
   });
 

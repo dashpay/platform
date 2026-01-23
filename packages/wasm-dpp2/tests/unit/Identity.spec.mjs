@@ -17,7 +17,7 @@ describe('Identity', () => {
     it('should generate identity from identifier', async () => {
       const identity = new wasm.Identity(identifier);
 
-      expect(identity.__wbg_ptr).to.not.equal(0);
+      expect(identity).to.be.an.instanceof(wasm.Identity);
     });
 
     it('should generate identity from identifier and return bytes', async () => {
@@ -27,8 +27,8 @@ describe('Identity', () => {
 
       const newIdentity = wasm.Identity.fromBytes(identity.toBytes());
 
-      expect(identity.__wbg_ptr).to.not.equal(0);
-      expect(newIdentity.__wbg_ptr).to.not.equal(0);
+      expect(identity).to.be.an.instanceof(wasm.Identity);
+      expect(newIdentity).to.be.an.instanceof(wasm.Identity);
     });
 
     it('should recreate identity from JSON output', () => {
@@ -121,7 +121,7 @@ describe('Identity', () => {
 
       identity.addPublicKey(pubKey);
 
-      expect(identity.__wbg_ptr).to.not.equal(0);
+      expect(identity).to.be.an.instanceof(wasm.Identity);
 
       expect(identity.getPublicKeyById(keyId).toBytes()).to.deep.equal(pubKey.toBytes());
     });

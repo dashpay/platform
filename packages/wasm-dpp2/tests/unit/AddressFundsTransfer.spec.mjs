@@ -67,7 +67,7 @@ describe.skip('AddressFundsTransferTransition', () => {
       });
 
       expect(transition).to.exist;
-      expect(transition.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.AddressFundsTransferTransition);
     });
 
     it('should build a transfer transition with multiple inputs and outputs', () => {

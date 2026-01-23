@@ -37,7 +37,7 @@ describe('IdentityUpdateTransition', () => {
     it('Should create IdentityUpdateTransition', () => {
       const transition = createUpdateTransition();
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityUpdateTransition);
     });
 
     it('Should create IdentityUpdateTransition with key', () => {
@@ -45,8 +45,8 @@ describe('IdentityUpdateTransition', () => {
 
       const transition = createUpdateTransition({ addPublicKeys: [key] });
 
-      expect(transition.__wbg_ptr).to.not.equal(0);
-      expect(key.__wbg_ptr).to.not.equal(0);
+      expect(transition).to.be.an.instanceof(wasm.IdentityUpdateTransition);
+      expect(key).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
     });
 
     it('Should convert IdentityUpdateTransition to base64 and back', () => {
@@ -156,7 +156,7 @@ describe('IdentityUpdateTransition', () => {
       transition.publicKeyIdsToAdd = [key, key];
 
       expect(transition.publicKeyIdsToAdd.length).to.deep.equal(2);
-      expect(key.__wbg_ptr).to.not.equal(0);
+      expect(key).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
     });
 
     it('Should allow to set signature', () => {

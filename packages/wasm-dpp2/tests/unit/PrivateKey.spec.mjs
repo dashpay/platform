@@ -13,13 +13,13 @@ describe('PrivateKey', () => {
     it('should allows to create PrivateKey from wif', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pkey.__wbg_ptr).to.not.equal(0);
+      expect(pkey).to.be.an.instanceof(wasm.PrivateKey);
     });
 
     it('should allows to create PrivateKey from bytes', () => {
       const pkey = wasm.PrivateKey.fromBytes(fromHexString(bytes), 'Mainnet');
 
-      expect(pkey.__wbg_ptr).to.not.equal(0);
+      expect(pkey).to.be.an.instanceof(wasm.PrivateKey);
     });
 
     it('should allows to create PrivateKey from hex', () => {

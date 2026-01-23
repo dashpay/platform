@@ -12,19 +12,19 @@ describe('TokenDistributionRecipient', () => {
     it('should allow to create from values ContractOwner', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
-      expect(recipient.__wbg_ptr).to.not.equal(0);
+      expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
     });
 
     it('should allow to create from values Identity', () => {
       const recipient = wasm.TokenDistributionRecipient.Identity(identifier);
 
-      expect(recipient.__wbg_ptr).to.not.equal(0);
+      expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
     });
 
     it('should allow to create from values EvonodesByParticipation', () => {
       const recipient = wasm.TokenDistributionRecipient.EvonodesByParticipation();
 
-      expect(recipient.__wbg_ptr).to.not.equal(0);
+      expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
     });
   });
 

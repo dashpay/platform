@@ -11,7 +11,7 @@ describe('OutPoint', () => {
     it('should allow to create from values', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
-      expect(outpoint.__wbg_ptr).to.not.equal(0);
+      expect(outpoint).to.be.an.instanceof(wasm.OutPoint);
     });
 
     it('should allow to create from bytes', () => {
@@ -22,7 +22,7 @@ describe('OutPoint', () => {
 
       const outpoint = wasm.OutPoint.fromBytes(bytes);
 
-      expect(outpoint.__wbg_ptr).to.not.equal(0);
+      expect(outpoint).to.be.an.instanceof(wasm.OutPoint);
     });
   });
 
