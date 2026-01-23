@@ -148,33 +148,33 @@ impl TokenDistributionRulesWasm {
     }
 
     #[wasm_bindgen(getter = "perpetualDistribution")]
-    pub fn get_perpetual_distribution(&self) -> Option<TokenPerpetualDistributionWasm> {
+    pub fn perpetual_distribution(&self) -> Option<TokenPerpetualDistributionWasm> {
         self.0
             .perpetual_distribution()
             .map(|perp| perp.clone().into())
     }
 
     #[wasm_bindgen(getter = "perpetualDistributionRules")]
-    pub fn get_perpetual_distribution_rules(&self) -> ChangeControlRulesWasm {
+    pub fn perpetual_distribution_rules(&self) -> ChangeControlRulesWasm {
         self.0.perpetual_distribution_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "preProgrammedDistribution")]
-    pub fn get_pre_programmed_distribution(&self) -> Option<TokenPreProgrammedDistributionWasm> {
+    pub fn pre_programmed_distribution(&self) -> Option<TokenPreProgrammedDistributionWasm> {
         self.0
             .pre_programmed_distribution()
             .map(|pre| pre.clone().into())
     }
 
     #[wasm_bindgen(getter = "newTokenDestinationIdentity")]
-    pub fn get_new_tokens_destination_identity(&self) -> Option<IdentifierWasm> {
+    pub fn new_tokens_destination_identity(&self) -> Option<IdentifierWasm> {
         self.0
             .new_tokens_destination_identity()
             .map(|id| IdentifierWasm::from(*id))
     }
 
     #[wasm_bindgen(getter = "newTokenDestinationIdentityRules")]
-    pub fn get_new_tokens_destination_identity_rules(&self) -> ChangeControlRulesWasm {
+    pub fn new_tokens_destination_identity_rules(&self) -> ChangeControlRulesWasm {
         self.0
             .new_tokens_destination_identity_rules()
             .clone()
@@ -187,7 +187,7 @@ impl TokenDistributionRulesWasm {
     }
 
     #[wasm_bindgen(getter = "mintingAllowChoosingDestinationRules")]
-    pub fn get_minting_allow_choosing_destination_rules(&self) -> ChangeControlRulesWasm {
+    pub fn minting_allow_choosing_destination_rules(&self) -> ChangeControlRulesWasm {
         self.0
             .minting_allow_choosing_destination_rules()
             .clone()
@@ -195,7 +195,7 @@ impl TokenDistributionRulesWasm {
     }
 
     #[wasm_bindgen(getter = "changeDirectPurchasePricingRules")]
-    pub fn get_change_direct_purchase_pricing_rules(&self) -> ChangeControlRulesWasm {
+    pub fn change_direct_purchase_pricing_rules(&self) -> ChangeControlRulesWasm {
         self.0.change_direct_purchase_pricing_rules().clone().into()
     }
 

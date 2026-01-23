@@ -107,4 +107,20 @@ describe('ContractBounds', () => {
       expect(documentType.contractBoundsTypeNumber).to.equal(1);
     });
   });
+
+  describe('setters', () => {
+    it('should throw an error when setting invalid identifier via setter', () => {
+      const bounds = new wasm.ContractBounds(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+
+      // This setter returns WasmDppResult<()> in Rust
+      // Let's test what happens when we pass an invalid identifier (wrong length)
+      const invalidIdentifier = Buffer.from('invalid', 'utf8'); // Only 7 bytes, need 32
+
+      expect(() => {
+        bounds.identifier = invalidIdentifier;
+      }).to.throw();
+    });
+  });
 });

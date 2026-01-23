@@ -89,17 +89,17 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(getter = "identityIdentifier")]
-    pub fn get_identity_identifier(&self) -> IdentifierWasm {
+    pub fn identity_identifier(&self) -> IdentifierWasm {
         (*self.0.identity_id()).into()
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]
-    pub fn get_asset_lock_proof(&self) -> AssetLockProofWasm {
+    pub fn asset_lock_proof(&self) -> AssetLockProofWasm {
         self.0.asset_lock_proof().clone().into()
     }
 
@@ -128,7 +128,7 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 

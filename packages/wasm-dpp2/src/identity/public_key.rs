@@ -229,37 +229,37 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(getter = keyId)]
-    pub fn get_key_id(&self) -> u32 {
+    pub fn key_id(&self) -> u32 {
         self.0.id()
     }
 
     #[wasm_bindgen(getter = purpose)]
-    pub fn get_purpose(&self) -> String {
+    pub fn purpose(&self) -> String {
         PurposeWasm::from(self.0.purpose()).into()
     }
 
     #[wasm_bindgen(getter = purposeNumber)]
-    pub fn get_purpose_number(&self) -> PurposeWasm {
+    pub fn purpose_number(&self) -> PurposeWasm {
         PurposeWasm::from(self.0.purpose())
     }
 
     #[wasm_bindgen(getter = securityLevel)]
-    pub fn get_security_level(&self) -> String {
+    pub fn security_level(&self) -> String {
         SecurityLevelWasm::from(self.0.security_level()).into()
     }
 
     #[wasm_bindgen(getter = securityLevelNumber)]
-    pub fn get_security_level_number(&self) -> SecurityLevelWasm {
+    pub fn security_level_number(&self) -> SecurityLevelWasm {
         SecurityLevelWasm::from(self.0.security_level())
     }
 
     #[wasm_bindgen(getter = keyType)]
-    pub fn get_key_type(&self) -> String {
+    pub fn key_type(&self) -> String {
         KeyTypeWasm::from(self.0.key_type()).into()
     }
 
     #[wasm_bindgen(getter = keyTypeNumber)]
-    pub fn get_key_type_number(&self) -> KeyTypeWasm {
+    pub fn key_type_number(&self) -> KeyTypeWasm {
         KeyTypeWasm::from(self.0.key_type())
     }
 
@@ -269,12 +269,12 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(getter = data)]
-    pub fn get_data(&self) -> String {
+    pub fn data(&self) -> String {
         self.0.data().to_string(Hex)
     }
 
     #[wasm_bindgen(getter = disabledAt)]
-    pub fn get_disabled_at(&self) -> Option<u64> {
+    pub fn disabled_at(&self) -> Option<u64> {
         self.0.disabled_at()
     }
 

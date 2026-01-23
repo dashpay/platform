@@ -140,17 +140,17 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "revision")]
-    pub fn get_revision(&self) -> Revision {
+    pub fn revision(&self) -> Revision {
         self.0.revision()
     }
 
     #[wasm_bindgen(getter = "nonce")]
-    pub fn get_nonce(&self) -> IdentityNonce {
+    pub fn nonce(&self) -> IdentityNonce {
         self.0.nonce()
     }
 
     #[wasm_bindgen(getter = "identityIdentifier")]
-    pub fn get_identity_identifier(&self) -> IdentifierWasm {
+    pub fn identity_identifier(&self) -> IdentifierWasm {
         self.0.identity_id().into()
     }
 
@@ -180,12 +180,12 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "publicKeyIdsToDisable")]
-    pub fn get_public_key_ids_to_disable(&self) -> Vec<KeyID> {
+    pub fn public_key_ids_to_disable(&self) -> Vec<KeyID> {
         self.0.public_key_ids_to_disable().to_vec()
     }
 
     #[wasm_bindgen(getter = "publicKeyIdsToAdd")]
-    pub fn get_public_key_ids_to_add(&self) -> Vec<IdentityPublicKeyInCreationWasm> {
+    pub fn public_key_ids_to_add(&self) -> Vec<IdentityPublicKeyInCreationWasm> {
         self.0
             .public_keys_to_add()
             .to_vec()
@@ -195,7 +195,7 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         self.0.user_fee_increase()
     }
 
@@ -243,7 +243,7 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 
@@ -253,7 +253,7 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> KeyID {
+    pub fn signature_public_key_id(&self) -> KeyID {
         self.0.signature_public_key_id()
     }
 

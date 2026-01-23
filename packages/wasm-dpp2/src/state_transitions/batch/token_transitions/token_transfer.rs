@@ -100,22 +100,22 @@ impl TokenTransferTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "amount")]
-    pub fn get_amount(&self) -> u64 {
+    pub fn amount(&self) -> u64 {
         self.0.amount()
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "publicNote")]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 
     #[wasm_bindgen(getter = "sharedEncryptedNote")]
-    pub fn get_shared_encrypted_note(&self) -> Option<SharedEncryptedNoteWasm> {
+    pub fn shared_encrypted_note(&self) -> Option<SharedEncryptedNoteWasm> {
         self.clone()
             .0
             .shared_encrypted_note_owned()
@@ -123,7 +123,7 @@ impl TokenTransferTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "privateEncryptedNote")]
-    pub fn get_private_encrypted_note(&self) -> Option<PrivateEncryptedNoteWasm> {
+    pub fn private_encrypted_note(&self) -> Option<PrivateEncryptedNoteWasm> {
         self.clone()
             .0
             .private_encrypted_note_owned()

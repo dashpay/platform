@@ -229,7 +229,7 @@ impl IdentityPublicKeyInCreationWasm {
         )
         .map_err(|e| WasmDppError::generic(format!("Failed to set data: {:?}", e)))?;
 
-        if let Some(bounds) = self.get_contract_bounds() {
+        if let Some(bounds) = self.contract_bounds() {
             Reflect::set(
                 &options,
                 &JsValue::from_str("contractBounds"),
@@ -250,29 +250,29 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(getter = "contractBounds")]
-    pub fn get_contract_bounds(&self) -> Option<ContractBoundsWasm> {
+    pub fn contract_bounds(&self) -> Option<ContractBoundsWasm> {
         self.0
             .contract_bounds()
             .map(|bounds| ContractBoundsWasm::from(bounds.clone()))
     }
 
     #[wasm_bindgen(getter = keyId)]
-    pub fn get_key_id(&self) -> u32 {
+    pub fn key_id(&self) -> u32 {
         self.0.id()
     }
 
     #[wasm_bindgen(getter = purpose)]
-    pub fn get_purpose(&self) -> String {
+    pub fn purpose(&self) -> String {
         PurposeWasm::from(self.0.purpose()).into()
     }
 
     #[wasm_bindgen(getter = securityLevel)]
-    pub fn get_security_level(&self) -> String {
+    pub fn security_level(&self) -> String {
         SecurityLevelWasm::from(self.0.security_level()).into()
     }
 
     #[wasm_bindgen(getter = keyType)]
-    pub fn get_key_type(&self) -> String {
+    pub fn key_type(&self) -> String {
         KeyTypeWasm::from(self.0.key_type()).into()
     }
 
@@ -282,12 +282,12 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(getter = data)]
-    pub fn get_data(&self) -> Vec<u8> {
+    pub fn data(&self) -> Vec<u8> {
         self.0.data().to_vec()
     }
 
     #[wasm_bindgen(getter = signature)]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 

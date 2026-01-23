@@ -307,17 +307,17 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Option<Vec<u8>> {
+    pub fn signature(&self) -> Option<Vec<u8>> {
         self.0.signature().map(BinaryData::to_vec)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> Option<KeyID> {
+    pub fn signature_public_key_id(&self) -> Option<KeyID> {
         self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         self.0.user_fee_increase()
     }
 

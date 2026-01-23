@@ -182,7 +182,7 @@ impl TokenPreProgrammedDistributionWasm {
     }
 
     #[wasm_bindgen(getter = "distributions")]
-    pub fn get_distributions(&self) -> PreProgrammedDistributionsMapJs {
+    pub fn distributions(&self) -> PreProgrammedDistributionsMapJs {
         distributions_to_map(self.0.distributions())
     }
 

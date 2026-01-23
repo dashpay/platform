@@ -39,7 +39,7 @@ impl DocumentDeleteTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -59,7 +59,7 @@ impl DocumentDeleteTransitionWasm {
     pub fn from_document_transition(
         transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
-        transition.get_delete_transition()
+        transition.delete_transition()
     }
 }
 

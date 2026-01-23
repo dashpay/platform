@@ -76,12 +76,12 @@ impl ChainAssetLockProofWasm {
     }
 
     #[wasm_bindgen(getter = "coreChainLockedHeight")]
-    pub fn get_core_chain_locked_height(&self) -> u32 {
+    pub fn core_chain_locked_height(&self) -> u32 {
         self.0.core_chain_locked_height
     }
 
     #[wasm_bindgen(getter = "outPoint")]
-    pub fn get_out_point(&self) -> OutPointWasm {
+    pub fn out_point(&self) -> OutPointWasm {
         self.0.out_point.into()
     }
 

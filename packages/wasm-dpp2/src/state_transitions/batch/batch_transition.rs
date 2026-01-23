@@ -112,7 +112,7 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "transitions")]
-    pub fn get_batched_transitions(&self) -> Vec<BatchedTransitionWasm> {
+    pub fn batched_transitions(&self) -> Vec<BatchedTransitionWasm> {
         self.0
             .transitions_iter()
             .map(|transition| BatchedTransitionWasm::from(transition.to_owned_transition()))
@@ -128,27 +128,27 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> KeyID {
+    pub fn signature_public_key_id(&self) -> KeyID {
         self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(getter = "allPurchasesAmount")]
-    pub fn get_all_purchases_amount(&self) -> WasmDppResult<Option<Credits>> {
+    pub fn all_purchases_amount(&self) -> WasmDppResult<Option<Credits>> {
         self.0.all_document_purchases_amount().map_err(Into::into)
     }
 
     #[wasm_bindgen(getter = "ownerId")]
-    pub fn get_owner_id(&self) -> IdentifierWasm {
+    pub fn owner_id(&self) -> IdentifierWasm {
         self.0.owner_id().into()
     }
 
     #[wasm_bindgen(getter = "modifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
+    pub fn modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -157,7 +157,7 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "allConflictingIndexCollateralVotingFunds")]
-    pub fn get_all_conflicting_index_collateral_voting_funds(
+    pub fn all_conflicting_index_collateral_voting_funds(
         &self,
     ) -> WasmDppResult<Option<Credits>> {
         self.0

@@ -208,22 +208,22 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(getter = "conventions")]
-    pub fn get_conventions(&self) -> TokenConfigurationConventionWasm {
+    pub fn conventions(&self) -> TokenConfigurationConventionWasm {
         self.0.conventions().clone().into()
     }
 
     #[wasm_bindgen(getter = "conventionsChangeRules")]
-    pub fn get_conventions_change_rules(&self) -> ChangeControlRulesWasm {
+    pub fn conventions_change_rules(&self) -> ChangeControlRulesWasm {
         self.0.conventions_change_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "baseSupply")]
-    pub fn get_base_supply(&self) -> TokenAmount {
+    pub fn base_supply(&self) -> TokenAmount {
         self.0.base_supply()
     }
 
     #[wasm_bindgen(getter = "keepsHistory")]
-    pub fn get_keeps_history(&self) -> TokenKeepsHistoryRulesWasm {
+    pub fn keeps_history(&self) -> TokenKeepsHistoryRulesWasm {
         (*self.0.keeps_history()).into()
     }
 
@@ -233,74 +233,74 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(getter = "isAllowedTransferToFrozenBalance")]
-    pub fn get_is_allowed_transfer_to_frozen_balance(&self) -> bool {
+    pub fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
         self.0.is_allowed_transfer_to_frozen_balance()
     }
 
     #[wasm_bindgen(getter = "maxSupply")]
-    pub fn get_max_supply(&self) -> Option<TokenAmount> {
+    pub fn max_supply(&self) -> Option<TokenAmount> {
         self.0.max_supply()
     }
 
     #[wasm_bindgen(getter = "maxSupplyChangeRules")]
-    pub fn get_max_supply_change_rules(&self) -> ChangeControlRulesWasm {
+    pub fn max_supply_change_rules(&self) -> ChangeControlRulesWasm {
         self.0.max_supply_change_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "distributionRules")]
-    pub fn get_distribution_rules(&self) -> TokenDistributionRulesWasm {
+    pub fn distribution_rules(&self) -> TokenDistributionRulesWasm {
         self.0.distribution_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "marketplaceRules")]
-    pub fn get_marketplace_rules(&self) -> TokenMarketplaceRulesWasm {
+    pub fn marketplace_rules(&self) -> TokenMarketplaceRulesWasm {
         match self.0.clone() {
             TokenConfiguration::V0(v0) => v0.marketplace_rules.clone().into(),
         }
     }
 
     #[wasm_bindgen(getter = "manualMintingRules")]
-    pub fn get_manual_minting_rules(&self) -> ChangeControlRulesWasm {
+    pub fn manual_minting_rules(&self) -> ChangeControlRulesWasm {
         self.0.manual_minting_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "manualBurningRules")]
-    pub fn get_manual_burning_rules(&self) -> ChangeControlRulesWasm {
+    pub fn manual_burning_rules(&self) -> ChangeControlRulesWasm {
         self.0.manual_burning_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "freezeRules")]
-    pub fn get_freeze_rules(&self) -> ChangeControlRulesWasm {
+    pub fn freeze_rules(&self) -> ChangeControlRulesWasm {
         self.0.freeze_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "unfreezeRules")]
-    pub fn get_unfreeze_rules(&self) -> ChangeControlRulesWasm {
+    pub fn unfreeze_rules(&self) -> ChangeControlRulesWasm {
         self.0.unfreeze_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "destroyFrozenFundsRules")]
-    pub fn get_destroy_frozen_funds_rules(&self) -> ChangeControlRulesWasm {
+    pub fn destroy_frozen_funds_rules(&self) -> ChangeControlRulesWasm {
         self.0.destroy_frozen_funds_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "emergencyActionRules")]
-    pub fn get_emergency_action_rules(&self) -> ChangeControlRulesWasm {
+    pub fn emergency_action_rules(&self) -> ChangeControlRulesWasm {
         self.0.emergency_action_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "mainControlGroup")]
-    pub fn get_main_control_group(&self) -> Option<GroupContractPosition> {
+    pub fn main_control_group(&self) -> Option<GroupContractPosition> {
         self.0.main_control_group()
     }
 
     #[wasm_bindgen(getter = "mainControlGroupCanBeModified")]
-    pub fn get_main_control_group_can_be_modified(&self) -> AuthorizedActionTakersWasm {
+    pub fn main_control_group_can_be_modified(&self) -> AuthorizedActionTakersWasm {
         (*self.0.main_control_group_can_be_modified()).into()
     }
 
     #[wasm_bindgen(getter = "description")]
-    pub fn get_description(&self) -> Option<String> {
+    pub fn description(&self) -> Option<String> {
         self.0.description().clone()
     }
 

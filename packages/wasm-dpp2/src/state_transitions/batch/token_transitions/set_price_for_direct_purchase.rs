@@ -62,17 +62,17 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "publicNote")]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 
     #[wasm_bindgen(getter = "price")]
-    pub fn get_price(&self) -> Option<TokenPricingScheduleWasm> {
+    pub fn price(&self) -> Option<TokenPricingScheduleWasm> {
         self.0.price().map(|p| p.clone().into())
     }
 

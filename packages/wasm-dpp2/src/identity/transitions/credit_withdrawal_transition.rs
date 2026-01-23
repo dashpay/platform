@@ -141,32 +141,32 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "outputScript")]
-    pub fn get_output_script(&self) -> Option<CoreScriptWasm> {
+    pub fn output_script(&self) -> Option<CoreScriptWasm> {
         self.0.output_script().map(|script| script.into())
     }
 
     #[wasm_bindgen(getter = "pooling")]
-    pub fn get_pooling(&self) -> String {
+    pub fn pooling(&self) -> String {
         PoolingWasm::from(self.0.pooling()).into()
     }
 
     #[wasm_bindgen(getter = "identityId")]
-    pub fn get_identity_id(&self) -> IdentifierWasm {
+    pub fn identity_id(&self) -> IdentifierWasm {
         IdentifierWasm::from(self.0.identity_id())
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(getter = "nonce")]
-    pub fn get_nonce(&self) -> IdentityNonce {
+    pub fn nonce(&self) -> IdentityNonce {
         self.0.nonce()
     }
 
     #[wasm_bindgen(getter = "amount")]
-    pub fn get_amount(&self) -> u64 {
+    pub fn amount(&self) -> u64 {
         self.0.amount()
     }
 
@@ -244,12 +244,12 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 
     #[wasm_bindgen(getter = "coreFeePerByte")]
-    pub fn get_core_fee_per_byte(&self) -> u32 {
+    pub fn core_fee_per_byte(&self) -> u32 {
         self.0.core_fee_per_byte()
     }
 
@@ -259,7 +259,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> KeyID {
+    pub fn signature_public_key_id(&self) -> KeyID {
         self.0.signature_public_key_id()
     }
 

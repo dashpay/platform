@@ -76,17 +76,17 @@ impl TokenConfigurationLocalizationWasm {
     }
 
     #[wasm_bindgen(getter = "shouldCapitalize")]
-    pub fn get_should_capitalize(&self) -> bool {
+    pub fn should_capitalize(&self) -> bool {
         self.0.should_capitalize()
     }
 
     #[wasm_bindgen(getter = "pluralForm")]
-    pub fn get_plural_form(&self) -> String {
+    pub fn plural_form(&self) -> String {
         self.0.plural_form().to_string()
     }
 
     #[wasm_bindgen(getter = "singularForm")]
-    pub fn get_singular_form(&self) -> String {
+    pub fn singular_form(&self) -> String {
         self.0.singular_form().to_string()
     }
 

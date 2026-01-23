@@ -169,7 +169,7 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "publicKeys")]
-    pub fn get_public_keys(&self) -> Vec<IdentityPublicKeyInCreationWasm> {
+    pub fn public_keys(&self) -> Vec<IdentityPublicKeyInCreationWasm> {
         self.0
             .public_keys()
             .iter()
@@ -183,12 +183,12 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> u16 {
+    pub fn user_fee_increase(&self) -> u16 {
         self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 
@@ -198,7 +198,7 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "assetLock")]
-    pub fn get_asset_lock_proof(&self) -> AssetLockProofWasm {
+    pub fn asset_lock_proof(&self) -> AssetLockProofWasm {
         AssetLockProofWasm::from(self.0.asset_lock_proof().clone())
     }
 

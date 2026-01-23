@@ -42,17 +42,17 @@ impl TokenConfigUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = publicNote)]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 
     #[wasm_bindgen(getter = updateTokenConfigurationItem)]
-    pub fn get_update_token_configuration_item(&self) -> TokenConfigurationChangeItemWasm {
+    pub fn update_token_configuration_item(&self) -> TokenConfigurationChangeItemWasm {
         self.0.update_token_configuration_item().clone().into()
     }
 

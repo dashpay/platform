@@ -88,27 +88,27 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(getter = identityContractNonce)]
-    pub fn get_identity_contract_nonce(&self) -> IdentityNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
     }
 
     #[wasm_bindgen(getter = tokenContractPosition)]
-    pub fn get_token_contract_position(&self) -> u16 {
+    pub fn token_contract_position(&self) -> u16 {
         self.0.token_contract_position()
     }
 
     #[wasm_bindgen(getter = dataContractId)]
-    pub fn get_data_contract_id(&self) -> IdentifierWasm {
+    pub fn data_contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(getter = tokenId)]
-    pub fn get_token_id(&self) -> IdentifierWasm {
+    pub fn token_id(&self) -> IdentifierWasm {
         self.0.token_id().into()
     }
 
     #[wasm_bindgen(getter = usingGroupInfo)]
-    pub fn get_using_group_info(&self) -> Option<GroupStateTransitionInfoWasm> {
+    pub fn using_group_info(&self) -> Option<GroupStateTransitionInfoWasm> {
         self.0
             .using_group_info()
             .map(|using_group_info| using_group_info.into())

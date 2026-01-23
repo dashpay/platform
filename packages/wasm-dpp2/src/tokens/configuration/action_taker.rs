@@ -84,7 +84,7 @@ impl ActionTakerWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn get_value(&self) -> ActionTakerValueJs {
+    pub fn value(&self) -> ActionTakerValueJs {
         match &self.0 {
             ActionTaker::SingleIdentity(value) => IdentifierWasm::from(*value).into(),
             ActionTaker::SpecifiedIdentities(value) => {

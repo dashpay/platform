@@ -736,7 +736,7 @@ impl DocumentWasm {
 
         Ok(DocumentWasm::new(
             document,
-            data_contract.get_id().into(),
+            data_contract.id().into(),
             type_name,
             None,
         ))

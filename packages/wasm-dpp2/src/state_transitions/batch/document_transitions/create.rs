@@ -59,18 +59,18 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "data")]
-    pub fn get_data(&self) -> WasmDppResult<DocumentTransitionDataJs> {
+    pub fn data(&self) -> WasmDppResult<DocumentTransitionDataJs> {
         let js_value = serialization::to_object(self.0.data())?;
         Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "entropy")]
-    pub fn get_entropy(&self) -> Vec<u8> {
+    pub fn entropy(&self) -> Vec<u8> {
         self.0.entropy().to_vec()
     }
 
@@ -106,7 +106,7 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "prefundedVotingBalance")]
-    pub fn get_prefunded_voting_balance(&self) -> Option<PrefundedVotingBalanceWasm> {
+    pub fn prefunded_voting_balance(&self) -> Option<PrefundedVotingBalanceWasm> {
         let rs_balance = self.0.prefunded_voting_balance();
 
         rs_balance.as_ref().map(|balance| balance.clone().into())
@@ -139,7 +139,7 @@ impl DocumentCreateTransitionWasm {
     pub fn from_document_transition(
         transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
-        transition.get_create_transition()
+        transition.create_transition()
     }
 }
 

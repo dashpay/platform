@@ -126,7 +126,7 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(getter = "members")]
-    pub fn get_members(&self) -> WasmDppResult<GroupMembersMapJs> {
+    pub fn members(&self) -> WasmDppResult<GroupMembersMapJs> {
         let members = self.0.members();
 
         let js_map = Map::new();
@@ -140,7 +140,7 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(getter = "requiredPower")]
-    pub fn get_required_power(&self) -> GroupRequiredPower {
+    pub fn required_power(&self) -> GroupRequiredPower {
         self.0.required_power()
     }
 

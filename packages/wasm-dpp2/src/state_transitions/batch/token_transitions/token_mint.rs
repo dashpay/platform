@@ -53,17 +53,17 @@ impl TokenMintTransitionWasm {
     }
 
     #[wasm_bindgen(getter = amount)]
-    pub fn get_amount(&self) -> u64 {
+    pub fn amount(&self) -> u64 {
         self.0.amount()
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = publicNote)]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 

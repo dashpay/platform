@@ -126,7 +126,7 @@ pub struct EpochBasedDistributionWasm {
 #[wasm_bindgen(js_class = BlockBasedDistribution)]
 impl BlockBasedDistributionWasm {
     #[wasm_bindgen(getter = "function")]
-    pub fn get_function(&self) -> DistributionFunctionWasm {
+    pub fn function(&self) -> DistributionFunctionWasm {
         self.function.clone()
     }
 
@@ -139,7 +139,7 @@ impl BlockBasedDistributionWasm {
 #[wasm_bindgen(js_class = TimeBasedDistribution)]
 impl TimeBasedDistributionWasm {
     #[wasm_bindgen(getter = "function")]
-    pub fn get_function(&self) -> DistributionFunctionWasm {
+    pub fn function(&self) -> DistributionFunctionWasm {
         self.function.clone()
     }
 
@@ -152,7 +152,7 @@ impl TimeBasedDistributionWasm {
 #[wasm_bindgen(js_class = EpochBasedDistribution)]
 impl EpochBasedDistributionWasm {
     #[wasm_bindgen(getter = "function")]
-    pub fn get_function(&self) -> DistributionFunctionWasm {
+    pub fn function(&self) -> DistributionFunctionWasm {
         self.function.clone()
     }
 

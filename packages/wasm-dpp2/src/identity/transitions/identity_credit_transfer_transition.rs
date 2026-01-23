@@ -190,7 +190,7 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 
@@ -200,32 +200,32 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> u32 {
+    pub fn signature_public_key_id(&self) -> u32 {
         self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> u16 {
+    pub fn user_fee_increase(&self) -> u16 {
         self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(getter = "recipientId")]
-    pub fn get_recipient_id(&self) -> IdentifierWasm {
+    pub fn recipient_id(&self) -> IdentifierWasm {
         self.0.recipient_id().into()
     }
 
     #[wasm_bindgen(getter = "senderId")]
-    pub fn get_identity_id(&self) -> IdentifierWasm {
+    pub fn sender_id(&self) -> IdentifierWasm {
         self.0.identity_id().into()
     }
 
     #[wasm_bindgen(getter = "amount")]
-    pub fn get_amount(&self) -> u64 {
+    pub fn amount(&self) -> u64 {
         self.0.amount()
     }
 
     #[wasm_bindgen(getter = "nonce")]
-    pub fn get_nonce(&self) -> u64 {
+    pub fn nonce(&self) -> u64 {
         self.0.nonce()
     }
 

@@ -252,17 +252,17 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "identityContractNonce")]
-    pub fn get_identity_contract_nonce(&self) -> IdentityNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
     }
 
     #[wasm_bindgen(getter = "tokenId")]
-    pub fn get_token_id(&self) -> IdentifierWasm {
+    pub fn token_id(&self) -> IdentifierWasm {
         self.0.token_id().into()
     }
 
     #[wasm_bindgen(getter = "contractId")]
-    pub fn get_contract_id(&self) -> IdentifierWasm {
+    pub fn contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 

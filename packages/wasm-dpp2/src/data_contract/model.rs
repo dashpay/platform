@@ -403,17 +403,17 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(getter = "version")]
-    pub fn get_version(&self) -> u32 {
+    pub fn version(&self) -> u32 {
         self.0.version()
     }
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWasm {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.id().into()
     }
 
     #[wasm_bindgen(getter = "ownerId")]
-    pub fn get_owner_id(&self) -> IdentifierWasm {
+    pub fn owner_id(&self) -> IdentifierWasm {
         self.0.owner_id().into()
     }
 
@@ -424,7 +424,7 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(getter = "tokens")]
-    pub fn get_tokens(&self) -> WasmDppResult<Object> {
+    pub fn tokens(&self) -> WasmDppResult<Object> {
         let tokens_object = Object::new();
 
         for (key, value) in self.0.tokens().iter() {
@@ -446,7 +446,7 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(getter = "groups")]
-    pub fn get_groups(&self) -> WasmDppResult<DataContractGroupsJs> {
+    pub fn groups(&self) -> WasmDppResult<DataContractGroupsJs> {
         let groups_object = Object::new();
 
         for (key, value) in self.0.groups().iter() {

@@ -36,12 +36,12 @@ impl From<DocumentTransitionWasm> for DocumentTransition {
 #[wasm_bindgen(js_class = DocumentTransition)]
 impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = "actionType")]
-    pub fn get_action_type(&self) -> String {
+    pub fn action_type(&self) -> String {
         BatchTypeWasm::from(self.0.action_type()).into()
     }
 
     #[wasm_bindgen(getter = "actionTypeNumber")]
-    pub fn get_action_type_number(&self) -> u8 {
+    pub fn action_type_number(&self) -> u8 {
         match self.0.action_type() {
             DocumentTransitionActionType::Create => 0,
             DocumentTransitionActionType::Replace => 1,
@@ -54,37 +54,37 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "dataContractId")]
-    pub fn get_data_contract_id(&self) -> IdentifierWasm {
+    pub fn data_contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWasm {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.get_id().into()
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
-    pub fn get_document_type_name(&self) -> String {
+    pub fn document_type_name(&self) -> String {
         self.0.document_type_name().clone()
     }
 
     #[wasm_bindgen(getter = "identityContractNonce")]
-    pub fn get_identity_contract_nonce(&self) -> IdentityNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
     }
 
     #[wasm_bindgen(getter = "revision")]
-    pub fn get_revision(&self) -> Option<Revision> {
+    pub fn revision(&self) -> Option<Revision> {
         self.0.revision()
     }
 
     #[wasm_bindgen(getter = "entropy")]
-    pub fn get_entropy(&self) -> Option<Vec<u8>> {
+    pub fn entropy(&self) -> Option<Vec<u8>> {
         self.0.entropy()
     }
 
     #[wasm_bindgen(getter = "createTransition")]
-    pub fn get_create_transition(&self) -> WasmDppResult<DocumentCreateTransitionWasm> {
+    pub fn create_transition(&self) -> WasmDppResult<DocumentCreateTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Create(create) => Ok(DocumentCreateTransitionWasm::from(create)),
             _ => Err(WasmDppError::invalid_argument(
@@ -94,7 +94,7 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "replaceTransition")]
-    pub fn get_replace_transition(&self) -> WasmDppResult<DocumentReplaceTransitionWasm> {
+    pub fn replace_transition(&self) -> WasmDppResult<DocumentReplaceTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Replace(replace) => {
                 Ok(DocumentReplaceTransitionWasm::from(replace))
@@ -106,7 +106,7 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "deleteTransition")]
-    pub fn get_delete_transition(&self) -> WasmDppResult<DocumentDeleteTransitionWasm> {
+    pub fn delete_transition(&self) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Delete(delete) => Ok(DocumentDeleteTransitionWasm::from(delete)),
             _ => Err(WasmDppError::invalid_argument(
@@ -116,7 +116,7 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "purchaseTransition")]
-    pub fn get_purchase_transition(&self) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
+    pub fn purchase_transition(&self) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Purchase(purchase) => {
                 Ok(DocumentPurchaseTransitionWasm::from(purchase))
@@ -128,7 +128,7 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "transferTransition")]
-    pub fn get_transfer_transition(&self) -> WasmDppResult<DocumentTransferTransitionWasm> {
+    pub fn transfer_transition(&self) -> WasmDppResult<DocumentTransferTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Transfer(transfer) => {
                 Ok(DocumentTransferTransitionWasm::from(transfer))
@@ -140,7 +140,7 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "updatePriceTransition")]
-    pub fn get_update_price_transition(&self) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
+    pub fn update_price_transition(&self) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::UpdatePrice(update_price) => {
                 Ok(DocumentUpdatePriceTransitionWasm::from(update_price))

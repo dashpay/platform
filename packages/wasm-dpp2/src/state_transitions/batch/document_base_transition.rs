@@ -102,27 +102,27 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWasm {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.id().into()
     }
 
     #[wasm_bindgen(getter = "identityContractNonce")]
-    pub fn get_identity_contract_nonce(&self) -> IdentityNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
     }
 
     #[wasm_bindgen(getter = "dataContractId")]
-    pub fn get_data_contract_id(&self) -> IdentifierWasm {
+    pub fn data_contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
-    pub fn get_document_type_name(&self) -> String {
+    pub fn document_type_name(&self) -> String {
         self.0.document_type_name().to_string()
     }
 
     #[wasm_bindgen(getter = "tokenPaymentInfo")]
-    pub fn get_token_payment_info(&self) -> Option<TokenPaymentInfoWasm> {
+    pub fn token_payment_info(&self) -> Option<TokenPaymentInfoWasm> {
         self.0.token_payment_info().map(|info| info.into())
     }
 

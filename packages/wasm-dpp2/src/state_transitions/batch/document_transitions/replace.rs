@@ -55,18 +55,18 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "data")]
-    pub fn get_data(&self) -> WasmDppResult<DocumentTransitionDataJs> {
+    pub fn data(&self) -> WasmDppResult<DocumentTransitionDataJs> {
         let js_value = serialization::to_object(self.0.data())?;
         Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "revision")]
-    pub fn get_revision(&self) -> Revision {
+    pub fn revision(&self) -> Revision {
         self.0.revision()
     }
 
@@ -102,7 +102,7 @@ impl DocumentReplaceTransitionWasm {
     pub fn from_document_transition(
         transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
-        transition.get_replace_transition()
+        transition.replace_transition()
     }
 }
 

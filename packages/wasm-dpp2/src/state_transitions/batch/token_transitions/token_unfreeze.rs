@@ -45,17 +45,17 @@ impl TokenUnFreezeTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "publicNote")]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 
     #[wasm_bindgen(getter = "frozenIdentityId")]
-    pub fn get_frozen_identity_id(&self) -> IdentifierWasm {
+    pub fn frozen_identity_id(&self) -> IdentifierWasm {
         self.0.frozen_identity_id().into()
     }
 

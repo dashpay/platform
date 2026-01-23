@@ -100,12 +100,12 @@ impl ChangeControlRulesWasm {
     }
 
     #[wasm_bindgen(getter = "authorizedToMakeChange")]
-    pub fn get_authorized_to_make_change(&self) -> AuthorizedActionTakersWasm {
+    pub fn authorized_to_make_change(&self) -> AuthorizedActionTakersWasm {
         (*self.0.authorized_to_make_change_action_takers()).into()
     }
 
     #[wasm_bindgen(getter = "adminActionTakers")]
-    pub fn get_admin_action_takers(&self) -> AuthorizedActionTakersWasm {
+    pub fn admin_action_takers(&self) -> AuthorizedActionTakersWasm {
         (*self.0.admin_action_takers()).into()
     }
 

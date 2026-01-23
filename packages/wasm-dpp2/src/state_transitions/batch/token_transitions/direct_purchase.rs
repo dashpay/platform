@@ -42,17 +42,17 @@ impl TokenDirectPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = tokenCount)]
-    pub fn get_token_count(&self) -> TokenAmount {
+    pub fn token_count(&self) -> TokenAmount {
         self.0.token_count()
     }
 
     #[wasm_bindgen(getter = totalAgreedPrice)]
-    pub fn get_total_agreed_price(&self) -> Credits {
+    pub fn total_agreed_price(&self) -> Credits {
         self.0.total_agreed_price()
     }
 

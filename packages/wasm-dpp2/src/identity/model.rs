@@ -96,17 +96,17 @@ impl IdentityWasm {
     // GETTERS
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWasm {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.id().into()
     }
 
     #[wasm_bindgen(getter = "balance")]
-    pub fn get_balance(&self) -> u64 {
+    pub fn balance(&self) -> u64 {
         self.0.balance()
     }
 
     #[wasm_bindgen(getter = "revision")]
-    pub fn get_revision(&self) -> u64 {
+    pub fn revision(&self) -> u64 {
         self.0.revision()
     }
 

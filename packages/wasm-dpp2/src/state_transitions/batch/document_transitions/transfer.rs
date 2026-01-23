@@ -49,12 +49,12 @@ impl DocumentTransferTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "recipientId")]
-    pub fn get_recipient_owner_id(&self) -> IdentifierWasm {
+    pub fn recipient_owner_id(&self) -> IdentifierWasm {
         self.0.recipient_owner_id().into()
     }
 
@@ -84,7 +84,7 @@ impl DocumentTransferTransitionWasm {
     pub fn from_document_transition(
         transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentTransferTransitionWasm> {
-        transition.get_transfer_transition()
+        transition.transfer_transition()
     }
 }
 

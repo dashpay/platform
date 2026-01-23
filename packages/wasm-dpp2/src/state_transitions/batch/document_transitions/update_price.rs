@@ -45,12 +45,12 @@ impl DocumentUpdatePriceTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "price")]
-    pub fn get_price(&self) -> Credits {
+    pub fn price(&self) -> Credits {
         self.0.price()
     }
 
@@ -75,7 +75,7 @@ impl DocumentUpdatePriceTransitionWasm {
     pub fn from_document_transition(
         transition: DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
-        transition.get_update_price_transition()
+        transition.update_price_transition()
     }
 }
 

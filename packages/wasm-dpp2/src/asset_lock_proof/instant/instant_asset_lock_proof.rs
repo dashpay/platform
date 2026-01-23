@@ -85,12 +85,12 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(getter = "outputIndex")]
-    pub fn get_output_index(&self) -> u32 {
+    pub fn output_index(&self) -> u32 {
         self.0.output_index()
     }
 
     #[wasm_bindgen(getter = "instantLock")]
-    pub fn get_instant_lock(&self) -> Vec<u8> {
+    pub fn instant_lock(&self) -> Vec<u8> {
         serialize(&self.0.instant_lock)
     }
 

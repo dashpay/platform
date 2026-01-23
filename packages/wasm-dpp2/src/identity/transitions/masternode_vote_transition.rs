@@ -232,7 +232,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> u16 {
+    pub fn user_fee_increase(&self) -> u16 {
         self.0.user_fee_increase()
     }
 
@@ -242,7 +242,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "assetLock")]
-    pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
+    pub fn asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
         self.0
             .optional_asset_lock_proof()
             .map(|asset_lock_proof| AssetLockProofWasm::from(asset_lock_proof.clone()))
@@ -254,7 +254,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "modifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
+    pub fn modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
