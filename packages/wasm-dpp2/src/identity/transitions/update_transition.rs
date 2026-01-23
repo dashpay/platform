@@ -6,7 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::try_to_u64;
+use crate::utils::{get_required_property, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -89,28 +89,19 @@ impl IdentityUpdateTransitionWasm {
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let identity_id_js = Reflect::get(&options_obj, &"identityId".into())
-            .map_err(|_| WasmDppError::invalid_argument("identityId is required"))?;
+        let identity_id_js = get_required_property(&options_obj, "identityId")?;
         let identity_id = IdentifierWasm::try_from(&identity_id_js)?.into();
 
-        let revision = try_to_u64(
-            Reflect::get(&options_obj, &"revision".into())
-                .map_err(|_| WasmDppError::invalid_argument("revision is required"))?,
-        )?;
+        let revision = try_to_u64(get_required_property(&options_obj, "revision")?)?;
 
-        let nonce = try_to_u64(
-            Reflect::get(&options_obj, &"nonce".into())
-                .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
-        )?;
+        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
 
-        let add_public_keys_js = Reflect::get(&options_obj, &"addPublicKeys".into())
-            .map_err(|_| WasmDppError::invalid_argument("addPublicKeys is required"))?;
+        let add_public_keys_js = get_required_property(&options_obj, "addPublicKeys")?;
         let add_public_keys_array = Array::from(&add_public_keys_js);
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&add_public_keys_array)?;
 
-        let disable_public_keys_js = Reflect::get(&options_obj, &"disablePublicKeys".into())
-            .map_err(|_| WasmDppError::invalid_argument("disablePublicKeys is required"))?;
+        let disable_public_keys_js = get_required_property(&options_obj, "disablePublicKeys")?;
         let disable_public_keys_array = Array::from(&disable_public_keys_js);
         let disable_public_keys: Vec<KeyID> = disable_public_keys_array
             .iter()

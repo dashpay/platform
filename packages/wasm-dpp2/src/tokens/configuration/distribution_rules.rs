@@ -4,7 +4,7 @@ use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, get_required_property};
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
@@ -72,10 +72,7 @@ impl TokenDistributionRulesWasm {
         };
 
         let perpetual_distribution_rules =
-            Reflect::get(&options_obj, &"perpetualDistributionRules".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("perpetualDistributionRules is required")
-                })?
+            get_required_property(&options_obj, "perpetualDistributionRules")?
                 .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
                 .clone();
 
@@ -105,18 +102,12 @@ impl TokenDistributionRulesWasm {
         };
 
         let new_tokens_destination_identity_rules =
-            Reflect::get(&options_obj, &"newTokensDestinationIdentityRules".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("newTokensDestinationIdentityRules is required")
-                })?
+            get_required_property(&options_obj, "newTokensDestinationIdentityRules")?
                 .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
                 .clone();
 
         let minting_allow_choosing_destination =
-            Reflect::get(&options_obj, &"mintingAllowChoosingDestination".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("mintingAllowChoosingDestination is required")
-                })?
+            get_required_property(&options_obj, "mintingAllowChoosingDestination")?
                 .as_bool()
                 .ok_or_else(|| {
                     WasmDppError::invalid_argument(
@@ -125,20 +116,12 @@ impl TokenDistributionRulesWasm {
                 })?;
 
         let minting_allow_choosing_destination_rules =
-            Reflect::get(&options_obj, &"mintingAllowChoosingDestinationRules".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument(
-                        "mintingAllowChoosingDestinationRules is required",
-                    )
-                })?
+            get_required_property(&options_obj, "mintingAllowChoosingDestinationRules")?
                 .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
                 .clone();
 
         let change_direct_purchase_pricing_rules =
-            Reflect::get(&options_obj, &"changeDirectPurchasePricingRules".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("changeDirectPurchasePricingRules is required")
-                })?
+            get_required_property(&options_obj, "changeDirectPurchasePricingRules")?
                 .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
                 .clone();
 

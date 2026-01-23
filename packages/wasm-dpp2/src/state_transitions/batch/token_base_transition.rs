@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
-use crate::utils::{IntoWasm, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u64};
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -53,24 +53,19 @@ impl TokenBaseTransitionWasm {
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let identity_contract_nonce = try_to_u64(
-            Reflect::get(&options_obj, &"identityContractNonce".into())
-                .map_err(|_| WasmDppError::invalid_argument("identityContractNonce is required"))?,
-        )?;
+        let identity_contract_nonce =
+            try_to_u64(get_required_property(&options_obj, "identityContractNonce")?)?;
 
-        let token_contract_position = Reflect::get(&options_obj, &"tokenContractPosition".into())
-            .map_err(|_| WasmDppError::invalid_argument("tokenContractPosition is required"))?
+        let token_contract_position = get_required_property(&options_obj, "tokenContractPosition")?
             .as_f64()
             .ok_or_else(|| {
                 WasmDppError::invalid_argument("tokenContractPosition must be a number")
             })? as u16;
 
-        let data_contract_id_js = Reflect::get(&options_obj, &"dataContractId".into())
-            .map_err(|_| WasmDppError::invalid_argument("dataContractId is required"))?;
+        let data_contract_id_js = get_required_property(&options_obj, "dataContractId")?;
         let data_contract_id = IdentifierWasm::try_from(&data_contract_id_js)?.into();
 
-        let token_id_js = Reflect::get(&options_obj, &"tokenId".into())
-            .map_err(|_| WasmDppError::invalid_argument("tokenId is required"))?;
+        let token_id_js = get_required_property(&options_obj, "tokenId")?;
         let token_id = IdentifierWasm::try_from(&token_id_js)?.into();
 
         let using_group_info_js =

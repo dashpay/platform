@@ -1,10 +1,10 @@
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
-use crate::utils::{IntoWasm, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u64};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
@@ -57,20 +57,15 @@ impl TokenTransferTransitionWasm {
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let base_js = Reflect::get(&options_obj, &"base".into())
-            .map_err(|_| WasmDppError::invalid_argument("base is required"))?;
+        let base_js = get_required_property(&options_obj, "base")?;
         let base = base_js
             .to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")?
             .clone();
 
-        let recipient_id_js = Reflect::get(&options_obj, &"recipientId".into())
-            .map_err(|_| WasmDppError::invalid_argument("recipientId is required"))?;
+        let recipient_id_js = get_required_property(&options_obj, "recipientId")?;
         let recipient_id: Identifier = IdentifierWasm::try_from(&recipient_id_js)?.into();
 
-        let amount = try_to_u64(
-            Reflect::get(&options_obj, &"amount".into())
-                .map_err(|_| WasmDppError::invalid_argument("amount is required"))?,
-        )?;
+        let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
 
         let public_note_js =
             Reflect::get(&options_obj, &"publicNote".into()).unwrap_or(JsValue::UNDEFINED);

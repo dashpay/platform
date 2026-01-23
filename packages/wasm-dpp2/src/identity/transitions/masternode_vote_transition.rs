@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -96,22 +96,16 @@ impl MasternodeVoteTransitionWasm {
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let pro_tx_hash_js = Reflect::get(&options_obj, &"proTxHash".into())
-            .map_err(|_| WasmDppError::invalid_argument("proTxHash is required"))?;
+        let pro_tx_hash_js = get_required_property(&options_obj, "proTxHash")?;
         let pro_tx_hash = IdentifierWasm::try_from(&pro_tx_hash_js)?.into();
 
-        let voter_identity_id_js = Reflect::get(&options_obj, &"voterIdentityId".into())
-            .map_err(|_| WasmDppError::invalid_argument("voterIdentityId is required"))?;
+        let voter_identity_id_js = get_required_property(&options_obj, "voterIdentityId")?;
         let voter_identity_id = IdentifierWasm::try_from(&voter_identity_id_js)?.into();
 
-        let vote_js = Reflect::get(&options_obj, &"vote".into())
-            .map_err(|_| WasmDppError::invalid_argument("vote is required"))?;
+        let vote_js = get_required_property(&options_obj, "vote")?;
         let vote = vote_js.to_wasm::<VoteWasm>("Vote")?.clone();
 
-        let nonce = try_to_u64(
-            Reflect::get(&options_obj, &"nonce".into())
-                .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
-        )?;
+        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
 
         let signature_public_key_js = Reflect::get(&options_obj, &"signaturePublicKeyId".into())
             .unwrap_or(JsValue::UNDEFINED);

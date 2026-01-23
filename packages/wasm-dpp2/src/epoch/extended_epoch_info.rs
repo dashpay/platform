@@ -1,9 +1,9 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::try_to_u64;
+use crate::utils::{get_required_property, try_to_u64};
 use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
-use js_sys::{BigInt, Object, Reflect};
+use js_sys::{BigInt, Object};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -87,36 +87,27 @@ impl ExtendedEpochInfoWasm {
     ) -> WasmDppResult<ExtendedEpochInfoWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let index = Reflect::get(&options_obj, &"index".into())
-            .map_err(|_| WasmDppError::invalid_argument("index is required"))?
+        let index = get_required_property(&options_obj, "index")?
             .as_f64()
             .ok_or_else(|| WasmDppError::invalid_argument("index must be a number"))?
             as u16;
 
-        let first_block_time = try_to_u64(
-            Reflect::get(&options_obj, &"firstBlockTime".into())
-                .map_err(|_| WasmDppError::invalid_argument("firstBlockTime is required"))?,
-        )?;
+        let first_block_time =
+            try_to_u64(get_required_property(&options_obj, "firstBlockTime")?)?;
 
-        let first_block_height = try_to_u64(
-            Reflect::get(&options_obj, &"firstBlockHeight".into())
-                .map_err(|_| WasmDppError::invalid_argument("firstBlockHeight is required"))?,
-        )?;
+        let first_block_height =
+            try_to_u64(get_required_property(&options_obj, "firstBlockHeight")?)?;
 
-        let first_core_block_height = Reflect::get(&options_obj, &"firstCoreBlockHeight".into())
-            .map_err(|_| WasmDppError::invalid_argument("firstCoreBlockHeight is required"))?
+        let first_core_block_height = get_required_property(&options_obj, "firstCoreBlockHeight")?
             .as_f64()
             .ok_or_else(|| {
                 WasmDppError::invalid_argument("firstCoreBlockHeight must be a number")
             })? as u32;
 
-        let fee_multiplier_permille = try_to_u64(
-            Reflect::get(&options_obj, &"feeMultiplierPermille".into())
-                .map_err(|_| WasmDppError::invalid_argument("feeMultiplierPermille is required"))?,
-        )?;
+        let fee_multiplier_permille =
+            try_to_u64(get_required_property(&options_obj, "feeMultiplierPermille")?)?;
 
-        let protocol_version = Reflect::get(&options_obj, &"protocolVersion".into())
-            .map_err(|_| WasmDppError::invalid_argument("protocolVersion is required"))?
+        let protocol_version = get_required_property(&options_obj, "protocolVersion")?
             .as_f64()
             .ok_or_else(|| WasmDppError::invalid_argument("protocolVersion must be a number"))?
             as u32;

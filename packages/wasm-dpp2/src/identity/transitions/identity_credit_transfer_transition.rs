@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::try_to_u64;
+use crate::utils::{get_required_property, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -81,23 +81,15 @@ impl IdentityCreditTransferWasm {
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let amount = try_to_u64(
-            Reflect::get(&options_obj, &"amount".into())
-                .map_err(|_| WasmDppError::invalid_argument("amount is required"))?,
-        )?;
+        let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
 
-        let sender_js = Reflect::get(&options_obj, &"senderId".into())
-            .map_err(|_| WasmDppError::invalid_argument("senderId is required"))?;
+        let sender_js = get_required_property(&options_obj, "senderId")?;
         let sender: Identifier = IdentifierWasm::try_from(&sender_js)?.into();
 
-        let recipient_js = Reflect::get(&options_obj, &"recipientId".into())
-            .map_err(|_| WasmDppError::invalid_argument("recipientId is required"))?;
+        let recipient_js = get_required_property(&options_obj, "recipientId")?;
         let recipient: Identifier = IdentifierWasm::try_from(&recipient_js)?.into();
 
-        let nonce = try_to_u64(
-            Reflect::get(&options_obj, &"nonce".into())
-                .map_err(|_| WasmDppError::invalid_argument("nonce is required"))?,
-        )?;
+        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
 
         let user_fee_increase_js =
             Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);

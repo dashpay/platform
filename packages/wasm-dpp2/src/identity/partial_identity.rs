@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt, try_to_u64};
+use crate::utils::{IntoWasm, JsValueExt, get_required_property, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value;
@@ -75,12 +75,10 @@ impl PartialIdentityWasm {
     pub fn constructor(options: PartialIdentityOptionsJs) -> WasmDppResult<Self> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let id_js = Reflect::get(&options_obj, &"id".into())
-            .map_err(|_| WasmDppError::invalid_argument("id is required"))?;
+        let id_js = get_required_property(&options_obj, "id")?;
         let id = IdentifierWasm::try_from(&id_js)?.into();
 
-        let loaded_public_keys_js = Reflect::get(&options_obj, &"loadedPublicKeys".into())
-            .map_err(|_| WasmDppError::invalid_argument("loadedPublicKeys is required"))?;
+        let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
         let loaded_public_keys = value_to_loaded_public_keys(&loaded_public_keys_js)?;
 
         let balance_js =
@@ -225,13 +223,11 @@ impl PartialIdentityWasm {
         let options_obj = Object::from(obj_val);
 
         // id - can be Uint8Array or Identifier
-        let id_js = Reflect::get(&options_obj, &"id".into())
-            .map_err(|_| WasmDppError::invalid_argument("id is required"))?;
+        let id_js = get_required_property(&options_obj, "id")?;
         let id = IdentifierWasm::try_from(&id_js)?.into();
 
         // loadedPublicKeys - values are plain objects
-        let loaded_public_keys_js = Reflect::get(&options_obj, &"loadedPublicKeys".into())
-            .map_err(|_| WasmDppError::invalid_argument("loadedPublicKeys is required"))?;
+        let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
         let loaded_public_keys = value_to_loaded_public_keys_from_object(&loaded_public_keys_js)?;
 
         // balance - can be BigInt, number, or undefined
@@ -277,13 +273,11 @@ impl PartialIdentityWasm {
         let options_obj = Object::from(obj_val);
 
         // id - base58 string
-        let id_js = Reflect::get(&options_obj, &"id".into())
-            .map_err(|_| WasmDppError::invalid_argument("id is required"))?;
+        let id_js = get_required_property(&options_obj, "id")?;
         let id = IdentifierWasm::try_from(&id_js)?.into();
 
         // loadedPublicKeys - values are JSON objects
-        let loaded_public_keys_js = Reflect::get(&options_obj, &"loadedPublicKeys".into())
-            .map_err(|_| WasmDppError::invalid_argument("loadedPublicKeys is required"))?;
+        let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
         let loaded_public_keys = value_to_loaded_public_keys_from_json(&loaded_public_keys_js)?;
 
         // balance - number or null

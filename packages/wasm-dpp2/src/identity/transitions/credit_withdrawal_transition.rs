@@ -7,7 +7,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -95,23 +95,17 @@ impl IdentityCreditWithdrawalTransitionWasm {
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let identity_id_js = Reflect::get(&options_obj, &"identityId".into())
-            .map_err(|_| WasmDppError::invalid_argument("identityId is required"))?;
+        let identity_id_js = get_required_property(&options_obj, "identityId")?;
         let identity_id: Identifier = IdentifierWasm::try_from(&identity_id_js)?.into();
 
-        let amount = try_to_u64(
-            Reflect::get(&options_obj, &"amount".into())
-                .map_err(|_| WasmDppError::invalid_argument("amount is required"))?,
-        )?;
+        let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
 
-        let core_fee_per_byte = Reflect::get(&options_obj, &"coreFeePerByte".into())
-            .map_err(|_| WasmDppError::invalid_argument("coreFeePerByte is required"))?
+        let core_fee_per_byte = get_required_property(&options_obj, "coreFeePerByte")?
             .as_f64()
             .ok_or_else(|| WasmDppError::invalid_argument("coreFeePerByte must be a number"))?
             as u32;
 
-        let pooling_js = Reflect::get(&options_obj, &"pooling".into())
-            .map_err(|_| WasmDppError::invalid_argument("pooling is required"))?;
+        let pooling_js = get_required_property(&options_obj, "pooling")?;
         let pooling = PoolingWasm::try_from(pooling_js)?;
 
         let output_script_js =
