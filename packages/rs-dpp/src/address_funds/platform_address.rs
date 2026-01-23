@@ -42,9 +42,9 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
 )]
 #[platform_serialize(unversioned)]
 pub enum PlatformAddress {
-    /// Pay to pubkey hash (type byte = 0)
+    /// Pay to pubkey hash (type byte = 0xb0)
     P2pkh([u8; 20]),
-    /// Pay to script hash (type byte = 1)
+    /// Pay to script hash (type byte = 0x80)
     P2sh([u8; 20]),
 }
 
@@ -82,21 +82,21 @@ impl Default for PlatformAddress {
 }
 
 /// Human-readable part for Platform addresses on mainnet (DIP-0018)
-pub const PLATFORM_HRP_MAINNET: &str = "dashevo";
+pub const PLATFORM_HRP_MAINNET: &str = "evo";
 /// Human-readable part for Platform addresses on testnet/devnet/regtest (DIP-0018)
-pub const PLATFORM_HRP_TESTNET: &str = "tdashevo";
+pub const PLATFORM_HRP_TESTNET: &str = "tevo";
 
 impl PlatformAddress {
     /// Type byte for P2PKH addresses
-    pub const P2PKH_TYPE: u8 = 0;
+    pub const P2PKH_TYPE: u8 = 0xb0;
     /// Type byte for P2SH addresses
-    pub const P2SH_TYPE: u8 = 1;
+    pub const P2SH_TYPE: u8 = 0x80;
 
     /// Returns the appropriate HRP (Human-Readable Part) for the given network.
     ///
     /// Per DIP-0018:
-    /// - Mainnet: "dashevo"
-    /// - Testnet/Devnet/Regtest: "tdashevo"
+    /// - Mainnet: "evo"
+    /// - Testnet/Devnet/Regtest: "tevo"
     pub fn hrp_for_network(network: Network) -> &'static str {
         match network {
             Network::Dash => PLATFORM_HRP_MAINNET,
@@ -110,14 +110,14 @@ impl PlatformAddress {
     ///
     /// The encoding follows DIP-0018:
     /// - Format: `<HRP>1<data-part>`
-    /// - Data: type_byte (0x00 for P2PKH, 0x01 for P2SH) || 20-byte hash
+    /// - Data: type_byte (0xb0 for P2PKH, 0x80 for P2SH) || 20-byte hash
     /// - Checksum: bech32m (BIP-350)
     ///
     /// # Example
     /// ```ignore
     /// let address = PlatformAddress::P2pkh([0xf7, 0xda, ...]);
     /// let encoded = address.to_bech32m_string(Network::Dash);
-    /// // Returns something like "dashevo1qrma5z3ttj75la4m93xcndna9ullamq9y..."
+    /// // Returns something like "evo1k..."
     /// ```
     pub fn to_bech32m_string(&self, network: Network) -> String {
         let hrp_str = Self::hrp_for_network(network);
@@ -567,13 +567,13 @@ impl FromStr for PlatformAddress {
 
     /// Parses a bech32m-encoded Platform address string.
     ///
-    /// This accepts addresses with either mainnet ("dashevo") or testnet ("tdashevo") HRP.
+    /// This accepts addresses with either mainnet ("evo") or testnet ("tevo") HRP.
     /// The network information is discarded; use `from_bech32m_string` if you need
     /// to preserve the network.
     ///
     /// # Example
     /// ```ignore
-    /// let address: PlatformAddress = "dashevo1qrma5z3ttj75la4m93xcndna9ullamq9y...".parse()?;
+    /// let address: PlatformAddress = "evo1k...".parse()?;
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_bech32m_string(s)
@@ -1012,7 +1012,7 @@ mod tests {
 
         // Verify exact match against DIP-0018 test vector
         assert_eq!(
-            encoded, "dashevo1qrma5z3ttj75la4m93xcndna9ullamq9y5smxxxm",
+            encoded, "evo1krma5z3ttj75la4m93xcndna9ullamq9y59dj9x7",
             "Encoded address must match DIP-0018 Vector 1 mainnet"
         );
 
@@ -1037,7 +1037,7 @@ mod tests {
 
         // Verify exact match against DIP-0018 test vector
         assert_eq!(
-            encoded, "tdashevo1qrma5z3ttj75la4m93xcndna9ullamq9y5aawfeu",
+            encoded, "tevo1krma5z3ttj75la4m93xcndna9ullamq9y5rky7cg",
             "Encoded address must match DIP-0018 Vector 1 testnet"
         );
 
@@ -1062,7 +1062,7 @@ mod tests {
 
         // Verify exact match against DIP-0018 P2SH test vector
         assert_eq!(
-            encoded, "dashevo1q9pl5xpu70aka8nacc4kj2htflydspzkxckndrac",
+            encoded, "evo1sppl5xpu70aka8nacc4kj2htflydspzkxctaevg5",
             "Encoded address must match DIP-0018 P2SH mainnet"
         );
 
@@ -1087,7 +1087,7 @@ mod tests {
 
         // Verify exact match against DIP-0018 P2SH test vector
         assert_eq!(
-            encoded, "tdashevo1q9pl5xpu70aka8nacc4kj2htflydspzkxcm49vzl",
+            encoded, "tevo1sppl5xpu70aka8nacc4kj2htflydspzkxcdx0hkz",
             "Encoded address must match DIP-0018 P2SH testnet"
         );
 
@@ -1106,8 +1106,8 @@ mod tests {
         // Devnet should use testnet HRP
         let encoded = address.to_bech32m_string(Network::Devnet);
         assert!(
-            encoded.starts_with("tdashevo1"),
-            "Devnet address should start with 'tdashevo1', got: {}",
+            encoded.starts_with("tevo1"),
+            "Devnet address should start with 'tevo1', got: {}",
             encoded
         );
     }
@@ -1120,8 +1120,8 @@ mod tests {
         // Regtest should use testnet HRP
         let encoded = address.to_bech32m_string(Network::Regtest);
         assert!(
-            encoded.starts_with("tdashevo1"),
-            "Regtest address should start with 'tdashevo1', got: {}",
+            encoded.starts_with("tevo1"),
+            "Regtest address should start with 'tevo1', got: {}",
             encoded
         );
     }
@@ -1163,7 +1163,7 @@ mod tests {
     fn test_bech32m_invalid_type_byte_fails() {
         // Manually construct an address with invalid type byte (0x02)
         // We need to use the bech32 crate directly for this
-        let hrp = Hrp::parse("dashevo").unwrap();
+        let hrp = Hrp::parse("evo").unwrap();
         let invalid_payload: [u8; 21] = [0x02; 21]; // type byte 0x02 is invalid
         let encoded = bech32::encode::<Bech32m>(hrp, &invalid_payload).unwrap();
 
@@ -1180,7 +1180,7 @@ mod tests {
     #[test]
     fn test_bech32m_too_short_fails() {
         // Construct an address with too few bytes
-        let hrp = Hrp::parse("dashevo").unwrap();
+        let hrp = Hrp::parse("evo").unwrap();
         let short_payload: [u8; 10] = [0x00; 10]; // Only 10 bytes instead of 21
         let encoded = bech32::encode::<Bech32m>(hrp, &short_payload).unwrap();
 
@@ -1248,18 +1248,9 @@ mod tests {
 
     #[test]
     fn test_hrp_for_network() {
-        assert_eq!(PlatformAddress::hrp_for_network(Network::Dash), "dashevo");
-        assert_eq!(
-            PlatformAddress::hrp_for_network(Network::Testnet),
-            "tdashevo"
-        );
-        assert_eq!(
-            PlatformAddress::hrp_for_network(Network::Devnet),
-            "tdashevo"
-        );
-        assert_eq!(
-            PlatformAddress::hrp_for_network(Network::Regtest),
-            "tdashevo"
-        );
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Dash), "evo");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Testnet), "tevo");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Devnet), "tevo");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Regtest), "tevo");
     }
 }

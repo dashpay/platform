@@ -27,10 +27,18 @@
 
 CF_EXTERN_C_BEGIN
 
+@class AddToCreditsOperations;
+@class AddressBalanceChange;
+@class AddressBalanceUpdateEntries;
 @class AddressInfoEntries;
 @class AddressInfoEntry;
 @class AllKeys;
 @class BalanceAndNonce;
+@class BlockAddressBalanceChanges;
+@class BlockHeightCreditEntry;
+@class CompactedAddressBalanceChange;
+@class CompactedAddressBalanceUpdateEntries;
+@class CompactedBlockAddressBalanceChanges;
 @class GPBBytesValue;
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
@@ -192,6 +200,10 @@ CF_EXTERN_C_BEGIN
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal;
 @class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals;
+@class GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0;
+@class GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0;
+@class GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0;
+@class GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0;
 @class GetStatusRequest_GetStatusRequestV0;
 @class GetStatusResponse_GetStatusResponseV0;
 @class GetStatusResponse_GetStatusResponseV0_Chain;
@@ -7867,6 +7879,68 @@ GPB_FINAL @interface AddressInfoEntries : GPBMessage
 
 @end
 
+#pragma mark - AddressBalanceChange
+
+typedef GPB_ENUM(AddressBalanceChange_FieldNumber) {
+  AddressBalanceChange_FieldNumber_Address = 1,
+  AddressBalanceChange_FieldNumber_SetBalance = 2,
+  AddressBalanceChange_FieldNumber_AddToBalance = 3,
+};
+
+typedef GPB_ENUM(AddressBalanceChange_Operation_OneOfCase) {
+  AddressBalanceChange_Operation_OneOfCase_GPBUnsetOneOfCase = 0,
+  AddressBalanceChange_Operation_OneOfCase_SetBalance = 2,
+  AddressBalanceChange_Operation_OneOfCase_AddToBalance = 3,
+};
+
+GPB_FINAL @interface AddressBalanceChange : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *address;
+
+@property(nonatomic, readonly) AddressBalanceChange_Operation_OneOfCase operationOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t setBalance;
+
+@property(nonatomic, readwrite) uint64_t addToBalance;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'operation'.
+ **/
+void AddressBalanceChange_ClearOperationOneOfCase(AddressBalanceChange *message);
+
+#pragma mark - BlockAddressBalanceChanges
+
+typedef GPB_ENUM(BlockAddressBalanceChanges_FieldNumber) {
+  BlockAddressBalanceChanges_FieldNumber_BlockHeight = 1,
+  BlockAddressBalanceChanges_FieldNumber_ChangesArray = 2,
+};
+
+GPB_FINAL @interface BlockAddressBalanceChanges : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<AddressBalanceChange*> *changesArray;
+/** The number of items in @c changesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger changesArray_Count;
+
+@end
+
+#pragma mark - AddressBalanceUpdateEntries
+
+typedef GPB_ENUM(AddressBalanceUpdateEntries_FieldNumber) {
+  AddressBalanceUpdateEntries_FieldNumber_BlockChangesArray = 1,
+};
+
+GPB_FINAL @interface AddressBalanceUpdateEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<BlockAddressBalanceChanges*> *blockChangesArray;
+/** The number of items in @c blockChangesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger blockChangesArray_Count;
+
+@end
+
 #pragma mark - GetAddressInfoResponse
 
 typedef GPB_ENUM(GetAddressInfoResponse_FieldNumber) {
@@ -8124,6 +8198,7 @@ void GetAddressesBranchStateRequest_ClearVersionOneOfCase(GetAddressesBranchStat
 typedef GPB_ENUM(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber) {
   GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_Key = 1,
   GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_Depth = 2,
+  GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_CheckpointHeight = 3,
 };
 
 GPB_FINAL @interface GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0 : GPBMessage
@@ -8131,6 +8206,9 @@ GPB_FINAL @interface GetAddressesBranchStateRequest_GetAddressesBranchStateReque
 @property(nonatomic, readwrite, copy, null_resettable) NSData *key;
 
 @property(nonatomic, readwrite) uint32_t depth;
+
+/** Block height from trunk response metadata for consistency */
+@property(nonatomic, readwrite) uint64_t checkpointHeight;
 
 @end
 
@@ -8169,6 +8247,306 @@ GPB_FINAL @interface GetAddressesBranchStateResponse_GetAddressesBranchStateResp
 @property(nonatomic, readwrite, copy, null_resettable) NSData *merkProof;
 
 @end
+
+#pragma mark - GetRecentAddressBalanceChangesRequest
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesRequest_FieldNumber) {
+  GetRecentAddressBalanceChangesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesRequest_Version_OneOfCase) {
+  GetRecentAddressBalanceChangesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentAddressBalanceChangesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentAddressBalanceChangesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetRecentAddressBalanceChangesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentAddressBalanceChangesRequest *message);
+
+#pragma mark - GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber) {
+  GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeight = 1,
+  GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startHeight;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetRecentAddressBalanceChangesResponse
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesResponse_FieldNumber) {
+  GetRecentAddressBalanceChangesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesResponse_Version_OneOfCase) {
+  GetRecentAddressBalanceChangesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentAddressBalanceChangesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentAddressBalanceChangesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetRecentAddressBalanceChangesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentAddressBalanceChangesResponse_ClearVersionOneOfCase(GetRecentAddressBalanceChangesResponse *message);
+
+#pragma mark - GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber) {
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber_AddressBalanceUpdateEntries = 1,
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber_Proof = 2,
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_Result_OneOfCase) {
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_Result_OneOfCase_AddressBalanceUpdateEntries = 1,
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) AddressBalanceUpdateEntries *addressBalanceUpdateEntries;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_ClearResultOneOfCase(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 *message);
+
+#pragma mark - BlockHeightCreditEntry
+
+typedef GPB_ENUM(BlockHeightCreditEntry_FieldNumber) {
+  BlockHeightCreditEntry_FieldNumber_BlockHeight = 1,
+  BlockHeightCreditEntry_FieldNumber_Credits = 2,
+};
+
+/**
+ * Entry for block height to credits mapping in AddToCreditsOperations
+ **/
+GPB_FINAL @interface BlockHeightCreditEntry : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+@property(nonatomic, readwrite) uint64_t credits;
+
+@end
+
+#pragma mark - CompactedAddressBalanceChange
+
+typedef GPB_ENUM(CompactedAddressBalanceChange_FieldNumber) {
+  CompactedAddressBalanceChange_FieldNumber_Address = 1,
+  CompactedAddressBalanceChange_FieldNumber_SetCredits = 2,
+  CompactedAddressBalanceChange_FieldNumber_AddToCreditsOperations = 3,
+};
+
+typedef GPB_ENUM(CompactedAddressBalanceChange_Operation_OneOfCase) {
+  CompactedAddressBalanceChange_Operation_OneOfCase_GPBUnsetOneOfCase = 0,
+  CompactedAddressBalanceChange_Operation_OneOfCase_SetCredits = 2,
+  CompactedAddressBalanceChange_Operation_OneOfCase_AddToCreditsOperations = 3,
+};
+
+/**
+ * Compacted address balance change supporting block-aware credit operations
+ * For SetCredits: the final balance value
+ * For AddToCreditsOperations: preserves individual adds with their block heights
+ **/
+GPB_FINAL @interface CompactedAddressBalanceChange : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *address;
+
+@property(nonatomic, readonly) CompactedAddressBalanceChange_Operation_OneOfCase operationOneOfCase;
+
+/** The address balance was set to this value (overwrites previous) */
+@property(nonatomic, readwrite) uint64_t setCredits;
+
+/** Individual add-to-credits operations by block height (preserved for partial sync) */
+@property(nonatomic, readwrite, strong, null_resettable) AddToCreditsOperations *addToCreditsOperations;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'operation'.
+ **/
+void CompactedAddressBalanceChange_ClearOperationOneOfCase(CompactedAddressBalanceChange *message);
+
+#pragma mark - AddToCreditsOperations
+
+typedef GPB_ENUM(AddToCreditsOperations_FieldNumber) {
+  AddToCreditsOperations_FieldNumber_EntriesArray = 1,
+};
+
+/**
+ * A collection of add-to-credits operations, each tagged with block height
+ * This allows clients to determine which adds to apply based on their sync height
+ **/
+GPB_FINAL @interface AddToCreditsOperations : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<BlockHeightCreditEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - CompactedBlockAddressBalanceChanges
+
+typedef GPB_ENUM(CompactedBlockAddressBalanceChanges_FieldNumber) {
+  CompactedBlockAddressBalanceChanges_FieldNumber_StartBlockHeight = 1,
+  CompactedBlockAddressBalanceChanges_FieldNumber_EndBlockHeight = 2,
+  CompactedBlockAddressBalanceChanges_FieldNumber_ChangesArray = 3,
+};
+
+GPB_FINAL @interface CompactedBlockAddressBalanceChanges : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startBlockHeight;
+
+@property(nonatomic, readwrite) uint64_t endBlockHeight;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<CompactedAddressBalanceChange*> *changesArray;
+/** The number of items in @c changesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger changesArray_Count;
+
+@end
+
+#pragma mark - CompactedAddressBalanceUpdateEntries
+
+typedef GPB_ENUM(CompactedAddressBalanceUpdateEntries_FieldNumber) {
+  CompactedAddressBalanceUpdateEntries_FieldNumber_CompactedBlockChangesArray = 1,
+};
+
+GPB_FINAL @interface CompactedAddressBalanceUpdateEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<CompactedBlockAddressBalanceChanges*> *compactedBlockChangesArray;
+/** The number of items in @c compactedBlockChangesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger compactedBlockChangesArray_Count;
+
+@end
+
+#pragma mark - GetRecentCompactedAddressBalanceChangesRequest
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesRequest_FieldNumber) {
+  GetRecentCompactedAddressBalanceChangesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesRequest_Version_OneOfCase) {
+  GetRecentCompactedAddressBalanceChangesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentCompactedAddressBalanceChangesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentCompactedAddressBalanceChangesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetRecentCompactedAddressBalanceChangesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentCompactedAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentCompactedAddressBalanceChangesRequest *message);
+
+#pragma mark - GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0_FieldNumber) {
+  GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0_FieldNumber_StartBlockHeight = 1,
+  GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startBlockHeight;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetRecentCompactedAddressBalanceChangesResponse
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesResponse_FieldNumber) {
+  GetRecentCompactedAddressBalanceChangesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesResponse_Version_OneOfCase) {
+  GetRecentCompactedAddressBalanceChangesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentCompactedAddressBalanceChangesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentCompactedAddressBalanceChangesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetRecentCompactedAddressBalanceChangesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentCompactedAddressBalanceChangesResponse_ClearVersionOneOfCase(GetRecentCompactedAddressBalanceChangesResponse *message);
+
+#pragma mark - GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber) {
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber_CompactedAddressBalanceUpdateEntries = 1,
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber_Proof = 2,
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_Result_OneOfCase) {
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_Result_OneOfCase_CompactedAddressBalanceUpdateEntries = 1,
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) CompactedAddressBalanceUpdateEntries *compactedAddressBalanceUpdateEntries;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_ClearResultOneOfCase(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 *message);
 
 NS_ASSUME_NONNULL_END
 
