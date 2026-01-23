@@ -137,8 +137,8 @@ describe('TokenDistributionRules', () => {
       expect(distributionRules.perpetualDistribution.constructor.name).to.deep.equal('TokenPerpetualDistribution');
       expect(distributionRules.perpetualDistributionRules.constructor.name).to.deep.equal('ChangeControlRules');
       expect(distributionRules.preProgrammedDistribution.constructor.name).to.deep.equal('TokenPreProgrammedDistribution');
-      expect(distributionRules.newTokenDestinationIdentity.constructor.name).to.deep.equal('Identifier');
-      expect(distributionRules.newTokenDestinationIdentityRules.constructor.name).to.deep.equal('ChangeControlRules');
+      expect(distributionRules.newTokensDestinationIdentity.constructor.name).to.deep.equal('Identifier');
+      expect(distributionRules.newTokensDestinationIdentityRules.constructor.name).to.deep.equal('ChangeControlRules');
       expect(distributionRules.isMintingAllowingChoosingDestination).to.deep.equal(true);
       expect(distributionRules.mintingAllowChoosingDestinationRules.constructor.name).to.deep.equal('ChangeControlRules');
       expect(distributionRules.changeDirectPurchasePricingRules.constructor.name).to.deep.equal('ChangeControlRules');
@@ -230,25 +230,25 @@ describe('TokenDistributionRules', () => {
       expect(distributionRules.mintingAllowChoosingDestinationRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
     });
 
-    it('should allow to set newTokenDestinationIdentityRules', () => {
+    it('should allow to set newTokensDestinationIdentityRules', () => {
       const newRules = createChangeControlRules(noOne, noOne, {
         isChangingAuthorizedActionTakersToNoOneAllowed: false,
         isChangingAdminActionTakersToNoOneAllowed: false,
         isSelfChangingAdminActionTakersAllowed: false,
       });
 
-      distributionRules.newTokenDestinationIdentityRules = newRules;
+      distributionRules.newTokensDestinationIdentityRules = newRules;
 
       expect(newRules.__wbg_ptr).to.not.equal(0);
-      expect(distributionRules.newTokenDestinationIdentityRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(false);
-      expect(distributionRules.newTokenDestinationIdentityRules.isChangingAdminActionTakersToNoOneAllowed).to.deep.equal(false);
-      expect(distributionRules.newTokenDestinationIdentityRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
+      expect(distributionRules.newTokensDestinationIdentityRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(false);
+      expect(distributionRules.newTokensDestinationIdentityRules.isChangingAdminActionTakersToNoOneAllowed).to.deep.equal(false);
+      expect(distributionRules.newTokensDestinationIdentityRules.isChangingAuthorizedActionTakersToNoOneAllowed).to.deep.equal(false);
     });
 
-    it('should allow to set newTokenDestinationIdentity', () => {
-      distributionRules.newTokenDestinationIdentity = '12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
+    it('should allow to set newTokensDestinationIdentity', () => {
+      distributionRules.newTokensDestinationIdentity = '12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 
-      expect(distributionRules.newTokenDestinationIdentity.toBase58()).to.deep.equal('12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1');
+      expect(distributionRules.newTokensDestinationIdentity.toBase58()).to.deep.equal('12p3355tKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1');
     });
 
     it('should allow to set preProgrammedDistribution', () => {

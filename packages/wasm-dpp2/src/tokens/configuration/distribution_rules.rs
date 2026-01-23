@@ -166,14 +166,14 @@ impl TokenDistributionRulesWasm {
             .map(|pre| pre.clone().into())
     }
 
-    #[wasm_bindgen(getter = "newTokenDestinationIdentity")]
+    #[wasm_bindgen(getter = "newTokensDestinationIdentity")]
     pub fn new_tokens_destination_identity(&self) -> Option<IdentifierWasm> {
         self.0
             .new_tokens_destination_identity()
             .map(|id| IdentifierWasm::from(*id))
     }
 
-    #[wasm_bindgen(getter = "newTokenDestinationIdentityRules")]
+    #[wasm_bindgen(getter = "newTokensDestinationIdentityRules")]
     pub fn new_tokens_destination_identity_rules(&self) -> ChangeControlRulesWasm {
         self.0
             .new_tokens_destination_identity_rules()
@@ -244,7 +244,7 @@ impl TokenDistributionRulesWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(setter = "newTokenDestinationIdentity")]
+    #[wasm_bindgen(setter = "newTokensDestinationIdentity")]
     pub fn set_new_tokens_destination_identity(
         &mut self,
         identifier: IdentifierLikeOrUndefinedJs,
@@ -254,7 +254,7 @@ impl TokenDistributionRulesWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(setter = "newTokenDestinationIdentityRules")]
+    #[wasm_bindgen(setter = "newTokensDestinationIdentityRules")]
     pub fn set_new_tokens_destination_identity_rules(&mut self, rules: &ChangeControlRulesWasm) {
         self.0
             .set_new_tokens_destination_identity_rules(rules.clone().into());
