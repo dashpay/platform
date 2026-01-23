@@ -15,6 +15,7 @@ use key_wallet::account::ManagedAccountCollection;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
+use key_wallet::wallet::immature_transaction::ImmatureTransactionCollection;
 use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::transaction_building::{
@@ -259,10 +260,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.update_last_synced(timestamp)
     }
 
-    fn synced_height(&self) -> CoreBlockHeight {
-        self.wallet_info.synced_height()
-    }
-
     fn monitored_addresses(&self) -> Vec<DashAddress> {
         self.wallet_info.monitored_addresses()
     }
@@ -272,7 +269,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
-        self.wallet_info.get_spendable_utxos()
+        WalletInfoInterface::get_spendable_utxos(&self.wallet_info)
     }
 
     fn balance(&self) -> WalletBalance {
@@ -295,7 +292,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.accounts()
     }
 
-    fn immature_transactions(&self) -> Vec<Transaction> {
+    fn immature_transactions(&self) -> &ImmatureTransactionCollection {
         self.wallet_info.immature_transactions()
     }
 
@@ -318,12 +315,30 @@ impl WalletInfoInterface for PlatformWalletInfo {
         )
     }
 
-    fn update_synced_height(&mut self, current_height: u32) {
-        self.wallet_info.update_synced_height(current_height)
+    fn update_chain_height(&mut self, current_height: u32) {
+        self.wallet_info.update_chain_height(current_height)
     }
 
     fn network(&self) -> Network {
         self.wallet_info.network()
+    }
+
+    fn add_immature_transaction(
+        &mut self,
+        tx: key_wallet::wallet::immature_transaction::ImmatureTransaction,
+    ) {
+        self.wallet_info.add_immature_transaction(tx)
+    }
+
+    fn immature_balance(&self) -> u64 {
+        self.wallet_info.immature_balance()
+    }
+    fn process_matured_transactions(
+        &mut self,
+        current_height: u32,
+    ) -> Vec<key_wallet::wallet::immature_transaction::ImmatureTransaction> {
+        self.wallet_info
+            .process_matured_transactions(current_height)
     }
 }
 

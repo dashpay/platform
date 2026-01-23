@@ -12,7 +12,18 @@ authors = [
 ]
 
 [dependencies]
-
+anyhow = { version = "1.0.81" }
+async-trait = { version = "0.1.79" }
+base64 = "0.22.1"
+bech32 = "0.11"
+bs58 = "0.5"
+byteorder = { version = "1.4" }
+chrono = { version = "0.4.35", default-features = false, features = [
+  "wasmbind",
+  "clock",
+] }
+chrono-tz = { version = "0.8", optional = true }
+ciborium = { version = "0.2.2", optional = true }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "53d699c9b551ac7d3644e11ca46dc3819277ff87", features = [
   "std",
   "secp-recovery",
@@ -62,18 +73,7 @@ once_cell = "1.19.0"
 tracing = { version = "0.1.41" }
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["full"] }anyhow = { version = "1.0.81" }
-async-trait = { version = "0.1.79" }
-base64 = "0.22.1"
-bech32 = "0.11"
-bs58 = "0.5"
-byteorder = { version = "1.4" }
-chrono = { version = "0.4.35", default-features = false, features = [
-  "wasmbind",
-  "clock",
-] }
-chrono-tz = { version = "0.8", optional = true }
-ciborium = { version = "0.2.2", optional = true }
+tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = [
   "all_features_without_client",

@@ -2559,7 +2559,7 @@ mod tests {
                             verified.err()
                         );
 
-                        let (root_hash, verified_changes) = verified.unwrap();
+                        let (root_hash, _verified_changes) = verified.unwrap();
                         assert!(
                             !root_hash.is_empty(),
                             "root hash should not be empty"
