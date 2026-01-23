@@ -31,6 +31,8 @@ pub struct RequestSettings {
     pub retries: Option<usize>,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: Option<bool>,
+    /// Maximum gRPC response size in bytes (decoding limit).
+    pub max_decoding_message_size: Option<usize>,
 }
 
 impl RequestSettings {
@@ -42,6 +44,7 @@ impl RequestSettings {
             timeout: None,
             retries: None,
             ban_failed_address: None,
+            max_decoding_message_size: None,
         }
     }
 
@@ -54,6 +57,9 @@ impl RequestSettings {
             timeout: rhs.timeout.or(self.timeout),
             retries: rhs.retries.or(self.retries),
             ban_failed_address: rhs.ban_failed_address.or(self.ban_failed_address),
+            max_decoding_message_size: rhs
+                .max_decoding_message_size
+                .or(self.max_decoding_message_size),
         }
     }
 
@@ -66,6 +72,7 @@ impl RequestSettings {
             ban_failed_address: self
                 .ban_failed_address
                 .unwrap_or(DEFAULT_BAN_FAILED_ADDRESS),
+            max_decoding_message_size: self.max_decoding_message_size,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
         }
@@ -83,6 +90,8 @@ pub struct AppliedRequestSettings {
     pub retries: usize,
     /// Ban DAPI address if node not responded or responded with error.
     pub ban_failed_address: bool,
+    /// Maximum gRPC response size in bytes (decoding limit).
+    pub max_decoding_message_size: Option<usize>,
     /// Certificate Authority certificate to use for verifying the server's certificate.
     #[cfg(not(target_arch = "wasm32"))]
     pub ca_certificate: Option<Certificate>,
