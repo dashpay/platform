@@ -6,7 +6,10 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_optional_property, get_required_property, try_to_array, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{
+    get_optional_property, get_required_property, try_to_array, try_to_object, try_to_u16,
+    try_to_u32, try_to_u64,
+};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -21,8 +24,8 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_UPDATE_OPTIONS_TS: &'static str = r#"

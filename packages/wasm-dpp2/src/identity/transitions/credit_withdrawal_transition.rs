@@ -7,7 +7,10 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{
+    IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u32,
+    try_to_u64,
+};
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -23,8 +26,8 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CREDIT_WITHDRAWAL_OPTIONS_TS: &'static str = r#"

@@ -193,12 +193,15 @@ impl FinalizedEpochInfoWasm {
 
         let first_core_block_height_js =
             get_required_property(&options_obj, "firstCoreBlockHeight")?;
-        let first_core_block_height = try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
+        let first_core_block_height =
+            try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
 
         let next_epoch_start_core_block_height_js =
             get_required_property(&options_obj, "nextEpochStartCoreBlockHeight")?;
-        let next_epoch_start_core_block_height =
-            try_to_u32(next_epoch_start_core_block_height_js, "nextEpochStartCoreBlockHeight")?;
+        let next_epoch_start_core_block_height = try_to_u32(
+            next_epoch_start_core_block_height_js,
+            "nextEpochStartCoreBlockHeight",
+        )?;
 
         let total_processing_fees_js = get_required_property(&options_obj, "totalProcessingFees")?;
         let total_processing_fees = try_to_u64(total_processing_fees_js)?;
@@ -220,7 +223,8 @@ impl FinalizedEpochInfoWasm {
                 "'blockProposers' must be a Map",
             ));
         }
-        let block_proposers = block_proposers_from_map(&Map::unchecked_from_js(block_proposers_js))?;
+        let block_proposers =
+            block_proposers_from_map(&Map::unchecked_from_js(block_proposers_js))?;
 
         let fee_multiplier_permille_js =
             get_required_property(&options_obj, "feeMultiplierPermille")?;

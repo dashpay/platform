@@ -5,8 +5,8 @@ use crate::utils::{IntoWasm, try_to_array, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 /// TypeScript type alias for flexible ProTxHash input
 #[wasm_bindgen(typescript_custom_section)]

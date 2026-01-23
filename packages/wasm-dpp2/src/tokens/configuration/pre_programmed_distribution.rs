@@ -10,8 +10,8 @@ use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0:
 use dpp::prelude::{Identifier, TimestampMillis};
 use js_sys::{BigInt, Map, Reflect};
 use std::collections::BTreeMap;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"

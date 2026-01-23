@@ -97,7 +97,8 @@ impl ExtendedEpochInfoWasm {
 
         let first_core_block_height_js =
             get_required_property(&options_obj, "firstCoreBlockHeight")?;
-        let first_core_block_height = try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
+        let first_core_block_height =
+            try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
 
         let fee_multiplier_permille_js =
             get_required_property(&options_obj, "feeMultiplierPermille")?;

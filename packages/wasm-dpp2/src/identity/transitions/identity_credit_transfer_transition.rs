@@ -3,7 +3,9 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u64};
+use crate::utils::{
+    get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u64,
+};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};

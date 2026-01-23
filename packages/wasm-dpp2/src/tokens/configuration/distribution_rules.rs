@@ -11,8 +11,8 @@ use dpp::data_contract::associated_token::token_distribution_rules::accessors::v
 };
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
 use js_sys::Reflect;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_DISTRIBUTION_RULES_OPTIONS_TS: &'static str = r#"

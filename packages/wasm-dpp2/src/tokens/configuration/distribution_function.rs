@@ -11,17 +11,20 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use js_sys::{BigInt, Object, Reflect};
 use std::collections::BTreeMap;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "DistributionFixedAmount | DistributionRandom | DistributionStepDecreasingAmount | Record<string, bigint> | DistributionLinear | DistributionPolynomial | DistributionExponential | DistributionLogarithmic | DistributionInvertedLogarithmic")]
+    #[wasm_bindgen(
+        typescript_type = "DistributionFixedAmount | DistributionRandom | DistributionStepDecreasingAmount | Record<string, bigint> | DistributionLinear | DistributionPolynomial | DistributionExponential | DistributionLogarithmic | DistributionInvertedLogarithmic"
+    )]
     pub type DistributionFunctionValue;
 }
 
 // Source types only (wasm_bindgen provides From<JsValue>)
-impl_from_for_extern_type!(DistributionFunctionValue,
+impl_from_for_extern_type!(
+    DistributionFunctionValue,
     DistributionFixedAmountWasm,
     DistributionRandomWasm,
     DistributionStepDecreasingAmountWasm,
@@ -268,9 +271,7 @@ impl DistributionFunctionWasm {
             DistributionFunction::FixedAmount { amount } => {
                 DistributionFixedAmountWasm { amount }.into()
             }
-            DistributionFunction::Random { min, max } => {
-                DistributionRandomWasm { min, max }.into()
-            }
+            DistributionFunction::Random { min, max } => DistributionRandomWasm { min, max }.into(),
             DistributionFunction::StepDecreasingAmount {
                 step_count,
                 decrease_per_interval_numerator,

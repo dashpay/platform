@@ -24,8 +24,8 @@ use dpp::state_transition::batch_transition::{
     TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition,
     TokenSetPriceForDirectPurchaseTransition, TokenTransferTransition, TokenUnfreezeTransition,
 };
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_TRANSITION_TYPES_TS: &'static str = r#"

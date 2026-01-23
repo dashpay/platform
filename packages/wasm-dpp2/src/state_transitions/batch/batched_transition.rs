@@ -13,8 +13,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const BATCHED_TRANSITION_TYPES_TS: &'static str = r#"
@@ -28,7 +28,11 @@ extern "C" {
     pub type BatchedTransitionLikeJs;
 }
 
-impl_from_for_extern_type!(BatchedTransitionLikeJs, DocumentTransitionWasm, TokenTransitionWasm);
+impl_from_for_extern_type!(
+    BatchedTransitionLikeJs,
+    DocumentTransitionWasm,
+    TokenTransitionWasm
+);
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "BatchedTransition")]

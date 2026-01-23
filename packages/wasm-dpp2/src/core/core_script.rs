@@ -42,9 +42,7 @@ impl CoreScriptWasm {
             )));
         }
 
-        let key_hash_bytes: [u8; 20] = key_hash
-            .try_into()
-            .expect("length already validated");
+        let key_hash_bytes: [u8; 20] = key_hash.try_into().expect("length already validated");
 
         Ok(CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes)))
     }
@@ -58,9 +56,7 @@ impl CoreScriptWasm {
             )));
         }
 
-        let script_hash_bytes: [u8; 20] = script_hash
-            .try_into()
-            .expect("length already validated");
+        let script_hash_bytes: [u8; 20] = script_hash.try_into().expect("length already validated");
 
         let mut bytes = vec![
             opcodes::all::OP_HASH160.to_u8(),

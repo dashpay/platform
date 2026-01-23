@@ -121,9 +121,7 @@ impl OutPointWasm {
             )));
         }
 
-        let out_buffer: [u8; 36] = buffer
-            .try_into()
-            .expect("length already validated");
+        let out_buffer: [u8; 36] = buffer.try_into().expect("length already validated");
 
         Ok(OutPointWasm(OutPoint::from(out_buffer)))
     }

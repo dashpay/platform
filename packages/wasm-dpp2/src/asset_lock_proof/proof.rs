@@ -211,8 +211,9 @@ impl AssetLockProofWasm {
         match type_num as u8 {
             0 => InstantAssetLockProofWasm::from_object(js_value.into())
                 .map(AssetLockProofWasm::from),
-            1 => ChainAssetLockProofWasm::from_object(js_value.into())
-                .map(AssetLockProofWasm::from),
+            1 => {
+                ChainAssetLockProofWasm::from_object(js_value.into()).map(AssetLockProofWasm::from)
+            }
             _ => Err(WasmDppError::invalid_argument(format!(
                 "Unknown AssetLockProof type: {}",
                 type_num
@@ -260,10 +261,10 @@ impl AssetLockProofWasm {
         })?;
 
         match type_num as u8 {
-            0 => InstantAssetLockProofWasm::from_json(js_value.into())
-                .map(AssetLockProofWasm::from),
-            1 => ChainAssetLockProofWasm::from_json(js_value.into())
-                .map(AssetLockProofWasm::from),
+            0 => {
+                InstantAssetLockProofWasm::from_json(js_value.into()).map(AssetLockProofWasm::from)
+            }
+            1 => ChainAssetLockProofWasm::from_json(js_value.into()).map(AssetLockProofWasm::from),
             _ => Err(WasmDppError::invalid_argument(format!(
                 "Unknown AssetLockProof type: {}",
                 type_num

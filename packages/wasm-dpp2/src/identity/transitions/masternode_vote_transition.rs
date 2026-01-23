@@ -5,7 +5,10 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_bytes, try_to_object, try_to_u32, try_to_u64};
+use crate::utils::{
+    IntoWasm, get_optional_property, get_required_property, try_to_bytes, try_to_object,
+    try_to_u32, try_to_u64,
+};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;

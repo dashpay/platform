@@ -3,15 +3,18 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt, get_optional_property, get_required_property, try_to_array, try_to_object, try_to_u64};
+use crate::utils::{
+    IntoWasm, JsValueExt, get_optional_property, get_required_property, try_to_array,
+    try_to_object, try_to_u64,
+};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value;
 use dpp::prelude::Revision;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const PARTIAL_IDENTITY_OPTIONS_TS: &'static str = r#"
@@ -99,7 +102,10 @@ impl PartialIdentityWasm {
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
-            Some(try_to_array(not_found_public_keys_js, "notFoundPublicKeys")?)
+            Some(try_to_array(
+                not_found_public_keys_js,
+                "notFoundPublicKeys",
+            )?)
         };
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
@@ -248,7 +254,10 @@ impl PartialIdentityWasm {
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
-            Some(try_to_array(not_found_public_keys_js, "notFoundPublicKeys")?)
+            Some(try_to_array(
+                not_found_public_keys_js,
+                "notFoundPublicKeys",
+            )?)
         };
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
@@ -295,7 +304,10 @@ impl PartialIdentityWasm {
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
-            Some(try_to_array(not_found_public_keys_js, "notFoundPublicKeys")?)
+            Some(try_to_array(
+                not_found_public_keys_js,
+                "notFoundPublicKeys",
+            )?)
         };
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
@@ -410,14 +422,11 @@ pub fn value_to_loaded_public_keys_from_object(
     let keys = Object::keys(&pub_keys_object);
 
     for key in keys.iter() {
-        let key_str = key.as_string().ok_or_else(|| {
-            WasmDppError::invalid_argument("Key identifier must be a string")
-        })?;
+        let key_str = key
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("Key identifier must be a string"))?;
         let key_val: f64 = key_str.parse().map_err(|_| {
-            WasmDppError::invalid_argument(format!(
-                "Key identifier '{}' must be numeric",
-                key_str
-            ))
+            WasmDppError::invalid_argument(format!("Key identifier '{}' must be numeric", key_str))
         })?;
 
         if key_val > u32::MAX as f64 {
@@ -460,14 +469,11 @@ pub fn value_to_loaded_public_keys_from_json(
     let keys = Object::keys(&pub_keys_object);
 
     for key in keys.iter() {
-        let key_str = key.as_string().ok_or_else(|| {
-            WasmDppError::invalid_argument("Key identifier must be a string")
-        })?;
+        let key_str = key
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("Key identifier must be a string"))?;
         let key_val: f64 = key_str.parse().map_err(|_| {
-            WasmDppError::invalid_argument(format!(
-                "Key identifier '{}' must be numeric",
-                key_str
-            ))
+            WasmDppError::invalid_argument(format!("Key identifier '{}' must be numeric", key_str))
         })?;
 
         if key_val > u32::MAX as f64 {
@@ -494,4 +500,3 @@ pub fn value_to_loaded_public_keys_from_json(
 
     Ok(map)
 }
-

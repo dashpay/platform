@@ -7,8 +7,8 @@ use dpp::data_contract::associated_token::token_configuration_localization::acce
     TokenConfigurationLocalizationV0Getters, TokenConfigurationLocalizationV0Setters,
 };
 use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"

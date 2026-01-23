@@ -6,8 +6,8 @@ use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
 use js_sys::Array;
 use std::collections::BTreeSet;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const ACTION_TAKER_TYPES_TS: &'static str = r#"

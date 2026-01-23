@@ -10,8 +10,8 @@ use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
 use dpp::prelude::Identifier;
 use js_sys::{Map, Reflect};
 use std::collections::BTreeMap;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &'static str = r#"

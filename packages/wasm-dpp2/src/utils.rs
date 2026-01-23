@@ -129,8 +129,9 @@ pub fn get_required_property(
     object: &js_sys::Object,
     property_name: &str,
 ) -> WasmDppResult<JsValue> {
-    let value = js_sys::Reflect::get(object, &JsValue::from_str(property_name))
-        .map_err(|_| WasmDppError::invalid_argument(format!("Missing '{}' property", property_name)))?;
+    let value = js_sys::Reflect::get(object, &JsValue::from_str(property_name)).map_err(|_| {
+        WasmDppError::invalid_argument(format!("Missing '{}' property", property_name))
+    })?;
 
     if value.is_undefined() {
         return Err(WasmDppError::invalid_argument(format!(
@@ -251,9 +252,9 @@ pub fn try_to_fixed_bytes<const N: usize>(
 /// - Non-negative
 /// - Within u32 range (0..=4294967295)
 pub fn try_to_u32(value: JsValue, field_name: &str) -> WasmDppResult<u32> {
-    let num = value
-        .as_f64()
-        .ok_or_else(|| WasmDppError::invalid_argument(format!("'{}' must be a number", field_name)))?;
+    let num = value.as_f64().ok_or_else(|| {
+        WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
+    })?;
 
     if num.is_nan() || num.is_infinite() {
         return Err(WasmDppError::invalid_argument(format!(
@@ -297,9 +298,9 @@ pub fn try_to_u32(value: JsValue, field_name: &str) -> WasmDppResult<u32> {
 /// - Non-negative
 /// - Within u16 range (0..=65535)
 pub fn try_to_u16(value: JsValue, field_name: &str) -> WasmDppResult<u16> {
-    let num = value
-        .as_f64()
-        .ok_or_else(|| WasmDppError::invalid_argument(format!("'{}' must be a number", field_name)))?;
+    let num = value.as_f64().ok_or_else(|| {
+        WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
+    })?;
 
     if num.is_nan() || num.is_infinite() {
         return Err(WasmDppError::invalid_argument(format!(

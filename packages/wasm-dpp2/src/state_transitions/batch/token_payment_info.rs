@@ -66,8 +66,7 @@ impl TokenPaymentInfoWasm {
         let object = Object::from(options.clone());
 
         // Extract paymentTokenContractId (optional, can be null/undefined)
-        let js_payment_token_contract_id =
-            get_optional_property(&object, "paymentTokenContractId");
+        let js_payment_token_contract_id = get_optional_property(&object, "paymentTokenContractId");
         let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
             .is_null()
             || js_payment_token_contract_id.is_undefined()
