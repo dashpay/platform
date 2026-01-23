@@ -205,11 +205,14 @@ describe('IdentityCreditWithdrawalTransition', () => {
         userFeeIncrease: 1,
       });
 
-      const script2 = wasm.CoreScript.fromP2PKH([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+      const script2 = wasm.CoreScript.fromP2PKH([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
+
+      expect(transition.outputScript.toString()).to.deep.equal(script.toString());
 
       transition.outputScript = script2;
 
       expect(transition.outputScript.toString()).to.deep.equal(script2.toString());
+      expect(transition.outputScript.toString()).to.not.deep.equal(script.toString());
     });
 
     it('Should allow to set pooling', () => {
