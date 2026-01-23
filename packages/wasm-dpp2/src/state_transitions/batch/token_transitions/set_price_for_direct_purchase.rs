@@ -39,14 +39,15 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
         price: &JsValue,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenSetPriceForDirectPurchaseTransitionWasm> {
-        let price: Option<TokenPricingSchedule> = match price.is_undefined() {
-            true => None,
-            false => Some(
+        let price: Option<TokenPricingSchedule> = if price.is_undefined() {
+            None
+        } else {
+            Some(
                 price
                     .to_wasm::<TokenPricingScheduleWasm>("TokenPricingSchedule")?
                     .clone()
                     .into(),
-            ),
+            )
         };
 
         Ok(TokenSetPriceForDirectPurchaseTransitionWasm(

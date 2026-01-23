@@ -75,14 +75,15 @@ impl DocumentBaseTransitionWasm {
         let js_token_payment_info = Reflect::get(&object, &JsValue::from_str("tokenPaymentInfo"))
             .unwrap_or(JsValue::UNDEFINED);
         let token_payment_info: Option<TokenPaymentInfo> =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
-                true => None,
-                false => Some(
+            if js_token_payment_info.is_null() || js_token_payment_info.is_undefined() {
+                None
+            } else {
+                Some(
                     js_token_payment_info
                         .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone()
                         .into(),
-                ),
+                )
             };
 
         // Extract simple fields via serde

@@ -63,9 +63,10 @@ impl DataContractUpdateTransitionWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
         let platform_version: JsValue = platform_version.into();
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let rs_data_contract_update_transition =
@@ -142,9 +143,10 @@ impl DataContractUpdateTransitionWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
         let platform_version: JsValue = platform_version.into();
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let data_contract_serialization_format =
@@ -170,9 +172,10 @@ impl DataContractUpdateTransitionWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version: JsValue = platform_version.into();
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let data_contract_serialization_format = self.0.data_contract();

@@ -75,26 +75,28 @@ impl TokenTransferTransitionWasm {
 
         let js_shared_encrypted_note = get_optional_property(&options_obj, "sharedEncryptedNote");
         let shared_encrypted_note: Option<SharedEncryptedNote> =
-            match js_shared_encrypted_note.is_undefined() {
-                true => None,
-                false => Some(
+            if js_shared_encrypted_note.is_undefined() {
+                None
+            } else {
+                Some(
                     js_shared_encrypted_note
                         .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
                         .clone()
                         .into(),
-                ),
+                )
             };
 
         let js_private_encrypted_note = get_optional_property(&options_obj, "privateEncryptedNote");
         let private_encrypted_note: Option<PrivateEncryptedNote> =
-            match js_private_encrypted_note.is_undefined() {
-                true => None,
-                false => Some(
+            if js_private_encrypted_note.is_undefined() {
+                None
+            } else {
+                Some(
                     js_private_encrypted_note
                         .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
                         .clone()
                         .into(),
-                ),
+                )
             };
 
         Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
@@ -172,14 +174,15 @@ impl TokenTransferTransitionWasm {
         shared_encrypted_note: &JsValue,
     ) -> WasmDppResult<()> {
         let shared_encrypted_note: Option<SharedEncryptedNote> =
-            match shared_encrypted_note.is_undefined() {
-                true => None,
-                false => Some(
+            if shared_encrypted_note.is_undefined() {
+                None
+            } else {
+                Some(
                     shared_encrypted_note
                         .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
                         .clone()
                         .into(),
-                ),
+                )
             };
 
         self.0.set_shared_encrypted_note(shared_encrypted_note);
@@ -192,14 +195,15 @@ impl TokenTransferTransitionWasm {
         private_encrypted_note: &JsValue,
     ) -> WasmDppResult<()> {
         let private_encrypted_note: Option<PrivateEncryptedNote> =
-            match private_encrypted_note.is_undefined() {
-                true => None,
-                false => Some(
+            if private_encrypted_note.is_undefined() {
+                None
+            } else {
+                Some(
                     private_encrypted_note
                         .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
                         .clone()
                         .into(),
-                ),
+                )
             };
 
         self.0.set_private_encrypted_note(private_encrypted_note);

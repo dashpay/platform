@@ -197,14 +197,15 @@ impl TokenDistributionRulesWasm {
         &mut self,
         perpetual_distribution: &JsValue,
     ) -> WasmDppResult<()> {
-        let perpetual_distribution = match perpetual_distribution.is_undefined() {
-            true => None,
-            false => Some(
+        let perpetual_distribution = if perpetual_distribution.is_undefined() {
+            None
+        } else {
+            Some(
                 perpetual_distribution
                     .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
                     .clone()
                     .into(),
-            ),
+            )
         };
 
         self.0.set_perpetual_distribution(perpetual_distribution);
@@ -219,16 +220,17 @@ impl TokenDistributionRulesWasm {
 
     #[wasm_bindgen(setter = "preProgrammedDistribution")]
     pub fn set_pre_programmed_distribution(&mut self, distribution: &JsValue) -> WasmDppResult<()> {
-        let distribution = match distribution.is_undefined() {
-            true => None,
-            false => Some(
+        let distribution = if distribution.is_undefined() {
+            None
+        } else {
+            Some(
                 distribution
                     .to_wasm::<TokenPreProgrammedDistributionWasm>(
                         "TokenPreProgrammedDistribution",
                     )?
                     .clone()
                     .into(),
-            ),
+            )
         };
 
         self.0.set_pre_programmed_distribution(distribution);

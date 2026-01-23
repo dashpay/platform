@@ -69,9 +69,10 @@ impl DataContractCreateTransitionWasm {
         let rs_data_contract: DataContract = data_contract.clone().into();
 
         let platform_version: JsValue = platform_version.into();
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let rs_data_contract_create_transition_v0: DataContractCreateTransitionV0 =
@@ -155,9 +156,10 @@ impl DataContractCreateTransitionWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
         let platform_version: JsValue = platform_version.into();
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let data_contract_serialization_format =
@@ -183,9 +185,10 @@ impl DataContractCreateTransitionWasm {
         full_validation: Option<bool>,
     ) -> WasmDppResult<DataContractWasm> {
         let platform_version: JsValue = platform_version.into();
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let rs_data_contract_serialization_format = self.0.data_contract();

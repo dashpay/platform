@@ -67,22 +67,23 @@ impl TokenPaymentInfoWasm {
 
         // Extract paymentTokenContractId (optional, can be null/undefined)
         let js_payment_token_contract_id = get_optional_property(&object, "paymentTokenContractId");
-        let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
-            .is_null()
-            || js_payment_token_contract_id.is_undefined()
-        {
-            true => None,
-            false => Some(IdentifierWasm::try_from(&js_payment_token_contract_id)?.into()),
-        };
+        let payment_token_contract_id: Option<Identifier> =
+            if js_payment_token_contract_id.is_null() || js_payment_token_contract_id.is_undefined()
+            {
+                None
+            } else {
+                Some(IdentifierWasm::try_from(&js_payment_token_contract_id)?.into())
+            };
 
         // Extract gasFeesPaidBy (optional)
         let js_gas_fees_paid_by = get_optional_property(&object, "gasFeesPaidBy");
         let gas_fees_paid_by =
-            match js_gas_fees_paid_by.is_undefined() || js_gas_fees_paid_by.is_null() {
-                true => GasFeesPaidBy::default(),
-                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by)?
+            if js_gas_fees_paid_by.is_undefined() || js_gas_fees_paid_by.is_null() {
+                GasFeesPaidBy::default()
+            } else {
+                GasFeesPaidByWasm::try_from(js_gas_fees_paid_by)?
                     .clone()
-                    .into(),
+                    .into()
             };
 
         // Extract simple fields via serde
@@ -132,9 +133,10 @@ impl TokenPaymentInfoWasm {
     ) -> WasmDppResult<()> {
         let id_value: JsValue = payment_token_contract_id.into();
         let payment_token_contract_id: Option<Identifier> =
-            match id_value.is_null() || id_value.is_undefined() {
-                true => None,
-                false => Some(IdentifierWasm::try_from(&id_value)?.into()),
+            if id_value.is_null() || id_value.is_undefined() {
+                None
+            } else {
+                Some(IdentifierWasm::try_from(&id_value)?.into())
             };
 
         self.0
@@ -164,9 +166,10 @@ impl TokenPaymentInfoWasm {
         gas_fees_paid_by: GasFeesPaidByLikeJs,
     ) -> WasmDppResult<()> {
         let value: JsValue = gas_fees_paid_by.into();
-        let gas_fees_paid_by = match value.is_undefined() || value.is_null() {
-            true => GasFeesPaidBy::default(),
-            false => GasFeesPaidByWasm::try_from(value)?.into(),
+        let gas_fees_paid_by = if value.is_undefined() || value.is_null() {
+            GasFeesPaidBy::default()
+        } else {
+            GasFeesPaidByWasm::try_from(value)?.into()
         };
 
         self.0.set_gas_fees_paid_by(gas_fees_paid_by);

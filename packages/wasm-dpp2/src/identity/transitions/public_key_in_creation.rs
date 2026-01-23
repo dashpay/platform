@@ -167,14 +167,15 @@ impl IdentityPublicKeyInCreationWasm {
         // Extract contractBounds (optional)
         let js_contract_bounds = get_optional_property(&object, "contractBounds");
         let contract_bounds: Option<ContractBounds> =
-            match js_contract_bounds.is_undefined() || js_contract_bounds.is_null() {
-                true => None,
-                false => Some(
+            if js_contract_bounds.is_undefined() || js_contract_bounds.is_null() {
+                None
+            } else {
+                Some(
                     js_contract_bounds
                         .to_wasm::<ContractBoundsWasm>("ContractBounds")?
                         .clone()
                         .into(),
-                ),
+                )
             };
 
         // Extract simple fields via serde

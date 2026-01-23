@@ -326,55 +326,54 @@ impl_wasm_type_info!(PartialIdentityWasm, PartialIdentity);
 pub fn value_to_loaded_public_keys(
     loaded_public_keys: &JsValue,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
-    match loaded_public_keys.is_object() {
-        false => Err(WasmDppError::invalid_argument(
+    if !loaded_public_keys.is_object() {
+        return Err(WasmDppError::invalid_argument(
             "loaded_public_keys must be an object",
-        )),
-        true => {
-            let mut map = BTreeMap::new();
-
-            let pub_keys_object = Object::from(loaded_public_keys.clone());
-            let keys = Object::keys(&pub_keys_object);
-
-            for key in keys.iter() {
-                // Object.keys() returns strings, so we need to parse them
-                let key_str = key.as_string().ok_or_else(|| {
-                    WasmDppError::invalid_argument("Key identifier must be a string")
-                })?;
-                let key_val: f64 = key_str.parse().map_err(|_| {
-                    WasmDppError::invalid_argument(format!(
-                        "Key identifier '{}' must be numeric",
-                        key_str
-                    ))
-                })?;
-
-                if key_val > u32::MAX as f64 {
-                    return Err(WasmDppError::invalid_argument(format!(
-                        "Key id '{:?}' exceeds the maximum limit for u32.",
-                        key.as_string()
-                    )));
-                }
-
-                let key_id = KeyID::from(key_val as u32);
-
-                let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
-                    let message = err.error_message();
-                    WasmDppError::invalid_argument(format!(
-                        "unable to access loaded public key '{}': {}",
-                        key_val as u32, message
-                    ))
-                })?;
-
-                let key = js_key
-                    .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
-                    .clone();
-
-                map.insert(key_id, IdentityPublicKey::from(key));
-            }
-
-            Ok(map)
-        }
+        ));
     }
+
+    let mut map = BTreeMap::new();
+
+    let pub_keys_object = Object::from(loaded_public_keys.clone());
+    let keys = Object::keys(&pub_keys_object);
+
+    for key in keys.iter() {
+        // Object.keys() returns strings, so we need to parse them
+        let key_str = key.as_string().ok_or_else(|| {
+            WasmDppError::invalid_argument("Key identifier must be a string")
+        })?;
+        let key_val: f64 = key_str.parse().map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "Key identifier '{}' must be numeric",
+                key_str
+            ))
+        })?;
+
+        if key_val > u32::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "Key id '{:?}' exceeds the maximum limit for u32.",
+                key.as_string()
+            )));
+        }
+
+        let key_id = KeyID::from(key_val as u32);
+
+        let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "unable to access loaded public key '{}': {}",
+                key_val as u32, message
+            ))
+        })?;
+
+        let key = js_key
+            .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
+            .clone();
+
+        map.insert(key_id, IdentityPublicKey::from(key));
+    }
+
+    Ok(map)
 }
 
 pub fn option_array_to_not_found(

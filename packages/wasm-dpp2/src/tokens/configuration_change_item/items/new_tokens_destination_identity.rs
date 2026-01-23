@@ -14,9 +14,10 @@ impl TokenConfigurationChangeItemWasm {
         identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<TokenConfigurationChangeItemWasm> {
         let id_value: JsValue = identity_id.into();
-        let identity_id: Option<Identifier> = match id_value.is_undefined() {
-            true => None,
-            false => Some(IdentifierWasm::try_from(&id_value)?.into()),
+        let identity_id: Option<Identifier> = if id_value.is_undefined() {
+            None
+        } else {
+            Some(IdentifierWasm::try_from(&id_value)?.into())
         };
 
         Ok(TokenConfigurationChangeItemWasm(

@@ -109,14 +109,15 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let pooling = PoolingWasm::try_from(pooling_js)?;
 
         let output_script_js = get_optional_property(&options_obj, "outputScript");
-        let output_script: Option<CoreScript> = match output_script_js.is_undefined() {
-            true => None,
-            false => Some(
+        let output_script: Option<CoreScript> = if output_script_js.is_undefined() {
+            None
+        } else {
+            Some(
                 output_script_js
                     .to_wasm::<CoreScriptWasm>("CoreScript")?
                     .clone()
                     .into(),
-            ),
+            )
         };
 
         let nonce_js = get_optional_property(&options_obj, "nonce");

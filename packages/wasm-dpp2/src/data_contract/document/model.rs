@@ -721,9 +721,10 @@ impl DocumentWasm {
         type_name: String,
         platform_version: JsValue,
     ) -> WasmDppResult<DocumentWasm> {
-        let platform_version = match platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(platform_version)?,
+        let platform_version = if platform_version.is_undefined() {
+            PlatformVersionWasm::default()
+        } else {
+            PlatformVersionWasm::try_from(platform_version)?
         };
 
         let document_type_ref = data_contract

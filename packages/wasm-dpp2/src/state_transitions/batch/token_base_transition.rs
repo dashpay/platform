@@ -70,15 +70,15 @@ impl TokenBaseTransitionWasm {
         let token_id = IdentifierWasm::try_from(&token_id_js)?.into();
 
         let using_group_info_js = get_optional_property(&options_obj, "usingGroupInfo");
-        let group_info: Option<GroupStateTransitionInfo> = match using_group_info_js.is_undefined()
-        {
-            true => None,
-            false => Some(
+        let group_info: Option<GroupStateTransitionInfo> = if using_group_info_js.is_undefined() {
+            None
+        } else {
+            Some(
                 using_group_info_js
                     .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
                     .clone()
                     .into(),
-            ),
+            )
         };
 
         Ok(TokenBaseTransitionWasm(TokenBaseTransition::V0(
@@ -155,14 +155,15 @@ impl TokenBaseTransitionWasm {
         #[wasm_bindgen(unchecked_param_type = "GroupStateTransitionInfo | undefined")]
         using_group_info: &JsValue,
     ) -> WasmDppResult<()> {
-        let group_info: Option<GroupStateTransitionInfo> = match using_group_info.is_undefined() {
-            false => Some(
+        let group_info: Option<GroupStateTransitionInfo> = if using_group_info.is_undefined() {
+            None
+        } else {
+            Some(
                 using_group_info
                     .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
                     .clone()
                     .into(),
-            ),
-            true => None,
+            )
         };
 
         self.0.set_using_group_info(group_info);

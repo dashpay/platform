@@ -49,8 +49,8 @@ impl TryFrom<&JsValue> for KeyTypeWasm {
     type Error = WasmDppError;
 
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
+        if value.is_string() {
+            match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -65,8 +65,9 @@ impl TryFrom<&JsValue> for KeyTypeWasm {
                         enum_val
                     ))),
                 },
-            },
-            false => match value.as_f64() {
+            }
+        } else {
+            match value.as_f64() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -81,7 +82,7 @@ impl TryFrom<&JsValue> for KeyTypeWasm {
                         enum_val
                     ))),
                 },
-            },
+            }
         }
     }
 }
