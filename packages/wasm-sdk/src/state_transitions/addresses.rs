@@ -927,10 +927,10 @@ impl WasmSdk {
         options: IdentityCreateFromAddressesOptionsJs,
     ) -> Result<IdentityCreateFromAddressesResultWasm, WasmSdkError> {
         use dash_sdk::platform::transition::put_identity::PutIdentity;
-        use wasm_dpp2::utils::{IntoWasm, get_required_property};
+        use wasm_dpp2::utils::{IntoWasm, get_required_property, try_to_object};
 
         let options_value: JsValue = options.into();
-        let options_obj = js_sys::Object::from(options_value.clone());
+        let options_obj = try_to_object(options_value.clone(), "options")?;
 
         // Deserialize and validate options
         let parsed = deserialize_identity_create_options(options_value.clone())?;

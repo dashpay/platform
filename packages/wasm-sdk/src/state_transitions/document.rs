@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{get_class_type, get_required_property, try_to_u64, IntoWasm};
+use wasm_dpp2::utils::{get_class_type, get_required_property, try_to_object, try_to_u64, IntoWasm};
 use wasm_dpp2::IdentitySignerWasm;
 
 /// Extracts a string field from a JS options object.
@@ -610,7 +610,7 @@ impl WasmSdk {
             IdentifierWasm::try_from_options(&options_value, "buyerId")?.into();
 
         // Extract price from options
-        let options_obj = js_sys::Object::from(options_value.clone());
+        let options_obj = try_to_object(options_value.clone(), "options")?;
         let price_js = get_required_property(&options_obj, "price")?;
         let price: Credits = try_to_u64(price_js).map_err(|e| {
             WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e))
@@ -727,7 +727,7 @@ impl WasmSdk {
         let document_type_name = document_wasm.document_type_name();
 
         // Extract price from options
-        let options_obj = js_sys::Object::from(options_value.clone());
+        let options_obj = try_to_object(options_value.clone(), "options")?;
         let price_js = get_required_property(&options_obj, "price")?;
         let price: Credits = try_to_u64(price_js).map_err(|e| {
             WasmSdkError::invalid_argument(format!("price must be a valid u64: {}", e))
