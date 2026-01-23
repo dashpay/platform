@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_array};
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
@@ -341,7 +341,7 @@ impl_wasm_type_info!(IdentifierWasm, Identifier);
 /// Accepts an array where each element can be an Identifier, Uint8Array, or string.
 pub fn identifiers_from_js_array(array: IdentifierLikeArrayJs) -> WasmDppResult<Vec<Identifier>> {
     let js_value: JsValue = array.into();
-    let js_array = js_sys::Array::from(&js_value);
+    let js_array = try_to_array(js_value, "identifiers")?;
     js_array
         .iter()
         .map(|v| {

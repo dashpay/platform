@@ -1,7 +1,7 @@
 use crate::core::network::NetworkLikeJs;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_array};
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
 use js_sys::Uint8Array;
@@ -61,7 +61,7 @@ pub fn platform_addresses_from_js_array(
     array: PlatformAddressLikeArrayJs,
 ) -> Result<Vec<PlatformAddress>, WasmDppError> {
     let js_value: JsValue = array.into();
-    let js_array = js_sys::Array::from(&js_value);
+    let js_array = try_to_array(js_value, "platformAddresses")?;
     js_array
         .iter()
         .map(|v| {

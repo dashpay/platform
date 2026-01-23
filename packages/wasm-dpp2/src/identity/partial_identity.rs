@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt, get_optional_property, get_required_property, try_to_object, try_to_u64};
+use crate::utils::{IntoWasm, JsValueExt, get_optional_property, get_required_property, try_to_array, try_to_object, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value;
@@ -99,7 +99,7 @@ impl PartialIdentityWasm {
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
-            Some(Array::from(&not_found_public_keys_js))
+            Some(try_to_array(not_found_public_keys_js, "notFoundPublicKeys")?)
         };
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
@@ -248,7 +248,7 @@ impl PartialIdentityWasm {
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
-            Some(Array::from(&not_found_public_keys_js))
+            Some(try_to_array(not_found_public_keys_js, "notFoundPublicKeys")?)
         };
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
@@ -295,7 +295,7 @@ impl PartialIdentityWasm {
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
-            Some(Array::from(&not_found_public_keys_js))
+            Some(try_to_array(not_found_public_keys_js, "notFoundPublicKeys")?)
         };
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 

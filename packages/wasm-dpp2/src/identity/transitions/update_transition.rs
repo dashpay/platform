@@ -6,7 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{get_optional_property, get_required_property, try_to_array, try_to_object, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -21,7 +21,6 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use js_sys::Array;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -97,12 +96,12 @@ impl IdentityUpdateTransitionWasm {
         let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
 
         let add_public_keys_js = get_required_property(&options_obj, "addPublicKeys")?;
-        let add_public_keys_array = Array::from(&add_public_keys_js);
+        let add_public_keys_array = try_to_array(add_public_keys_js, "addPublicKeys")?;
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&add_public_keys_array)?;
 
         let disable_public_keys_js = get_required_property(&options_obj, "disablePublicKeys")?;
-        let disable_public_keys_array = Array::from(&disable_public_keys_js);
+        let disable_public_keys_array = try_to_array(disable_public_keys_js, "disablePublicKeys")?;
         let disable_public_keys: Vec<KeyID> = disable_public_keys_array
             .iter()
             .enumerate()

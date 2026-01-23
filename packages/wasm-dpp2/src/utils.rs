@@ -195,6 +195,20 @@ pub fn try_to_object(value: JsValue, field_name: &str) -> WasmDppResult<Object> 
         .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be an object", field_name)))
 }
 
+/// Convert a JS value to Array with validation.
+///
+/// Validates that the value is an array using `Array::is_array()`.
+/// Returns an error if the value is not an array.
+pub fn try_to_array(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::Array> {
+    if !js_sys::Array::is_array(&value) {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be an array",
+            field_name
+        )));
+    }
+    Ok(js_sys::Array::from(&value))
+}
+
 /// Convert a JS value to bytes (Vec<u8>) with type validation.
 ///
 /// Validates that the value is a Uint8Array using `dyn_into()`.

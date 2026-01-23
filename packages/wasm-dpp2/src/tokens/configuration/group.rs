@@ -3,6 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::serialization;
+use crate::utils::try_to_array;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
@@ -92,7 +93,7 @@ pub fn members_map_to_btree(
         let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
             .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
 
-        let entry_array = js_sys::Array::from(&entry_value);
+        let entry_array = try_to_array(entry_value, "map entry")?;
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 

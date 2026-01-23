@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object};
+use wasm_dpp2::utils::{IntoWasm, get_optional_property, get_required_property, try_to_array, try_to_object};
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -648,7 +648,7 @@ impl WasmSdk {
         let keys_to_add: Vec<IdentityPublicKey> = if !add_public_keys_js.is_undefined()
             && !add_public_keys_js.is_null()
         {
-            let keys_array = js_sys::Array::from(&add_public_keys_js);
+            let keys_array = try_to_array(add_public_keys_js, "addPublicKeys")?;
             let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
             let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {
                 WasmSdkError::invalid_argument("Key ID overflow: identity has too many keys")

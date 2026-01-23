@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property};
+use crate::utils::{IntoWasm, get_required_property, try_to_array};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -18,7 +18,7 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
-use js_sys::{Array, Object};
+use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -101,7 +101,7 @@ impl IdentityCreateTransitionWasm {
 
         // Extract publicKeys (required array)
         let js_public_keys = get_required_property(&object, "publicKeys")?;
-        let js_public_keys_array = Array::from(&js_public_keys);
+        let js_public_keys_array = try_to_array(js_public_keys, "publicKeys")?;
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 

@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_to_fixed_bytes};
+use crate::utils::{IntoWasm, try_to_array, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
@@ -75,7 +75,7 @@ pub fn pro_tx_hashes_from_js_array(
     array: ProTxHashLikeArrayJs,
 ) -> Result<Vec<ProTxHash>, WasmDppError> {
     let js_value: JsValue = array.into();
-    let js_array = js_sys::Array::from(&js_value);
+    let js_array = try_to_array(js_value, "proTxHashes")?;
     js_array
         .iter()
         .map(|v| {

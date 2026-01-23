@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::try_to_u64;
+use crate::utils::{try_to_array, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
@@ -77,7 +77,7 @@ fn distribution_amounts_from_map(
         let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
             .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
 
-        let entry_array = js_sys::Array::from(&entry_value);
+        let entry_array = try_to_array(entry_value, "map entry")?;
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 
@@ -117,7 +117,7 @@ pub fn distributions_from_map(
         let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
             .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
 
-        let entry_array = js_sys::Array::from(&entry_value);
+        let entry_array = try_to_array(entry_value, "map entry")?;
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 
