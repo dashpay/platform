@@ -6,7 +6,7 @@ use dpp::block::epoch::Epoch;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * BlockInfo serialized as a plain object.
  */

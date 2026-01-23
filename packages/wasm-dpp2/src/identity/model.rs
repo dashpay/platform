@@ -14,7 +14,7 @@ use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const IDENTITY_TYPES_TS: &'static str = r#"
+const IDENTITY_TYPES_TS: &str = r#"
 /**
  * Identity serialized as a plain object.
  */

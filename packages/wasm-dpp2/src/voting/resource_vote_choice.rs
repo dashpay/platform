@@ -5,7 +5,7 @@ use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * ResourceVoteChoice serialized as a plain object.
  */

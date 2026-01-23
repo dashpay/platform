@@ -28,7 +28,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 /// TypeScript interface for Document constructor options
 #[wasm_bindgen(typescript_custom_section)]
-const DOCUMENT_OPTIONS_TS: &'static str = r#"
+const DOCUMENT_OPTIONS_TS: &str = r#"
 /**
  * Options for creating a new Document.
  */

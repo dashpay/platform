@@ -4,7 +4,7 @@ use dpp::tokens::token_event::TokenEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * TokenEvent serialized as a plain object.
  */

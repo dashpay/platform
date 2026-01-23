@@ -26,7 +26,7 @@ struct TokenPaymentInfoOptions {
 }
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 export interface TokenPaymentInfoOptions {
     paymentTokenContractId?: IdentifierLike | null;
     tokenContractPosition: number;

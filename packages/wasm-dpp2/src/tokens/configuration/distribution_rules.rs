@@ -15,7 +15,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TOKEN_DISTRIBUTION_RULES_OPTIONS_TS: &'static str = r#"
+const TOKEN_DISTRIBUTION_RULES_OPTIONS_TS: &str = r#"
 export interface TokenDistributionRulesOptions {
     perpetualDistribution?: TokenPerpetualDistribution;
     perpetualDistributionRules: ChangeControlRules;

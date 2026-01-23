@@ -9,7 +9,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TOKEN_CONFIGURATION_CHANGE_ITEM_TS: &'static str = r#"
+const TOKEN_CONFIGURATION_CHANGE_ITEM_TS: &str = r#"
 /**
  * Union type for token configuration change item values.
  * Use `itemName` getter to determine which variant it is.

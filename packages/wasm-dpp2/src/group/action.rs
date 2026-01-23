@@ -7,7 +7,7 @@ use dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * GroupAction serialized as a plain object.
  */

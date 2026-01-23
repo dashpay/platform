@@ -17,7 +17,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TOKEN_TRANSFER_OPTIONS_TS: &'static str = r#"
+const TOKEN_TRANSFER_OPTIONS_TS: &str = r#"
 export interface TokenTransferTransitionOptions {
     base: TokenBaseTransition;
     recipientId: IdentifierLike;

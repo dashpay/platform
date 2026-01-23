@@ -22,7 +22,7 @@ use dpp::state_transition::{
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const CREDIT_TRANSFER_OPTIONS_TS: &'static str = r#"
+const CREDIT_TRANSFER_OPTIONS_TS: &str = r#"
 export interface IdentityCreditTransferOptions {
     amount: bigint;
     senderId: IdentifierLike;

@@ -28,7 +28,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TOKEN_TRANSITION_TYPES_TS: &'static str = r#"
+const TOKEN_TRANSITION_TYPES_TS: &str = r#"
 export type TokenTransitionLike = TokenMintTransition | TokenBurnTransition | TokenTransferTransition | TokenFreezeTransition | TokenUnFreezeTransition | TokenDestroyFrozenFundsTransition | TokenClaimTransition | TokenEmergencyActionTransition | TokenConfigUpdateTransition | TokenDirectPurchaseTransition | TokenSetPriceForDirectPurchaseTransition;
 "#;
 

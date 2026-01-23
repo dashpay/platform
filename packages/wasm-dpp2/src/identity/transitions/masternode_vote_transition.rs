@@ -26,7 +26,7 @@ use dpp::state_transition::{
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const MASTERNODE_VOTE_OPTIONS_TS: &'static str = r#"
+const MASTERNODE_VOTE_OPTIONS_TS: &str = r#"
 export interface MasternodeVoteTransitionOptions {
     proTxHash: IdentifierLike;
     voterIdentityId: IdentifierLike;

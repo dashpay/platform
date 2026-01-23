@@ -12,7 +12,7 @@ use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * AssetLockProof serialized as a plain object.
  * Type 0 = Instant, Type 1 = Chain.

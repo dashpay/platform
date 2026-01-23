@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 /// TypeScript type alias for flexible network input
 #[wasm_bindgen(typescript_custom_section)]
-const NETWORK_LIKE_TS: &'static str = r#"
+const NETWORK_LIKE_TS: &str = r#"
 /**
  * Flexible network type that accepts Network enum, string names, or numeric values.
  *

@@ -27,7 +27,7 @@ struct TokenKeepsHistoryRulesOptions {
 }
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 export interface TokenKeepsHistoryRulesOptions {
     isKeepingTransferHistory?: boolean;
     isKeepingFreezingHistory?: boolean;

@@ -30,7 +30,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const CREDIT_WITHDRAWAL_OPTIONS_TS: &'static str = r#"
+const CREDIT_WITHDRAWAL_OPTIONS_TS: &str = r#"
 export type CreditWithdrawalTransitionPoolingLike = CreditWithdrawalTransitionPooling | string | number;
 
 export interface IdentityCreditWithdrawalTransitionOptions {

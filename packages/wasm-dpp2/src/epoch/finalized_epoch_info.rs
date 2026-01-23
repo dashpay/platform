@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 
 #[wasm_bindgen(typescript_custom_section)]
-const FINALIZED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
+const FINALIZED_EPOCH_INFO_OPTIONS_TS: &str = r#"
 /**
  * Block proposers mapping: Identifier -> block count (bigint).
  */

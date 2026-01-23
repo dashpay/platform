@@ -7,7 +7,7 @@ use js_sys::BigInt;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const EXTENDED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
+const EXTENDED_EPOCH_INFO_OPTIONS_TS: &str = r#"
 export interface ExtendedEpochInfoOptions {
     index: number;
     firstBlockTime: bigint;

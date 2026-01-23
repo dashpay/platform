@@ -16,7 +16,7 @@ use wasm_bindgen::prelude::*;
 pub struct PlatformAddressWasm(PlatformAddress);
 
 #[wasm_bindgen(typescript_custom_section)]
-const PLATFORM_ADDRESS_TS_HELPERS: &'static str = r#"
+const PLATFORM_ADDRESS_TS_HELPERS: &str = r#"
 /**
  * A Platform address can be provided as:
  * - A PlatformAddress object

@@ -38,7 +38,7 @@ struct TokenConfigurationOptions {
 }
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 export interface TokenConfigurationOptions {
     conventions: TokenConfigurationConvention;
     conventionsChangeRules: ChangeControlRules;

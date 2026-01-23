@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 /// TypeScript type alias for flexible ProTxHash input
 #[wasm_bindgen(typescript_custom_section)]
-const PRO_TX_HASH_LIKE_TS: &'static str = r#"
+const PRO_TX_HASH_LIKE_TS: &str = r#"
 /**
  * Flexible ProTxHash type that accepts ProTxHash object, hex string, or Uint8Array.
  *

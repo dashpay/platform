@@ -10,7 +10,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const ACTION_TAKER_TYPES_TS: &'static str = r#"
+const ACTION_TAKER_TYPES_TS: &str = r#"
 export type ActionTakerValue = IdentifierLike | IdentifierLike[];
 "#;
 

@@ -14,7 +14,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const PLATFORM_VERSION_LIKE_TS: &'static str = r#"
+const PLATFORM_VERSION_LIKE_TS: &str = r#"
 export type PlatformVersionLike = PlatformVersion | string | number;
 "#;
 

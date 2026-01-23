@@ -17,7 +17,7 @@ use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitio
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * IdentityTopUpTransition serialized as a plain object.
  */

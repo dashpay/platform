@@ -17,7 +17,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const PARTIAL_IDENTITY_OPTIONS_TS: &'static str = r#"
+const PARTIAL_IDENTITY_OPTIONS_TS: &str = r#"
 export interface PartialIdentityOptions {
     id: IdentifierLike;
     loadedPublicKeys: Record<number, IdentityPublicKey>;

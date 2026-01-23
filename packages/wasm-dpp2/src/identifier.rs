@@ -16,7 +16,7 @@ use wasm_bindgen::prelude::*;
 pub struct IdentifierWasm(Identifier);
 
 #[wasm_bindgen(typescript_custom_section)]
-const IDENTIFIER_TS_HELPERS: &'static str = r#"
+const IDENTIFIER_TS_HELPERS: &str = r#"
 export type IdentifierLike = Identifier | Uint8Array | string;
 export type IdentifierLikeArray = Array<Identifier | Uint8Array | string>;
 export type IdentifierLikeOrUndefined = Identifier | Uint8Array | string | undefined;

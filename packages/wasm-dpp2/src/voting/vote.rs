@@ -9,7 +9,7 @@ use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 /**
  * Vote serialized as a plain object.
  */

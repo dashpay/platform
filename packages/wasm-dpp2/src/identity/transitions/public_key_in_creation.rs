@@ -33,7 +33,7 @@ struct IdentityPublicKeyInCreationOptions {
 }
 
 #[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &'static str = r#"
+const TS_TYPES: &str = r#"
 export interface IdentityPublicKeyInCreationOptions {
     keyId: number;
     purpose: Purpose | string | number;

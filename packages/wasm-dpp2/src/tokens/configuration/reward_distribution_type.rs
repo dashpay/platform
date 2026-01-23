@@ -7,7 +7,7 @@ use dpp::prelude::{BlockHeightInterval, EpochInterval, TimestampMillisInterval};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
-const REWARD_DISTRIBUTION_TS: &'static str = r#"
+const REWARD_DISTRIBUTION_TS: &str = r#"
 /**
  * Union type for reward distribution variants.
  */
