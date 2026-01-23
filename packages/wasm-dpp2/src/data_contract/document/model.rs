@@ -595,7 +595,7 @@ impl DocumentWasm {
         data_contract: &DataContractWasm,
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<Vec<u8>> {
-        self.to_bytes_internal(data_contract, platform_version.into())
+        self.to_bytes_internal(data_contract, platform_version)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
@@ -605,7 +605,7 @@ impl DocumentWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes_internal(data_contract, platform_version.into())?
+            self.to_bytes_internal(data_contract, platform_version)?
                 .as_slice(),
             Hex,
         ))
@@ -618,7 +618,7 @@ impl DocumentWasm {
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<String> {
         Ok(encode(
-            self.to_bytes_internal(data_contract, platform_version.into())?
+            self.to_bytes_internal(data_contract, platform_version)?
                 .as_slice(),
             Base64,
         ))
