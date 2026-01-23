@@ -194,7 +194,7 @@ impl DataContractWasm {
         // Extract definitions (optional)
         let js_definitions = get_optional_property(&object, "definitions");
         let definitions: Option<Value> =
-            match js_definitions.is_undefined() | js_definitions.is_null() {
+            match js_definitions.is_undefined() || js_definitions.is_null() {
                 true => None,
                 false => Some(serialization::platform_value_from_object(js_definitions)?),
             };
@@ -202,7 +202,7 @@ impl DataContractWasm {
         // Extract tokens (optional)
         let js_tokens = get_optional_property(&object, "tokens");
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
-            match js_tokens.is_undefined() | js_tokens.is_null() {
+            match js_tokens.is_undefined() || js_tokens.is_null() {
                 true => BTreeMap::new(),
                 false => tokens_configuration_from_js_value(&js_tokens)?,
             };

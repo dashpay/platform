@@ -8,7 +8,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, get_required_property, try_to_fixed_bytes};
+use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_fixed_bytes};
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::identity::contract_bounds::ContractBounds;
@@ -26,7 +26,7 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::version::PlatformVersion;
 use hex;
-use js_sys::{Object, Reflect};
+use js_sys::Object;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::from_value as serde_from_value;
@@ -171,10 +171,9 @@ impl IdentityPublicKeyWasm {
         let key_type = KeyTypeWasm::try_from(js_key_type)?;
 
         // Extract contractBounds (optional)
-        let js_contract_bounds = Reflect::get(&object, &JsValue::from_str("contractBounds"))
-            .unwrap_or(JsValue::UNDEFINED);
+        let js_contract_bounds = get_optional_property(&object, "contractBounds");
         let contract_bounds: Option<ContractBounds> =
-            match js_contract_bounds.is_undefined() | js_contract_bounds.is_null() {
+            match js_contract_bounds.is_undefined() || js_contract_bounds.is_null() {
                 true => None,
                 false => Some(
                     js_contract_bounds
