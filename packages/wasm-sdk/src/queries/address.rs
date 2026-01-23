@@ -82,7 +82,7 @@ impl WasmSdk {
     /// @returns ProofMetadataResponse containing PlatformAddressInfo with proof information
     #[wasm_bindgen(
         js_name = "getAddressInfoWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<PlatformAddressInfo>"
+        unchecked_return_type = "ProofMetadataResponseTyped<PlatformAddressInfo | undefined>"
     )]
     pub async fn get_address_info_with_proof_info(
         &self,
@@ -100,7 +100,7 @@ impl WasmSdk {
         let data = match address_info {
             Some(info) => {
                 let wrapper = PlatformAddressInfoWasm::from(info);
-                wrapper.to_object()?
+                wrapper.into()
             }
             None => JsValue::UNDEFINED,
         };
@@ -137,7 +137,7 @@ impl WasmSdk {
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());
-                    wrapper.to_object()?
+                    wrapper.into()
                 }
                 None => JsValue::UNDEFINED,
             };

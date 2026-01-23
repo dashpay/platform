@@ -21,7 +21,7 @@ const PLATFORM_ADDRESS_TS_HELPERS: &str = r#"
  * A Platform address can be provided as:
  * - A PlatformAddress object
  * - A Uint8Array (21 bytes: type byte + 20-byte hash)
- * - A bech32m string (e.g., "dashevo1..." or "tdashevo1...")
+ * - A bech32m string (e.g., "evo1..." or "tevo1...")
  */
 export type PlatformAddressLike = PlatformAddress | Uint8Array | string;
 
@@ -153,7 +153,7 @@ impl TryFrom<&str> for PlatformAddressWasm {
     type Error = WasmDppError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        // Try parsing as bech32m string first (e.g., "dashevo1..." or "tdashevo1...")
+        // Try parsing as bech32m string first (e.g., "evo1..." or "tevo1...")
         if let Ok((addr, _network)) = PlatformAddress::from_bech32m_string(value) {
             return Ok(PlatformAddressWasm(addr));
         }
@@ -246,7 +246,7 @@ impl PlatformAddressWasm {
     /// Creates a new PlatformAddress from various input types.
     ///
     /// Accepts:
-    /// - A bech32m string (e.g., "dashevo1..." or "tdashevo1...")
+    /// - A bech32m string (e.g., "evo1..." or "tevo1...")
     /// - A Uint8Array (21 bytes: type byte + 20-byte hash)
     /// - An existing PlatformAddress object
     #[wasm_bindgen(constructor)]
@@ -308,7 +308,7 @@ impl PlatformAddressWasm {
 
     /// Creates a PlatformAddress from a bech32m-encoded string.
     ///
-    /// Accepts addresses with either mainnet ("dashevo") or testnet ("tdashevo") HRP.
+    /// Accepts addresses with either mainnet ("evo") or testnet ("tevo") HRP.
     #[wasm_bindgen(js_name = "fromBech32m")]
     pub fn from_bech32m(address: &str) -> WasmDppResult<PlatformAddressWasm> {
         PlatformAddress::from_bech32m_string(address)

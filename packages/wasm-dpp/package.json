@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "3.0.0-rc.1",
+  "version": "3.0.0",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -35,7 +35,7 @@
   "dependencies": {
     "@dashevo/bls": "~1.2.9",
     "bs58": "^4.0.1",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "varint": "^6.0.0"
   },
   "devDependencies": {
@@ -71,7 +71,7 @@
     "karma-mocha": "^2.0.1",
     "karma-mocha-reporter": "^2.2.5",
     "karma-webpack": "^5.0.0",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "long": "^5.2.0",
     "mocha": "^11.1.0",
     "path-browserify": "^1.0.1",

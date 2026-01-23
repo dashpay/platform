@@ -53,6 +53,9 @@ import createDIContainer from '../src/createDIContainer.js';
   if (isEnabled && provider === 'zerossl') {
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
     await scheduleRenewZeroSslCertificate(config);
+  } else if (isEnabled && provider === 'letsencrypt') {
+    const scheduleRenewLetsEncryptCertificate = container.resolve('scheduleRenewLetsEncryptCertificate');
+    await scheduleRenewLetsEncryptCertificate(config);
   } else {
     // prevent infinite restarts
     setInterval(() => {

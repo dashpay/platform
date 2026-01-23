@@ -1,3 +1,28 @@
+## [3.0.0-rc.3](///compare/v3.0.0-rc.2...v3.0.0-rc.3) (2026-01-20)
+
+
+### Features
+
+* **dashmate:** add Let's Encrypt SSL provider support ([#3000](undefined/undefined/undefined/issues/3000))
+* **drive:** improve error handling in merk proof extraction ([#3003](undefined/undefined/undefined/issues/3003))
+
+
+### Bug Fixes
+
+* **platform:** update grovedb dependency to allow for larger proof sizes ([#3005](undefined/undefined/undefined/issues/3005))
+
+## [3.0.0-rc.2](///compare/v3.0.0-rc.1...v3.0.0-rc.2) (2026-01-16)
+
+
+### Bug Fixes
+
+* **sdk:** toJSON returns empty object ([#2995](undefined/undefined/undefined/issues/2995))
+
+
+### Code Refactoring
+
+* **sdk:** introduce `ProRegTxLike` and `NetworkLike` types  ([#2990](undefined/undefined/undefined/issues/2990))
+
 ## [3.0.0-rc.1](https://github.com/dashpay/platform/compare/v3.0.0-dev.11...v3.0.0-rc.1) (2026-01-13)
 
 
