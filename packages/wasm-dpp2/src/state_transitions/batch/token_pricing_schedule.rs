@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "bigint | Record<string, number>")]
+    #[wasm_bindgen(typescript_type = "bigint | Record<string, bigint>")]
     pub type TokenPricingScheduleValueJs;
 }
 
@@ -88,7 +88,7 @@ impl TokenPricingScheduleWasm {
                     Reflect::set(
                         &price_object,
                         &JsValue::from(key.to_string()),
-                        &(*value).into(),
+                        &JsValue::bigint_from_str(&value.to_string()),
                     )
                     .map_err(|err| {
                         let message = err.error_message();
