@@ -17,7 +17,7 @@ describe('AddressesFacade', () => {
     this.sinon.stub(wasmSdk, 'getAddressesInfosWithProofInfo').resolves('ok');
     // Create a mock PlatformAddress for test results
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
     );
     this.sinon.stub(wasmSdk, 'addressFundsTransfer').resolves({
       type: 'VerifiedAddressInfos',
@@ -26,21 +26,21 @@ describe('AddressesFacade', () => {
   });
 
   it('get() forwards address to getAddressInfo', async () => {
-    const address = 'tdashevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
+    const address = 'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
     await client.addresses.get(address);
     expect(wasmSdk.getAddressInfo).to.be.calledOnceWithExactly(address);
   });
 
   it('getWithProof() forwards address to getAddressInfoWithProofInfo', async () => {
-    const address = 'tdashevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
+    const address = 'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
     await client.addresses.getWithProof(address);
     expect(wasmSdk.getAddressInfoWithProofInfo).to.be.calledOnceWithExactly(address);
   });
 
   it('getMany() forwards array of addresses to getAddressesInfos', async () => {
     const addresses = [
-      'tdashevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4',
-      'tdashevo1abc123def456ghi789jkl012mno345pqr678st',
+      'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4',
+      'tevo1abc123def456ghi789jkl012mno345pqr678st',
     ];
     await client.addresses.getMany(addresses);
     expect(wasmSdk.getAddressesInfos).to.be.calledOnceWithExactly(addresses);
@@ -48,7 +48,7 @@ describe('AddressesFacade', () => {
 
   it('getManyWithProof() forwards array of addresses to getAddressesInfosWithProofInfo', async () => {
     const addresses = [
-      'tdashevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4',
+      'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4',
     ];
     await client.addresses.getManyWithProof(addresses);
     expect(wasmSdk.getAddressesInfosWithProofInfo).to.be.calledOnceWithExactly(addresses);
@@ -61,7 +61,7 @@ describe('AddressesFacade', () => {
   });
 
   it('getMany() accepts mixed address formats', async () => {
-    const bech32Address = 'tdashevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
+    const bech32Address = 'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
     const bytesAddress = new Uint8Array(21);
     const mixedAddresses = [bech32Address, bytesAddress];
     await client.addresses.getMany(mixedAddresses);
@@ -71,7 +71,7 @@ describe('AddressesFacade', () => {
   it('transfer() forwards options to addressFundsTransfer with PlatformAddressSigner', async () => {
     // Create proper PlatformAddress objects
     const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
+      new Uint8Array([0xb0, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
     );
 
     // Create a PrivateKey object from bytes (32 bytes for testnet)
@@ -106,7 +106,7 @@ describe('AddressesFacade', () => {
 
     // Create proper PlatformAddress objects
     const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
+      new Uint8Array([0xb0, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
     );
 
     // Create a PrivateKey object from bytes
@@ -134,7 +134,7 @@ describe('AddressesFacade', () => {
   it('topUpIdentity() forwards options to identityTopUpFromAddresses', async function topUpTest() {
     // Create mock address and result
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
     );
 
     this.sinon.stub(wasmSdk, 'identityTopUpFromAddresses').resolves({
@@ -160,7 +160,7 @@ describe('AddressesFacade', () => {
   it('withdraw() forwards options to addressFundsWithdraw', async function withdrawTest() {
     // Create mock address and result map
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
     );
 
     const resultMap = new Map();
@@ -188,7 +188,7 @@ describe('AddressesFacade', () => {
   it('transferFromIdentity() forwards options to identityTransferToAddresses', async function transferFromIdentityTest() {
     // Create mock address
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
     );
 
     this.sinon.stub(wasmSdk, 'identityTransferToAddresses').resolves({
@@ -214,7 +214,7 @@ describe('AddressesFacade', () => {
   it('fundFromAssetLock() forwards options to addressFundingFromAssetLock', async function fundFromAssetLockTest() {
     // Create mock address and result map
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
     );
 
     const resultMap = new Map();
@@ -238,7 +238,7 @@ describe('AddressesFacade', () => {
   it('createIdentity() forwards options to identityCreateFromAddresses', async function createIdentityTest() {
     // Create mock address
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
-      new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
     );
 
     // Create mock identity ID

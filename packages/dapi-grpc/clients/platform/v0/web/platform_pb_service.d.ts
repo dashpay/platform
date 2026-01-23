@@ -463,6 +463,24 @@ type PlatformgetAddressesBranchState = {
   readonly responseType: typeof platform_pb.GetAddressesBranchStateResponse;
 };
 
+type PlatformgetRecentAddressBalanceChanges = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentAddressBalanceChangesRequest;
+  readonly responseType: typeof platform_pb.GetRecentAddressBalanceChangesResponse;
+};
+
+type PlatformgetRecentCompactedAddressBalanceChanges = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentCompactedAddressBalanceChangesRequest;
+  readonly responseType: typeof platform_pb.GetRecentCompactedAddressBalanceChangesResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -516,6 +534,8 @@ export class Platform {
   static readonly getAddressesInfos: PlatformgetAddressesInfos;
   static readonly getAddressesTrunkState: PlatformgetAddressesTrunkState;
   static readonly getAddressesBranchState: PlatformgetAddressesBranchState;
+  static readonly getRecentAddressBalanceChanges: PlatformgetRecentAddressBalanceChanges;
+  static readonly getRecentCompactedAddressBalanceChanges: PlatformgetRecentCompactedAddressBalanceChanges;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1008,6 +1028,24 @@ export class PlatformClient {
   getAddressesBranchState(
     requestMessage: platform_pb.GetAddressesBranchStateRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesBranchStateResponse|null) => void
+  ): UnaryResponse;
+  getRecentAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentAddressBalanceChangesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentAddressBalanceChangesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentCompactedAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentCompactedAddressBalanceChangesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentCompactedAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentCompactedAddressBalanceChangesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedAddressBalanceChangesResponse|null) => void
   ): UnaryResponse;
 }
 
