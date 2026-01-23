@@ -181,7 +181,7 @@ impl TokenDistributionRulesWasm {
             .into()
     }
 
-    #[wasm_bindgen(getter = "isMintingAllowingChoosingDestination")]
+    #[wasm_bindgen(getter = "mintingAllowChoosingDestination")]
     pub fn is_minting_allowing_choosing_destination(&self) -> bool {
         self.0.minting_allow_choosing_destination()
     }
@@ -260,7 +260,7 @@ impl TokenDistributionRulesWasm {
             .set_new_tokens_destination_identity_rules(rules.clone().into());
     }
 
-    #[wasm_bindgen(setter = "isMintingAllowingChoosingDestination")]
+    #[wasm_bindgen(setter = "mintingAllowChoosingDestination")]
     pub fn set_is_minting_allowing_choosing_destination(
         &mut self,
         is_minting_allowing_choosing_destination: bool,
