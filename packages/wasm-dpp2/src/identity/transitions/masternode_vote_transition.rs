@@ -247,7 +247,7 @@ impl MasternodeVoteTransitionWasm {
         self.0.signable_bytes().map_err(Into::into)
     }
 
-    #[wasm_bindgen(getter = "assetLock")]
+    #[wasm_bindgen(getter = "assetLockProof")]
     pub fn asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
         self.0
             .optional_asset_lock_proof()

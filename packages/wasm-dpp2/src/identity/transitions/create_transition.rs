@@ -36,7 +36,7 @@ struct IdentityCreateTransitionOptions {
 const TS_TYPES: &str = r#"
 export interface IdentityCreateTransitionOptions {
     publicKeys: IdentityPublicKeyInCreation[];
-    assetLock: AssetLockProof;
+    assetLockProof: AssetLockProof;
     signature?: Uint8Array;
     userFeeIncrease?: number;
 }
@@ -106,9 +106,9 @@ impl IdentityCreateTransitionWasm {
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 
-        // Extract assetLock (required)
+        // Extract assetLockProof (required)
         let asset_lock: AssetLockProofWasm =
-            try_from_options_with(&object, "assetLock", |v| {
+            try_from_options_with(&object, "assetLockProof", |v| {
                 v.to_wasm::<AssetLockProofWasm>("AssetLockProof")
                     .map(|r| r.clone())
             })?;
@@ -197,7 +197,7 @@ impl IdentityCreateTransitionWasm {
         Ok(self.0.signable_bytes()?)
     }
 
-    #[wasm_bindgen(getter = "assetLock")]
+    #[wasm_bindgen(getter = "assetLockProof")]
     pub fn asset_lock_proof(&self) -> AssetLockProofWasm {
         AssetLockProofWasm::from(self.0.asset_lock_proof().clone())
     }
@@ -230,7 +230,7 @@ impl IdentityCreateTransitionWasm {
         self.0.set_signature_bytes(signature)
     }
 
-    #[wasm_bindgen(setter = "assetLock")]
+    #[wasm_bindgen(setter = "assetLockProof")]
     pub fn set_asset_lock_proof(&mut self, proof: AssetLockProofWasm) -> WasmDppResult<()> {
         self.0.set_asset_lock_proof(proof.into())?;
         Ok(())
