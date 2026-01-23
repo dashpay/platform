@@ -7,7 +7,7 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, get_required_property};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -16,7 +16,7 @@ use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigur
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
 use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
-use js_sys::{Object, Reflect};
+use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -94,122 +94,70 @@ impl TokenConfigurationWasm {
         let object = Object::from(options.clone());
 
         // Extract conventions (required)
-        let js_conventions = Reflect::get(&object, &JsValue::from_str("conventions"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing conventions: {:?}", e)))?;
-        let conventions = js_conventions
+        let conventions = get_required_property(&object, "conventions")?
             .to_wasm::<TokenConfigurationConventionWasm>("TokenConfigurationConvention")?
             .clone();
 
         // Extract conventionsChangeRules (required)
-        let js_conventions_change_rules =
-            Reflect::get(&object, &JsValue::from_str("conventionsChangeRules")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing conventionsChangeRules: {:?}", e))
-            })?;
-        let conventions_change_rules = js_conventions_change_rules
+        let conventions_change_rules = get_required_property(&object, "conventionsChangeRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract keepsHistory (required)
-        let js_keeps_history =
-            Reflect::get(&object, &JsValue::from_str("keepsHistory")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing keepsHistory: {:?}", e))
-            })?;
-        let keeps_history = js_keeps_history
+        let keeps_history = get_required_property(&object, "keepsHistory")?
             .to_wasm::<TokenKeepsHistoryRulesWasm>("TokenKeepsHistoryRules")?
             .clone();
 
         // Extract maxSupplyChangeRules (required)
-        let js_max_supply_change_rules =
-            Reflect::get(&object, &JsValue::from_str("maxSupplyChangeRules")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing maxSupplyChangeRules: {:?}", e))
-            })?;
-        let max_supply_change_rules = js_max_supply_change_rules
+        let max_supply_change_rules = get_required_property(&object, "maxSupplyChangeRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract distributionRules (required)
-        let js_distribution_rules = Reflect::get(&object, &JsValue::from_str("distributionRules"))
-            .map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing distributionRules: {:?}", e))
-            })?;
-        let distribution_rules = js_distribution_rules
+        let distribution_rules = get_required_property(&object, "distributionRules")?
             .to_wasm::<TokenDistributionRulesWasm>("TokenDistributionRules")?
             .clone();
 
         // Extract marketplaceRules (required)
-        let js_marketplace_rules = Reflect::get(&object, &JsValue::from_str("marketplaceRules"))
-            .map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing marketplaceRules: {:?}", e))
-            })?;
-        let marketplace_rules = js_marketplace_rules
+        let marketplace_rules = get_required_property(&object, "marketplaceRules")?
             .to_wasm::<TokenMarketplaceRulesWasm>("TokenMarketplaceRules")?
             .clone();
 
         // Extract manualMintingRules (required)
-        let js_manual_minting_rules =
-            Reflect::get(&object, &JsValue::from_str("manualMintingRules")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing manualMintingRules: {:?}", e))
-            })?;
-        let manual_minting_rules = js_manual_minting_rules
+        let manual_minting_rules = get_required_property(&object, "manualMintingRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract manualBurningRules (required)
-        let js_manual_burning_rules =
-            Reflect::get(&object, &JsValue::from_str("manualBurningRules")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing manualBurningRules: {:?}", e))
-            })?;
-        let manual_burning_rules = js_manual_burning_rules
+        let manual_burning_rules = get_required_property(&object, "manualBurningRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract freezeRules (required)
-        let js_freeze_rules = Reflect::get(&object, &JsValue::from_str("freezeRules"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing freezeRules: {:?}", e)))?;
-        let freeze_rules = js_freeze_rules
+        let freeze_rules = get_required_property(&object, "freezeRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract unfreezeRules (required)
-        let js_unfreeze_rules = Reflect::get(&object, &JsValue::from_str("unfreezeRules"))
-            .map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing unfreezeRules: {:?}", e))
-            })?;
-        let unfreeze_rules = js_unfreeze_rules
+        let unfreeze_rules = get_required_property(&object, "unfreezeRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract destroyFrozenFundsRules (required)
-        let js_destroy_frozen_funds_rules =
-            Reflect::get(&object, &JsValue::from_str("destroyFrozenFundsRules")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing destroyFrozenFundsRules: {:?}", e))
-            })?;
-        let destroy_frozen_funds_rules = js_destroy_frozen_funds_rules
+        let destroy_frozen_funds_rules = get_required_property(&object, "destroyFrozenFundsRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract emergencyActionRules (required)
-        let js_emergency_action_rules =
-            Reflect::get(&object, &JsValue::from_str("emergencyActionRules")).map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing emergencyActionRules: {:?}", e))
-            })?;
-        let emergency_action_rules = js_emergency_action_rules
+        let emergency_action_rules = get_required_property(&object, "emergencyActionRules")?
             .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
             .clone();
 
         // Extract mainControlGroupCanBeModified (required)
-        let js_main_control_group_can_be_modified =
-            Reflect::get(&object, &JsValue::from_str("mainControlGroupCanBeModified")).map_err(
-                |e| {
-                    WasmDppError::invalid_argument(format!(
-                        "Missing mainControlGroupCanBeModified: {:?}",
-                        e
-                    ))
-                },
-            )?;
-        let main_control_group_can_be_modified = js_main_control_group_can_be_modified
-            .to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")?
-            .clone();
+        let main_control_group_can_be_modified =
+            get_required_property(&object, "mainControlGroupCanBeModified")?
+                .to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")?
+                .clone();
 
         // Extract simple fields via serde
         let opts: TokenConfigurationOptions = serde_wasm_bindgen::from_value(options)

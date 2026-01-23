@@ -5,7 +5,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, get_required_property};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
@@ -19,7 +19,7 @@ use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
-use js_sys::Reflect;
+use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -176,29 +176,25 @@ impl DocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DocumentOptionsJs) -> WasmDppResult<DocumentWasm> {
         let options_value: JsValue = options.into();
+        let options_obj = Object::from(options_value.clone());
 
-        // Extract required fields
-        let properties_js = Reflect::get(&options_value, &JsValue::from_str("properties"))
-            .map_err(|_| WasmDppError::invalid_argument("Missing 'properties' field"))?;
+        // Extract required properties
+        let properties_js = get_required_property(&options_obj, "properties")?;
 
-        let document_type_name =
-            Reflect::get(&options_value, &JsValue::from_str("documentTypeName"))
-                .map_err(|_| WasmDppError::invalid_argument("Missing 'documentTypeName' field"))?
-                .as_string()
-                .ok_or_else(|| {
-                    WasmDppError::invalid_argument("'documentTypeName' must be a string")
-                })?;
+        let document_type_name = get_required_property(&options_obj, "documentTypeName")?
+            .as_string()
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument("'documentTypeName' must be a string")
+            })?;
 
-        let data_contract_id_js =
-            Reflect::get(&options_value, &JsValue::from_str("dataContractId"))
-                .map_err(|_| WasmDppError::invalid_argument("Missing 'dataContractId' field"))?;
-        let data_contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id_js)?.into();
+        let data_contract_id: Identifier =
+            IdentifierWasm::try_from(&get_required_property(&options_obj, "dataContractId")?)?
+                .into();
 
-        let owner_id_js = Reflect::get(&options_value, &JsValue::from_str("ownerId"))
-            .map_err(|_| WasmDppError::invalid_argument("Missing 'ownerId' field"))?;
-        let owner_id: Identifier = IdentifierWasm::try_from(&owner_id_js)?.into();
+        let owner_id: Identifier =
+            IdentifierWasm::try_from(&get_required_property(&options_obj, "ownerId")?)?.into();
 
-        // Extract optional fields
+        // Extract optional properties
         let revision_js = Reflect::get(&options_value, &JsValue::from_str("revision"))
             .unwrap_or(JsValue::UNDEFINED);
         let revision = if revision_js.is_undefined() {

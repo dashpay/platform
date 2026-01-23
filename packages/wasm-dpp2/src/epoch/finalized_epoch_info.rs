@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::try_to_u64;
+use crate::utils::{get_required_property, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
@@ -182,73 +182,51 @@ impl FinalizedEpochInfoWasm {
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let first_block_time = try_to_u64(
-            Reflect::get(&options_obj, &"firstBlockTime".into())
-                .map_err(|_| WasmDppError::invalid_argument("firstBlockTime is required"))?,
-        )?;
+        let first_block_time =
+            try_to_u64(get_required_property(&options_obj, "firstBlockTime")?)?;
 
-        let first_block_height = try_to_u64(
-            Reflect::get(&options_obj, &"firstBlockHeight".into())
-                .map_err(|_| WasmDppError::invalid_argument("firstBlockHeight is required"))?,
-        )?;
+        let first_block_height =
+            try_to_u64(get_required_property(&options_obj, "firstBlockHeight")?)?;
 
-        let total_blocks_in_epoch = try_to_u64(
-            Reflect::get(&options_obj, &"totalBlocksInEpoch".into())
-                .map_err(|_| WasmDppError::invalid_argument("totalBlocksInEpoch is required"))?,
-        )?;
+        let total_blocks_in_epoch =
+            try_to_u64(get_required_property(&options_obj, "totalBlocksInEpoch")?)?;
 
-        let first_core_block_height = Reflect::get(&options_obj, &"firstCoreBlockHeight".into())
-            .map_err(|_| WasmDppError::invalid_argument("firstCoreBlockHeight is required"))?
+        let first_core_block_height = get_required_property(&options_obj, "firstCoreBlockHeight")?
             .as_f64()
             .ok_or_else(|| {
-                WasmDppError::invalid_argument("firstCoreBlockHeight must be a number")
+                WasmDppError::invalid_argument("'firstCoreBlockHeight' must be a number")
             })? as u32;
 
         let next_epoch_start_core_block_height =
-            Reflect::get(&options_obj, &"nextEpochStartCoreBlockHeight".into())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("nextEpochStartCoreBlockHeight is required")
-                })?
+            get_required_property(&options_obj, "nextEpochStartCoreBlockHeight")?
                 .as_f64()
                 .ok_or_else(|| {
-                    WasmDppError::invalid_argument("nextEpochStartCoreBlockHeight must be a number")
+                    WasmDppError::invalid_argument(
+                        "'nextEpochStartCoreBlockHeight' must be a number",
+                    )
                 })? as u32;
 
-        let total_processing_fees = try_to_u64(
-            Reflect::get(&options_obj, &"totalProcessingFees".into())
-                .map_err(|_| WasmDppError::invalid_argument("totalProcessingFees is required"))?,
-        )?;
+        let total_processing_fees =
+            try_to_u64(get_required_property(&options_obj, "totalProcessingFees")?)?;
 
-        let total_distributed_storage_fees = try_to_u64(
-            Reflect::get(&options_obj, &"totalDistributedStorageFees".into()).map_err(|_| {
-                WasmDppError::invalid_argument("totalDistributedStorageFees is required")
-            })?,
-        )?;
+        let total_distributed_storage_fees =
+            try_to_u64(get_required_property(&options_obj, "totalDistributedStorageFees")?)?;
 
-        let total_created_storage_fees = try_to_u64(
-            Reflect::get(&options_obj, &"totalCreatedStorageFees".into()).map_err(|_| {
-                WasmDppError::invalid_argument("totalCreatedStorageFees is required")
-            })?,
-        )?;
+        let total_created_storage_fees =
+            try_to_u64(get_required_property(&options_obj, "totalCreatedStorageFees")?)?;
 
-        let core_block_rewards = try_to_u64(
-            Reflect::get(&options_obj, &"coreBlockRewards".into())
-                .map_err(|_| WasmDppError::invalid_argument("coreBlockRewards is required"))?,
-        )?;
+        let core_block_rewards =
+            try_to_u64(get_required_property(&options_obj, "coreBlockRewards")?)?;
 
-        let block_proposers_js = Reflect::get(&options_obj, &"blockProposers".into())
-            .map_err(|_| WasmDppError::invalid_argument("blockProposers is required"))?;
+        let block_proposers_js = get_required_property(&options_obj, "blockProposers")?;
         let block_proposers = block_proposers_from_map(&Map::from(block_proposers_js))?;
 
-        let fee_multiplier_permille = try_to_u64(
-            Reflect::get(&options_obj, &"feeMultiplierPermille".into())
-                .map_err(|_| WasmDppError::invalid_argument("feeMultiplierPermille is required"))?,
-        )?;
+        let fee_multiplier_permille =
+            try_to_u64(get_required_property(&options_obj, "feeMultiplierPermille")?)?;
 
-        let protocol_version = Reflect::get(&options_obj, &"protocolVersion".into())
-            .map_err(|_| WasmDppError::invalid_argument("protocolVersion is required"))?
+        let protocol_version = get_required_property(&options_obj, "protocolVersion")?
             .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("protocolVersion must be a number"))?
+            .ok_or_else(|| WasmDppError::invalid_argument("'protocolVersion' must be a number"))?
             as u32;
 
         Ok(FinalizedEpochInfoWasm(FinalizedEpochInfo::V0(

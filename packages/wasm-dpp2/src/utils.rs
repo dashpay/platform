@@ -121,6 +121,27 @@ pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     Ok(class_type.as_string().unwrap_or_default())
 }
 
+/// Extract a required property from a JS object.
+///
+/// This function properly handles the case where `Reflect::get` returns `Ok(undefined)`
+/// for missing properties (rather than `Err`), providing clear error messages.
+pub fn get_required_property(
+    object: &js_sys::Object,
+    property_name: &str,
+) -> WasmDppResult<JsValue> {
+    let value = js_sys::Reflect::get(object, &JsValue::from_str(property_name))
+        .map_err(|_| WasmDppError::invalid_argument(format!("Missing '{}' property", property_name)))?;
+
+    if value.is_undefined() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "Property '{}' is undefined",
+            property_name
+        )));
+    }
+
+    Ok(value)
+}
+
 /// Convert a JS Number or BigInt to u64
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
     if value.is_bigint() {
