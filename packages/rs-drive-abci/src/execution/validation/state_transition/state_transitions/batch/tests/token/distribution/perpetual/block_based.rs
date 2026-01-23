@@ -2639,15 +2639,9 @@ mod test_suite {
 
         /// Enable logging for tests
         fn setup_logs() {
-            tracing_subscriber::fmt::fmt()
-                .with_env_filter(tracing_subscriber::EnvFilter::new(
-                    "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace",
-                ))
-                .pretty()
-                .with_ansi(true)
-                .with_writer(std::io::stdout)
-                .try_init()
-                .ok();
+            drive_abci::logging::init_for_tests(drive_abci::logging::LogLevel::Custom(
+                "info,dash_sdk=trace,dash_sdk::platform::fetch=debug,drive_proof_verifier=debug,main=debug,h2=info,drive_abci::execution=trace".to_string(),
+            ));
         }
 
         /// Lazily initialize and return the token configuration.
