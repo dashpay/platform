@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "3.0.0-rc.3",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -79,6 +79,9 @@
     "elliptic": "6.6.1",
     "bn.js": "4.12.0",
     "fast-json-patch": "^3.1.1",
+    "diff@^4.0.1": "4.0.4",
+    "diff@^5.1.0": "5.2.2",
+    "diff@^5.2.0": "5.2.2",
     "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
     "qs": "^6.14.1",
     "engine.io": "^6.4.2",
@@ -105,11 +108,14 @@
     "cross-spawn": "^7.0.5",
     "nanoid": "^3.3.8",
     "tar-fs": "^3.0.9",
+    "tar": "^7.5.4",
     "brace-expansion": "^2.0.2",
     "cipher-base": "^1.0.5",
     "sha.js": "^2.4.12",
     "tmp": "^0.2.4",
-    "js-yaml": "^4.1.1"
+    "js-yaml": "^4.1.1",
+    "micromatch": "^4.0.8",
+    "lodash": "^4.17.23"
   },
   "dependencies": {
     "dompurify": "^3.2.6",

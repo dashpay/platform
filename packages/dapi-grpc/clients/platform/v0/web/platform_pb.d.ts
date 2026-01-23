@@ -10242,6 +10242,93 @@ export namespace GetRecentAddressBalanceChangesResponse {
   }
 }
 
+export class BlockHeightCreditEntry extends jspb.Message {
+  getBlockHeight(): string;
+  setBlockHeight(value: string): void;
+
+  getCredits(): string;
+  setCredits(value: string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): BlockHeightCreditEntry.AsObject;
+  static toObject(includeInstance: boolean, msg: BlockHeightCreditEntry): BlockHeightCreditEntry.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: BlockHeightCreditEntry, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): BlockHeightCreditEntry;
+  static deserializeBinaryFromReader(message: BlockHeightCreditEntry, reader: jspb.BinaryReader): BlockHeightCreditEntry;
+}
+
+export namespace BlockHeightCreditEntry {
+  export type AsObject = {
+    blockHeight: string,
+    credits: string,
+  }
+}
+
+export class CompactedAddressBalanceChange extends jspb.Message {
+  getAddress(): Uint8Array | string;
+  getAddress_asU8(): Uint8Array;
+  getAddress_asB64(): string;
+  setAddress(value: Uint8Array | string): void;
+
+  hasSetCredits(): boolean;
+  clearSetCredits(): void;
+  getSetCredits(): string;
+  setSetCredits(value: string): void;
+
+  hasAddToCreditsOperations(): boolean;
+  clearAddToCreditsOperations(): void;
+  getAddToCreditsOperations(): AddToCreditsOperations | undefined;
+  setAddToCreditsOperations(value?: AddToCreditsOperations): void;
+
+  getOperationCase(): CompactedAddressBalanceChange.OperationCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): CompactedAddressBalanceChange.AsObject;
+  static toObject(includeInstance: boolean, msg: CompactedAddressBalanceChange): CompactedAddressBalanceChange.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: CompactedAddressBalanceChange, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): CompactedAddressBalanceChange;
+  static deserializeBinaryFromReader(message: CompactedAddressBalanceChange, reader: jspb.BinaryReader): CompactedAddressBalanceChange;
+}
+
+export namespace CompactedAddressBalanceChange {
+  export type AsObject = {
+    address: Uint8Array | string,
+    setCredits: string,
+    addToCreditsOperations?: AddToCreditsOperations.AsObject,
+  }
+
+  export enum OperationCase {
+    OPERATION_NOT_SET = 0,
+    SET_CREDITS = 2,
+    ADD_TO_CREDITS_OPERATIONS = 3,
+  }
+}
+
+export class AddToCreditsOperations extends jspb.Message {
+  clearEntriesList(): void;
+  getEntriesList(): Array<BlockHeightCreditEntry>;
+  setEntriesList(value: Array<BlockHeightCreditEntry>): void;
+  addEntries(value?: BlockHeightCreditEntry, index?: number): BlockHeightCreditEntry;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): AddToCreditsOperations.AsObject;
+  static toObject(includeInstance: boolean, msg: AddToCreditsOperations): AddToCreditsOperations.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: AddToCreditsOperations, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): AddToCreditsOperations;
+  static deserializeBinaryFromReader(message: AddToCreditsOperations, reader: jspb.BinaryReader): AddToCreditsOperations;
+}
+
+export namespace AddToCreditsOperations {
+  export type AsObject = {
+    entriesList: Array<BlockHeightCreditEntry.AsObject>,
+  }
+}
+
 export class CompactedBlockAddressBalanceChanges extends jspb.Message {
   getStartBlockHeight(): string;
   setStartBlockHeight(value: string): void;
@@ -10250,9 +10337,9 @@ export class CompactedBlockAddressBalanceChanges extends jspb.Message {
   setEndBlockHeight(value: string): void;
 
   clearChangesList(): void;
-  getChangesList(): Array<AddressBalanceChange>;
-  setChangesList(value: Array<AddressBalanceChange>): void;
-  addChanges(value?: AddressBalanceChange, index?: number): AddressBalanceChange;
+  getChangesList(): Array<CompactedAddressBalanceChange>;
+  setChangesList(value: Array<CompactedAddressBalanceChange>): void;
+  addChanges(value?: CompactedAddressBalanceChange, index?: number): CompactedAddressBalanceChange;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): CompactedBlockAddressBalanceChanges.AsObject;
@@ -10268,7 +10355,7 @@ export namespace CompactedBlockAddressBalanceChanges {
   export type AsObject = {
     startBlockHeight: string,
     endBlockHeight: string,
-    changesList: Array<AddressBalanceChange.AsObject>,
+    changesList: Array<CompactedAddressBalanceChange.AsObject>,
   }
 }
 

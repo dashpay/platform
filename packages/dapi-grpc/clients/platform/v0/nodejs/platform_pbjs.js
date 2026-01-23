@@ -79998,6 +79998,733 @@ $root.org = (function() {
                         return GetRecentAddressBalanceChangesResponse;
                     })();
 
+                    v0.BlockHeightCreditEntry = (function() {
+
+                        /**
+                         * Properties of a BlockHeightCreditEntry.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IBlockHeightCreditEntry
+                         * @property {number|Long|null} [blockHeight] BlockHeightCreditEntry blockHeight
+                         * @property {number|Long|null} [credits] BlockHeightCreditEntry credits
+                         */
+
+                        /**
+                         * Constructs a new BlockHeightCreditEntry.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a BlockHeightCreditEntry.
+                         * @implements IBlockHeightCreditEntry
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry=} [properties] Properties to set
+                         */
+                        function BlockHeightCreditEntry(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * BlockHeightCreditEntry blockHeight.
+                         * @member {number|Long} blockHeight
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @instance
+                         */
+                        BlockHeightCreditEntry.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * BlockHeightCreditEntry credits.
+                         * @member {number|Long} credits
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @instance
+                         */
+                        BlockHeightCreditEntry.prototype.credits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * Creates a new BlockHeightCreditEntry instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry instance
+                         */
+                        BlockHeightCreditEntry.create = function create(properties) {
+                            return new BlockHeightCreditEntry(properties);
+                        };
+
+                        /**
+                         * Encodes the specified BlockHeightCreditEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.BlockHeightCreditEntry.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry} message BlockHeightCreditEntry message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockHeightCreditEntry.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.blockHeight);
+                            if (message.credits != null && Object.hasOwnProperty.call(message, "credits"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.credits);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified BlockHeightCreditEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BlockHeightCreditEntry.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry} message BlockHeightCreditEntry message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockHeightCreditEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a BlockHeightCreditEntry message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockHeightCreditEntry.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.blockHeight = reader.uint64();
+                                    break;
+                                case 2:
+                                    message.credits = reader.uint64();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a BlockHeightCreditEntry message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockHeightCreditEntry.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a BlockHeightCreditEntry message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        BlockHeightCreditEntry.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                    return "blockHeight: integer|Long expected";
+                            if (message.credits != null && message.hasOwnProperty("credits"))
+                                if (!$util.isInteger(message.credits) && !(message.credits && $util.isInteger(message.credits.low) && $util.isInteger(message.credits.high)))
+                                    return "credits: integer|Long expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a BlockHeightCreditEntry message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry
+                         */
+                        BlockHeightCreditEntry.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry();
+                            if (object.blockHeight != null)
+                                if ($util.Long)
+                                    (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                else if (typeof object.blockHeight === "string")
+                                    message.blockHeight = parseInt(object.blockHeight, 10);
+                                else if (typeof object.blockHeight === "number")
+                                    message.blockHeight = object.blockHeight;
+                                else if (typeof object.blockHeight === "object")
+                                    message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                            if (object.credits != null)
+                                if ($util.Long)
+                                    (message.credits = $util.Long.fromValue(object.credits)).unsigned = true;
+                                else if (typeof object.credits === "string")
+                                    message.credits = parseInt(object.credits, 10);
+                                else if (typeof object.credits === "number")
+                                    message.credits = object.credits;
+                                else if (typeof object.credits === "object")
+                                    message.credits = new $util.LongBits(object.credits.low >>> 0, object.credits.high >>> 0).toNumber(true);
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a BlockHeightCreditEntry message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.BlockHeightCreditEntry} message BlockHeightCreditEntry
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        BlockHeightCreditEntry.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.blockHeight = options.longs === String ? "0" : 0;
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.credits = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.credits = options.longs === String ? "0" : 0;
+                            }
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (typeof message.blockHeight === "number")
+                                    object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                else
+                                    object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                            if (message.credits != null && message.hasOwnProperty("credits"))
+                                if (typeof message.credits === "number")
+                                    object.credits = options.longs === String ? String(message.credits) : message.credits;
+                                else
+                                    object.credits = options.longs === String ? $util.Long.prototype.toString.call(message.credits) : options.longs === Number ? new $util.LongBits(message.credits.low >>> 0, message.credits.high >>> 0).toNumber(true) : message.credits;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this BlockHeightCreditEntry to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        BlockHeightCreditEntry.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return BlockHeightCreditEntry;
+                    })();
+
+                    v0.CompactedAddressBalanceChange = (function() {
+
+                        /**
+                         * Properties of a CompactedAddressBalanceChange.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ICompactedAddressBalanceChange
+                         * @property {Uint8Array|null} [address] CompactedAddressBalanceChange address
+                         * @property {number|Long|null} [setCredits] CompactedAddressBalanceChange setCredits
+                         * @property {org.dash.platform.dapi.v0.IAddToCreditsOperations|null} [addToCreditsOperations] CompactedAddressBalanceChange addToCreditsOperations
+                         */
+
+                        /**
+                         * Constructs a new CompactedAddressBalanceChange.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a CompactedAddressBalanceChange.
+                         * @implements ICompactedAddressBalanceChange
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange=} [properties] Properties to set
+                         */
+                        function CompactedAddressBalanceChange(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * CompactedAddressBalanceChange address.
+                         * @member {Uint8Array} address
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        CompactedAddressBalanceChange.prototype.address = $util.newBuffer([]);
+
+                        /**
+                         * CompactedAddressBalanceChange setCredits.
+                         * @member {number|Long} setCredits
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        CompactedAddressBalanceChange.prototype.setCredits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * CompactedAddressBalanceChange addToCreditsOperations.
+                         * @member {org.dash.platform.dapi.v0.IAddToCreditsOperations|null|undefined} addToCreditsOperations
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        CompactedAddressBalanceChange.prototype.addToCreditsOperations = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * CompactedAddressBalanceChange operation.
+                         * @member {"setCredits"|"addToCreditsOperations"|undefined} operation
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        Object.defineProperty(CompactedAddressBalanceChange.prototype, "operation", {
+                            get: $util.oneOfGetter($oneOfFields = ["setCredits", "addToCreditsOperations"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new CompactedAddressBalanceChange instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange instance
+                         */
+                        CompactedAddressBalanceChange.create = function create(properties) {
+                            return new CompactedAddressBalanceChange(properties);
+                        };
+
+                        /**
+                         * Encodes the specified CompactedAddressBalanceChange message. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedAddressBalanceChange.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange} message CompactedAddressBalanceChange message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedAddressBalanceChange.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.address != null && Object.hasOwnProperty.call(message, "address"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.address);
+                            if (message.setCredits != null && Object.hasOwnProperty.call(message, "setCredits"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.setCredits);
+                            if (message.addToCreditsOperations != null && Object.hasOwnProperty.call(message, "addToCreditsOperations"))
+                                $root.org.dash.platform.dapi.v0.AddToCreditsOperations.encode(message.addToCreditsOperations, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified CompactedAddressBalanceChange message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedAddressBalanceChange.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange} message CompactedAddressBalanceChange message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedAddressBalanceChange.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a CompactedAddressBalanceChange message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedAddressBalanceChange.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.address = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.setCredits = reader.uint64();
+                                    break;
+                                case 3:
+                                    message.addToCreditsOperations = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a CompactedAddressBalanceChange message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedAddressBalanceChange.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a CompactedAddressBalanceChange message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        CompactedAddressBalanceChange.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                if (!(message.address && typeof message.address.length === "number" || $util.isString(message.address)))
+                                    return "address: buffer expected";
+                            if (message.setCredits != null && message.hasOwnProperty("setCredits")) {
+                                properties.operation = 1;
+                                if (!$util.isInteger(message.setCredits) && !(message.setCredits && $util.isInteger(message.setCredits.low) && $util.isInteger(message.setCredits.high)))
+                                    return "setCredits: integer|Long expected";
+                            }
+                            if (message.addToCreditsOperations != null && message.hasOwnProperty("addToCreditsOperations")) {
+                                if (properties.operation === 1)
+                                    return "operation: multiple values";
+                                properties.operation = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.verify(message.addToCreditsOperations);
+                                    if (error)
+                                        return "addToCreditsOperations." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a CompactedAddressBalanceChange message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange
+                         */
+                        CompactedAddressBalanceChange.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange();
+                            if (object.address != null)
+                                if (typeof object.address === "string")
+                                    $util.base64.decode(object.address, message.address = $util.newBuffer($util.base64.length(object.address)), 0);
+                                else if (object.address.length >= 0)
+                                    message.address = object.address;
+                            if (object.setCredits != null)
+                                if ($util.Long)
+                                    (message.setCredits = $util.Long.fromValue(object.setCredits)).unsigned = true;
+                                else if (typeof object.setCredits === "string")
+                                    message.setCredits = parseInt(object.setCredits, 10);
+                                else if (typeof object.setCredits === "number")
+                                    message.setCredits = object.setCredits;
+                                else if (typeof object.setCredits === "object")
+                                    message.setCredits = new $util.LongBits(object.setCredits.low >>> 0, object.setCredits.high >>> 0).toNumber(true);
+                            if (object.addToCreditsOperations != null) {
+                                if (typeof object.addToCreditsOperations !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.CompactedAddressBalanceChange.addToCreditsOperations: object expected");
+                                message.addToCreditsOperations = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.fromObject(object.addToCreditsOperations);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a CompactedAddressBalanceChange message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} message CompactedAddressBalanceChange
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        CompactedAddressBalanceChange.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.address = "";
+                                else {
+                                    object.address = [];
+                                    if (options.bytes !== Array)
+                                        object.address = $util.newBuffer(object.address);
+                                }
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                object.address = options.bytes === String ? $util.base64.encode(message.address, 0, message.address.length) : options.bytes === Array ? Array.prototype.slice.call(message.address) : message.address;
+                            if (message.setCredits != null && message.hasOwnProperty("setCredits")) {
+                                if (typeof message.setCredits === "number")
+                                    object.setCredits = options.longs === String ? String(message.setCredits) : message.setCredits;
+                                else
+                                    object.setCredits = options.longs === String ? $util.Long.prototype.toString.call(message.setCredits) : options.longs === Number ? new $util.LongBits(message.setCredits.low >>> 0, message.setCredits.high >>> 0).toNumber(true) : message.setCredits;
+                                if (options.oneofs)
+                                    object.operation = "setCredits";
+                            }
+                            if (message.addToCreditsOperations != null && message.hasOwnProperty("addToCreditsOperations")) {
+                                object.addToCreditsOperations = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.toObject(message.addToCreditsOperations, options);
+                                if (options.oneofs)
+                                    object.operation = "addToCreditsOperations";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this CompactedAddressBalanceChange to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        CompactedAddressBalanceChange.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return CompactedAddressBalanceChange;
+                    })();
+
+                    v0.AddToCreditsOperations = (function() {
+
+                        /**
+                         * Properties of an AddToCreditsOperations.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IAddToCreditsOperations
+                         * @property {Array.<org.dash.platform.dapi.v0.IBlockHeightCreditEntry>|null} [entries] AddToCreditsOperations entries
+                         */
+
+                        /**
+                         * Constructs a new AddToCreditsOperations.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents an AddToCreditsOperations.
+                         * @implements IAddToCreditsOperations
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations=} [properties] Properties to set
+                         */
+                        function AddToCreditsOperations(properties) {
+                            this.entries = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * AddToCreditsOperations entries.
+                         * @member {Array.<org.dash.platform.dapi.v0.IBlockHeightCreditEntry>} entries
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @instance
+                         */
+                        AddToCreditsOperations.prototype.entries = $util.emptyArray;
+
+                        /**
+                         * Creates a new AddToCreditsOperations instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations instance
+                         */
+                        AddToCreditsOperations.create = function create(properties) {
+                            return new AddToCreditsOperations(properties);
+                        };
+
+                        /**
+                         * Encodes the specified AddToCreditsOperations message. Does not implicitly {@link org.dash.platform.dapi.v0.AddToCreditsOperations.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations} message AddToCreditsOperations message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddToCreditsOperations.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.entries != null && message.entries.length)
+                                for (var i = 0; i < message.entries.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified AddToCreditsOperations message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.AddToCreditsOperations.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations} message AddToCreditsOperations message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddToCreditsOperations.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an AddToCreditsOperations message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddToCreditsOperations.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.AddToCreditsOperations();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.entries && message.entries.length))
+                                        message.entries = [];
+                                    message.entries.push($root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an AddToCreditsOperations message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddToCreditsOperations.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an AddToCreditsOperations message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        AddToCreditsOperations.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.entries != null && message.hasOwnProperty("entries")) {
+                                if (!Array.isArray(message.entries))
+                                    return "entries: array expected";
+                                for (var i = 0; i < message.entries.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.verify(message.entries[i]);
+                                    if (error)
+                                        return "entries." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates an AddToCreditsOperations message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations
+                         */
+                        AddToCreditsOperations.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.AddToCreditsOperations)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.AddToCreditsOperations();
+                            if (object.entries) {
+                                if (!Array.isArray(object.entries))
+                                    throw TypeError(".org.dash.platform.dapi.v0.AddToCreditsOperations.entries: array expected");
+                                message.entries = [];
+                                for (var i = 0; i < object.entries.length; ++i) {
+                                    if (typeof object.entries[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.AddToCreditsOperations.entries: object expected");
+                                    message.entries[i] = $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.fromObject(object.entries[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an AddToCreditsOperations message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.AddToCreditsOperations} message AddToCreditsOperations
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        AddToCreditsOperations.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.entries = [];
+                            if (message.entries && message.entries.length) {
+                                object.entries = [];
+                                for (var j = 0; j < message.entries.length; ++j)
+                                    object.entries[j] = $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.toObject(message.entries[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this AddToCreditsOperations to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        AddToCreditsOperations.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return AddToCreditsOperations;
+                    })();
+
                     v0.CompactedBlockAddressBalanceChanges = (function() {
 
                         /**
@@ -80006,7 +80733,7 @@ $root.org = (function() {
                          * @interface ICompactedBlockAddressBalanceChanges
                          * @property {number|Long|null} [startBlockHeight] CompactedBlockAddressBalanceChanges startBlockHeight
                          * @property {number|Long|null} [endBlockHeight] CompactedBlockAddressBalanceChanges endBlockHeight
-                         * @property {Array.<org.dash.platform.dapi.v0.IAddressBalanceChange>|null} [changes] CompactedBlockAddressBalanceChanges changes
+                         * @property {Array.<org.dash.platform.dapi.v0.ICompactedAddressBalanceChange>|null} [changes] CompactedBlockAddressBalanceChanges changes
                          */
 
                         /**
@@ -80043,7 +80770,7 @@ $root.org = (function() {
 
                         /**
                          * CompactedBlockAddressBalanceChanges changes.
-                         * @member {Array.<org.dash.platform.dapi.v0.IAddressBalanceChange>} changes
+                         * @member {Array.<org.dash.platform.dapi.v0.ICompactedAddressBalanceChange>} changes
                          * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
                          * @instance
                          */
@@ -80079,7 +80806,7 @@ $root.org = (function() {
                                 writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.endBlockHeight);
                             if (message.changes != null && message.changes.length)
                                 for (var i = 0; i < message.changes.length; ++i)
-                                    $root.org.dash.platform.dapi.v0.AddressBalanceChange.encode(message.changes[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.encode(message.changes[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             return writer;
                         };
 
@@ -80123,7 +80850,7 @@ $root.org = (function() {
                                 case 3:
                                     if (!(message.changes && message.changes.length))
                                         message.changes = [];
-                                    message.changes.push($root.org.dash.platform.dapi.v0.AddressBalanceChange.decode(reader, reader.uint32()));
+                                    message.changes.push($root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.decode(reader, reader.uint32()));
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -80170,7 +80897,7 @@ $root.org = (function() {
                                 if (!Array.isArray(message.changes))
                                     return "changes: array expected";
                                 for (var i = 0; i < message.changes.length; ++i) {
-                                    var error = $root.org.dash.platform.dapi.v0.AddressBalanceChange.verify(message.changes[i]);
+                                    var error = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.verify(message.changes[i]);
                                     if (error)
                                         return "changes." + error;
                                 }
@@ -80215,7 +80942,7 @@ $root.org = (function() {
                                 for (var i = 0; i < object.changes.length; ++i) {
                                     if (typeof object.changes[i] !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.changes: object expected");
-                                    message.changes[i] = $root.org.dash.platform.dapi.v0.AddressBalanceChange.fromObject(object.changes[i]);
+                                    message.changes[i] = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.fromObject(object.changes[i]);
                                 }
                             }
                             return message;
@@ -80261,7 +80988,7 @@ $root.org = (function() {
                             if (message.changes && message.changes.length) {
                                 object.changes = [];
                                 for (var j = 0; j < message.changes.length; ++j)
-                                    object.changes[j] = $root.org.dash.platform.dapi.v0.AddressBalanceChange.toObject(message.changes[j], options);
+                                    object.changes[j] = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.toObject(message.changes[j], options);
                             }
                             return object;
                         };

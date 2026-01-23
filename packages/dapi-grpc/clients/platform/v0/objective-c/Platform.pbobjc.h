@@ -27,6 +27,7 @@
 
 CF_EXTERN_C_BEGIN
 
+@class AddToCreditsOperations;
 @class AddressBalanceChange;
 @class AddressBalanceUpdateEntries;
 @class AddressInfoEntries;
@@ -34,6 +35,8 @@ CF_EXTERN_C_BEGIN
 @class AllKeys;
 @class BalanceAndNonce;
 @class BlockAddressBalanceChanges;
+@class BlockHeightCreditEntry;
+@class CompactedAddressBalanceChange;
 @class CompactedAddressBalanceUpdateEntries;
 @class CompactedBlockAddressBalanceChanges;
 @class GPBBytesValue;
@@ -8341,6 +8344,80 @@ GPB_FINAL @interface GetRecentAddressBalanceChangesResponse_GetRecentAddressBala
  **/
 void GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_ClearResultOneOfCase(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 *message);
 
+#pragma mark - BlockHeightCreditEntry
+
+typedef GPB_ENUM(BlockHeightCreditEntry_FieldNumber) {
+  BlockHeightCreditEntry_FieldNumber_BlockHeight = 1,
+  BlockHeightCreditEntry_FieldNumber_Credits = 2,
+};
+
+/**
+ * Entry for block height to credits mapping in AddToCreditsOperations
+ **/
+GPB_FINAL @interface BlockHeightCreditEntry : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+@property(nonatomic, readwrite) uint64_t credits;
+
+@end
+
+#pragma mark - CompactedAddressBalanceChange
+
+typedef GPB_ENUM(CompactedAddressBalanceChange_FieldNumber) {
+  CompactedAddressBalanceChange_FieldNumber_Address = 1,
+  CompactedAddressBalanceChange_FieldNumber_SetCredits = 2,
+  CompactedAddressBalanceChange_FieldNumber_AddToCreditsOperations = 3,
+};
+
+typedef GPB_ENUM(CompactedAddressBalanceChange_Operation_OneOfCase) {
+  CompactedAddressBalanceChange_Operation_OneOfCase_GPBUnsetOneOfCase = 0,
+  CompactedAddressBalanceChange_Operation_OneOfCase_SetCredits = 2,
+  CompactedAddressBalanceChange_Operation_OneOfCase_AddToCreditsOperations = 3,
+};
+
+/**
+ * Compacted address balance change supporting block-aware credit operations
+ * For SetCredits: the final balance value
+ * For AddToCreditsOperations: preserves individual adds with their block heights
+ **/
+GPB_FINAL @interface CompactedAddressBalanceChange : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *address;
+
+@property(nonatomic, readonly) CompactedAddressBalanceChange_Operation_OneOfCase operationOneOfCase;
+
+/** The address balance was set to this value (overwrites previous) */
+@property(nonatomic, readwrite) uint64_t setCredits;
+
+/** Individual add-to-credits operations by block height (preserved for partial sync) */
+@property(nonatomic, readwrite, strong, null_resettable) AddToCreditsOperations *addToCreditsOperations;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'operation'.
+ **/
+void CompactedAddressBalanceChange_ClearOperationOneOfCase(CompactedAddressBalanceChange *message);
+
+#pragma mark - AddToCreditsOperations
+
+typedef GPB_ENUM(AddToCreditsOperations_FieldNumber) {
+  AddToCreditsOperations_FieldNumber_EntriesArray = 1,
+};
+
+/**
+ * A collection of add-to-credits operations, each tagged with block height
+ * This allows clients to determine which adds to apply based on their sync height
+ **/
+GPB_FINAL @interface AddToCreditsOperations : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<BlockHeightCreditEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
 #pragma mark - CompactedBlockAddressBalanceChanges
 
 typedef GPB_ENUM(CompactedBlockAddressBalanceChanges_FieldNumber) {
@@ -8355,7 +8432,7 @@ GPB_FINAL @interface CompactedBlockAddressBalanceChanges : GPBMessage
 
 @property(nonatomic, readwrite) uint64_t endBlockHeight;
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<AddressBalanceChange*> *changesArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<CompactedAddressBalanceChange*> *changesArray;
 /** The number of items in @c changesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger changesArray_Count;
 

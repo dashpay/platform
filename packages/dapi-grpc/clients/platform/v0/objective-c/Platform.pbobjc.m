@@ -27,6 +27,7 @@
 // Forward declarations of Objective C classes that we can use as
 // static values in struct initializers.
 // We don't use [Foo class] because it is not a static value.
+GPBObjCClassDeclaration(AddToCreditsOperations);
 GPBObjCClassDeclaration(AddressBalanceChange);
 GPBObjCClassDeclaration(AddressBalanceUpdateEntries);
 GPBObjCClassDeclaration(AddressInfoEntries);
@@ -34,6 +35,8 @@ GPBObjCClassDeclaration(AddressInfoEntry);
 GPBObjCClassDeclaration(AllKeys);
 GPBObjCClassDeclaration(BalanceAndNonce);
 GPBObjCClassDeclaration(BlockAddressBalanceChanges);
+GPBObjCClassDeclaration(BlockHeightCreditEntry);
+GPBObjCClassDeclaration(CompactedAddressBalanceChange);
 GPBObjCClassDeclaration(CompactedAddressBalanceUpdateEntries);
 GPBObjCClassDeclaration(CompactedBlockAddressBalanceChanges);
 GPBObjCClassDeclaration(GPBBytesValue);
@@ -21719,6 +21722,186 @@ void GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesRespon
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - BlockHeightCreditEntry
+
+@implementation BlockHeightCreditEntry
+
+@dynamic blockHeight;
+@dynamic credits;
+
+typedef struct BlockHeightCreditEntry__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t blockHeight;
+  uint64_t credits;
+} BlockHeightCreditEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BlockHeightCreditEntry_FieldNumber_BlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(BlockHeightCreditEntry__storage_, blockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "credits",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BlockHeightCreditEntry_FieldNumber_Credits,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(BlockHeightCreditEntry__storage_, credits),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[BlockHeightCreditEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(BlockHeightCreditEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - CompactedAddressBalanceChange
+
+@implementation CompactedAddressBalanceChange
+
+@dynamic operationOneOfCase;
+@dynamic address;
+@dynamic setCredits;
+@dynamic addToCreditsOperations;
+
+typedef struct CompactedAddressBalanceChange__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *address;
+  AddToCreditsOperations *addToCreditsOperations;
+  uint64_t setCredits;
+} CompactedAddressBalanceChange__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "address",
+        .dataTypeSpecific.clazz = Nil,
+        .number = CompactedAddressBalanceChange_FieldNumber_Address,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceChange__storage_, address),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "setCredits",
+        .dataTypeSpecific.clazz = Nil,
+        .number = CompactedAddressBalanceChange_FieldNumber_SetCredits,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceChange__storage_, setCredits),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "addToCreditsOperations",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddToCreditsOperations),
+        .number = CompactedAddressBalanceChange_FieldNumber_AddToCreditsOperations,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceChange__storage_, addToCreditsOperations),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[CompactedAddressBalanceChange class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(CompactedAddressBalanceChange__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "operation",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void CompactedAddressBalanceChange_ClearOperationOneOfCase(CompactedAddressBalanceChange *message) {
+  GPBDescriptor *descriptor = [CompactedAddressBalanceChange descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - AddToCreditsOperations
+
+@implementation AddToCreditsOperations
+
+@dynamic entriesArray, entriesArray_Count;
+
+typedef struct AddToCreditsOperations__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+} AddToCreditsOperations__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(BlockHeightCreditEntry),
+        .number = AddToCreditsOperations_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(AddToCreditsOperations__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[AddToCreditsOperations class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(AddToCreditsOperations__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - CompactedBlockAddressBalanceChanges
 
 @implementation CompactedBlockAddressBalanceChanges
@@ -21760,7 +21943,7 @@ typedef struct CompactedBlockAddressBalanceChanges__storage_ {
       },
       {
         .name = "changesArray",
-        .dataTypeSpecific.clazz = GPBObjCClass(AddressBalanceChange),
+        .dataTypeSpecific.clazz = GPBObjCClass(CompactedAddressBalanceChange),
         .number = CompactedBlockAddressBalanceChanges_FieldNumber_ChangesArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(CompactedBlockAddressBalanceChanges__storage_, changesArray),
