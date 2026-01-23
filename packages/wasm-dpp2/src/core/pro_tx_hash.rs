@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
+use crate::utils::IntoWasm;
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
@@ -131,7 +132,12 @@ impl TryFrom<JsValue> for ProTxHashWasm {
     type Error = WasmDppError;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        // Try as string first (hex format)
+        // Try as ProTxHash object first
+        if let Ok(wasm) = value.to_wasm::<ProTxHashWasm>("ProTxHash") {
+            return Ok(wasm.clone());
+        }
+
+        // Try as string (hex format)
         if let Some(hex_str) = value.as_string() {
             let hash = ProTxHash::from_str(&hex_str).map_err(|e| {
                 WasmDppError::invalid_argument(format!("Invalid ProTxHash hex string: {}", e))
@@ -156,7 +162,7 @@ impl TryFrom<JsValue> for ProTxHashWasm {
         }
 
         Err(WasmDppError::invalid_argument(
-            "ProTxHash must be a hex string or Uint8Array (32 bytes)",
+            "ProTxHash must be a ProTxHash object, hex string, or Uint8Array (32 bytes)",
         ))
     }
 }
