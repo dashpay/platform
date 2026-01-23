@@ -162,7 +162,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
-        expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
@@ -224,7 +224,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = transferTransition.toDocumentTransition();
 
-        expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
+        expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
         expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
       });
