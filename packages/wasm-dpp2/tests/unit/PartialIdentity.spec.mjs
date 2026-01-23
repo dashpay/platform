@@ -253,6 +253,28 @@ describe('PartialIdentity', () => {
 
       expect(Array.from(partialIdentity.notFoundPublicKeys)).to.deep.equal([100, 200]);
     });
+
+    it('should set loadedPublicKeys', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+      });
+
+      const pubKey = new wasm.IdentityPublicKey({
+        keyId,
+        purpose,
+        securityLevel,
+        keyType,
+        isReadOnly: false,
+        data: binaryData,
+      });
+
+      partialIdentity.loadedPublicKeys = { [keyId]: pubKey };
+
+      const keys = partialIdentity.loadedPublicKeys;
+      expect(Object.keys(keys)).to.deep.equal([String(keyId)]);
+      expect(keys[String(keyId)].__type).to.equal('IdentityPublicKey');
+    });
   });
 
   describe('fromObject', () => {
