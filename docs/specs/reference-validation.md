@@ -29,7 +29,7 @@ Introduce an optional `refersTo` keyword on document properties so contracts can
 - Basic validation (DPP) only checks keyword shape/placement; no state access.
 
 ## Errors
-- Add a dedicated consensus state error, e.g., `ReferencedIdentityNotFoundError { path, identityId }`.
+- Add a dedicated consensus state error, e.g., `ReferencedEntityNotFoundError { path, identityId }`.
 - Avoid overloading signature errors; ensure deterministic mapping to codes.
 
 ## Backward Compatibility

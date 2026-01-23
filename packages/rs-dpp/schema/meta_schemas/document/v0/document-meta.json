@@ -222,6 +222,33 @@
           "required": [
             "maxLength"
           ]
+        },
+        "refersTo": {
+          "description": "refersTo is only allowed on identifier properties",
+          "properties": {
+            "type": {
+              "const": "array"
+            },
+            "byteArray": {
+              "const": true
+            },
+            "contentMediaType": {
+              "const": "application/x.dash.dpp.identifier"
+            },
+            "minItems": {
+              "const": 32
+            },
+            "maxItems": {
+              "const": 32
+            }
+          },
+          "required": [
+            "type",
+            "byteArray",
+            "contentMediaType",
+            "minItems",
+            "maxItems"
+          ]
         }
       },
       "allOf": [
