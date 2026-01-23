@@ -114,7 +114,7 @@
     "sha.js": "^2.4.12",
     "tmp": "^0.2.4",
     "js-yaml": "^4.1.1",
-    "micromatch": "^4.0.7",
+    "micromatch": "^4.0.8",
     "lodash": "^4.17.23"
   },
   "dependencies": {
