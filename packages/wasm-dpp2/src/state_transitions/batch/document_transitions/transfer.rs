@@ -53,7 +53,7 @@ impl DocumentTransferTransitionWasm {
         self.0.base().clone().into()
     }
 
-    #[wasm_bindgen(getter = "recipientId")]
+    #[wasm_bindgen(getter = "recipientOwnerId")]
     pub fn recipient_owner_id(&self) -> IdentifierWasm {
         self.0.recipient_owner_id().into()
     }
@@ -63,7 +63,7 @@ impl DocumentTransferTransitionWasm {
         self.0.set_base(base.clone().into())
     }
 
-    #[wasm_bindgen(setter = "recipientId")]
+    #[wasm_bindgen(setter = "recipientOwnerId")]
     pub fn set_recipient_owner_id(
         &mut self,
         #[wasm_bindgen(js_name = "recipientOwnerId")] recipient_owner_id: IdentifierLikeJs,
