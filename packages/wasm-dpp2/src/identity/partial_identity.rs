@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt, get_required_property, try_to_u64};
+use crate::utils::{IntoWasm, JsValueExt, get_required_property, try_to_object, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value;
@@ -73,7 +73,7 @@ impl From<PartialIdentity> for PartialIdentityWasm {
 impl PartialIdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: PartialIdentityOptionsJs) -> WasmDppResult<Self> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let id_js = get_required_property(&options_obj, "id")?;
         let id = IdentifierWasm::try_from(&id_js)?.into();

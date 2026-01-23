@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_u32, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_object, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -20,9 +20,9 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use js_sys::{Object, Reflect, Uint8Array};
-use wasm_bindgen::JsValue;
+use js_sys::{Reflect, Uint8Array};
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const MASTERNODE_VOTE_OPTIONS_TS: &'static str = r#"
@@ -94,7 +94,7 @@ impl MasternodeVoteTransitionWasm {
     pub fn constructor(
         options: MasternodeVoteTransitionOptionsJs,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let pro_tx_hash_js = get_required_property(&options_obj, "proTxHash")?;
         let pro_tx_hash = IdentifierWasm::try_from(&pro_tx_hash_js)?.into();

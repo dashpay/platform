@@ -4,14 +4,14 @@ use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_object, try_to_u64};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 use dpp::state_transition::batch_transition::TokenTransferTransition;
 use dpp::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
-use js_sys::{Object, Reflect};
+use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -55,7 +55,7 @@ impl TokenTransferTransitionWasm {
     pub fn constructor(
         options: TokenTransferTransitionOptionsJs,
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let base_js = get_required_property(&options_obj, "base")?;
         let base = base_js

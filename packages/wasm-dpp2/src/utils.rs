@@ -3,7 +3,7 @@ use anyhow::{anyhow, bail};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
-use js_sys::Error as JsError;
+use js_sys::{Error as JsError, Object};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -176,6 +176,15 @@ fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error
         return Ok(float_number as u64);
     }
     bail!("the value is not a number")
+}
+
+/// Convert a JS value to Object with validation.
+///
+/// Uses `dyn_into()` to safely convert, returning an error if the value is not an object.
+pub fn try_to_object(value: JsValue, field_name: &str) -> WasmDppResult<Object> {
+    value
+        .dyn_into()
+        .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be an object", field_name)))
 }
 
 /// Convert a JS value to u32 with validation.

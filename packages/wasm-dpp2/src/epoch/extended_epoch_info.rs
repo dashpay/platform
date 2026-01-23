@@ -1,10 +1,9 @@
 use crate::error::WasmDppResult;
-use crate::utils::{get_required_property, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
 use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
-use js_sys::{BigInt, Object};
-use wasm_bindgen::JsValue;
+use js_sys::BigInt;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -85,7 +84,7 @@ impl ExtendedEpochInfoWasm {
     pub fn constructor(
         options: ExtendedEpochInfoOptionsJs,
     ) -> WasmDppResult<ExtendedEpochInfoWasm> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let index_js = get_required_property(&options_obj, "index")?;
         let index = try_to_u16(index_js, "index")?;

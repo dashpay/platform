@@ -2,15 +2,15 @@ use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_u16, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_object, try_to_u16, try_to_u64};
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use js_sys::{Object, Reflect};
-use wasm_bindgen::JsValue;
+use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_BASE_TRANSITION_OPTIONS_TS: &'static str = r#"
@@ -51,7 +51,7 @@ impl TokenBaseTransitionWasm {
     pub fn constructor(
         options: TokenBaseTransitionOptionsJs,
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let identity_contract_nonce_js =
             get_required_property(&options_obj, "identityContractNonce")?;

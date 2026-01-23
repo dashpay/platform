@@ -2,15 +2,15 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{get_required_property, try_to_u32, try_to_u64};
+use crate::utils::{get_required_property, try_to_object, try_to_u32, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::prelude::Identifier;
-use js_sys::{BigInt, Map, Object, Reflect};
+use js_sys::{BigInt, Map, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 
 #[wasm_bindgen(typescript_custom_section)]
 const FINALIZED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
@@ -180,7 +180,7 @@ impl FinalizedEpochInfoWasm {
     pub fn constructor(
         options: FinalizedEpochInfoOptionsJs,
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let first_block_time_js = get_required_property(&options_obj, "firstBlockTime")?;
         let first_block_time = try_to_u64(first_block_time_js)?;
@@ -215,7 +215,12 @@ impl FinalizedEpochInfoWasm {
         let core_block_rewards = try_to_u64(core_block_rewards_js)?;
 
         let block_proposers_js = get_required_property(&options_obj, "blockProposers")?;
-        let block_proposers = block_proposers_from_map(&Map::from(block_proposers_js))?;
+        if !block_proposers_js.is_instance_of::<Map>() {
+            return Err(WasmDppError::invalid_argument(
+                "'blockProposers' must be a Map",
+            ));
+        }
+        let block_proposers = block_proposers_from_map(&Map::unchecked_from_js(block_proposers_js))?;
 
         let fee_multiplier_permille_js =
             get_required_property(&options_obj, "feeMultiplierPermille")?;

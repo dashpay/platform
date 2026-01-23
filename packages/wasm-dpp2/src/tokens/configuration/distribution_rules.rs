@@ -4,15 +4,15 @@ use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
-use crate::utils::{IntoWasm, get_required_property};
+use crate::utils::{IntoWasm, get_required_property, try_to_object};
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
-use js_sys::{Object, Reflect};
-use wasm_bindgen::JsValue;
+use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_DISTRIBUTION_RULES_OPTIONS_TS: &'static str = r#"
@@ -56,7 +56,7 @@ impl TokenDistributionRulesWasm {
     pub fn constructor(
         options: TokenDistributionRulesOptionsJs,
     ) -> WasmDppResult<TokenDistributionRulesWasm> {
-        let options_obj = Object::from(JsValue::from(options));
+        let options_obj = try_to_object(options.into(), "options")?;
 
         let js_perpetual_distribution = Reflect::get(&options_obj, &"perpetualDistribution".into())
             .unwrap_or(JsValue::UNDEFINED);
