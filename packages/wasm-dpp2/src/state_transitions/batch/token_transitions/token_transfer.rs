@@ -5,9 +5,9 @@ use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionW
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property_with, get_required_property, try_to_object, try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
+    try_to_object, try_to_u64,
 };
-use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
@@ -58,30 +58,31 @@ impl TokenTransferTransitionWasm {
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let base_js = get_required_property(&options_obj, "base")?;
-        let base = base_js
-            .to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")?
-            .clone();
+        let base: TokenBaseTransitionWasm =
+            try_from_options_with(&options_obj, "base", |v| {
+                v.to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")
+                    .map(|r| r.clone())
+            })?;
 
-        let recipient_id_js = get_required_property(&options_obj, "recipientId")?;
-        let recipient_id: Identifier = IdentifierWasm::try_from(&recipient_id_js)?.into();
+        let recipient_id: IdentifierWasm = try_from_options(&options_obj, "recipientId")?;
 
-        let amount = try_to_u64(get_required_property(&options_obj, "amount")?, "amount")?;
+        let amount =
+            try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
 
         let public_note: Option<String> =
-            get_optional_property_with(&options_obj, "publicNote", |v| {
+            try_from_options_optional_with(&options_obj, "publicNote", |v| {
                 v.as_string()
                     .ok_or_else(|| crate::error::WasmDppError::invalid_argument("publicNote must be a string"))
             })?;
 
         let shared_encrypted_note: Option<SharedEncryptedNote> =
-            get_optional_property_with(&options_obj, "sharedEncryptedNote", |v| {
+            try_from_options_optional_with(&options_obj, "sharedEncryptedNote", |v| {
                 v.to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")
                     .map(|n| n.clone().into())
             })?;
 
         let private_encrypted_note: Option<PrivateEncryptedNote> =
-            get_optional_property_with(&options_obj, "privateEncryptedNote", |v| {
+            try_from_options_optional_with(&options_obj, "privateEncryptedNote", |v| {
                 v.to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")
                     .map(|n| n.clone().into())
             })?;
@@ -89,7 +90,7 @@ impl TokenTransferTransitionWasm {
         Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
             TokenTransferTransitionV0 {
                 base: base.into(),
-                recipient_id,
+                recipient_id: recipient_id.into(),
                 amount,
                 public_note,
                 shared_encrypted_note,

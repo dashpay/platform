@@ -6,8 +6,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property_with, get_required_property, try_to_bytes, try_to_object,
-    try_to_u32, try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
+    try_to_bytes, try_to_object, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -97,33 +97,33 @@ impl MasternodeVoteTransitionWasm {
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let pro_tx_hash_js = get_required_property(&options_obj, "proTxHash")?;
-        let pro_tx_hash = IdentifierWasm::try_from(&pro_tx_hash_js)?.into();
+        let pro_tx_hash: IdentifierWasm = try_from_options(&options_obj, "proTxHash")?;
 
-        let voter_identity_id_js = get_required_property(&options_obj, "voterIdentityId")?;
-        let voter_identity_id = IdentifierWasm::try_from(&voter_identity_id_js)?.into();
+        let voter_identity_id: IdentifierWasm =
+            try_from_options(&options_obj, "voterIdentityId")?;
 
-        let vote_js = get_required_property(&options_obj, "vote")?;
-        let vote = vote_js.to_wasm::<VoteWasm>("Vote")?.clone();
+        let vote: VoteWasm = try_from_options_with(&options_obj, "vote", |v| {
+            v.to_wasm::<VoteWasm>("Vote").map(|r| r.clone())
+        })?;
 
-        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?, "nonce")?;
+        let nonce = try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
 
         let signature_public_key_id: KeyID =
-            get_optional_property_with(&options_obj, "signaturePublicKeyId", |v| {
+            try_from_options_optional_with(&options_obj, "signaturePublicKeyId", |v| {
                 try_to_u32(v, "signaturePublicKeyId")
             })?
             .unwrap_or(0);
 
         let signature: Vec<u8> =
-            get_optional_property_with(&options_obj, "signature", |v| {
+            try_from_options_optional_with(&options_obj, "signature", |v| {
                 try_to_bytes(v, "signature")
             })?
             .unwrap_or_default();
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
-                pro_tx_hash,
-                voter_identity_id,
+                pro_tx_hash: pro_tx_hash.into(),
+                voter_identity_id: voter_identity_id.into(),
                 vote: vote.into(),
                 nonce,
                 signature_public_key_id,

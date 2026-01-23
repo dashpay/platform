@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{get_required_property, try_to_object, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options_with, try_to_object, try_to_u32, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
@@ -177,58 +177,67 @@ impl FinalizedEpochInfoWasm {
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let first_block_time_js = get_required_property(&options_obj, "firstBlockTime")?;
-        let first_block_time = try_to_u64(first_block_time_js, "firstBlockTime")?;
+        let first_block_time = try_from_options_with(&options_obj, "firstBlockTime", |v| {
+            try_to_u64(v, "firstBlockTime")
+        })?;
 
-        let first_block_height_js = get_required_property(&options_obj, "firstBlockHeight")?;
-        let first_block_height = try_to_u64(first_block_height_js, "firstBlockHeight")?;
+        let first_block_height = try_from_options_with(&options_obj, "firstBlockHeight", |v| {
+            try_to_u64(v, "firstBlockHeight")
+        })?;
 
-        let total_blocks_in_epoch_js = get_required_property(&options_obj, "totalBlocksInEpoch")?;
-        let total_blocks_in_epoch = try_to_u64(total_blocks_in_epoch_js, "totalBlocksInEpoch")?;
+        let total_blocks_in_epoch =
+            try_from_options_with(&options_obj, "totalBlocksInEpoch", |v| {
+                try_to_u64(v, "totalBlocksInEpoch")
+            })?;
 
-        let first_core_block_height_js =
-            get_required_property(&options_obj, "firstCoreBlockHeight")?;
         let first_core_block_height =
-            try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
+            try_from_options_with(&options_obj, "firstCoreBlockHeight", |v| {
+                try_to_u32(v, "firstCoreBlockHeight")
+            })?;
 
-        let next_epoch_start_core_block_height_js =
-            get_required_property(&options_obj, "nextEpochStartCoreBlockHeight")?;
-        let next_epoch_start_core_block_height = try_to_u32(
-            next_epoch_start_core_block_height_js,
-            "nextEpochStartCoreBlockHeight",
-        )?;
+        let next_epoch_start_core_block_height =
+            try_from_options_with(&options_obj, "nextEpochStartCoreBlockHeight", |v| {
+                try_to_u32(v, "nextEpochStartCoreBlockHeight")
+            })?;
 
-        let total_processing_fees_js = get_required_property(&options_obj, "totalProcessingFees")?;
-        let total_processing_fees = try_to_u64(total_processing_fees_js, "totalProcessingFees")?;
+        let total_processing_fees =
+            try_from_options_with(&options_obj, "totalProcessingFees", |v| {
+                try_to_u64(v, "totalProcessingFees")
+            })?;
 
-        let total_distributed_storage_fees_js =
-            get_required_property(&options_obj, "totalDistributedStorageFees")?;
         let total_distributed_storage_fees =
-            try_to_u64(total_distributed_storage_fees_js, "totalDistributedStorageFees")?;
+            try_from_options_with(&options_obj, "totalDistributedStorageFees", |v| {
+                try_to_u64(v, "totalDistributedStorageFees")
+            })?;
 
-        let total_created_storage_fees_js =
-            get_required_property(&options_obj, "totalCreatedStorageFees")?;
         let total_created_storage_fees =
-            try_to_u64(total_created_storage_fees_js, "totalCreatedStorageFees")?;
+            try_from_options_with(&options_obj, "totalCreatedStorageFees", |v| {
+                try_to_u64(v, "totalCreatedStorageFees")
+            })?;
 
-        let core_block_rewards_js = get_required_property(&options_obj, "coreBlockRewards")?;
-        let core_block_rewards = try_to_u64(core_block_rewards_js, "coreBlockRewards")?;
+        let core_block_rewards =
+            try_from_options_with(&options_obj, "coreBlockRewards", |v| {
+                try_to_u64(v, "coreBlockRewards")
+            })?;
 
-        let block_proposers_js = get_required_property(&options_obj, "blockProposers")?;
-        if !block_proposers_js.is_instance_of::<Map>() {
-            return Err(WasmDppError::invalid_argument(
-                "'blockProposers' must be a Map",
-            ));
-        }
         let block_proposers =
-            block_proposers_from_map(&Map::unchecked_from_js(block_proposers_js))?;
+            try_from_options_with(&options_obj, "blockProposers", |v| {
+                if !v.is_instance_of::<Map>() {
+                    return Err(WasmDppError::invalid_argument(
+                        "'blockProposers' must be a Map",
+                    ));
+                }
+                block_proposers_from_map(&Map::unchecked_from_js(v))
+            })?;
 
-        let fee_multiplier_permille_js =
-            get_required_property(&options_obj, "feeMultiplierPermille")?;
-        let fee_multiplier_permille = try_to_u64(fee_multiplier_permille_js, "feeMultiplierPermille")?;
+        let fee_multiplier_permille =
+            try_from_options_with(&options_obj, "feeMultiplierPermille", |v| {
+                try_to_u64(v, "feeMultiplierPermille")
+            })?;
 
-        let protocol_version_js = get_required_property(&options_obj, "protocolVersion")?;
-        let protocol_version = try_to_u32(protocol_version_js, "protocolVersion")?;
+        let protocol_version = try_from_options_with(&options_obj, "protocolVersion", |v| {
+            try_to_u32(v, "protocolVersion")
+        })?;
 
         Ok(FinalizedEpochInfoWasm(FinalizedEpochInfo::V0(
             FinalizedEpochInfoV0 {

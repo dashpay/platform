@@ -7,7 +7,7 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
-use crate::utils::{IntoWasm, get_required_property};
+use crate::utils::{IntoWasm, try_from_options_with};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -94,70 +94,89 @@ impl TokenConfigurationWasm {
         let object = Object::from(options.clone());
 
         // Extract conventions (required)
-        let conventions = get_required_property(&object, "conventions")?
-            .to_wasm::<TokenConfigurationConventionWasm>("TokenConfigurationConvention")?
-            .clone();
+        let conventions = try_from_options_with(&object, "conventions", |v| {
+            v.to_wasm::<TokenConfigurationConventionWasm>("TokenConfigurationConvention")
+                .map(|r| r.clone())
+        })?;
 
         // Extract conventionsChangeRules (required)
-        let conventions_change_rules = get_required_property(&object, "conventionsChangeRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let conventions_change_rules =
+            try_from_options_with(&object, "conventionsChangeRules", |v| {
+                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract keepsHistory (required)
-        let keeps_history = get_required_property(&object, "keepsHistory")?
-            .to_wasm::<TokenKeepsHistoryRulesWasm>("TokenKeepsHistoryRules")?
-            .clone();
+        let keeps_history = try_from_options_with(&object, "keepsHistory", |v| {
+            v.to_wasm::<TokenKeepsHistoryRulesWasm>("TokenKeepsHistoryRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract maxSupplyChangeRules (required)
-        let max_supply_change_rules = get_required_property(&object, "maxSupplyChangeRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let max_supply_change_rules =
+            try_from_options_with(&object, "maxSupplyChangeRules", |v| {
+                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract distributionRules (required)
-        let distribution_rules = get_required_property(&object, "distributionRules")?
-            .to_wasm::<TokenDistributionRulesWasm>("TokenDistributionRules")?
-            .clone();
+        let distribution_rules = try_from_options_with(&object, "distributionRules", |v| {
+            v.to_wasm::<TokenDistributionRulesWasm>("TokenDistributionRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract marketplaceRules (required)
-        let marketplace_rules = get_required_property(&object, "marketplaceRules")?
-            .to_wasm::<TokenMarketplaceRulesWasm>("TokenMarketplaceRules")?
-            .clone();
+        let marketplace_rules = try_from_options_with(&object, "marketplaceRules", |v| {
+            v.to_wasm::<TokenMarketplaceRulesWasm>("TokenMarketplaceRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract manualMintingRules (required)
-        let manual_minting_rules = get_required_property(&object, "manualMintingRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let manual_minting_rules =
+            try_from_options_with(&object, "manualMintingRules", |v| {
+                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract manualBurningRules (required)
-        let manual_burning_rules = get_required_property(&object, "manualBurningRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let manual_burning_rules =
+            try_from_options_with(&object, "manualBurningRules", |v| {
+                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract freezeRules (required)
-        let freeze_rules = get_required_property(&object, "freezeRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let freeze_rules = try_from_options_with(&object, "freezeRules", |v| {
+            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract unfreezeRules (required)
-        let unfreeze_rules = get_required_property(&object, "unfreezeRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let unfreeze_rules = try_from_options_with(&object, "unfreezeRules", |v| {
+            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract destroyFrozenFundsRules (required)
-        let destroy_frozen_funds_rules = get_required_property(&object, "destroyFrozenFundsRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let destroy_frozen_funds_rules =
+            try_from_options_with(&object, "destroyFrozenFundsRules", |v| {
+                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract emergencyActionRules (required)
-        let emergency_action_rules = get_required_property(&object, "emergencyActionRules")?
-            .to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")?
-            .clone();
+        let emergency_action_rules =
+            try_from_options_with(&object, "emergencyActionRules", |v| {
+                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract mainControlGroupCanBeModified (required)
         let main_control_group_can_be_modified =
-            get_required_property(&object, "mainControlGroupCanBeModified")?
-                .to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")?
-                .clone();
+            try_from_options_with(&object, "mainControlGroupCanBeModified", |v| {
+                v.to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract simple fields via serde
         let opts: TokenConfigurationOptions = serde_wasm_bindgen::from_value(options)

@@ -1,13 +1,13 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
-    IntoWasm, JsValueExt, get_optional_property, get_optional_property_with, get_required_property,
+    IntoWasm, JsValueExt, try_from_options_optional, try_from_options_optional_with, try_from_options,
+    try_from_options_with,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -186,25 +186,25 @@ impl DataContractWasm {
         let object = Object::from(options.clone());
 
         // Extract ownerId (required)
-        let js_owner_id = get_required_property(&object, "ownerId")?;
-        let owner_id: IdentifierWasm = js_owner_id.try_into()?;
+        let owner_id: IdentifierWasm = try_from_options(&object, "ownerId")?;
 
         // Extract schemas (required)
-        let js_schema = get_required_property(&object, "schemas")?;
-        let schema: Value = serialization::platform_value_from_object(js_schema)?;
+        let schema: Value = try_from_options_with(&object, "schemas", |v| {
+            serialization::platform_value_from_object(v)
+        })?;
 
         // Extract definitions (optional)
         let definitions: Option<Value> =
-            get_optional_property_with(&object, "definitions", serialization::platform_value_from_object)?;
+            try_from_options_optional_with(&object, "definitions", serialization::platform_value_from_object)?;
 
         // Extract tokens (optional)
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
-            get_optional_property_with(&object, "tokens", |v| tokens_configuration_from_js_value(&v))?
+            try_from_options_optional_with(&object, "tokens", |v| tokens_configuration_from_js_value(&v))?
                 .unwrap_or_default();
 
         // Extract platformVersion (optional)
         let platform_version: PlatformVersion =
-            get_optional_property::<PlatformVersionWasm>(&object, "platformVersion")?
+            try_from_options_optional::<PlatformVersionWasm>(&object, "platformVersion")?
                 .map(Into::into)
                 .unwrap_or_else(|| PlatformVersionWasm::default().into());
 
@@ -668,5 +668,4 @@ impl DataContractWasm {
 }
 
 impl_try_from_js_value!(DataContractWasm, "DataContract");
-impl_try_from_options!(DataContractWasm);
 impl_wasm_type_info!(DataContractWasm, DataContract);

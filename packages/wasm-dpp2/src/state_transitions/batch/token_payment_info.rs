@@ -2,7 +2,7 @@ use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWa
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
-use crate::utils::{get_optional_property, get_optional_property_with};
+use crate::utils::{try_from_options_optional, try_from_options_optional_with};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
@@ -67,12 +67,12 @@ impl TokenPaymentInfoWasm {
 
         // Extract paymentTokenContractId (optional, can be null/undefined)
         let payment_token_contract_id: Option<Identifier> =
-            get_optional_property::<IdentifierWasm>(&object, "paymentTokenContractId")?
+            try_from_options_optional::<IdentifierWasm>(&object, "paymentTokenContractId")?
                 .map(Into::into);
 
         // Extract gasFeesPaidBy (optional)
         let gas_fees_paid_by: GasFeesPaidBy =
-            get_optional_property_with(&object, "gasFeesPaidBy", |v| {
+            try_from_options_optional_with(&object, "gasFeesPaidBy", |v| {
                 GasFeesPaidByWasm::try_from(v).map(|g| g.into())
             })?
             .unwrap_or_default();

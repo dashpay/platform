@@ -1,5 +1,4 @@
 use crate::error::WasmDppError;
-use crate::impl_try_from_options;
 use dpp::dashcore::Network;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -133,8 +132,6 @@ impl From<Network> for NetworkWasm {
         }
     }
 }
-
-impl_try_from_options!(NetworkWasm);
 
 impl NetworkWasm {
     /// Get the network name as a lowercase string (for compatibility with existing code)

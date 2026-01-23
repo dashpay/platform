@@ -1,5 +1,5 @@
 use crate::error::WasmDppResult;
-use crate::utils::{get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options_with, try_to_object, try_to_u16, try_to_u32, try_to_u64};
 use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
@@ -86,26 +86,29 @@ impl ExtendedEpochInfoWasm {
     ) -> WasmDppResult<ExtendedEpochInfoWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let index_js = get_required_property(&options_obj, "index")?;
-        let index = try_to_u16(index_js, "index")?;
+        let index = try_from_options_with(&options_obj, "index", |v| try_to_u16(v, "index"))?;
 
-        let first_block_time_js = get_required_property(&options_obj, "firstBlockTime")?;
-        let first_block_time = try_to_u64(first_block_time_js, "firstBlockTime")?;
+        let first_block_time = try_from_options_with(&options_obj, "firstBlockTime", |v| {
+            try_to_u64(v, "firstBlockTime")
+        })?;
 
-        let first_block_height_js = get_required_property(&options_obj, "firstBlockHeight")?;
-        let first_block_height = try_to_u64(first_block_height_js, "firstBlockHeight")?;
+        let first_block_height = try_from_options_with(&options_obj, "firstBlockHeight", |v| {
+            try_to_u64(v, "firstBlockHeight")
+        })?;
 
-        let first_core_block_height_js =
-            get_required_property(&options_obj, "firstCoreBlockHeight")?;
         let first_core_block_height =
-            try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
+            try_from_options_with(&options_obj, "firstCoreBlockHeight", |v| {
+                try_to_u32(v, "firstCoreBlockHeight")
+            })?;
 
-        let fee_multiplier_permille_js =
-            get_required_property(&options_obj, "feeMultiplierPermille")?;
-        let fee_multiplier_permille = try_to_u64(fee_multiplier_permille_js, "feeMultiplierPermille")?;
+        let fee_multiplier_permille =
+            try_from_options_with(&options_obj, "feeMultiplierPermille", |v| {
+                try_to_u64(v, "feeMultiplierPermille")
+            })?;
 
-        let protocol_version_js = get_required_property(&options_obj, "protocolVersion")?;
-        let protocol_version = try_to_u32(protocol_version_js, "protocolVersion")?;
+        let protocol_version = try_from_options_with(&options_obj, "protocolVersion", |v| {
+            try_to_u32(v, "protocolVersion")
+        })?;
 
         Ok(ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(
             ExtendedEpochInfoV0 {

@@ -1,9 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::utils::{ToSerdeJSONExt, get_required_property};
-use crate::{
-    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
-};
+use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with};
+use crate::{impl_try_from_js_value, impl_wasm_conversions, impl_wasm_type_info};
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -85,15 +83,15 @@ impl VotePollWasm {
         let object = Object::from(options.clone());
 
         // Extract contractId (required)
-        let js_contract_id = get_required_property(&object, "contractId")?;
-        let contract_id = IdentifierWasm::try_from(&js_contract_id)?.into();
+        let contract_id: IdentifierWasm = try_from_options(&object, "contractId")?;
 
         // Extract indexValues (required)
-        let js_index_values = get_required_property(&object, "indexValues")?;
-        let index_values_value = js_index_values.with_serde_to_platform_value()?;
-        let index_values = index_values_value
-            .into_array()
-            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        let index_values = try_from_options_with(&object, "indexValues", |v| {
+            let index_values_value = v.with_serde_to_platform_value()?;
+            index_values_value
+                .into_array()
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
+        })?;
 
         // Extract simple fields via serde
         let opts: VotePollOptions = serde_wasm_bindgen::from_value(options)
@@ -101,7 +99,7 @@ impl VotePollWasm {
 
         Ok(VotePollWasm(VotePoll::ContestedDocumentResourceVotePoll(
             ContestedDocumentResourceVotePoll {
-                contract_id,
+                contract_id: contract_id.into(),
                 document_type_name: opts.document_type_name,
                 index_name: opts.index_name,
                 index_values,
@@ -223,6 +221,5 @@ impl VotePollWasm {
 }
 
 impl_try_from_js_value!(VotePollWasm, "VotePoll");
-impl_try_from_options!(VotePollWasm);
 impl_wasm_conversions!(VotePollWasm, VotePoll, VotePollObjectJs, VotePollJSONJs);
 impl_wasm_type_info!(VotePollWasm, VotePoll);

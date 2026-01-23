@@ -1,7 +1,6 @@
 use super::network::{NetworkLikeJs, NetworkWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
@@ -106,5 +105,4 @@ impl CoreScriptWasm {
 }
 
 impl_try_from_js_value!(CoreScriptWasm, "CoreScript");
-impl_try_from_options!(CoreScriptWasm);
 impl_wasm_type_info!(CoreScriptWasm, CoreScript);

@@ -5,7 +5,6 @@
 
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
@@ -179,7 +178,6 @@ impl IdentitySignerWasm {
     }
 }
 
-impl_try_from_options!(IdentitySignerWasm, "signer");
 impl_wasm_type_info!(IdentitySignerWasm, IdentitySigner);
 
 impl TryFrom<&JsValue> for IdentitySignerWasm {

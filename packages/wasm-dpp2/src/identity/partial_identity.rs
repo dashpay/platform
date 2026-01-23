@@ -4,8 +4,8 @@ use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, JsValueExt, get_optional_property_with, get_required_property, try_to_array,
-    try_to_object, try_to_u64,
+    IntoWasm, JsValueExt, try_from_options_optional_with, try_from_options,
+    try_from_options_with, try_to_array, try_to_object, try_to_u64,
 };
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
@@ -78,28 +78,28 @@ impl PartialIdentityWasm {
     pub fn constructor(options: PartialIdentityOptionsJs) -> WasmDppResult<Self> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let id_js = get_required_property(&options_obj, "id")?;
-        let id = IdentifierWasm::try_from(&id_js)?.into();
+        let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
 
-        let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
-        let loaded_public_keys = value_to_loaded_public_keys(&loaded_public_keys_js)?;
+        let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
+            value_to_loaded_public_keys(&v)
+        })?;
 
-        let balance: Option<Credits> = get_optional_property_with(&options_obj, "balance", |v| {
+        let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
             try_to_u64(v, "balance")
         })?;
 
-        let revision: Option<Revision> = get_optional_property_with(&options_obj, "revision", |v| {
+        let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
             try_to_u64(v, "revision")
         })?;
 
         let not_found_public_keys: Option<Array> =
-            get_optional_property_with(&options_obj, "notFoundPublicKeys", |v| {
+            try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
                 try_to_array(v, "notFoundPublicKeys")
             })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
-            id,
+            id: id.into(),
             loaded_public_keys,
             balance,
             revision,
@@ -215,32 +215,32 @@ impl PartialIdentityWasm {
         let options_obj = Object::from(obj_val);
 
         // id - can be Uint8Array or Identifier
-        let id_js = get_required_property(&options_obj, "id")?;
-        let id = IdentifierWasm::try_from(&id_js)?.into();
+        let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
 
         // loadedPublicKeys - values are plain objects
-        let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
-        let loaded_public_keys = value_to_loaded_public_keys_from_object(&loaded_public_keys_js)?;
+        let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
+            value_to_loaded_public_keys_from_object(&v)
+        })?;
 
         // balance - can be BigInt, number, or undefined
-        let balance: Option<Credits> = get_optional_property_with(&options_obj, "balance", |v| {
+        let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
             try_to_u64(v, "balance")
         })?;
 
         // revision - can be BigInt, number, or undefined
-        let revision: Option<Revision> = get_optional_property_with(&options_obj, "revision", |v| {
+        let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
             try_to_u64(v, "revision")
         })?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
-            get_optional_property_with(&options_obj, "notFoundPublicKeys", |v| {
+            try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
                 try_to_array(v, "notFoundPublicKeys")
             })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
-            id,
+            id: id.into(),
             loaded_public_keys,
             balance,
             revision,
@@ -254,32 +254,32 @@ impl PartialIdentityWasm {
         let options_obj = Object::from(obj_val);
 
         // id - base58 string
-        let id_js = get_required_property(&options_obj, "id")?;
-        let id = IdentifierWasm::try_from(&id_js)?.into();
+        let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
 
         // loadedPublicKeys - values are JSON objects
-        let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
-        let loaded_public_keys = value_to_loaded_public_keys_from_json(&loaded_public_keys_js)?;
+        let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
+            value_to_loaded_public_keys_from_json(&v)
+        })?;
 
         // balance - number or null
-        let balance: Option<Credits> = get_optional_property_with(&options_obj, "balance", |v| {
+        let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
             try_to_u64(v, "balance")
         })?;
 
         // revision - number or null
-        let revision: Option<Revision> = get_optional_property_with(&options_obj, "revision", |v| {
+        let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
             try_to_u64(v, "revision")
         })?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
-            get_optional_property_with(&options_obj, "notFoundPublicKeys", |v| {
+            try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
                 try_to_array(v, "notFoundPublicKeys")
             })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
-            id,
+            id: id.into(),
             loaded_public_keys,
             balance,
             revision,

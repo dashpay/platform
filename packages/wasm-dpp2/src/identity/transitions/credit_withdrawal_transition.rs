@@ -8,8 +8,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property_with, get_required_property, try_to_object, try_to_u16,
-    try_to_u32, try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
+    try_to_object, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -97,29 +97,30 @@ impl IdentityCreditWithdrawalTransitionWasm {
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let identity_id_js = get_required_property(&options_obj, "identityId")?;
-        let identity_id: Identifier = IdentifierWasm::try_from(&identity_id_js)?.into();
+        let identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options_obj, "identityId")?.into();
 
-        let amount = try_to_u64(get_required_property(&options_obj, "amount")?, "amount")?;
+        let amount =
+            try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
 
-        let core_fee_per_byte_js = get_required_property(&options_obj, "coreFeePerByte")?;
-        let core_fee_per_byte = try_to_u32(core_fee_per_byte_js, "coreFeePerByte")?;
+        let core_fee_per_byte = try_from_options_with(&options_obj, "coreFeePerByte", |v| {
+            try_to_u32(v, "coreFeePerByte")
+        })?;
 
-        let pooling_js = get_required_property(&options_obj, "pooling")?;
-        let pooling = PoolingWasm::try_from(pooling_js)?;
+        let pooling: PoolingWasm = try_from_options(&options_obj, "pooling")?;
 
         let output_script: Option<CoreScript> =
-            get_optional_property_with(&options_obj, "outputScript", |v| {
+            try_from_options_optional_with(&options_obj, "outputScript", |v| {
                 v.to_wasm::<CoreScriptWasm>("CoreScript")
                     .map(|cs| cs.clone().into())
             })?;
 
         let nonce: IdentityNonce =
-            get_optional_property_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?
+            try_from_options_optional_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?
                 .unwrap_or(0);
 
         let user_fee_increase: UserFeeIncrease =
-            get_optional_property_with(&options_obj, "userFeeIncrease", |v| {
+            try_from_options_optional_with(&options_obj, "userFeeIncrease", |v| {
                 try_to_u16(v, "userFeeIncrease")
             })?
             .unwrap_or(0);

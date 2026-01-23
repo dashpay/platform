@@ -7,8 +7,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    get_optional_property_with, get_required_property, try_to_array, try_to_object, try_to_u16,
-    try_to_u32, try_to_u64,
+    try_from_options_optional_with, try_from_options, try_from_options_with, try_to_array,
+    try_to_object, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -91,20 +91,25 @@ impl IdentityUpdateTransitionWasm {
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let identity_id_js = get_required_property(&options_obj, "identityId")?;
-        let identity_id = IdentifierWasm::try_from(&identity_id_js)?.into();
+        let identity_id =
+            try_from_options::<IdentifierWasm>(&options_obj, "identityId")?.into();
 
-        let revision = try_to_u64(get_required_property(&options_obj, "revision")?, "revision")?;
+        let revision =
+            try_from_options_with(&options_obj, "revision", |v| try_to_u64(v, "revision"))?;
 
-        let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?, "nonce")?;
+        let nonce =
+            try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
 
-        let add_public_keys_js = get_required_property(&options_obj, "addPublicKeys")?;
-        let add_public_keys_array = try_to_array(add_public_keys_js, "addPublicKeys")?;
+        let add_public_keys_array = try_from_options_with(&options_obj, "addPublicKeys", |v| {
+            try_to_array(v, "addPublicKeys")
+        })?;
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&add_public_keys_array)?;
 
-        let disable_public_keys_js = get_required_property(&options_obj, "disablePublicKeys")?;
-        let disable_public_keys_array = try_to_array(disable_public_keys_js, "disablePublicKeys")?;
+        let disable_public_keys_array =
+            try_from_options_with(&options_obj, "disablePublicKeys", |v| {
+                try_to_array(v, "disablePublicKeys")
+            })?;
         let disable_public_keys: Vec<KeyID> = disable_public_keys_array
             .iter()
             .enumerate()
@@ -112,7 +117,7 @@ impl IdentityUpdateTransitionWasm {
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
         let user_fee_increase: UserFeeIncrease =
-            get_optional_property_with(&options_obj, "userFeeIncrease", |v| {
+            try_from_options_optional_with(&options_obj, "userFeeIncrease", |v| {
                 try_to_u16(v, "userFeeIncrease")
             })?
             .unwrap_or(0);

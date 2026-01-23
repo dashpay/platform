@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_array};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -100,16 +100,18 @@ impl IdentityCreateTransitionWasm {
         let object = Object::from(options.clone());
 
         // Extract publicKeys (required array)
-        let js_public_keys = get_required_property(&object, "publicKeys")?;
-        let js_public_keys_array = try_to_array(js_public_keys, "publicKeys")?;
+        let js_public_keys_array = try_from_options_with(&object, "publicKeys", |v| {
+            try_to_array(v, "publicKeys")
+        })?;
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 
         // Extract assetLock (required)
-        let js_asset_lock = get_required_property(&object, "assetLock")?;
-        let asset_lock = js_asset_lock
-            .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
-            .clone();
+        let asset_lock: AssetLockProofWasm =
+            try_from_options_with(&object, "assetLock", |v| {
+                v.to_wasm::<AssetLockProofWasm>("AssetLockProof")
+                    .map(|r| r.clone())
+            })?;
 
         // Extract simple fields via serde
         let opts: IdentityCreateTransitionOptions = serde_wasm_bindgen::from_value(options)

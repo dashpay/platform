@@ -1,8 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::{
-    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
-};
+use crate::{impl_try_from_js_value, impl_wasm_conversions, impl_wasm_type_info};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -89,7 +87,6 @@ impl ResourceVoteChoiceWasm {
 }
 
 impl_try_from_js_value!(ResourceVoteChoiceWasm, "ResourceVoteChoice");
-impl_try_from_options!(ResourceVoteChoiceWasm);
 impl_wasm_conversions!(
     ResourceVoteChoiceWasm,
     ResourceVoteChoice,

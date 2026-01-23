@@ -120,26 +120,70 @@ pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     Ok(class_type.as_string().unwrap_or_default())
 }
 
-/// Extract a required property from a JS object.
+/// Extract a required property from a JS value/object and convert it using TryFrom.
 ///
-/// This function properly handles the case where `Reflect::get` returns `Ok(undefined)`
-/// for missing properties (rather than `Err`), providing clear error messages.
-pub fn get_required_property(
-    object: &js_sys::Object,
+/// Returns `Err` if the property is undefined, null, or conversion fails.
+///
+/// This function works with types that implement `TryFrom<&JsValue>`.
+///
+/// # Example
+///
+/// ```ignore
+/// let id: IdentifierWasm = try_from_options(&options, "id")?;
+/// ```
+pub fn try_from_options<T>(
+    options: &JsValue,
     property_name: &str,
-) -> WasmDppResult<JsValue> {
-    let value = js_sys::Reflect::get(object, &JsValue::from_str(property_name)).map_err(|_| {
-        WasmDppError::invalid_argument(format!("Missing '{}' property", property_name))
-    })?;
+) -> WasmDppResult<T>
+where
+    for<'a> T: TryFrom<&'a JsValue>,
+    for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
+{
+    let value =
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
 
-    if value.is_undefined() {
+    if value.is_undefined() || value.is_null() {
         return Err(WasmDppError::invalid_argument(format!(
-            "Property '{}' is undefined",
+            "'{}' is required",
             property_name
         )));
     }
 
-    Ok(value)
+    T::try_from(&value).map_err(Into::into)
+}
+
+/// Extract a required property from a JS value/object and convert it with a custom converter.
+///
+/// Returns `Err` if the property is undefined, null, or conversion fails.
+///
+/// Use this for primitive types (u64, etc.) that don't have TryFrom<&JsValue>.
+///
+/// # Example
+///
+/// ```ignore
+/// let balance: u64 = try_from_options_with(&options, "balance", |v| {
+///     try_to_u64(v, "balance")
+/// })?;
+/// ```
+pub fn try_from_options_with<T, F>(
+    options: &JsValue,
+    property_name: &str,
+    converter: F,
+) -> WasmDppResult<T>
+where
+    F: FnOnce(JsValue) -> WasmDppResult<T>,
+{
+    let value =
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+
+    if value.is_undefined() || value.is_null() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' is required",
+            property_name
+        )));
+    }
+
+    converter(value)
 }
 
 /// Extract an optional property from a JS object and convert it using TryFrom.
@@ -148,28 +192,28 @@ pub fn get_required_property(
 /// Returns `Ok(Some(T))` if the property exists and conversion succeeds.
 /// Returns `Err` if the property exists but conversion fails.
 ///
-/// This function works with types that implement `TryFrom<JsValue>`.
+/// This function works with types that implement `TryFrom<&JsValue>`.
 ///
 /// # Example
 ///
 /// ```ignore
-/// let id: Option<IdentifierWasm> = get_optional_property(&obj, "id")?;
+/// let id: Option<IdentifierWasm> = try_from_options_optional(&options, "id")?;
 /// ```
-pub fn get_optional_property<T>(
-    object: &js_sys::Object,
+pub fn try_from_options_optional<T>(
+    options: &JsValue,
     property_name: &str,
 ) -> WasmDppResult<Option<T>>
 where
-    T: TryFrom<JsValue>,
-    T::Error: Into<WasmDppError>,
+    for<'a> T: TryFrom<&'a JsValue>,
+    for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
     let value =
-        js_sys::Reflect::get(object, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
     } else {
-        T::try_from(value).map(Some).map_err(Into::into)
+        T::try_from(&value).map(Some).map_err(Into::into)
     }
 }
 
@@ -179,17 +223,17 @@ where
 /// Returns `Ok(Some(T))` if the property exists and conversion succeeds.
 /// Returns `Err` if the property exists but conversion fails.
 ///
-/// Use this for primitive types (u64, etc.) that don't have TryFrom<JsValue>.
+/// Use this for primitive types (u64, etc.) that don't have TryFrom<&JsValue>.
 ///
 /// # Example
 ///
 /// ```ignore
-/// let balance: Option<u64> = get_optional_property_with(&obj, "balance", |v| {
+/// let balance: Option<u64> = try_from_options_optional_with(&options, "balance", |v| {
 ///     try_to_u64(v, "balance")
 /// })?;
 /// ```
-pub fn get_optional_property_with<T, F>(
-    object: &js_sys::Object,
+pub fn try_from_options_optional_with<T, F>(
+    options: &JsValue,
     property_name: &str,
     converter: F,
 ) -> WasmDppResult<Option<T>>
@@ -197,7 +241,7 @@ where
     F: FnOnce(JsValue) -> WasmDppResult<T>,
 {
     let value =
-        js_sys::Reflect::get(object, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
@@ -431,164 +475,6 @@ pub fn generate_document_id_v0(
 
     Identifier::from_bytes(&hash_double_to_vec(&buf))
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
-}
-
-/// Macro to implement `try_from_options` helper method for extracting a WASM type from an options object.
-///
-/// This generates methods that read a named field from a JsValue options object and convert it
-/// to the WASM wrapper type using the type's `TryFrom<&JsValue>` implementation.
-///
-/// The type must implement `TryFrom<&JsValue, Error = WasmDppError>`.
-///
-/// # Usage
-///
-/// ```ignore
-/// // Basic form: requires field_name parameter
-/// impl_try_from_options!(MyTypeWasm);
-///
-/// // With default field name: generates both try_from_options() and try_from_options_with_field()
-/// impl_try_from_options!(MySignerWasm, "signer");
-/// ```
-///
-/// The basic form generates:
-/// ```ignore
-/// impl MyTypeWasm {
-///     pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
-///     pub fn try_from_optional_options(options: &JsValue, field_name: &str) -> WasmDppResult<Option<Self>> { ... }
-/// }
-/// ```
-///
-/// The form with default field name generates:
-/// ```ignore
-/// impl MySignerWasm {
-///     pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> { ... }
-///     pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
-///     pub fn try_from_optional_options(options: &JsValue) -> WasmDppResult<Option<Self>> { ... }
-///     pub fn try_from_optional_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Option<Self>> { ... }
-/// }
-/// ```
-#[macro_export]
-macro_rules! impl_try_from_options {
-    // Basic form: requires field_name parameter
-    ($wrapper:ty) => {
-        impl $wrapper {
-            /// Try to extract this type from an options object field.
-            ///
-            /// This helper reads the specified field from an options object and converts it
-            /// using the type's TryFrom implementation.
-            pub fn try_from_options(
-                options: &wasm_bindgen::JsValue,
-                field_name: &str,
-            ) -> $crate::error::WasmDppResult<Self> {
-                let value_js =
-                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                        .map_err(|_| {
-                            $crate::error::WasmDppError::invalid_argument(format!(
-                                "Missing '{}' field",
-                                field_name
-                            ))
-                        })?;
-
-                if value_js.is_undefined() || value_js.is_null() {
-                    return Err($crate::error::WasmDppError::invalid_argument(format!(
-                        "'{}' is required",
-                        field_name
-                    )));
-                }
-
-                Self::try_from(&value_js).map_err(Into::into)
-            }
-
-            /// Try to extract this type from an options object field, returning None if not present.
-            ///
-            /// Returns Ok(None) if the field is undefined or null.
-            pub fn try_from_optional_options(
-                options: &wasm_bindgen::JsValue,
-                field_name: &str,
-            ) -> $crate::error::WasmDppResult<Option<Self>> {
-                let value_js =
-                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                        .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
-
-                if value_js.is_undefined() || value_js.is_null() {
-                    return Ok(None);
-                }
-
-                Self::try_from(&value_js).map(Some).map_err(Into::into)
-            }
-        }
-    };
-
-    // Form with default field name: generates try_from_options() with default and try_from_options_with_field()
-    ($wrapper:ty, $default_field:expr) => {
-        impl $wrapper {
-            /// Try to extract this type from an options object using the default field name.
-            ///
-            /// This helper reads the default field from an options object and converts it
-            /// using the type's TryFrom implementation.
-            pub fn try_from_options(
-                options: &wasm_bindgen::JsValue,
-            ) -> $crate::error::WasmDppResult<Self> {
-                Self::try_from_options_with_field(options, $default_field)
-            }
-
-            /// Try to extract this type from an options object with a custom field name.
-            ///
-            /// This helper reads the specified field from an options object and converts it
-            /// using the type's TryFrom implementation.
-            pub fn try_from_options_with_field(
-                options: &wasm_bindgen::JsValue,
-                field_name: &str,
-            ) -> $crate::error::WasmDppResult<Self> {
-                let value_js =
-                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                        .map_err(|_| {
-                            $crate::error::WasmDppError::invalid_argument(format!(
-                                "Missing '{}' field",
-                                field_name
-                            ))
-                        })?;
-
-                if value_js.is_undefined() || value_js.is_null() {
-                    return Err($crate::error::WasmDppError::invalid_argument(format!(
-                        "'{}' is required",
-                        field_name
-                    )));
-                }
-
-                Self::try_from(&value_js).map_err(Into::into)
-            }
-
-            /// Try to extract this type from an options object using the default field name,
-            /// returning None if not present.
-            ///
-            /// Returns Ok(None) if the field is undefined or null.
-            pub fn try_from_optional_options(
-                options: &wasm_bindgen::JsValue,
-            ) -> $crate::error::WasmDppResult<Option<Self>> {
-                Self::try_from_optional_options_with_field(options, $default_field)
-            }
-
-            /// Try to extract this type from an options object with a custom field name,
-            /// returning None if not present.
-            ///
-            /// Returns Ok(None) if the field is undefined or null.
-            pub fn try_from_optional_options_with_field(
-                options: &wasm_bindgen::JsValue,
-                field_name: &str,
-            ) -> $crate::error::WasmDppResult<Option<Self>> {
-                let value_js =
-                    js_sys::Reflect::get(options, &wasm_bindgen::JsValue::from_str(field_name))
-                        .unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
-
-                if value_js.is_undefined() || value_js.is_null() {
-                    return Ok(None);
-                }
-
-                Self::try_from(&value_js).map(Some).map_err(Into::into)
-            }
-        }
-    };
 }
 
 /// Macro to implement `TryFrom<&JsValue>` for WASM wrapper types using `IntoWasm`.

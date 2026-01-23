@@ -3,8 +3,8 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
 use crate::utils::{
-    IntoWasm, get_optional_property_with, get_required_property, try_to_object, try_to_u16,
-    try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
+    try_to_object, try_to_u16, try_to_u64,
 };
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
@@ -55,23 +55,23 @@ impl TokenBaseTransitionWasm {
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let identity_contract_nonce_js =
-            get_required_property(&options_obj, "identityContractNonce")?;
-        let identity_contract_nonce = try_to_u64(identity_contract_nonce_js, "identityContractNonce")?;
+        let identity_contract_nonce =
+            try_from_options_with(&options_obj, "identityContractNonce", |v| {
+                try_to_u64(v, "identityContractNonce")
+            })?;
 
-        let token_contract_position_js =
-            get_required_property(&options_obj, "tokenContractPosition")?;
         let token_contract_position =
-            try_to_u16(token_contract_position_js, "tokenContractPosition")?;
+            try_from_options_with(&options_obj, "tokenContractPosition", |v| {
+                try_to_u16(v, "tokenContractPosition")
+            })?;
 
-        let data_contract_id_js = get_required_property(&options_obj, "dataContractId")?;
-        let data_contract_id = IdentifierWasm::try_from(&data_contract_id_js)?.into();
+        let data_contract_id: IdentifierWasm =
+            try_from_options(&options_obj, "dataContractId")?;
 
-        let token_id_js = get_required_property(&options_obj, "tokenId")?;
-        let token_id = IdentifierWasm::try_from(&token_id_js)?.into();
+        let token_id: IdentifierWasm = try_from_options(&options_obj, "tokenId")?;
 
         let group_info: Option<GroupStateTransitionInfo> =
-            get_optional_property_with(&options_obj, "usingGroupInfo", |v| {
+            try_from_options_optional_with(&options_obj, "usingGroupInfo", |v| {
                 v.to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")
                     .map(|gi| gi.clone().into())
             })?;
@@ -80,8 +80,8 @@ impl TokenBaseTransitionWasm {
             TokenBaseTransitionV0 {
                 identity_contract_nonce,
                 token_contract_position,
-                data_contract_id,
-                token_id,
+                data_contract_id: data_contract_id.into(),
+                token_id: token_id.into(),
                 using_group_info: group_info,
             },
         )))

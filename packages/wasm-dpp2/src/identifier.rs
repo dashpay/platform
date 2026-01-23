@@ -1,5 +1,4 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_to_array};
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
@@ -333,7 +332,6 @@ impl IdentifierWasm {
     }
 }
 
-impl_try_from_options!(IdentifierWasm);
 impl_wasm_type_info!(IdentifierWasm, Identifier);
 
 /// Convert a JavaScript array of identifier-like values to a Vec of Identifiers.

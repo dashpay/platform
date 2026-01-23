@@ -2,12 +2,11 @@ use crate::data_contract::DataContractWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    ToSerdeJSONExt, get_optional_property, get_optional_property_with, get_required_property,
-    try_to_fixed_bytes, try_to_u64,
+    ToSerdeJSONExt, try_from_options_optional, try_from_options_optional_with, try_from_options,
+    try_from_options_with, try_to_fixed_bytes, try_to_u64,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -182,32 +181,32 @@ impl DocumentWasm {
         let options_obj = Object::from(options_value.clone());
 
         // Extract required properties
-        let properties_js = get_required_property(&options_obj, "properties")?;
-
-        let document_type_name = get_required_property(&options_obj, "documentTypeName")?
-            .as_string()
-            .ok_or_else(|| WasmDppError::invalid_argument("'documentTypeName' must be a string"))?;
+        let document_type_name = try_from_options_with(&options_obj, "documentTypeName", |v| {
+            v.as_string()
+                .ok_or_else(|| WasmDppError::invalid_argument("'documentTypeName' must be a string"))
+        })?;
 
         let data_contract_id: Identifier =
-            IdentifierWasm::try_from(&get_required_property(&options_obj, "dataContractId")?)?
-                .into();
+            try_from_options::<IdentifierWasm>(&options_obj, "dataContractId")?.into();
 
         let owner_id: Identifier =
-            IdentifierWasm::try_from(&get_required_property(&options_obj, "ownerId")?)?.into();
+            try_from_options::<IdentifierWasm>(&options_obj, "ownerId")?.into();
+
+        let properties = try_from_options_with(&options_obj, "properties", |v| {
+            v.with_serde_to_platform_value_map()
+        })?;
 
         // Extract optional properties
-        let revision = get_optional_property_with(&options_obj, "revision", |v| {
+        let revision = try_from_options_optional_with(&options_obj, "revision", |v| {
             try_to_u64(v, "revision").map(Revision::from)
         })?
         .unwrap_or(Revision::from(1u64));
 
-        let id: Option<IdentifierWasm> = get_optional_property(&options_obj, "id")?;
+        let id: Option<IdentifierWasm> = try_from_options_optional(&options_obj, "id")?;
 
-        let entropy: Option<[u8; 32]> = get_optional_property_with(&options_obj, "entropy", |v| {
+        let entropy: Option<[u8; 32]> = try_from_options_optional_with(&options_obj, "entropy", |v| {
             try_to_fixed_bytes::<32>(v, "entropy")
         })?;
-
-        let properties = properties_js.with_serde_to_platform_value_map()?;
 
         let entropy: [u8; 32] = entropy.map_or_else(
             || {
@@ -745,5 +744,4 @@ impl DocumentWasm {
 }
 
 impl_try_from_js_value!(DocumentWasm, "Document");
-impl_try_from_options!(DocumentWasm);
 impl_wasm_type_info!(DocumentWasm, Document);

@@ -6,7 +6,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, get_optional_property_with, get_required_property};
+use crate::utils::{IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with};
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -148,25 +148,23 @@ impl IdentityPublicKeyInCreationWasm {
         let object = Object::from(options.clone());
 
         // Extract purpose (required, complex type)
-        let js_purpose = get_required_property(&object, "purpose")?;
-        let purpose = PurposeWasm::try_from(js_purpose)?;
+        let purpose: PurposeWasm = try_from_options(&object, "purpose")?;
 
         // Extract securityLevel (required, complex type)
-        let js_security_level = get_required_property(&object, "securityLevel")?;
-        let security_level = SecurityLevelWasm::try_from(js_security_level)?;
+        let security_level: SecurityLevelWasm = try_from_options(&object, "securityLevel")?;
 
         // Extract keyType (required, complex type)
-        let js_key_type = get_required_property(&object, "keyType")?;
-        let key_type = KeyTypeWasm::try_from(js_key_type)?;
+        let key_type: KeyTypeWasm = try_from_options(&object, "keyType")?;
 
         // Extract data (required, Uint8Array)
-        let js_data = get_required_property(&object, "data")?;
-        let data: Vec<u8> = serde_wasm_bindgen::from_value(js_data)
-            .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))?;
+        let data: Vec<u8> = try_from_options_with(&object, "data", |v| {
+            serde_wasm_bindgen::from_value(v)
+                .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))
+        })?;
 
         // Extract contractBounds (optional)
         let contract_bounds: Option<ContractBounds> =
-            get_optional_property_with(&object, "contractBounds", |v| {
+            try_from_options_optional_with(&object, "contractBounds", |v| {
                 v.to_wasm::<ContractBoundsWasm>("ContractBounds")
                     .map(|cb| cb.clone().into())
             })?;

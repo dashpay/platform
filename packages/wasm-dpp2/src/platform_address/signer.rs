@@ -1,7 +1,6 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::ProtocolError;
@@ -139,8 +138,6 @@ impl PlatformAddressSignerWasm {
         &self.private_keys
     }
 }
-
-impl_try_from_options!(PlatformAddressSignerWasm, "signer");
 
 impl TryFrom<&JsValue> for PlatformAddressSignerWasm {
     type Error = WasmDppError;

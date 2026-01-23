@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::{IntoWasm, get_required_property};
+use crate::utils::{IntoWasm, try_from_options};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -64,12 +64,10 @@ impl DocumentBaseTransitionWasm {
         let object = Object::from(options.clone());
 
         // Extract documentId (required)
-        let js_document_id = get_required_property(&object, "documentId")?;
-        let document_id = IdentifierWasm::try_from(&js_document_id)?.into();
+        let document_id: IdentifierWasm = try_from_options(&object, "documentId")?;
 
         // Extract dataContractId (required)
-        let js_data_contract_id = get_required_property(&object, "dataContractId")?;
-        let data_contract_id = IdentifierWasm::try_from(&js_data_contract_id)?.into();
+        let data_contract_id: IdentifierWasm = try_from_options(&object, "dataContractId")?;
 
         // Extract tokenPaymentInfo (optional)
         let js_token_payment_info = Reflect::get(&object, &JsValue::from_str("tokenPaymentInfo"))
@@ -91,10 +89,10 @@ impl DocumentBaseTransitionWasm {
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let rs_base_v1 = DocumentBaseTransitionV1 {
-            id: document_id,
+            id: document_id.into(),
             identity_contract_nonce: opts.identity_contract_nonce,
             document_type_name: opts.document_type_name,
-            data_contract_id,
+            data_contract_id: data_contract_id.into(),
             token_payment_info,
         };
 

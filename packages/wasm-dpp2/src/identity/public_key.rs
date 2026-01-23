@@ -5,11 +5,10 @@ use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
 use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, get_optional_property_with, get_required_property, try_to_fixed_bytes,
+    IntoWasm, try_from_options_optional_with, try_from_options, try_to_fixed_bytes,
 };
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -161,20 +160,17 @@ impl IdentityPublicKeyWasm {
         let object = Object::from(options.clone());
 
         // Extract purpose (required, complex type)
-        let js_purpose = get_required_property(&object, "purpose")?;
-        let purpose = PurposeWasm::try_from(js_purpose)?;
+        let purpose: PurposeWasm = try_from_options(&object, "purpose")?;
 
         // Extract securityLevel (required, complex type)
-        let js_security_level = get_required_property(&object, "securityLevel")?;
-        let security_level = SecurityLevelWasm::try_from(js_security_level)?;
+        let security_level: SecurityLevelWasm = try_from_options(&object, "securityLevel")?;
 
         // Extract keyType (required, complex type)
-        let js_key_type = get_required_property(&object, "keyType")?;
-        let key_type = KeyTypeWasm::try_from(js_key_type)?;
+        let key_type: KeyTypeWasm = try_from_options(&object, "keyType")?;
 
         // Extract contractBounds (optional)
         let contract_bounds: Option<ContractBounds> =
-            get_optional_property_with(&object, "contractBounds", |v| {
+            try_from_options_optional_with(&object, "contractBounds", |v| {
                 v.to_wasm::<ContractBoundsWasm>("ContractBounds")
                     .map(|cb| cb.clone().into())
             })?;
@@ -441,5 +437,4 @@ impl IdentityPublicKeyWasm {
 }
 
 impl_try_from_js_value!(IdentityPublicKeyWasm, "IdentityPublicKey");
-impl_try_from_options!(IdentityPublicKeyWasm);
 impl_wasm_type_info!(IdentityPublicKeyWasm, IdentityPublicKey);

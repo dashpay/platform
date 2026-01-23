@@ -1,5 +1,4 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_to_array, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
@@ -125,8 +124,6 @@ impl ProTxHashWasm {
         Ok(ProTxHashWasm(hash))
     }
 }
-
-impl_try_from_options!(ProTxHashWasm);
 
 impl TryFrom<JsValue> for ProTxHashWasm {
     type Error = WasmDppError;
