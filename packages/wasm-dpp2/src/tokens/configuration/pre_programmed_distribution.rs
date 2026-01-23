@@ -16,9 +16,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * Distribution amounts per identity: Identifier -> token amount (bigint).
+ * Distribution amounts per identity: base58 Identifier string -> token amount (bigint).
  */
-export type DistributionAmountsMap = Map<Identifier, bigint>;
+export type DistributionAmountsMap = Map<string, bigint>;
 
 /**
  * Pre-programmed distributions: timestamp (string) -> distribution amounts map.
@@ -147,7 +147,7 @@ fn distribution_amounts_to_map(
 
     for (identifier, amount) in amounts {
         let identifier_wasm = IdentifierWasm::from(*identifier);
-        js_map.set(&identifier_wasm.into(), &BigInt::from(*amount).into());
+        js_map.set(&identifier_wasm.to_base58().into(), &BigInt::from(*amount).into());
     }
 
     js_map.into()

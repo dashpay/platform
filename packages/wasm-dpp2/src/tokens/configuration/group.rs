@@ -16,9 +16,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * Group members mapping: Identifier -> power.
+ * Group members mapping: base58 Identifier string -> power.
  */
-export type GroupMembersMap = Map<Identifier, number>;
+export type GroupMembersMap = Map<string, number>;
 
 /**
  * Group serialized as a plain object.
@@ -133,7 +133,7 @@ impl GroupWasm {
 
         for (k, v) in members {
             let identifier_wasm = IdentifierWasm::from(*k);
-            js_map.set(&identifier_wasm.into(), &JsValue::from(*v));
+            js_map.set(&identifier_wasm.to_base58().into(), &JsValue::from(*v));
         }
 
         Ok(js_map.into())

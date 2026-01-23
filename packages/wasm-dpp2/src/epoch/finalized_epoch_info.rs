@@ -15,9 +15,9 @@ use wasm_bindgen::{JsCast, JsValue};
 #[wasm_bindgen(typescript_custom_section)]
 const FINALIZED_EPOCH_INFO_OPTIONS_TS: &str = r#"
 /**
- * Block proposers mapping: Identifier -> block count (bigint).
+ * Block proposers mapping: base58 Identifier string -> block count (bigint).
  */
-export type BlockProposersMap = Map<Identifier, bigint>;
+export type BlockProposersMap = Map<string, bigint>;
 
 export interface FinalizedEpochInfoOptions {
     firstBlockTime: bigint;
@@ -163,7 +163,7 @@ fn block_proposers_to_map(map: &BTreeMap<Identifier, u64>) -> BlockProposersMapJ
 
     for (identifier, value) in map {
         let identifier_wasm = IdentifierWasm::from(*identifier);
-        js_map.set(&identifier_wasm.into(), &BigInt::from(*value).into());
+        js_map.set(&identifier_wasm.to_base58().into(), &BigInt::from(*value).into());
     }
 
     js_map.into()

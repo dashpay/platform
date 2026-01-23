@@ -52,14 +52,8 @@ describe('Group', () => {
 
       const fetchedMembers = group.members;
       expect(fetchedMembers).to.be.instanceOf(Map);
-      // Find the member by comparing base58 representations
-      let foundPower = null;
-      for (const [id, power] of fetchedMembers.entries()) {
-        if (id.toBase58() === memberId.toBase58()) {
-          foundPower = power;
-          break;
-        }
-      }
+      // Map keys are now base58 strings for value-based lookups
+      const foundPower = fetchedMembers.get(memberId.toBase58());
       expect(foundPower).to.equal(100);
     });
 
@@ -83,14 +77,8 @@ describe('Group', () => {
       group.setMemberRequiredPower(memberId, 200);
 
       const updatedMembers = group.members;
-      // Find the member by comparing base58 representations
-      let foundPower = null;
-      for (const [id, power] of updatedMembers.entries()) {
-        if (id.toBase58() === memberId.toBase58()) {
-          foundPower = power;
-          break;
-        }
-      }
+      // Map keys are now base58 strings for value-based lookups
+      const foundPower = updatedMembers.get(memberId.toBase58());
       expect(foundPower).to.equal(200);
     });
   });
