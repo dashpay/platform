@@ -64,7 +64,7 @@ impl GroupStateTransitionInfoWasm {
     }
 
     #[wasm_bindgen(getter = "groupContractPosition")]
-    pub fn group_contract_position(&mut self) -> u16 {
+    pub fn group_contract_position(&self) -> u16 {
         self.0.group_contract_position
     }
 
