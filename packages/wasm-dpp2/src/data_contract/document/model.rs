@@ -5,7 +5,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{ToSerdeJSONExt, get_required_property};
+use crate::utils::{ToSerdeJSONExt, get_required_property, try_to_fixed_bytes};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
@@ -221,16 +221,7 @@ impl DocumentWasm {
                 .generate()
                 .map_err(|err| WasmDppError::serialization(err.to_string()))?
         } else {
-            let entropy_array = js_sys::Uint8Array::new(&entropy_js);
-            let entropy_vec = entropy_array.to_vec();
-            if entropy_vec.len() != 32 {
-                return Err(WasmDppError::invalid_argument(
-                    "entropy must be exactly 32 bytes",
-                ));
-            }
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&entropy_vec);
-            arr
+            try_to_fixed_bytes::<32>(entropy_js, "entropy")?
         };
 
         let doc_id: Identifier = if id_js.is_undefined() || id_js.is_null() {

@@ -1,12 +1,12 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 /// TypeScript type alias for flexible ProTxHash input
 #[wasm_bindgen(typescript_custom_section)]
@@ -145,17 +145,8 @@ impl TryFrom<JsValue> for ProTxHashWasm {
             return Ok(ProTxHashWasm(hash));
         }
 
-        // Try as Uint8Array
-        if value.is_instance_of::<js_sys::Uint8Array>() {
-            let bytes = js_sys::Uint8Array::new(&value).to_vec();
-            if bytes.len() != 32 {
-                return Err(WasmDppError::invalid_argument(format!(
-                    "ProTxHash must be exactly 32 bytes, got {} bytes",
-                    bytes.len()
-                )));
-            }
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
+        // Try as Uint8Array (validates type and 32-byte length)
+        if let Ok(arr) = try_to_fixed_bytes::<32>(value, "proTxHash") {
             let raw = sha256d::Hash::from_byte_array(arr);
             let hash = ProTxHash::from_raw_hash(raw);
             return Ok(ProTxHashWasm(hash));

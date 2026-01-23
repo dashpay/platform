@@ -8,7 +8,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, get_required_property};
+use crate::utils::{IntoWasm, get_required_property, try_to_fixed_bytes};
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::identity::contract_bounds::ContractBounds;
@@ -113,18 +113,25 @@ extern "C" {
 }
 
 /// Convert PublicKeyHashLikeJs to Vec<u8>
-/// Accepts hex string or Uint8Array
+/// Accepts hex string (40 chars) or Uint8Array (20 bytes) for HASH160
 pub fn public_key_hash_from_js(value: PublicKeyHashLikeJs) -> WasmDppResult<Vec<u8>> {
     let js_value: JsValue = value.into();
 
     if let Some(hex_str) = js_value.as_string() {
-        hex::decode(&hex_str).map_err(|e| {
+        let bytes = hex::decode(&hex_str).map_err(|e| {
             WasmDppError::invalid_argument(format!("Invalid hex string for public key hash: {}", e))
-        })
+        })?;
+        if bytes.len() != 20 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "Public key hash must be exactly 20 bytes (HASH160), got {}",
+                bytes.len()
+            )));
+        }
+        Ok(bytes)
     } else {
-        // Try to convert as Uint8Array
-        let array = js_sys::Uint8Array::new(&js_value);
-        Ok(array.to_vec())
+        // Validate type is Uint8Array and length is 20 bytes
+        let bytes = try_to_fixed_bytes::<20>(js_value, "publicKeyHash")?;
+        Ok(bytes.to_vec())
     }
 }
 

@@ -187,6 +187,40 @@ pub fn try_to_object(value: JsValue, field_name: &str) -> WasmDppResult<Object> 
         .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be an object", field_name)))
 }
 
+/// Convert a JS value to bytes (Vec<u8>) with type validation.
+///
+/// Validates that the value is a Uint8Array using `dyn_into()`.
+/// Returns an error if the value is not a Uint8Array.
+pub fn try_to_bytes(value: JsValue, field_name: &str) -> WasmDppResult<Vec<u8>> {
+    let array: js_sys::Uint8Array = value.dyn_into().map_err(|_| {
+        WasmDppError::invalid_argument(format!("'{}' must be a Uint8Array", field_name))
+    })?;
+    Ok(array.to_vec())
+}
+
+/// Convert a JS value to a fixed-size byte array with type and length validation.
+///
+/// Validates that:
+/// - The value is a Uint8Array
+/// - The length is exactly N bytes
+pub fn try_to_fixed_bytes<const N: usize>(
+    value: JsValue,
+    field_name: &str,
+) -> WasmDppResult<[u8; N]> {
+    let bytes = try_to_bytes(value, field_name)?;
+    if bytes.len() != N {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be exactly {} bytes, got {}",
+            field_name,
+            N,
+            bytes.len()
+        )));
+    }
+    let mut arr = [0u8; N];
+    arr.copy_from_slice(&bytes);
+    Ok(arr)
+}
+
 /// Convert a JS value to u32 with validation.
 ///
 /// Validates that the value is:

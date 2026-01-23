@@ -128,7 +128,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
             return IdentifierWasm::try_from(string.as_str());
         }
 
-        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
+        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() {
             let uint8_array = Uint8Array::from(value.clone());
             let bytes = uint8_array.to_vec();
 
@@ -138,7 +138,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         }
 
         Err(WasmDppError::invalid_argument(
-            "Invalid identifier. Expected Identifier, Uint8Array or string",
+            "Invalid identifier. Expected Identifier, Uint8Array, array or string",
         ))
     }
 }
