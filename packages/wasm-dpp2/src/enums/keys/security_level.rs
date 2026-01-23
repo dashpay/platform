@@ -3,7 +3,14 @@ use dpp::identity::SecurityLevel;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-/// Extern type for flexible SecurityLevel input
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * Flexible input type for SecurityLevel - accepts the enum, string name, or numeric value.
+ */
+export type SecurityLevelLike = SecurityLevel | "master" | "critical" | "high" | "medium" | 0 | 1 | 2 | 3;
+"#;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "SecurityLevelLike")]

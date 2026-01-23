@@ -3,7 +3,14 @@ use dpp::identity::Purpose;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-/// Extern type for flexible Purpose input
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * Flexible input type for Purpose - accepts the enum, string name, or numeric value.
+ */
+export type PurposeLike = Purpose | "authentication" | "encryption" | "decryption" | "transfer" | "system" | "voting" | "owner" | 0 | 1 | 2 | 3 | 4 | 5 | 6;
+"#;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "PurposeLike")]

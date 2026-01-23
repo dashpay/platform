@@ -3,7 +3,14 @@ use dpp::identity::KeyType;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-/// Extern type for flexible KeyType input
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * Flexible input type for KeyType - accepts the enum, string name, or numeric value.
+ */
+export type KeyTypeLike = KeyType | "ecdsa_secp256k1" | "bls12_381" | "ecdsa_hash160" | "bip13_script_hash" | "eddsa_25519_hash160" | 0 | 1 | 2 | 3 | 4;
+"#;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "KeyTypeLike")]

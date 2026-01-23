@@ -4,7 +4,14 @@ use serde::{Deserialize, Deserializer};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-/// Extern type for flexible Pooling input
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &'static str = r#"
+/**
+ * Flexible input type for Pooling - accepts the enum, string name, or numeric value.
+ */
+export type CreditWithdrawalTransitionPoolingLike = Pooling | "never" | "ifavailable" | "standard" | 0 | 1 | 2;
+"#;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "CreditWithdrawalTransitionPoolingLike")]
