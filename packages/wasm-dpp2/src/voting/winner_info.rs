@@ -9,19 +9,21 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TS_TYPES: &str = r#"
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as a plain object.
+ * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
  */
-export interface ContestedDocumentVotePollWinnerInfoObject {
-    kind: "NoWinner" | "WonByIdentity" | "Locked";
-    identityId?: Uint8Array;
-}
+export type ContestedDocumentVotePollWinnerInfoObject =
+    | "NoWinner"
+    | "Locked"
+    | { WonByIdentity: Uint8Array };
 
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as JSON.
+ * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
  */
-export interface ContestedDocumentVotePollWinnerInfoJSON {
-    kind: "NoWinner" | "WonByIdentity" | "Locked";
-    identityId?: string;
-}
+export type ContestedDocumentVotePollWinnerInfoJSON =
+    | "NoWinner"
+    | "Locked"
+    | { WonByIdentity: string };
 "#;
 
 #[wasm_bindgen]
