@@ -139,8 +139,13 @@ where
     for<'a> T: TryFrom<&'a JsValue>,
     for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read '{}' from options: {}",
+            property_name, message
+        ))
+    })?;
 
     if value.is_undefined() || value.is_null() {
         return Err(WasmDppError::invalid_argument(format!(
@@ -173,8 +178,13 @@ pub fn try_from_options_with<T, F>(
 where
     F: FnOnce(JsValue) -> WasmDppResult<T>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read '{}' from options: {}",
+            property_name, message
+        ))
+    })?;
 
     if value.is_undefined() || value.is_null() {
         return Err(WasmDppError::invalid_argument(format!(
@@ -207,8 +217,13 @@ where
     for<'a> T: TryFrom<&'a JsValue>,
     for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read '{}' from options: {}",
+            property_name, message
+        ))
+    })?;
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
@@ -240,8 +255,13 @@ pub fn try_from_options_optional_with<T, F>(
 where
     F: FnOnce(JsValue) -> WasmDppResult<T>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).unwrap_or(JsValue::UNDEFINED);
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read '{}' from options: {}",
+            property_name, message
+        ))
+    })?;
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
