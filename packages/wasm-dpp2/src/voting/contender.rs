@@ -15,18 +15,22 @@ const TS_TYPES: &str = r#"
  * ContenderWithSerializedDocument serialized as a plain object.
  */
 export interface ContenderWithSerializedDocumentObject {
-    identityId: Uint8Array;
-    serializedDocument?: Uint8Array;
-    voteTally: number | null;
+    v0: {
+        identityId: Uint8Array;
+        serializedDocument: Uint8Array | null;
+        voteTally: number | null;
+    };
 }
 
 /**
  * ContenderWithSerializedDocument serialized as JSON.
  */
 export interface ContenderWithSerializedDocumentJSON {
-    identityId: string;
-    serializedDocument?: string;
-    voteTally: number | null;
+    v0: {
+        identityId: string;
+        serializedDocument: string | null;
+        voteTally: number | null;
+    };
 }
 "#;
 

@@ -14,16 +14,22 @@ const TS_TYPES: &str = r#"
  * Vote serialized as a plain object.
  */
 export interface VoteObject {
-    votePoll: VotePollObject;
-    resourceVoteChoice: ResourceVoteChoiceObject;
+    resourceVote: {
+        $version: string;
+        votePoll: VotePollObject;
+        resourceVoteChoice: ResourceVoteChoiceObject;
+    };
 }
 
 /**
  * Vote serialized as JSON.
  */
 export interface VoteJSON {
-    votePoll: VotePollJSON;
-    resourceVoteChoice: ResourceVoteChoiceJSON;
+    resourceVote: {
+        $version: string;
+        votePoll: VotePollJSON;
+        resourceVoteChoice: ResourceVoteChoiceJSON;
+    };
 }
 "#;
 
@@ -65,36 +71,36 @@ impl VoteWasm {
         })))
     }
 
-    #[wasm_bindgen(getter = votePoll)]
-    pub fn vote_poll(&self) -> VotePollWasm {
+    #[wasm_bindgen(getter = poll)]
+    pub fn poll(&self) -> VotePollWasm {
         match &self.0 {
             Vote::ResourceVote(vote) => vote.vote_poll().clone().into(),
         }
     }
 
-    #[wasm_bindgen(getter = resourceVoteChoice)]
-    pub fn resource_vote_choice(&self) -> ResourceVoteChoiceWasm {
+    #[wasm_bindgen(getter = choice)]
+    pub fn choice(&self) -> ResourceVoteChoiceWasm {
         match &self.0 {
             Vote::ResourceVote(vote) => vote.resource_vote_choice().into(),
         }
     }
 
-    #[wasm_bindgen(setter = votePoll)]
-    pub fn set_vote_poll(&mut self, vote_poll: &VotePollWasm) {
+    #[wasm_bindgen(setter = poll)]
+    pub fn set_poll(&mut self, poll: &VotePollWasm) {
         self.0 = match self.0.clone() {
             Vote::ResourceVote(vote) => Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-                vote_poll: vote_poll.clone().into(),
+                vote_poll: poll.clone().into(),
                 resource_vote_choice: vote.resource_vote_choice(),
             })),
         }
     }
 
-    #[wasm_bindgen(setter = resourceVoteChoice)]
-    pub fn set_resource_vote_choice(&mut self, resource_vote_choice: &ResourceVoteChoiceWasm) {
+    #[wasm_bindgen(setter = choice)]
+    pub fn set_choice(&mut self, choice: &ResourceVoteChoiceWasm) {
         self.0 = match self.0.clone() {
             Vote::ResourceVote(vote) => Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
                 vote_poll: vote.vote_poll().clone(),
-                resource_vote_choice: resource_vote_choice.clone().into(),
+                resource_vote_choice: choice.clone().into(),
             })),
         }
     }
