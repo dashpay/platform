@@ -149,7 +149,7 @@ impl TokenPaymentInfoWasm {
         &mut self,
         #[wasm_bindgen(js_name = "minimumCost")] minimum_cost: Option<TokenAmount>,
     ) {
-        self.0.set_maximum_token_cost(minimum_cost);
+        self.0.set_minimum_token_cost(minimum_cost);
     }
 
     #[wasm_bindgen(setter = "maximumTokenCost")]
