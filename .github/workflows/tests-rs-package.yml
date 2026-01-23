@@ -12,7 +12,7 @@ on:
       direct-packages:
         description: JSON array of packages that changed directly (not via deps)
         type: string
-        default: '[]'
+        default: "[]"
 
 jobs:
   lint:
@@ -198,14 +198,69 @@ jobs:
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
-      - name: Run tests        
-        run: RUST_MIN_STACK=4194304 cargo test --package=${{ inputs.package }} --all-features --locked
+      - name: Configure core dumps
+        run: |
+          sudo mkdir /cores
+          sudo chmod 777 /cores
+          # Core filenames will be of the form executable.pid.timestamp:
+          sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
+
+      - name: Run tests
+        run: |
+          ulimit -c unlimited
+          RUST_MIN_STACK=4194304 cargo test --package=${{ inputs.package }} --all-features --locked
         env:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      # Zip crash artifacts (core files + binaries) so filenames stay safe
+      - name: Collect crash artifacts
+        if: failure()
+        env:
+          PACKAGE_NAME: ${{ inputs.package }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          if ! compgen -G "/cores/*" > /dev/null; then
+            echo "No core dumps were produced; skipping artifact archive."
+            exit 0
+          fi
+
+          ARTIFACT_DIR=crash-artifacts
+          rm -rf "${ARTIFACT_DIR}"
+          mkdir -p "${ARTIFACT_DIR}/cores" "${ARTIFACT_DIR}/binaries"
+
+          cp -a /cores/. "${ARTIFACT_DIR}/cores/"
+
+          BIN_PREFIX=$(echo "${PACKAGE_NAME}" | tr '-' '_')
+          for path in target/debug/deps/${BIN_PREFIX}-* target/debug/${BIN_PREFIX}-*; do
+            if [[ -f "$path" && -x "$path" ]]; then
+              cp -a "$path" "${ARTIFACT_DIR}/binaries/"
+            fi
+          done
+
+          for extra in target/debug/deps/${BIN_PREFIX}-*.dwp target/debug/${BIN_PREFIX}.dwp; do
+            if [[ -e "$extra" ]]; then
+              cp -a "$extra" "${ARTIFACT_DIR}/binaries/"
+            fi
+          done
+
+          (cd "${ARTIFACT_DIR}" && zip -9 -r ../core-dumps.zip .)
+
+      - name: Upload core dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dumps-${{ inputs.package }}
+          path: |
+            core-dumps.zip
+          if-no-files-found: ignore
+          retention-days: 3
+          # Inspect locally with: gdb path/to/binary path/to/core
 
   check_each_feature:
     name: Check each feature
