@@ -178,6 +178,98 @@ fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error
     bail!("the value is not a number")
 }
 
+/// Convert a JS value to u32 with validation.
+///
+/// Validates that the value is:
+/// - A finite number (not NaN or Infinity)
+/// - An integer (no fractional part)
+/// - Non-negative
+/// - Within u32 range (0..=4294967295)
+pub fn try_to_u32(value: JsValue, field_name: &str) -> WasmDppResult<u32> {
+    let num = value
+        .as_f64()
+        .ok_or_else(|| WasmDppError::invalid_argument(format!("'{}' must be a number", field_name)))?;
+
+    if num.is_nan() || num.is_infinite() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a finite number, got {}",
+            field_name,
+            if num.is_nan() { "NaN" } else { "Infinity" }
+        )));
+    }
+
+    if num.fract() != 0.0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be an integer, got {}",
+            field_name, num
+        )));
+    }
+
+    if num < 0.0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be non-negative, got {}",
+            field_name, num
+        )));
+    }
+
+    if num > u32::MAX as f64 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be at most {}, got {}",
+            field_name,
+            u32::MAX,
+            num
+        )));
+    }
+
+    Ok(num as u32)
+}
+
+/// Convert a JS value to u16 with validation.
+///
+/// Validates that the value is:
+/// - A finite number (not NaN or Infinity)
+/// - An integer (no fractional part)
+/// - Non-negative
+/// - Within u16 range (0..=65535)
+pub fn try_to_u16(value: JsValue, field_name: &str) -> WasmDppResult<u16> {
+    let num = value
+        .as_f64()
+        .ok_or_else(|| WasmDppError::invalid_argument(format!("'{}' must be a number", field_name)))?;
+
+    if num.is_nan() || num.is_infinite() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a finite number, got {}",
+            field_name,
+            if num.is_nan() { "NaN" } else { "Infinity" }
+        )));
+    }
+
+    if num.fract() != 0.0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be an integer, got {}",
+            field_name, num
+        )));
+    }
+
+    if num < 0.0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be non-negative, got {}",
+            field_name, num
+        )));
+    }
+
+    if num > u16::MAX as f64 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be at most {}, got {}",
+            field_name,
+            u16::MAX,
+            num
+        )));
+    }
+
+    Ok(num as u16)
+}
+
 /// Generate a document ID using the v0 algorithm
 pub fn generate_document_id_v0(
     contract_id: &Identifier,

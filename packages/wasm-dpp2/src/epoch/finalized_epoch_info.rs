@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{get_required_property, try_to_u64};
+use crate::utils::{get_required_property, try_to_u32, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
@@ -182,52 +182,47 @@ impl FinalizedEpochInfoWasm {
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let first_block_time =
-            try_to_u64(get_required_property(&options_obj, "firstBlockTime")?)?;
+        let first_block_time_js = get_required_property(&options_obj, "firstBlockTime")?;
+        let first_block_time = try_to_u64(first_block_time_js)?;
 
-        let first_block_height =
-            try_to_u64(get_required_property(&options_obj, "firstBlockHeight")?)?;
+        let first_block_height_js = get_required_property(&options_obj, "firstBlockHeight")?;
+        let first_block_height = try_to_u64(first_block_height_js)?;
 
-        let total_blocks_in_epoch =
-            try_to_u64(get_required_property(&options_obj, "totalBlocksInEpoch")?)?;
+        let total_blocks_in_epoch_js = get_required_property(&options_obj, "totalBlocksInEpoch")?;
+        let total_blocks_in_epoch = try_to_u64(total_blocks_in_epoch_js)?;
 
-        let first_core_block_height = get_required_property(&options_obj, "firstCoreBlockHeight")?
-            .as_f64()
-            .ok_or_else(|| {
-                WasmDppError::invalid_argument("'firstCoreBlockHeight' must be a number")
-            })? as u32;
+        let first_core_block_height_js =
+            get_required_property(&options_obj, "firstCoreBlockHeight")?;
+        let first_core_block_height = try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
 
+        let next_epoch_start_core_block_height_js =
+            get_required_property(&options_obj, "nextEpochStartCoreBlockHeight")?;
         let next_epoch_start_core_block_height =
-            get_required_property(&options_obj, "nextEpochStartCoreBlockHeight")?
-                .as_f64()
-                .ok_or_else(|| {
-                    WasmDppError::invalid_argument(
-                        "'nextEpochStartCoreBlockHeight' must be a number",
-                    )
-                })? as u32;
+            try_to_u32(next_epoch_start_core_block_height_js, "nextEpochStartCoreBlockHeight")?;
 
-        let total_processing_fees =
-            try_to_u64(get_required_property(&options_obj, "totalProcessingFees")?)?;
+        let total_processing_fees_js = get_required_property(&options_obj, "totalProcessingFees")?;
+        let total_processing_fees = try_to_u64(total_processing_fees_js)?;
 
-        let total_distributed_storage_fees =
-            try_to_u64(get_required_property(&options_obj, "totalDistributedStorageFees")?)?;
+        let total_distributed_storage_fees_js =
+            get_required_property(&options_obj, "totalDistributedStorageFees")?;
+        let total_distributed_storage_fees = try_to_u64(total_distributed_storage_fees_js)?;
 
-        let total_created_storage_fees =
-            try_to_u64(get_required_property(&options_obj, "totalCreatedStorageFees")?)?;
+        let total_created_storage_fees_js =
+            get_required_property(&options_obj, "totalCreatedStorageFees")?;
+        let total_created_storage_fees = try_to_u64(total_created_storage_fees_js)?;
 
-        let core_block_rewards =
-            try_to_u64(get_required_property(&options_obj, "coreBlockRewards")?)?;
+        let core_block_rewards_js = get_required_property(&options_obj, "coreBlockRewards")?;
+        let core_block_rewards = try_to_u64(core_block_rewards_js)?;
 
         let block_proposers_js = get_required_property(&options_obj, "blockProposers")?;
         let block_proposers = block_proposers_from_map(&Map::from(block_proposers_js))?;
 
-        let fee_multiplier_permille =
-            try_to_u64(get_required_property(&options_obj, "feeMultiplierPermille")?)?;
+        let fee_multiplier_permille_js =
+            get_required_property(&options_obj, "feeMultiplierPermille")?;
+        let fee_multiplier_permille = try_to_u64(fee_multiplier_permille_js)?;
 
-        let protocol_version = get_required_property(&options_obj, "protocolVersion")?
-            .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("'protocolVersion' must be a number"))?
-            as u32;
+        let protocol_version_js = get_required_property(&options_obj, "protocolVersion")?;
+        let protocol_version = try_to_u32(protocol_version_js, "protocolVersion")?;
 
         Ok(FinalizedEpochInfoWasm(FinalizedEpochInfo::V0(
             FinalizedEpochInfoV0 {

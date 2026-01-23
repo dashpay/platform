@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_required_property, try_to_u64};
+use crate::utils::{get_required_property, try_to_u16, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -96,10 +96,7 @@ impl IdentityCreditTransferWasm {
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {
-            user_fee_increase_js
-                .as_f64()
-                .ok_or_else(|| WasmDppError::invalid_argument("userFeeIncrease must be a number"))?
-                as u16
+            try_to_u16(user_fee_increase_js, "userFeeIncrease")?
         };
 
         Ok(IdentityCreditTransferWasm(

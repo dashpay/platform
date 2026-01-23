@@ -6,7 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_required_property, try_to_u64};
+use crate::utils::{get_required_property, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -105,15 +105,8 @@ impl IdentityUpdateTransitionWasm {
         let disable_public_keys_array = Array::from(&disable_public_keys_js);
         let disable_public_keys: Vec<KeyID> = disable_public_keys_array
             .iter()
-            .map(|v| {
-                v.as_f64()
-                    .ok_or_else(|| {
-                        WasmDppError::invalid_argument(
-                            "disablePublicKeys must be an array of numbers",
-                        )
-                    })
-                    .map(|n| n as KeyID)
-            })
+            .enumerate()
+            .map(|(i, v)| try_to_u32(v, &format!("disablePublicKeys[{}]", i)))
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
         let user_fee_increase_js =
@@ -121,10 +114,7 @@ impl IdentityUpdateTransitionWasm {
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {
-            user_fee_increase_js
-                .as_f64()
-                .ok_or_else(|| WasmDppError::invalid_argument("userFeeIncrease must be a number"))?
-                as u16
+            try_to_u16(user_fee_increase_js, "userFeeIncrease")?
         };
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(

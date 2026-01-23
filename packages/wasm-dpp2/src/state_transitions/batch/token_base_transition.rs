@@ -1,8 +1,8 @@
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u16, try_to_u64};
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -53,14 +53,14 @@ impl TokenBaseTransitionWasm {
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let identity_contract_nonce =
-            try_to_u64(get_required_property(&options_obj, "identityContractNonce")?)?;
+        let identity_contract_nonce_js =
+            get_required_property(&options_obj, "identityContractNonce")?;
+        let identity_contract_nonce = try_to_u64(identity_contract_nonce_js)?;
 
-        let token_contract_position = get_required_property(&options_obj, "tokenContractPosition")?
-            .as_f64()
-            .ok_or_else(|| {
-                WasmDppError::invalid_argument("tokenContractPosition must be a number")
-            })? as u16;
+        let token_contract_position_js =
+            get_required_property(&options_obj, "tokenContractPosition")?;
+        let token_contract_position =
+            try_to_u16(token_contract_position_js, "tokenContractPosition")?;
 
         let data_contract_id_js = get_required_property(&options_obj, "dataContractId")?;
         let data_contract_id = IdentifierWasm::try_from(&data_contract_id_js)?.into();

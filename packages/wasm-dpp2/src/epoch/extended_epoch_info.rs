@@ -1,5 +1,5 @@
-use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{get_required_property, try_to_u64};
+use crate::error::WasmDppResult;
+use crate::utils::{get_required_property, try_to_u16, try_to_u32, try_to_u64};
 use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
@@ -87,30 +87,25 @@ impl ExtendedEpochInfoWasm {
     ) -> WasmDppResult<ExtendedEpochInfoWasm> {
         let options_obj = Object::from(JsValue::from(options));
 
-        let index = get_required_property(&options_obj, "index")?
-            .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("index must be a number"))?
-            as u16;
+        let index_js = get_required_property(&options_obj, "index")?;
+        let index = try_to_u16(index_js, "index")?;
 
-        let first_block_time =
-            try_to_u64(get_required_property(&options_obj, "firstBlockTime")?)?;
+        let first_block_time_js = get_required_property(&options_obj, "firstBlockTime")?;
+        let first_block_time = try_to_u64(first_block_time_js)?;
 
-        let first_block_height =
-            try_to_u64(get_required_property(&options_obj, "firstBlockHeight")?)?;
+        let first_block_height_js = get_required_property(&options_obj, "firstBlockHeight")?;
+        let first_block_height = try_to_u64(first_block_height_js)?;
 
-        let first_core_block_height = get_required_property(&options_obj, "firstCoreBlockHeight")?
-            .as_f64()
-            .ok_or_else(|| {
-                WasmDppError::invalid_argument("firstCoreBlockHeight must be a number")
-            })? as u32;
+        let first_core_block_height_js =
+            get_required_property(&options_obj, "firstCoreBlockHeight")?;
+        let first_core_block_height = try_to_u32(first_core_block_height_js, "firstCoreBlockHeight")?;
 
-        let fee_multiplier_permille =
-            try_to_u64(get_required_property(&options_obj, "feeMultiplierPermille")?)?;
+        let fee_multiplier_permille_js =
+            get_required_property(&options_obj, "feeMultiplierPermille")?;
+        let fee_multiplier_permille = try_to_u64(fee_multiplier_permille_js)?;
 
-        let protocol_version = get_required_property(&options_obj, "protocolVersion")?
-            .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("protocolVersion must be a number"))?
-            as u32;
+        let protocol_version_js = get_required_property(&options_obj, "protocolVersion")?;
+        let protocol_version = try_to_u32(protocol_version_js, "protocolVersion")?;
 
         Ok(ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(
             ExtendedEpochInfoV0 {

@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -112,9 +112,7 @@ impl MasternodeVoteTransitionWasm {
         let signature_public_key_id: KeyID = if signature_public_key_js.is_undefined() {
             0
         } else {
-            signature_public_key_js.as_f64().ok_or_else(|| {
-                WasmDppError::invalid_argument("signaturePublicKeyId must be a number")
-            })? as KeyID
+            try_to_u32(signature_public_key_js, "signaturePublicKeyId")?
         };
 
         let signature_js =

@@ -7,7 +7,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_u64};
+use crate::utils::{IntoWasm, get_required_property, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -100,10 +100,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
 
-        let core_fee_per_byte = get_required_property(&options_obj, "coreFeePerByte")?
-            .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("coreFeePerByte must be a number"))?
-            as u32;
+        let core_fee_per_byte_js = get_required_property(&options_obj, "coreFeePerByte")?;
+        let core_fee_per_byte = try_to_u32(core_fee_per_byte_js, "coreFeePerByte")?;
 
         let pooling_js = get_required_property(&options_obj, "pooling")?;
         let pooling = PoolingWasm::try_from(pooling_js)?;
@@ -132,10 +130,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {
-            user_fee_increase_js
-                .as_f64()
-                .ok_or_else(|| WasmDppError::invalid_argument("userFeeIncrease must be a number"))?
-                as u16
+            try_to_u16(user_fee_increase_js, "userFeeIncrease")?
         };
 
         Ok(IdentityCreditWithdrawalTransitionWasm(
