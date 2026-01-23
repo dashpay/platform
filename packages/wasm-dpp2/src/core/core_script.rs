@@ -34,21 +34,33 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "fromP2PKH")]
-    pub fn from_p2pkh(key_hash: Vec<u8>) -> Self {
-        let mut key_hash_bytes = [0u8; 20];
-        let bytes = key_hash.as_slice();
-        let len = bytes.len().min(key_hash_bytes.len());
-        key_hash_bytes[..len].copy_from_slice(&bytes[..len]);
+    pub fn from_p2pkh(key_hash: Vec<u8>) -> WasmDppResult<CoreScriptWasm> {
+        if key_hash.len() != 20 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "P2PKH key hash must be exactly 20 bytes, got {}",
+                key_hash.len()
+            )));
+        }
 
-        CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes))
+        let key_hash_bytes: [u8; 20] = key_hash
+            .try_into()
+            .expect("length already validated");
+
+        Ok(CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes)))
     }
 
     #[wasm_bindgen(js_name = "fromP2SH")]
-    pub fn from_p2sh(script_hash: Vec<u8>) -> Self {
-        let mut script_hash_bytes = [0u8; 20];
-        let bytes = script_hash.as_slice();
-        let len = bytes.len().min(script_hash_bytes.len());
-        script_hash_bytes[..len].copy_from_slice(&bytes[..len]);
+    pub fn from_p2sh(script_hash: Vec<u8>) -> WasmDppResult<CoreScriptWasm> {
+        if script_hash.len() != 20 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "P2SH script hash must be exactly 20 bytes, got {}",
+                script_hash.len()
+            )));
+        }
+
+        let script_hash_bytes: [u8; 20] = script_hash
+            .try_into()
+            .expect("length already validated");
 
         let mut bytes = vec![
             opcodes::all::OP_HASH160.to_u8(),
@@ -56,7 +68,7 @@ impl CoreScriptWasm {
         ];
         bytes.extend_from_slice(&script_hash_bytes);
         bytes.push(opcodes::all::OP_EQUAL.to_u8());
-        Self::from_bytes(bytes)
+        Ok(Self::from_bytes(bytes))
     }
 
     #[wasm_bindgen(js_name = "toAddress")]

@@ -113,27 +113,33 @@ impl OutPointWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(buffer: Vec<u8>) -> OutPointWasm {
-        let mut out_buffer = [0u8; 36];
-        let bytes = buffer.as_slice();
-        let len = bytes.len();
-        out_buffer[..len].copy_from_slice(bytes);
+    pub fn from_bytes(buffer: Vec<u8>) -> WasmDppResult<OutPointWasm> {
+        if buffer.len() != 36 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "OutPoint must be exactly 36 bytes, got {}",
+                buffer.len()
+            )));
+        }
 
-        OutPointWasm(OutPoint::from(out_buffer))
+        let out_buffer: [u8; 36] = buffer
+            .try_into()
+            .expect("length already validated");
+
+        Ok(OutPointWasm(OutPoint::from(out_buffer)))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(hex: String) -> WasmDppResult<OutPointWasm> {
         let bytes =
             decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(OutPointWasm::from_bytes(bytes))
+        OutPointWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
     pub fn from_base64(base64: String) -> WasmDppResult<OutPointWasm> {
         let bytes = decode(base64.as_str(), Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(OutPointWasm::from_bytes(bytes))
+        OutPointWasm::from_bytes(bytes)
     }
 }
 
