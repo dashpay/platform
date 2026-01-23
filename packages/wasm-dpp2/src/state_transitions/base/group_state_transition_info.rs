@@ -27,7 +27,7 @@ impl GroupStateTransitionInfoWasm {
     pub fn constructor(
         #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
         #[wasm_bindgen(js_name = "actionId")] action_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "actionIsProposer")] action_is_proposer: bool,
+        #[wasm_bindgen(js_name = "isActionProposer")] action_is_proposer: bool,
     ) -> WasmDppResult<GroupStateTransitionInfoWasm> {
         let action_id: Identifier = action_id.try_into()?;
 
