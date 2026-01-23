@@ -102,7 +102,7 @@ impl WasmSdk {
         let data = match address_info {
             Some(info) => {
                 let wrapper = PlatformAddressInfoWasm::from(info);
-                wrapper.to_object()?
+                wrapper.into()
             }
             None => JsValue::UNDEFINED,
         };
@@ -147,7 +147,7 @@ impl WasmSdk {
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());
-                    wrapper.to_object()?
+                    wrapper.into()
                 }
                 None => JsValue::UNDEFINED,
             };
@@ -197,7 +197,7 @@ impl WasmSdk {
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());
-                    wrapper.to_object()?
+                    wrapper.into()
                 }
                 None => JsValue::UNDEFINED,
             };
