@@ -7,7 +7,7 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, JsValueExt, get_class_type};
+use crate::utils::{IntoWasm, get_class_type, get_required_property};
 use dpp::prelude::AssetLockProof;
 use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::*;
@@ -200,13 +200,11 @@ impl AssetLockProofWasm {
     pub fn from_object(object: AssetLockProofObjectJs) -> WasmDppResult<AssetLockProofWasm> {
         let js_value: JsValue = object.into();
         let object = Object::from(js_value.clone());
-        let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
-            .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
+        let proof_type = get_required_property(&object, "type")?;
 
         let type_num = proof_type.as_f64().ok_or_else(|| {
             WasmDppError::invalid_argument(
-                "AssetLockProof object must have a 'type' field (0 = Instant, 1 = Chain)"
-                    .to_string(),
+                "AssetLockProof 'type' must be a number (0 = Instant, 1 = Chain)".to_string(),
             )
         })?;
 
@@ -253,12 +251,11 @@ impl AssetLockProofWasm {
     pub fn from_json(object: AssetLockProofJSONJs) -> WasmDppResult<AssetLockProofWasm> {
         let js_value: JsValue = object.into();
         let object = Object::from(js_value.clone());
-        let proof_type = Reflect::get(&object, &JsValue::from_str("type"))
-            .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?;
+        let proof_type = get_required_property(&object, "type")?;
 
         let type_num = proof_type.as_f64().ok_or_else(|| {
             WasmDppError::invalid_argument(
-                "AssetLockProof JSON must have a 'type' field (0 = Instant, 1 = Chain)".to_string(),
+                "AssetLockProof 'type' must be a number (0 = Instant, 1 = Chain)".to_string(),
             )
         })?;
 

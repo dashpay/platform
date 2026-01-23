@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::IntoWasm;
+use wasm_dpp2::utils::{IntoWasm, get_required_property};
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -318,8 +318,8 @@ impl WasmSdk {
             IdentifierWasm::try_from_options(&options_value, "recipientId")?.into();
 
         // Extract amount from options
-        let amount_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("amount"))
-            .map_err(|_| WasmSdkError::invalid_argument("amount is required"))?;
+        let options_obj = js_sys::Object::from(options_value.clone());
+        let amount_js = get_required_property(&options_obj, "amount")?;
         let amount = wasm_dpp2::utils::try_to_u64(amount_js)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid amount: {}", e)))?;
 

@@ -8,7 +8,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, get_required_property};
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::identity::contract_bounds::ContractBounds;
@@ -152,20 +152,15 @@ impl IdentityPublicKeyWasm {
         let object = Object::from(options.clone());
 
         // Extract purpose (required, complex type)
-        let js_purpose = Reflect::get(&object, &JsValue::from_str("purpose"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing purpose: {:?}", e)))?;
+        let js_purpose = get_required_property(&object, "purpose")?;
         let purpose = PurposeWasm::try_from(js_purpose)?;
 
         // Extract securityLevel (required, complex type)
-        let js_security_level = Reflect::get(&object, &JsValue::from_str("securityLevel"))
-            .map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e))
-            })?;
+        let js_security_level = get_required_property(&object, "securityLevel")?;
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
 
         // Extract keyType (required, complex type)
-        let js_key_type = Reflect::get(&object, &JsValue::from_str("keyType"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing keyType: {:?}", e)))?;
+        let js_key_type = get_required_property(&object, "keyType")?;
         let key_type = KeyTypeWasm::try_from(js_key_type)?;
 
         // Extract contractBounds (optional)

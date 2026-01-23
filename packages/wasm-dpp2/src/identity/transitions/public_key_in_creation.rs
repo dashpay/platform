@@ -6,7 +6,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, get_required_property};
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -148,25 +148,19 @@ impl IdentityPublicKeyInCreationWasm {
         let object = Object::from(options.clone());
 
         // Extract purpose (required, complex type)
-        let js_purpose = Reflect::get(&object, &JsValue::from_str("purpose"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing purpose: {:?}", e)))?;
+        let js_purpose = get_required_property(&object, "purpose")?;
         let purpose = PurposeWasm::try_from(js_purpose)?;
 
         // Extract securityLevel (required, complex type)
-        let js_security_level = Reflect::get(&object, &JsValue::from_str("securityLevel"))
-            .map_err(|e| {
-                WasmDppError::invalid_argument(format!("Missing securityLevel: {:?}", e))
-            })?;
+        let js_security_level = get_required_property(&object, "securityLevel")?;
         let security_level = SecurityLevelWasm::try_from(js_security_level)?;
 
         // Extract keyType (required, complex type)
-        let js_key_type = Reflect::get(&object, &JsValue::from_str("keyType"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing keyType: {:?}", e)))?;
+        let js_key_type = get_required_property(&object, "keyType")?;
         let key_type = KeyTypeWasm::try_from(js_key_type)?;
 
         // Extract data (required, Uint8Array)
-        let js_data = Reflect::get(&object, &JsValue::from_str("data"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing data: {:?}", e)))?;
+        let js_data = get_required_property(&object, "data")?;
         let data: Vec<u8> = serde_wasm_bindgen::from_value(js_data)
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))?;
 

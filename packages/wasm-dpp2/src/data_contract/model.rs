@@ -6,7 +6,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
-use crate::utils::{IntoWasm, JsValueExt};
+use crate::utils::{IntoWasm, JsValueExt, get_required_property};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
@@ -184,13 +184,11 @@ impl DataContractWasm {
         let object = Object::from(options.clone());
 
         // Extract ownerId (required)
-        let js_owner_id = Reflect::get(&object, &JsValue::from_str("ownerId"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing ownerId: {:?}", e)))?;
+        let js_owner_id = get_required_property(&object, "ownerId")?;
         let owner_id: IdentifierWasm = js_owner_id.try_into()?;
 
         // Extract schemas (required)
-        let js_schema = Reflect::get(&object, &JsValue::from_str("schemas"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing schemas: {:?}", e)))?;
+        let js_schema = get_required_property(&object, "schemas")?;
         let schema: Value = serialization::platform_value_from_object(js_schema)?;
 
         // Extract definitions (optional)

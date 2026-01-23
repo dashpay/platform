@@ -1,13 +1,13 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, get_required_property};
 use crate::{
     impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
 };
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use js_sys::{Array, Object, Reflect};
+use js_sys::{Array, Object};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -85,13 +85,11 @@ impl VotePollWasm {
         let object = Object::from(options.clone());
 
         // Extract contractId (required)
-        let js_contract_id = Reflect::get(&object, &JsValue::from_str("contractId"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing contractId: {:?}", e)))?;
+        let js_contract_id = get_required_property(&object, "contractId")?;
         let contract_id = IdentifierWasm::try_from(&js_contract_id)?.into();
 
         // Extract indexValues (required)
-        let js_index_values = Reflect::get(&object, &JsValue::from_str("indexValues"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing indexValues: {:?}", e)))?;
+        let js_index_values = get_required_property(&object, "indexValues")?;
         let index_values_value = js_index_values.with_serde_to_platform_value()?;
         let index_values = index_values_value
             .into_array()

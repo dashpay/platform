@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, get_required_property};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -18,7 +18,7 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
-use js_sys::{Array, Object, Reflect};
+use js_sys::{Array, Object};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -100,15 +100,13 @@ impl IdentityCreateTransitionWasm {
         let object = Object::from(options.clone());
 
         // Extract publicKeys (required array)
-        let js_public_keys = Reflect::get(&object, &JsValue::from_str("publicKeys"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing publicKeys: {:?}", e)))?;
+        let js_public_keys = get_required_property(&object, "publicKeys")?;
         let js_public_keys_array = Array::from(&js_public_keys);
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 
         // Extract assetLock (required)
-        let js_asset_lock = Reflect::get(&object, &JsValue::from_str("assetLock"))
-            .map_err(|e| WasmDppError::invalid_argument(format!("Missing assetLock: {:?}", e)))?;
+        let js_asset_lock = get_required_property(&object, "assetLock")?;
         let asset_lock = js_asset_lock
             .to_wasm::<AssetLockProofWasm>("AssetLockProof")?
             .clone();
