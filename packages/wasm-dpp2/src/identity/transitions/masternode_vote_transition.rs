@@ -31,7 +31,7 @@ export interface MasternodeVoteTransitionOptions {
     proTxHash: IdentifierLike;
     voterIdentityId: IdentifierLike;
     vote: Vote;
-    nonce: bigint | number;
+    nonce: bigint;
     signaturePublicKeyId?: number;
     signature?: Uint8Array;
 }

@@ -24,10 +24,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const CREDIT_TRANSFER_OPTIONS_TS: &'static str = r#"
 export interface IdentityCreditTransferOptions {
-    amount: bigint | number;
+    amount: bigint;
     senderId: IdentifierLike;
     recipientId: IdentifierLike;
-    nonce: bigint | number;
+    nonce: bigint;
     userFeeIncrease?: number;
 }
 

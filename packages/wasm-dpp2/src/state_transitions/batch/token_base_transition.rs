@@ -17,7 +17,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_BASE_TRANSITION_OPTIONS_TS: &'static str = r#"
 export interface TokenBaseTransitionOptions {
-    identityContractNonce: bigint | number;
+    identityContractNonce: bigint;
     tokenContractPosition: number;
     dataContractId: IdentifierLike;
     tokenId: IdentifierLike;

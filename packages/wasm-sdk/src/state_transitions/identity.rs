@@ -240,7 +240,7 @@ export interface IdentityCreditTransferOptions {
   /**
    * The amount of credits to transfer.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * Signer containing the private key for the sender's transfer key.
@@ -371,7 +371,7 @@ export interface IdentityCreditWithdrawalOptions {
   /**
    * The amount of credits to withdraw.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * Optional Dash address to send the withdrawn credits to.

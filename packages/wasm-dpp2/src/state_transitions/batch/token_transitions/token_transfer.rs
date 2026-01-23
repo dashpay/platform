@@ -21,7 +21,7 @@ const TOKEN_TRANSFER_OPTIONS_TS: &'static str = r#"
 export interface TokenTransferTransitionOptions {
     base: TokenBaseTransition;
     recipientId: IdentifierLike;
-    amount: bigint | number;
+    amount: bigint;
     publicNote?: string;
     sharedEncryptedNote?: SharedEncryptedNote;
     privateEncryptedNote?: PrivateEncryptedNote;

@@ -31,8 +31,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const IDENTITY_UPDATE_OPTIONS_TS: &'static str = r#"
 export interface IdentityUpdateTransitionOptions {
     identityId: IdentifierLike;
-    revision: bigint | number;
-    nonce: bigint | number;
+    revision: bigint;
+    nonce: bigint;
     addPublicKeys: IdentityPublicKeyInCreation[];
     disablePublicKeys: number[];
     userFeeIncrease?: number;

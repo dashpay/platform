@@ -40,7 +40,7 @@ impl TokenPricingScheduleWasm {
 
     #[wasm_bindgen(js_name = "SetPrices")]
     pub fn set_prices(
-        #[wasm_bindgen(unchecked_param_type = "Record<string, bigint | number>")] prices: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, bigint>")] prices: &JsValue,
     ) -> WasmDppResult<TokenPricingScheduleWasm> {
         let raw_prices = prices.with_serde_to_platform_value_map()?;
 

@@ -10,10 +10,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const EXTENDED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
 export interface ExtendedEpochInfoOptions {
     index: number;
-    firstBlockTime: bigint | number;
-    firstBlockHeight: bigint | number;
+    firstBlockTime: bigint;
+    firstBlockHeight: bigint;
     firstCoreBlockHeight: number;
-    feeMultiplierPermille: bigint | number;
+    feeMultiplierPermille: bigint;
     protocolVersion: number;
 }
 

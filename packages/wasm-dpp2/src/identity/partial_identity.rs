@@ -21,8 +21,8 @@ const PARTIAL_IDENTITY_OPTIONS_TS: &'static str = r#"
 export interface PartialIdentityOptions {
     id: IdentifierLike;
     loadedPublicKeys: Record<number, IdentityPublicKey>;
-    balance?: bigint | number;
-    revision?: bigint | number;
+    balance?: bigint;
+    revision?: bigint;
     notFoundPublicKeys?: number[];
 }
 

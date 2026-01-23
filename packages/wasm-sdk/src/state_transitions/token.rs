@@ -68,7 +68,7 @@ export interface TokenMintOptions {
   /**
    * The amount of tokens to mint.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * The identity ID of the minter.
@@ -321,7 +321,7 @@ export interface TokenBurnOptions {
   /**
    * The amount of tokens to burn.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * The identity ID of the token holder burning tokens.
@@ -558,7 +558,7 @@ export interface TokenTransferOptions {
   /**
    * The amount of tokens to transfer.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * The sender's identity ID.
@@ -1900,7 +1900,7 @@ export interface TokenSetPriceOptions {
    * The price in credits for one token.
    * Set to null to disable direct purchases.
    */
-  price: bigint | number | null;
+  price: bigint | null;
 
   /**
    * Optional public note for the price change.
@@ -2149,13 +2149,13 @@ export interface TokenDirectPurchaseOptions {
   /**
    * The amount of tokens to purchase.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * The maximum total credits the buyer is willing to pay.
    * The actual cost may be less if the token price is lower.
    */
-  maxTotalCost: bigint | number;
+  maxTotalCost: bigint;
 
   /**
    * The identity public key to use for signing the transition.

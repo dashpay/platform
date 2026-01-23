@@ -551,7 +551,7 @@ export interface DocumentPurchaseOptions {
    * The purchase price in credits.
    * Must match the document's listed price.
    */
-  price: bigint | number;
+  price: bigint;
 
   /**
    * The public key to use for signing the transition.
@@ -670,7 +670,7 @@ export interface DocumentSetPriceOptions {
    * The price in credits.
    * Set to 0 to remove the price and make the document not for sale.
    */
-  price: bigint | number;
+  price: bigint;
 
   /**
    * The identity public key to use for signing the transition.

@@ -250,14 +250,13 @@ where
     }
 }
 
-/// Convert a JS Number or BigInt to u64 with validation.
+/// Convert a JS BigInt to u64 with validation.
+///
+/// Only accepts BigInt values to avoid precision loss with large numbers.
+/// Use `BigInt(value)` in JavaScript to convert numbers to BigInt.
 ///
 /// Validates that the value is:
-/// - A BigInt that fits in u64 range, OR
-/// - A finite number (not NaN or Infinity)
-/// - An integer (no fractional part)
-/// - Non-negative
-/// - Within u64 range
+/// - A BigInt that fits in u64 range (0 to 2^64-1)
 pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
     if value.is_bigint() {
         let bigint = js_sys::BigInt::new(&value).map_err(|_| {
@@ -269,42 +268,9 @@ pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
                 field_name
             ))
         })
-    } else if let Some(num) = value.as_f64() {
-        if num.is_nan() || num.is_infinite() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' must be a finite number, got {}",
-                field_name,
-                if num.is_nan() { "NaN" } else { "Infinity" }
-            )));
-        }
-
-        if num.fract() != 0.0 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' must be an integer, got {}",
-                field_name, num
-            )));
-        }
-
-        if num < 0.0 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' must be non-negative, got {}",
-                field_name, num
-            )));
-        }
-
-        if num > u64::MAX as f64 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' must be at most {}, got {}",
-                field_name,
-                u64::MAX,
-                num
-            )));
-        }
-
-        Ok(num as u64)
     } else {
         Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be a number or BigInt",
+            "'{}' must be a BigInt, use BigInt(value) to convert",
             field_name
         )))
     }

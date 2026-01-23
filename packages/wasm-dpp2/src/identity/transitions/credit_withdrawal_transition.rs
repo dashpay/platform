@@ -35,11 +35,11 @@ export type CreditWithdrawalTransitionPoolingLike = CreditWithdrawalTransitionPo
 
 export interface IdentityCreditWithdrawalTransitionOptions {
     identityId: IdentifierLike;
-    amount: bigint | number;
+    amount: bigint;
     coreFeePerByte: number;
     pooling: CreditWithdrawalTransitionPoolingLike;
     outputScript?: CoreScript;
-    nonce?: bigint | number;
+    nonce?: bigint;
     userFeeIncrease?: number;
 }
 

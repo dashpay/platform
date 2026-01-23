@@ -20,17 +20,17 @@ const FINALIZED_EPOCH_INFO_OPTIONS_TS: &'static str = r#"
 export type BlockProposersMap = Map<Identifier, bigint>;
 
 export interface FinalizedEpochInfoOptions {
-    firstBlockTime: bigint | number;
-    firstBlockHeight: bigint | number;
-    totalBlocksInEpoch: bigint | number;
+    firstBlockTime: bigint;
+    firstBlockHeight: bigint;
+    totalBlocksInEpoch: bigint;
     firstCoreBlockHeight: number;
     nextEpochStartCoreBlockHeight: number;
-    totalProcessingFees: bigint | number;
-    totalDistributedStorageFees: bigint | number;
-    totalCreatedStorageFees: bigint | number;
-    coreBlockRewards: bigint | number;
+    totalProcessingFees: bigint;
+    totalDistributedStorageFees: bigint;
+    totalCreatedStorageFees: bigint;
+    coreBlockRewards: bigint;
     blockProposers: BlockProposersMap;
-    feeMultiplierPermille: bigint | number;
+    feeMultiplierPermille: bigint;
     protocolVersion: number;
 }
 
