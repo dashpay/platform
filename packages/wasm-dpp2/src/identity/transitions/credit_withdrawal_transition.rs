@@ -7,7 +7,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -23,7 +23,6 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -106,8 +105,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let pooling_js = get_required_property(&options_obj, "pooling")?;
         let pooling = PoolingWasm::try_from(pooling_js)?;
 
-        let output_script_js =
-            Reflect::get(&options_obj, &"outputScript".into()).unwrap_or(JsValue::UNDEFINED);
+        let output_script_js = get_optional_property(&options_obj, "outputScript");
         let output_script: Option<CoreScript> = match output_script_js.is_undefined() {
             true => None,
             false => Some(
@@ -118,15 +116,14 @@ impl IdentityCreditWithdrawalTransitionWasm {
             ),
         };
 
-        let nonce_js = Reflect::get(&options_obj, &"nonce".into()).unwrap_or(JsValue::UNDEFINED);
+        let nonce_js = get_optional_property(&options_obj, "nonce");
         let nonce: IdentityNonce = if nonce_js.is_undefined() {
             0
         } else {
             try_to_u64(nonce_js)?
         };
 
-        let user_fee_increase_js =
-            Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase_js = get_optional_property(&options_obj, "userFeeIncrease");
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {

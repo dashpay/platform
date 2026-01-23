@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{IntoWasm, get_required_property, try_to_object};
+use wasm_dpp2::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object};
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -642,9 +642,8 @@ impl WasmSdk {
             })?;
 
         // Parse keys to add from options
-        let add_public_keys_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("addPublicKeys"))
-                .unwrap_or(JsValue::UNDEFINED);
+        let options_obj = try_to_object(options_value.clone(), "options")?;
+        let add_public_keys_js = get_optional_property(&options_obj, "addPublicKeys");
 
         let keys_to_add: Vec<IdentityPublicKey> = if !add_public_keys_js.is_undefined()
             && !add_public_keys_js.is_null()

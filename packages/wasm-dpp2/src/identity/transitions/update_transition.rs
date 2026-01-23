@@ -6,7 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -21,7 +21,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use js_sys::{Array, Reflect};
+use js_sys::Array;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -109,8 +109,7 @@ impl IdentityUpdateTransitionWasm {
             .map(|(i, v)| try_to_u32(v, &format!("disablePublicKeys[{}]", i)))
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
-        let user_fee_increase_js =
-            Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase_js = get_optional_property(&options_obj, "userFeeIncrease");
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {

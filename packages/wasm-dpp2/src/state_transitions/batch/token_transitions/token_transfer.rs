@@ -4,14 +4,13 @@ use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_object, try_to_u64};
+use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u64};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 use dpp::state_transition::batch_transition::TokenTransferTransition;
 use dpp::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -67,16 +66,14 @@ impl TokenTransferTransitionWasm {
 
         let amount = try_to_u64(get_required_property(&options_obj, "amount")?)?;
 
-        let public_note_js =
-            Reflect::get(&options_obj, &"publicNote".into()).unwrap_or(JsValue::UNDEFINED);
+        let public_note_js = get_optional_property(&options_obj, "publicNote");
         let public_note: Option<String> = if public_note_js.is_undefined() {
             None
         } else {
             public_note_js.as_string()
         };
 
-        let js_shared_encrypted_note =
-            Reflect::get(&options_obj, &"sharedEncryptedNote".into()).unwrap_or(JsValue::UNDEFINED);
+        let js_shared_encrypted_note = get_optional_property(&options_obj, "sharedEncryptedNote");
         let shared_encrypted_note: Option<SharedEncryptedNote> =
             match js_shared_encrypted_note.is_undefined() {
                 true => None,
@@ -88,8 +85,7 @@ impl TokenTransferTransitionWasm {
                 ),
             };
 
-        let js_private_encrypted_note = Reflect::get(&options_obj, &"privateEncryptedNote".into())
-            .unwrap_or(JsValue::UNDEFINED);
+        let js_private_encrypted_note = get_optional_property(&options_obj, "privateEncryptedNote");
         let private_encrypted_note: Option<PrivateEncryptedNote> =
             match js_private_encrypted_note.is_undefined() {
                 true => None,

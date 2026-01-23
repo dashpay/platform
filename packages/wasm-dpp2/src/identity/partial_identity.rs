@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{IntoWasm, JsValueExt, get_required_property, try_to_object, try_to_u64};
+use crate::utils::{IntoWasm, JsValueExt, get_optional_property, get_required_property, try_to_object, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value;
@@ -81,24 +81,21 @@ impl PartialIdentityWasm {
         let loaded_public_keys_js = get_required_property(&options_obj, "loadedPublicKeys")?;
         let loaded_public_keys = value_to_loaded_public_keys(&loaded_public_keys_js)?;
 
-        let balance_js =
-            Reflect::get(&options_obj, &"balance".into()).unwrap_or(JsValue::UNDEFINED);
+        let balance_js = get_optional_property(&options_obj, "balance");
         let balance: Option<Credits> = if balance_js.is_undefined() {
             None
         } else {
             Some(try_to_u64(balance_js)?)
         };
 
-        let revision_js =
-            Reflect::get(&options_obj, &"revision".into()).unwrap_or(JsValue::UNDEFINED);
+        let revision_js = get_optional_property(&options_obj, "revision");
         let revision: Option<Revision> = if revision_js.is_undefined() {
             None
         } else {
             Some(try_to_u64(revision_js)?)
         };
 
-        let not_found_public_keys_js =
-            Reflect::get(&options_obj, &"notFoundPublicKeys".into()).unwrap_or(JsValue::UNDEFINED);
+        let not_found_public_keys_js = get_optional_property(&options_obj, "notFoundPublicKeys");
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
@@ -231,8 +228,7 @@ impl PartialIdentityWasm {
         let loaded_public_keys = value_to_loaded_public_keys_from_object(&loaded_public_keys_js)?;
 
         // balance - can be BigInt, number, or undefined
-        let balance_js =
-            Reflect::get(&options_obj, &"balance".into()).unwrap_or(JsValue::UNDEFINED);
+        let balance_js = get_optional_property(&options_obj, "balance");
         let balance: Option<Credits> = if balance_js.is_undefined() || balance_js.is_null() {
             None
         } else {
@@ -240,8 +236,7 @@ impl PartialIdentityWasm {
         };
 
         // revision - can be BigInt, number, or undefined
-        let revision_js =
-            Reflect::get(&options_obj, &"revision".into()).unwrap_or(JsValue::UNDEFINED);
+        let revision_js = get_optional_property(&options_obj, "revision");
         let revision: Option<Revision> = if revision_js.is_undefined() || revision_js.is_null() {
             None
         } else {
@@ -249,8 +244,7 @@ impl PartialIdentityWasm {
         };
 
         // notFoundPublicKeys
-        let not_found_public_keys_js =
-            Reflect::get(&options_obj, &"notFoundPublicKeys".into()).unwrap_or(JsValue::UNDEFINED);
+        let not_found_public_keys_js = get_optional_property(&options_obj, "notFoundPublicKeys");
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {
@@ -281,8 +275,7 @@ impl PartialIdentityWasm {
         let loaded_public_keys = value_to_loaded_public_keys_from_json(&loaded_public_keys_js)?;
 
         // balance - number or null
-        let balance_js =
-            Reflect::get(&options_obj, &"balance".into()).unwrap_or(JsValue::UNDEFINED);
+        let balance_js = get_optional_property(&options_obj, "balance");
         let balance: Option<Credits> = if balance_js.is_undefined() || balance_js.is_null() {
             None
         } else {
@@ -290,8 +283,7 @@ impl PartialIdentityWasm {
         };
 
         // revision - number or null
-        let revision_js =
-            Reflect::get(&options_obj, &"revision".into()).unwrap_or(JsValue::UNDEFINED);
+        let revision_js = get_optional_property(&options_obj, "revision");
         let revision: Option<Revision> = if revision_js.is_undefined() || revision_js.is_null() {
             None
         } else {
@@ -299,8 +291,7 @@ impl PartialIdentityWasm {
         };
 
         // notFoundPublicKeys
-        let not_found_public_keys_js =
-            Reflect::get(&options_obj, &"notFoundPublicKeys".into()).unwrap_or(JsValue::UNDEFINED);
+        let not_found_public_keys_js = get_optional_property(&options_obj, "notFoundPublicKeys");
         let not_found_public_keys: Option<Array> = if not_found_public_keys_js.is_undefined() {
             None
         } else {

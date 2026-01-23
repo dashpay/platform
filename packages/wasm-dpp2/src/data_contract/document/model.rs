@@ -5,7 +5,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{ToSerdeJSONExt, get_required_property, try_to_fixed_bytes};
+use crate::utils::{ToSerdeJSONExt, get_optional_property, get_required_property, try_to_fixed_bytes};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
@@ -19,7 +19,7 @@ use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
-use js_sys::{Object, Reflect};
+use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -195,8 +195,7 @@ impl DocumentWasm {
             IdentifierWasm::try_from(&get_required_property(&options_obj, "ownerId")?)?.into();
 
         // Extract optional properties
-        let revision_js = Reflect::get(&options_value, &JsValue::from_str("revision"))
-            .unwrap_or(JsValue::UNDEFINED);
+        let revision_js = get_optional_property(&options_obj, "revision");
         let revision = if revision_js.is_undefined() {
             Revision::from(1u64)
         } else {
@@ -208,11 +207,9 @@ impl DocumentWasm {
             )
         };
 
-        let id_js =
-            Reflect::get(&options_value, &JsValue::from_str("id")).unwrap_or(JsValue::UNDEFINED);
+        let id_js = get_optional_property(&options_obj, "id");
 
-        let entropy_js = Reflect::get(&options_value, &JsValue::from_str("entropy"))
-            .unwrap_or(JsValue::UNDEFINED);
+        let entropy_js = get_optional_property(&options_obj, "entropy");
 
         let properties = properties_js.with_serde_to_platform_value_map()?;
 

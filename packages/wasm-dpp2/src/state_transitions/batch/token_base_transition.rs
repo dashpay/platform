@@ -2,13 +2,12 @@ use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_object, try_to_u16, try_to_u64};
+use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u64};
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -68,8 +67,7 @@ impl TokenBaseTransitionWasm {
         let token_id_js = get_required_property(&options_obj, "tokenId")?;
         let token_id = IdentifierWasm::try_from(&token_id_js)?.into();
 
-        let using_group_info_js =
-            Reflect::get(&options_obj, &"usingGroupInfo".into()).unwrap_or(JsValue::UNDEFINED);
+        let using_group_info_js = get_optional_property(&options_obj, "usingGroupInfo");
         let group_info: Option<GroupStateTransitionInfo> = match using_group_info_js.is_undefined()
         {
             true => None,

@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, get_required_property, try_to_bytes, try_to_object, try_to_u32, try_to_u64};
+use crate::utils::{IntoWasm, get_optional_property, get_required_property, try_to_bytes, try_to_object, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -20,9 +20,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const MASTERNODE_VOTE_OPTIONS_TS: &'static str = r#"
@@ -107,16 +105,14 @@ impl MasternodeVoteTransitionWasm {
 
         let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
 
-        let signature_public_key_js = Reflect::get(&options_obj, &"signaturePublicKeyId".into())
-            .unwrap_or(JsValue::UNDEFINED);
+        let signature_public_key_js = get_optional_property(&options_obj, "signaturePublicKeyId");
         let signature_public_key_id: KeyID = if signature_public_key_js.is_undefined() {
             0
         } else {
             try_to_u32(signature_public_key_js, "signaturePublicKeyId")?
         };
 
-        let signature_js =
-            Reflect::get(&options_obj, &"signature".into()).unwrap_or(JsValue::UNDEFINED);
+        let signature_js = get_optional_property(&options_obj, "signature");
         let signature: Vec<u8> = if signature_js.is_undefined() {
             Vec::new()
         } else {

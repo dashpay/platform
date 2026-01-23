@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{get_required_property, try_to_object, try_to_u16, try_to_u64};
+use crate::utils::{get_optional_property, get_required_property, try_to_object, try_to_u16, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -16,9 +16,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CREDIT_TRANSFER_OPTIONS_TS: &'static str = r#"
@@ -91,8 +89,7 @@ impl IdentityCreditTransferWasm {
 
         let nonce = try_to_u64(get_required_property(&options_obj, "nonce")?)?;
 
-        let user_fee_increase_js =
-            Reflect::get(&options_obj, &"userFeeIncrease".into()).unwrap_or(JsValue::UNDEFINED);
+        let user_fee_increase_js = get_optional_property(&options_obj, "userFeeIncrease");
         let user_fee_increase: UserFeeIncrease = if user_fee_increase_js.is_undefined() {
             0
         } else {

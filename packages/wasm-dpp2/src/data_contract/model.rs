@@ -6,7 +6,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
-use crate::utils::{IntoWasm, JsValueExt, get_required_property};
+use crate::utils::{IntoWasm, JsValueExt, get_optional_property, get_required_property};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
@@ -192,8 +192,7 @@ impl DataContractWasm {
         let schema: Value = serialization::platform_value_from_object(js_schema)?;
 
         // Extract definitions (optional)
-        let js_definitions =
-            Reflect::get(&object, &JsValue::from_str("definitions")).unwrap_or(JsValue::UNDEFINED);
+        let js_definitions = get_optional_property(&object, "definitions");
         let definitions: Option<Value> =
             match js_definitions.is_undefined() | js_definitions.is_null() {
                 true => None,
@@ -201,8 +200,7 @@ impl DataContractWasm {
             };
 
         // Extract tokens (optional)
-        let js_tokens =
-            Reflect::get(&object, &JsValue::from_str("tokens")).unwrap_or(JsValue::UNDEFINED);
+        let js_tokens = get_optional_property(&object, "tokens");
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
             match js_tokens.is_undefined() | js_tokens.is_null() {
                 true => BTreeMap::new(),
@@ -210,8 +208,7 @@ impl DataContractWasm {
             };
 
         // Extract platformVersion (optional)
-        let js_platform_version = Reflect::get(&object, &JsValue::from_str("platformVersion"))
-            .unwrap_or(JsValue::UNDEFINED);
+        let js_platform_version = get_optional_property(&object, "platformVersion");
         let platform_version: PlatformVersion = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default().into(),
             false => PlatformVersionWasm::try_from(js_platform_version)?.into(),
