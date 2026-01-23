@@ -316,6 +316,16 @@ pub fn try_to_array(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::A
     Ok(js_sys::Array::from(&value))
 }
 
+/// Convert a JS value to Map with validation.
+///
+/// Uses `dyn_into()` to safely convert, returning an error if the value is not a Map.
+/// This is preferred over `Map::from()` which unsafely casts any JsValue without validation.
+pub fn try_to_map(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::Map> {
+    value
+        .dyn_into()
+        .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be a Map", field_name)))
+}
+
 /// Convert a JS value to bytes (Vec<u8>) with type validation.
 ///
 /// Validates that the value is a Uint8Array using `dyn_into()`.

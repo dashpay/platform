@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options_with, try_to_object, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options_with, try_to_map, try_to_object, try_to_u32, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
@@ -400,7 +400,7 @@ impl FinalizedEpochInfoWasm {
         #[wasm_bindgen(js_name = "blockProposers")] block_proposers: BlockProposersMapJs,
     ) -> WasmDppResult<()> {
         let block_proposers_map =
-            block_proposers_from_map(&Map::from(JsValue::from(block_proposers)))?;
+            block_proposers_from_map(&try_to_map(block_proposers.into(), "blockProposers")?)?;
         self.v0_mut().block_proposers = block_proposers_map;
         Ok(())
     }

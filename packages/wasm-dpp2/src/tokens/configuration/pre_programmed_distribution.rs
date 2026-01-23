@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_to_array, try_to_u64};
+use crate::utils::{try_to_array, try_to_map, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
@@ -131,7 +131,7 @@ pub fn distributions_from_map(
             ))
         })?;
 
-        let inner_map = Map::from(value);
+        let inner_map = try_to_map(value, "distribution amounts")?;
         let amounts = distribution_amounts_from_map(&inner_map)?;
 
         distributions.insert(timestamp, amounts);
@@ -172,7 +172,8 @@ impl TokenPreProgrammedDistributionWasm {
     pub fn constructor(
         distributions: PreProgrammedDistributionsMapJs,
     ) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
-        let distributions_map = distributions_from_map(&Map::from(JsValue::from(distributions)))?;
+        let distributions_map =
+            distributions_from_map(&try_to_map(distributions.into(), "distributions")?)?;
 
         Ok(TokenPreProgrammedDistributionWasm(
             TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 {
@@ -191,7 +192,8 @@ impl TokenPreProgrammedDistributionWasm {
         &mut self,
         distributions: PreProgrammedDistributionsMapJs,
     ) -> WasmDppResult<()> {
-        let distributions_map = distributions_from_map(&Map::from(JsValue::from(distributions)))?;
+        let distributions_map =
+            distributions_from_map(&try_to_map(distributions.into(), "distributions")?)?;
 
         self.0.set_distributions(distributions_map);
 
