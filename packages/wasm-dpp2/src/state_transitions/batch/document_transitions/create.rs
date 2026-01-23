@@ -137,7 +137,7 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        transition: DocumentTransitionWasm,
+        transition: &DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
         transition.create_transition()
     }

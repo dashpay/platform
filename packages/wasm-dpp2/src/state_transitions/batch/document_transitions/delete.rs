@@ -57,7 +57,7 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        transition: DocumentTransitionWasm,
+        transition: &DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         transition.delete_transition()
     }
