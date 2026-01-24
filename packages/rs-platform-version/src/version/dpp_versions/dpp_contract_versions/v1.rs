@@ -34,6 +34,7 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
             try_from_schema: 0,
             create_document_types_from_document_schemas: 0,
+            parse_property_reference: None,
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {

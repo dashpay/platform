@@ -1,6 +1,6 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property::reference::DocumentPropertyReferenceTarget;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

@@ -34,6 +34,7 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
             try_from_schema: 1,                             //changed to use document type V1
             create_document_types_from_document_schemas: 1, //changed to allow contracts with only tokens
+            parse_property_reference: None,
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {

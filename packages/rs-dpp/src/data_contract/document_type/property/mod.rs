@@ -4,7 +4,6 @@ use std::convert::TryInto;
 use std::io::{BufReader, Cursor, Read};
 
 use crate::data_contract::errors::DataContractError;
-use bincode::{Decode, Encode};
 
 use crate::consensus::basic::decode::DecodingError;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
@@ -17,16 +16,17 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
 use integer_encoding::{VarInt, VarIntReader};
 use itertools::Itertools;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
+use reference::DocumentPropertyReference;
 use serde::Serialize;
 
 pub mod array;
+pub mod reference;
 
 // This struct will be changed in future to support more validation logic and serialization
 // It will become versioned and it will be introduced by a new document type version
@@ -49,30 +49,6 @@ pub struct StringPropertySizes {
 pub struct ByteArrayPropertySizes {
     pub min_size: Option<u16>,
     pub max_size: Option<u16>,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize)]
-pub struct DocumentPropertyReference {
-    pub target: DocumentPropertyReferenceTarget,
-    pub must_exist: bool,
-}
-
-#[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum DocumentPropertyReferenceTarget {
-    Identity,
-    Contract,
-}
-
-impl std::fmt::Display for DocumentPropertyReferenceTarget {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DocumentPropertyReferenceTarget::Identity => write!(f, "identity"),
-            DocumentPropertyReferenceTarget::Contract => write!(f, "contract"),
-        }
-    }
 }
 
 // @append_only
@@ -2392,6 +2368,7 @@ impl DocumentPropertyType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::document_type::property::reference::DocumentPropertyReferenceTarget;
     use serde_json::json;
 
     #[test]
@@ -2401,7 +2378,7 @@ mod tests {
             required: false,
             transient: false,
             reference: Some(DocumentPropertyReference {
-                target: DocumentPropertyReferenceTarget::Identity,
+                target: DocumentPropertyReferenceTarget::IdentityReferenceTarget,
                 must_exist: false,
             }),
         };

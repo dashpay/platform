@@ -246,6 +246,7 @@ impl DocumentTypeV0 {
             // TODO: It's very inefficient. It must be done in one iteration and flattened properties
             //  must keep a reference? We even could keep only one collection
             try_from_schema::insert_values(
+                data_contract_system_version,
                 &mut flattened_document_properties,
                 &required_fields,
                 &transient_fields,
@@ -254,10 +255,11 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 data_contact_config,
-            )
-            .map_err(consensus_or_protocol_data_contract_error)?;
+                platform_version,
+            )?;
 
             try_from_schema::insert_values_nested(
+                data_contract_system_version,
                 &mut document_properties,
                 &required_fields,
                 &transient_fields,
@@ -265,8 +267,8 @@ impl DocumentTypeV0 {
                 property_value,
                 &root_schema,
                 data_contact_config,
-            )
-            .map_err(consensus_or_protocol_data_contract_error)?;
+                platform_version,
+            )?;
         }
 
         // Initialize indices

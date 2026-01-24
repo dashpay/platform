@@ -2,6 +2,7 @@ use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -28,7 +29,7 @@ impl DocumentType {
 
         if document_schemas.is_empty() && !has_tokens {
             return Err(consensus_or_protocol_data_contract_error(
-                DocumentTypesAreMissingError::new(data_contract_id).into(),
+                DataContractError::from(DocumentTypesAreMissingError::new(data_contract_id)).into(),
             ));
         }
 

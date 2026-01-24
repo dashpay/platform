@@ -1,5 +1,5 @@
 pub mod accessors;
-mod property;
+pub mod property;
 pub use property::*;
 pub mod class_methods;
 mod index;

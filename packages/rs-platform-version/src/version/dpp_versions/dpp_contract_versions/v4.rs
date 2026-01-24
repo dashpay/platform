@@ -5,8 +5,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 };
 use versioned_feature_core::FeatureVersionBounds;
 
-// Introduced in protocol version 10, system_properties are changed to allow to make indexes on $creatorId
-pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
+// Introduced in protocol version 12, adding in parse property reference
+pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
         min_version: 0,
@@ -35,11 +35,11 @@ pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
         class_method_versions: DocumentTypeClassMethodVersions {
             try_from_schema: 1,
             create_document_types_from_document_schemas: 1,
-            parse_property_reference: None,
+            parse_property_reference: Some(0), // parsing property references are new
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
-            should_add_creator_id: 1, //changed
+            should_add_creator_id: 1,
             enrich_with_base_schema: 0,
             find_identifier_and_binary_paths: 0,
             validate_max_depth: 0,

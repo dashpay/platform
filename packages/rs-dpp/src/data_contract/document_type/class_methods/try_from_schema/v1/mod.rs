@@ -49,7 +49,9 @@ use crate::data_contract::document_type::class_methods::try_from_schema::{
     NOT_ALLOWED_SYSTEM_PROPERTIES,
 };
 use crate::data_contract::document_type::class_methods::{
-    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+    consensus_or_protocol_data_contract_error,
+    consensus_or_protocol_data_contract_error_from_wrapped_protocol_error,
+    consensus_or_protocol_value_error,
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
@@ -263,6 +265,7 @@ impl DocumentTypeV1 {
             // TODO: It's very inefficient. It must be done in one iteration and flattened properties
             //  must keep a reference? We even could keep only one collection
             insert_values(
+                data_contract_system_version,
                 &mut flattened_document_properties,
                 &required_fields,
                 &transient_fields,
@@ -271,10 +274,12 @@ impl DocumentTypeV1 {
                 property_value,
                 &root_schema,
                 data_contact_config,
+                platform_version,
             )
-            .map_err(consensus_or_protocol_data_contract_error)?;
+            .map_err(consensus_or_protocol_data_contract_error_from_wrapped_protocol_error)?;
 
             insert_values_nested(
+                data_contract_system_version,
                 &mut document_properties,
                 &required_fields,
                 &transient_fields,
@@ -282,8 +287,9 @@ impl DocumentTypeV1 {
                 property_value,
                 &root_schema,
                 data_contact_config,
+                platform_version,
             )
-            .map_err(consensus_or_protocol_data_contract_error)?;
+            .map_err(consensus_or_protocol_data_contract_error_from_wrapped_protocol_error)?;
         }
 
         // Initialize indices

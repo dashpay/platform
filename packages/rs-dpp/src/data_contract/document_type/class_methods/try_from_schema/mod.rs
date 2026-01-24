@@ -2,8 +2,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::{
-    property_names, DocumentProperty, DocumentPropertyReference, DocumentPropertyReferenceTarget,
-    DocumentPropertyType, DocumentType,
+    property_names, DocumentProperty, DocumentPropertyType, DocumentType,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -85,6 +84,7 @@ impl DocumentType {
 
 #[allow(clippy::too_many_arguments)]
 fn insert_values(
+    data_contract_system_version: u16,
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     known_transient: &BTreeSet<String>,
@@ -93,7 +93,8 @@ fn insert_values(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
-) -> Result<(), DataContractError> {
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
     let mut to_visit: Vec<(Option<String>, String, &Value)> =
         vec![(prefix, property_key, property_value)];
 
@@ -144,7 +145,12 @@ fn insert_values(
                 }
             }
             property_type => {
-                let reference = parse_property_reference(&inner_properties, &property_type)?;
+                let reference = DocumentType::parse_property_reference(
+                    data_contract_system_version,
+                    &inner_properties,
+                    &property_type,
+                    platform_version,
+                )?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -163,6 +169,7 @@ fn insert_values(
 
 // TODO: This is quite big
 fn insert_values_nested(
+    data_contract_system_version: u16,
     document_properties: &mut IndexMap<String, DocumentProperty>,
     known_required: &BTreeSet<String>,
     known_transient: &BTreeSet<String>,
@@ -170,7 +177,8 @@ fn insert_values_nested(
     property_value: &Value,
     root_schema: &Value,
     config: &DataContractConfig,
-) -> Result<(), DataContractError> {
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
     let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
     if let Some(schema_ref) = inner_properties.get_optional_str(property_names::REF)? {
@@ -240,6 +248,7 @@ fn insert_values_nested(
                             .to_string();
 
                         insert_values_nested(
+                            data_contract_system_version,
                             &mut nested_properties,
                             &stripped_required,
                             &stripped_transient,
@@ -247,6 +256,7 @@ fn insert_values_nested(
                             object_property_value,
                             root_schema,
                             config,
+                            platform_version,
                         )?;
                     }
                 }
@@ -256,7 +266,12 @@ fn insert_values_nested(
             property_type => property_type,
         };
 
-    let reference = parse_property_reference(&inner_properties, &property_type)?;
+    let reference = DocumentType::parse_property_reference(
+        data_contract_system_version,
+        &inner_properties,
+        &property_type,
+        platform_version,
+    )?;
 
     document_properties.insert(
         property_key,
@@ -269,208 +284,4 @@ fn insert_values_nested(
     );
 
     Ok(())
-}
-
-fn parse_property_reference(
-    inner_properties: &BTreeMap<String, &Value>,
-    property_type: &DocumentPropertyType,
-) -> Result<Option<DocumentPropertyReference>, DataContractError> {
-    let Some(refers_to_value) = inner_properties.get(property_names::REFERS_TO) else {
-        return Ok(None);
-    };
-
-    if !matches!(property_type, DocumentPropertyType::Identifier) {
-        return Err(DataContractError::InvalidContractStructure(
-            "refersTo is only allowed on identifier properties".to_string(),
-        ));
-    }
-
-    let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
-
-    let target = match refers_to_map
-        .get_str(property_names::TYPE)
-        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?
-    {
-        "identity" => DocumentPropertyReferenceTarget::Identity,
-        "contract" => DocumentPropertyReferenceTarget::Contract,
-        other => {
-            return Err(DataContractError::InvalidContractStructure(format!(
-                "invalid refersTo type {other}"
-            )))
-        }
-    };
-
-    let must_exist = refers_to_map
-        .get_optional_bool("mustExist")
-        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?
-        .unwrap_or(true);
-
-    Ok(Some(DocumentPropertyReference { target, must_exist }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use platform_value::Identifier;
-    use platform_version::version::PlatformVersion;
-    use serde_json::json;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn should_parse_refers_to_on_identifier_property() {
-        let platform_version = PlatformVersion::latest();
-        let config =
-            DataContractConfig::default_for_version(platform_version).expect("config should build");
-
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "toUserId": {
-                    "type": "array",
-                    "byteArray": true,
-                    "minItems": 32,
-                    "maxItems": 32,
-                    "contentMediaType": "application/x.dash.dpp.identifier",
-                    "position": 0,
-                    "refersTo": {
-                        "type": "identity"
-                    }
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        });
-
-        let value = platform_value::to_value(schema).expect("schema should convert");
-
-        let document_type = DocumentType::try_from_schema(
-            Identifier::random(),
-            0,
-            config.version(),
-            "msg",
-            value,
-            None,
-            &BTreeMap::new(),
-            &config,
-            false,
-            &mut vec![],
-            platform_version,
-        )
-        .expect("should parse");
-
-        let reference = document_type
-            .as_ref()
-            .flattened_properties()
-            .get("toUserId")
-            .and_then(|p| p.reference.clone())
-            .expect("reference should be present");
-
-        assert!(matches!(
-            reference.target,
-            DocumentPropertyReferenceTarget::Identity
-        ));
-        assert!(reference.must_exist);
-    }
-
-    #[test]
-    fn should_reject_refers_to_on_non_identifier_property() {
-        let platform_version = PlatformVersion::latest();
-        let config =
-            DataContractConfig::default_for_version(platform_version).expect("config should build");
-
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "position": 0,
-                    "refersTo": { "type": "identity" }
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        });
-
-        let value = platform_value::to_value(schema).expect("schema should convert");
-
-        let err = DocumentType::try_from_schema(
-            Identifier::random(),
-            0,
-            config.version(),
-            "msg",
-            value,
-            None,
-            &BTreeMap::new(),
-            &config,
-            false,
-            &mut vec![],
-            platform_version,
-        )
-        .expect_err("should fail");
-
-        let message = err.to_string();
-        assert!(
-            message.contains("refersTo is only allowed on identifier properties"),
-            "unexpected error: {message}"
-        );
-    }
-
-    #[test]
-    fn should_parse_refers_to_with_must_exist_false() {
-        let platform_version = PlatformVersion::latest();
-        let config =
-            DataContractConfig::default_for_version(platform_version).expect("config should build");
-
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "toUserId": {
-                    "type": "array",
-                    "byteArray": true,
-                    "minItems": 32,
-                    "maxItems": 32,
-                    "contentMediaType": "application/x.dash.dpp.identifier",
-                    "position": 0,
-                    "refersTo": {
-                        "type": "identity",
-                        "mustExist": false
-                    }
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        });
-
-        let value = platform_value::to_value(schema).expect("schema should convert");
-
-        let document_type = DocumentType::try_from_schema(
-            Identifier::random(),
-            0,
-            config.version(),
-            "msg",
-            value,
-            None,
-            &BTreeMap::new(),
-            &config,
-            false,
-            &mut vec![],
-            platform_version,
-        )
-        .expect("should parse");
-
-        let reference = document_type
-            .as_ref()
-            .flattened_properties()
-            .get("toUserId")
-            .and_then(|p| p.reference.clone())
-            .expect("reference should be present");
-
-        assert!(matches!(
-            reference.target,
-            DocumentPropertyReferenceTarget::Identity
-        ));
-        assert!(!reference.must_exist);
-    }
 }

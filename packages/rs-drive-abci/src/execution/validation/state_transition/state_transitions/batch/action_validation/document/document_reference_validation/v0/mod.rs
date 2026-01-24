@@ -6,7 +6,8 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, DocumentTypeRef};
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::property::reference::DocumentPropertyReferenceTarget;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
@@ -95,7 +96,7 @@ fn validate_document_type_references_v0(
         };
 
         match reference.target {
-            DocumentPropertyReferenceTarget::Identity => {
+            DocumentPropertyReferenceTarget::IdentityReferenceTarget => {
                 let validation_result = validate_identity_reference_v0(
                     document_data,
                     path,
@@ -161,7 +162,7 @@ fn validate_identity_reference_v0(
             ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(
                 ReferencedEntityNotFoundError::new(
                     missing_id,
-                    DocumentPropertyReferenceTarget::Identity,
+                    DocumentPropertyReferenceTarget::IdentityReferenceTarget,
                     path.to_string(),
                 ),
             )),
