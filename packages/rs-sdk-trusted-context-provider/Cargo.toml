@@ -18,7 +18,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1.41"
-lru = "0.12.5"
+lru = "0.16.3"
 arc-swap = "1.7.1"
 hex = "0.4.3"
 futures = "0.3"

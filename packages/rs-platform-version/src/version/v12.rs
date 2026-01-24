@@ -30,7 +30,6 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_12: ProtocolVersion = 12;
 
-/// This version introduces document reference validation in document state validation.
 /// Introduced in Platform release 3.1.0.
 pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
@@ -38,7 +37,7 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V7,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V8,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V8, // changed to v8 for reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
