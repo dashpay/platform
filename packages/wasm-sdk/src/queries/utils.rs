@@ -3,14 +3,14 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::serialization::conversions::{from_object, js_value_to_platform_value};
 
-use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
 
 pub(crate) fn deserialize_required_query<T, Q>(
     query: Q,
     missing_error: &str,
-    context: &str,
+    _context: &str,
 ) -> Result<T, WasmSdkError>
 where
     T: DeserializeOwned,
@@ -22,13 +22,12 @@ where
         return Err(WasmSdkError::invalid_argument(missing_error.to_string()));
     }
 
-    serde_wasm_bindgen::from_value(value)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
+    Ok(from_object(value)?)
 }
 
 pub(crate) fn deserialize_query_with_default<T, Q>(
     query: Option<Q>,
-    context: &str,
+    _context: &str,
 ) -> Result<T, WasmSdkError>
 where
     T: Default + DeserializeOwned,
@@ -40,8 +39,7 @@ where
         return Ok(T::default());
     }
 
-    serde_wasm_bindgen::from_value(value)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
+    Ok(from_object(value)?)
 }
 
 pub(crate) fn convert_optional_limit(
@@ -70,17 +68,18 @@ pub(crate) fn convert_json_values_to_platform_values(
     values: Option<Vec<JsonValue>>,
     field_name: &str,
 ) -> Result<Vec<PlatformValue>, WasmSdkError> {
-    let js_values = values
+    values
         .unwrap_or_default()
         .into_iter()
         .map(|value| {
             // Use json_compatible() to ensure objects become plain JS objects (not Maps)
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            value.serialize(&serializer).map_err(|err| {
+            let js_value = value.serialize(&serializer).map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
+            })?;
+            js_value_to_platform_value(&js_value).map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    js_values_to_platform_values(js_values)
+        .collect()
 }

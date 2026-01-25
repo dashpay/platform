@@ -10,6 +10,7 @@ use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::serialization::conversions::to_object;
 use wasm_dpp2::StateTransitionWasm;
 
 // TODO: Create proper WASM wrappers for StateTransitionProofResult variants.
@@ -79,9 +80,7 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
             })?;
 
-        serde_wasm_bindgen::to_value(&result)
-            .map(Into::into)
-            .map_err(|e| WasmSdkError::generic(format!("Failed to serialize result: {}", e)))
+        Ok(to_object(&result).map(Into::into)?)
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -108,8 +107,6 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
-        serde_wasm_bindgen::to_value(&result)
-            .map(Into::into)
-            .map_err(|e| WasmSdkError::generic(format!("Failed to serialize result: {}", e)))
+        Ok(to_object(&result).map(Into::into)?)
     }
 }

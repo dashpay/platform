@@ -9,8 +9,7 @@ use rs_dapi_client::RequestSettings;
 use serde::Deserialize;
 use std::time::Duration;
 use wasm_bindgen::prelude::*;
-use wasm_dpp2::error::WasmDppError;
-use wasm_dpp2::utils::try_from_options_optional;
+use wasm_dpp2::serialization::conversions::from_object;
 
 // ============================================================================
 // RequestSettings - for queries and basic requests
@@ -98,9 +97,7 @@ pub fn parse_request_settings(
         return Ok(None);
     }
 
-    let input: RequestSettingsInput = serde_wasm_bindgen::from_value(js_value).map_err(|e| {
-        WasmSdkError::serialization(format!("Failed to parse request settings: {}", e))
-    })?;
+    let input: RequestSettingsInput = from_object(js_value)?;
     Ok(Some(input.into()))
 }
 
@@ -208,8 +205,7 @@ impl TryFrom<&JsValue> for PutSettingsInput {
     type Error = wasm_dpp2::error::WasmDppError;
 
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        serde_wasm_bindgen::from_value(value.clone())
-            .map_err(|e| WasmDppError::serialization(format!("Failed to parse put settings: {}", e)))
+        from_object(value.clone())
     }
 }
 
@@ -261,8 +257,7 @@ pub fn parse_put_settings(
         return Ok(None);
     }
 
-    let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to parse put settings: {}", e)))?;
+    let input: PutSettingsInput = from_object(js_value)?;
     Ok(Some(input.into()))
 }
 

@@ -11,6 +11,7 @@ use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::serialization::conversions::to_object;
 use wasm_dpp2::{NetworkLikeJs, NetworkWasm};
 
 /// Key pair information
@@ -298,7 +299,6 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&result)
-            .map_err(|e| WasmSdkError::generic(format!("Serialization error: {}", e)))
+        Ok(to_object(&result)?)
     }
 }

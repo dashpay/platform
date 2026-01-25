@@ -3,8 +3,8 @@ use crate::queries::utils::{
 };
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
-use crate::utils::js_value_to_platform_value;
 use crate::WasmSdkError;
+use wasm_dpp2::serialization::conversions::js_value_to_platform_value;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::FetchMany;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
@@ -122,7 +122,7 @@ fn create_vote_polls_by_document_type_query(
 
     let start_at_value = match start_at_value {
         Some(value) => {
-            let platform_value = js_value_to_platform_value(value).map_err(|err| {
+            let platform_value = js_value_to_platform_value(&value).map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid startAtValue: {}", err))
             })?;
             Some((platform_value, start_at_value_included.unwrap_or(true)))
