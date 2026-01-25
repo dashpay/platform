@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_to_array, try_to_map, try_to_u64};
+use crate::utils::{try_to_array, try_to_map, try_to_u64, JsMapExt};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
@@ -143,27 +143,23 @@ pub fn distributions_from_map(
 fn distribution_amounts_to_map(
     amounts: &BTreeMap<Identifier, TokenAmount>,
 ) -> DistributionAmountsMapJs {
-    let js_map = Map::new();
-
-    for (identifier, amount) in amounts {
-        let identifier_wasm = IdentifierWasm::from(*identifier);
-        js_map.set(&identifier_wasm.to_base58().into(), &BigInt::from(*amount).into());
-    }
-
-    js_map.into()
+    Map::from_entries(amounts.iter().map(|(identifier, amount)| {
+        let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
+        let value: JsValue = BigInt::from(*amount).into();
+        (key, value)
+    }))
+    .into()
 }
 
 fn distributions_to_map(
     distributions: &BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
 ) -> PreProgrammedDistributionsMapJs {
-    let js_map = Map::new();
-
-    for (timestamp, amounts) in distributions {
-        let amounts_map = distribution_amounts_to_map(amounts);
-        js_map.set(&JsValue::from(timestamp.to_string()), &amounts_map.into());
-    }
-
-    js_map.into()
+    Map::from_entries(distributions.iter().map(|(timestamp, amounts)| {
+        let key = JsValue::from(timestamp.to_string());
+        let value: JsValue = distribution_amounts_to_map(amounts).into();
+        (key, value)
+    }))
+    .into()
 }
 
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]

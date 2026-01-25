@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::utils::JsMapExt;
 use wasm_dpp2::{pro_tx_hashes_from_js_array, ProTxHashLikeArrayJs, ProTxHashWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -242,15 +243,13 @@ impl WasmSdk {
         let epochs_result: drive_proof_verifier::types::ExtendedEpochInfos =
             ExtendedEpochInfo::fetch_many(self.as_ref(), query).await?;
 
-        let epochs_map = Map::new();
-
-        for (epoch_index, epoch_info) in epochs_result {
-            let key = Number::from(epoch_index as u32);
-            let value = epoch_info.map(ExtendedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
-
-        Ok(epochs_map)
+        Ok(Map::from_entries(epochs_result.into_iter().map(
+            |(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(ExtendedEpochInfoWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -300,14 +299,13 @@ impl WasmSdk {
             )
             .await?;
 
-        let epochs_map = Map::new();
-        for (epoch_index, epoch_info) in epochs_result {
-            let key = Number::from(epoch_index as u32);
-            let value = epoch_info.map(FinalizedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
-
-        Ok(epochs_map)
+        Ok(Map::from_entries(epochs_result.into_iter().map(
+            |(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(FinalizedEpochInfoWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -328,14 +326,13 @@ impl WasmSdk {
         let counts =
             ProposerBlockCountById::fetch_many(self.as_ref(), (epoch, pro_tx_hashes)).await?;
 
-        let map = Map::new();
-
-        for (identifier, count) in counts.0 {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
-
-        Ok(map)
+        Ok(Map::from_entries(counts.0.into_iter().map(
+            |(identifier, count)| {
+                let key = JsValue::from(IdentifierWasm::from(identifier));
+                let value = JsValue::from(BigInt::from(count));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -362,13 +359,13 @@ impl WasmSdk {
         )
         .await?;
 
-        let map = Map::new();
-        for (identifier, count) in counts_result.0 {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
-
-        Ok(map)
+        Ok(Map::from_entries(counts_result.0.into_iter().map(
+            |(identifier, count)| {
+                let key = JsValue::from(IdentifierWasm::from(identifier));
+                let value = JsValue::from(BigInt::from(count));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(js_name = "getCurrentEpoch")]
@@ -407,12 +404,13 @@ impl WasmSdk {
             ExtendedEpochInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let epochs_map = Map::new();
-        for (epoch_index, epoch_info) in epochs_result {
-            let key = Number::from(epoch_index as u32);
-            let value = epoch_info.map(ExtendedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
+        let epochs_map = Map::from_entries(epochs_result.into_iter().map(
+            |(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(ExtendedEpochInfoWasm::from));
+                (key, value)
+            },
+        ));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
@@ -480,12 +478,13 @@ impl WasmSdk {
         let (epochs_result, metadata, proof) = dash_sdk::dpp::block::finalized_epoch_info::FinalizedEpochInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
             .await?;
 
-        let epochs_map = Map::new();
-        for (index, epoch) in epochs_result {
-            let key = Number::from(index as u32);
-            let value = epoch.map(FinalizedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
+        let epochs_map = Map::from_entries(epochs_result.into_iter().map(
+            |(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(FinalizedEpochInfoWasm::from));
+                (key, value)
+            },
+        ));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
@@ -515,11 +514,11 @@ impl WasmSdk {
         )
         .await?;
 
-        let map = Map::new();
-        for (identifier, count) in counts.0 {
+        let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
             let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
+            let value = JsValue::from(BigInt::from(count));
+            (key, value)
+        }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             map, metadata, proof,
@@ -557,11 +556,11 @@ impl WasmSdk {
             )
             .await?;
 
-        let map = Map::new();
-        for (identifier, count) in counts.0 {
+        let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
             let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
+            let value = JsValue::from(BigInt::from(count));
+            (key, value)
+        }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             map, metadata, proof,

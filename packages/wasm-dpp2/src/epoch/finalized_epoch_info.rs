@@ -2,7 +2,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options_with, try_to_map, try_to_object, try_to_u32, try_to_u64};
+use crate::utils::{
+    try_from_options_with, try_to_map, try_to_object, try_to_u32, try_to_u64, JsMapExt,
+};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
@@ -159,14 +161,12 @@ fn block_proposers_from_map(js_map: &Map) -> WasmDppResult<BTreeMap<Identifier, 
 }
 
 fn block_proposers_to_map(map: &BTreeMap<Identifier, u64>) -> BlockProposersMapJs {
-    let js_map = Map::new();
-
-    for (identifier, value) in map {
-        let identifier_wasm = IdentifierWasm::from(*identifier);
-        js_map.set(&identifier_wasm.to_base58().into(), &BigInt::from(*value).into());
-    }
-
-    js_map.into()
+    Map::from_entries(map.iter().map(|(identifier, value)| {
+        let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
+        let value: JsValue = BigInt::from(*value).into();
+        (key, value)
+    }))
+    .into()
 }
 
 #[wasm_bindgen(js_class = FinalizedEpochInfo)]

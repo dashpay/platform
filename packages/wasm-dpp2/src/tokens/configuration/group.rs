@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{try_to_array, try_to_map};
+use crate::utils::{try_to_array, try_to_map, JsMapExt};
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
@@ -129,14 +129,12 @@ impl GroupWasm {
     pub fn members(&self) -> WasmDppResult<GroupMembersMapJs> {
         let members = self.0.members();
 
-        let js_map = Map::new();
-
-        for (k, v) in members {
-            let identifier_wasm = IdentifierWasm::from(*k);
-            js_map.set(&identifier_wasm.to_base58().into(), &JsValue::from(*v));
-        }
-
-        Ok(js_map.into())
+        Ok(Map::from_entries(members.iter().map(|(k, v)| {
+            let key: JsValue = IdentifierWasm::from(*k).to_base58().into();
+            let value = JsValue::from(*v);
+            (key, value)
+        }))
+        .into())
     }
 
     #[wasm_bindgen(getter = "requiredPower")]

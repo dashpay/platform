@@ -19,6 +19,7 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::group::GroupActionWasm;
 use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::tokens::GroupWasm;
+use wasm_dpp2::utils::JsMapExt;
 
 // Proof info functions are now included below
 
@@ -706,15 +707,13 @@ impl WasmSdk {
         // Fetch groups
         let groups_result = Group::fetch_many(self.as_ref(), query).await?;
 
-        // Convert result to response format
-        let infos_map = Map::new();
-        for (position, group_opt) in groups_result {
-            let key = Number::from(position as u32);
-            let value = JsValue::from(group_opt.map(GroupWasm::from));
-            infos_map.set(&key.into(), &value);
-        }
-
-        Ok(infos_map)
+        Ok(Map::from_entries(groups_result.into_iter().map(
+            |(position, group_opt)| {
+                let key: JsValue = Number::from(position as u32).into();
+                let value = JsValue::from(group_opt.map(GroupWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -736,14 +735,13 @@ impl WasmSdk {
         // Fetch actions
         let actions_result = GroupAction::fetch_many(self.as_ref(), query).await?;
 
-        let actions_map = Map::new();
-        for (action_id, action_opt) in actions_result {
-            let key = JsValue::from(IdentifierWasm::from(action_id));
-            let value = JsValue::from(action_opt.map(GroupActionWasm::from));
-            actions_map.set(&key, &value);
-        }
-
-        Ok(actions_map)
+        Ok(Map::from_entries(actions_result.into_iter().map(
+            |(action_id, action_opt)| {
+                let key = JsValue::from(IdentifierWasm::from(action_id));
+                let value = JsValue::from(action_opt.map(GroupActionWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -767,16 +765,15 @@ impl WasmSdk {
         // Fetch signers
         let signers_result = GroupMemberPower::fetch_many(self.as_ref(), query).await?;
 
-        let signers_map = Map::new();
-        for (signer_id, power_opt) in signers_result {
-            if let Some(power) = power_opt {
-                let key = JsValue::from(IdentifierWasm::from(signer_id));
-                let value = JsValue::from(BigInt::from(power as u64));
-                signers_map.set(&key, &value);
-            }
-        }
-
-        Ok(signers_map)
+        Ok(Map::from_entries(signers_result.into_iter().filter_map(
+            |(signer_id, power_opt)| {
+                power_opt.map(|power| {
+                    let key = JsValue::from(IdentifierWasm::from(signer_id));
+                    let value = JsValue::from(BigInt::from(power as u64));
+                    (key, value)
+                })
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -808,13 +805,13 @@ impl WasmSdk {
 
             let groups_result = Group::fetch_many(self.as_ref(), query).await?;
 
-            let groups_map = Map::new();
-
-            for (position, group_opt) in groups_result {
-                let key = Number::from(position as u32);
-                let value = JsValue::from(group_opt.map(GroupWasm::from));
-                groups_map.set(&key.into(), &value);
-            }
+            let groups_map = Map::from_entries(groups_result.into_iter().map(
+                |(position, group_opt)| {
+                    let key: JsValue = Number::from(position as u32).into();
+                    let value = JsValue::from(group_opt.map(GroupWasm::from));
+                    (key, value)
+                },
+            ));
 
             contracts_map.set(&contract_key, &JsValue::from(groups_map));
         }
@@ -878,16 +875,17 @@ impl WasmSdk {
         let (groups_result, metadata, proof) =
             Group::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        let infos_map = Map::new();
-        for (position, group_opt) in groups_result {
-            let key = Number::from(position as u32);
-            let value = JsValue::from(group_opt.map(GroupWasm::from));
-            infos_map.set(&key.into(), &value);
-        }
+        let infos_map = Map::from_entries(groups_result.into_iter().map(
+            |(position, group_opt)| {
+                let key: JsValue = Number::from(position as u32).into();
+                let value = JsValue::from(group_opt.map(GroupWasm::from));
+                (key, value)
+            },
+        ));
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(infos_map, metadata, proof);
-
-        Ok(response)
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            infos_map, metadata, proof,
+        ))
     }
 
     // Additional proof info versions for remaining group queries
@@ -1026,16 +1024,17 @@ impl WasmSdk {
         let (actions_result, metadata, proof) =
             GroupAction::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        let actions_map = Map::new();
-        for (action_id, action_opt) in actions_result {
-            let key = JsValue::from(IdentifierWasm::from(action_id));
-            let value = JsValue::from(action_opt.map(GroupActionWasm::from));
-            actions_map.set(&key, &value);
-        }
+        let actions_map = Map::from_entries(actions_result.into_iter().map(
+            |(action_id, action_opt)| {
+                let key = JsValue::from(IdentifierWasm::from(action_id));
+                let value = JsValue::from(action_opt.map(GroupActionWasm::from));
+                (key, value)
+            },
+        ));
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(actions_map, metadata, proof);
-
-        Ok(response)
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            actions_map, metadata, proof,
+        ))
     }
 
     #[wasm_bindgen(
@@ -1059,18 +1058,19 @@ impl WasmSdk {
             GroupMemberPower::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let signers_map = Map::new();
-        for (signer_id, power_opt) in signers_result {
-            if let Some(power) = power_opt {
-                let key = JsValue::from(IdentifierWasm::from(signer_id));
-                let value = JsValue::from(BigInt::from(power as u64));
-                signers_map.set(&key, &value);
-            }
-        }
+        let signers_map = Map::from_entries(signers_result.into_iter().filter_map(
+            |(signer_id, power_opt)| {
+                power_opt.map(|power| {
+                    let key = JsValue::from(IdentifierWasm::from(signer_id));
+                    let value = JsValue::from(BigInt::from(power as u64));
+                    (key, value)
+                })
+            },
+        ));
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(signers_map, metadata, proof);
-
-        Ok(response)
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            signers_map, metadata, proof,
+        ))
     }
 
     #[wasm_bindgen(
@@ -1109,12 +1109,13 @@ impl WasmSdk {
                 combined_proof = Some(proof.clone());
             }
 
-            let groups_map = Map::new();
-            for (position, group_opt) in groups_result {
-                let key = Number::from(position as u32);
-                let value = JsValue::from(group_opt.map(GroupWasm::from));
-                groups_map.set(&key.into(), &value);
-            }
+            let groups_map = Map::from_entries(groups_result.into_iter().map(
+                |(position, group_opt)| {
+                    let key: JsValue = Number::from(position as u32).into();
+                    let value = JsValue::from(group_opt.map(GroupWasm::from));
+                    (key, value)
+                },
+            ));
 
             contracts_map.set(&contract_key, &JsValue::from(groups_map));
         }

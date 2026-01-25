@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
-use js_sys::{Error as JsError, Object};
+use js_sys::{Error as JsError, Map, Object};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -32,6 +32,47 @@ impl JsValueExt for JsValue {
             .ok()
             .and_then(|v| v.as_string())
             .unwrap_or_else(|| "Unknown JavaScript error".to_string())
+    }
+}
+
+/// Extension trait for building a js_sys::Map from an iterator
+///
+/// Similar to JavaScript's `new Map(entries)` constructor.
+///
+/// # Example
+///
+/// ```ignore
+/// use js_sys::Map;
+/// use wasm_dpp2::utils::JsMapExt;
+///
+/// let items = vec![("key1", 1), ("key2", 2)];
+/// let map = Map::from_entries(items.into_iter().map(|(k, v)| {
+///     (JsValue::from(k), JsValue::from(v))
+/// }));
+/// ```
+pub trait JsMapExt {
+    /// Create a Map from an iterator of key-value pairs.
+    ///
+    /// Both key and value types must implement `Into<JsValue>`.
+    fn from_entries<K, V, I>(iter: I) -> Self
+    where
+        K: Into<JsValue>,
+        V: Into<JsValue>,
+        I: IntoIterator<Item = (K, V)>;
+}
+
+impl JsMapExt for Map {
+    fn from_entries<K, V, I>(iter: I) -> Self
+    where
+        K: Into<JsValue>,
+        V: Into<JsValue>,
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let map = Map::new();
+        for (key, value) in iter {
+            map.set(&key.into(), &value.into());
+        }
+        map
     }
 }
 
