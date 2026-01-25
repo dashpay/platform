@@ -6,7 +6,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     ToSerdeJSONExt, try_from_options_optional, try_from_options_optional_with, try_from_options,
-    try_from_options_with, try_to_fixed_bytes, try_to_u64,
+    try_from_options_with, try_to_fixed_bytes, try_to_string, try_to_u64,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -182,8 +182,7 @@ impl DocumentWasm {
 
         // Extract required properties
         let document_type_name = try_from_options_with(&options_obj, "documentTypeName", |v| {
-            v.as_string()
-                .ok_or_else(|| WasmDppError::invalid_argument("'documentTypeName' must be a string"))
+            try_to_string(v, "documentTypeName")
         })?;
 
         let data_contract_id: Identifier =

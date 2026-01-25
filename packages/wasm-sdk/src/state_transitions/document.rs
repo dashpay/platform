@@ -21,21 +21,8 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{get_class_type, try_from_options_with, try_to_u64, IntoWasm};
+use wasm_dpp2::utils::{get_class_type, try_from_options_with, try_to_string, try_to_u64, IntoWasm};
 use wasm_dpp2::IdentitySignerWasm;
-
-/// Extracts a string field from a JS options object.
-fn extract_string_from_options(
-    options: &JsValue,
-    field_name: &str,
-) -> Result<String, WasmSdkError> {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-        .map_err(|_| WasmSdkError::invalid_argument(format!("{} is required", field_name)))?;
-
-    value
-        .as_string()
-        .ok_or_else(|| WasmSdkError::invalid_argument(format!("{} must be a string", field_name)))
-}
 
 // ============================================================================
 // Document Create
@@ -365,7 +352,9 @@ impl WasmSdk {
                 IdentifierWasm::try_from_options(&document_js, "id")?.into(),
                 IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
                 IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
-                extract_string_from_options(&document_js, "documentTypeName")?,
+                try_from_options_with(&document_js, "documentTypeName", |v| {
+                    try_to_string(v, "documentTypeName")
+                })?,
             )
         };
 

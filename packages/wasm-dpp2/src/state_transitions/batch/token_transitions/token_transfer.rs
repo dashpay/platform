@@ -6,7 +6,7 @@ use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteW
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
 use crate::utils::{
     IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
-    try_to_object, try_to_u64,
+    try_to_object, try_to_string, try_to_u64,
 };
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
@@ -71,8 +71,7 @@ impl TokenTransferTransitionWasm {
 
         let public_note: Option<String> =
             try_from_options_optional_with(&options_obj, "publicNote", |v| {
-                v.as_string()
-                    .ok_or_else(|| crate::error::WasmDppError::invalid_argument("publicNote must be a string"))
+                try_to_string(v, "publicNote")
             })?;
 
         let shared_encrypted_note: Option<SharedEncryptedNote> =

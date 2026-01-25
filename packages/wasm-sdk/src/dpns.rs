@@ -24,6 +24,7 @@ use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
+use wasm_dpp2::utils::{try_from_options_with, try_to_string};
 use wasm_dpp2::IdentitySignerWasm;
 
 #[wasm_bindgen(js_name = "RegisterDpnsNameResult")]
@@ -191,19 +192,6 @@ fn parse_dpns_usernames_query(
     })
 }
 
-/// Extracts a string field from a JS options object.
-fn extract_string_from_options(
-    options: &JsValue,
-    field_name: &str,
-) -> Result<String, WasmSdkError> {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-        .map_err(|_| WasmSdkError::invalid_argument(format!("{} is required", field_name)))?;
-
-    value
-        .as_string()
-        .ok_or_else(|| WasmSdkError::invalid_argument(format!("{} must be a string", field_name)))
-}
-
 /// Extracts an optional JS function from options.
 fn extract_callback_from_options(
     options: &JsValue,
@@ -340,7 +328,8 @@ impl WasmSdk {
         let options_value: JsValue = options.into();
 
         // Extract label from options
-        let label = extract_string_from_options(&options_value, "label")?;
+        let label: String =
+            try_from_options_with(&options_value, "label", |v| try_to_string(v, "label"))?;
 
         // Extract identity from options
         let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();

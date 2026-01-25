@@ -367,6 +367,16 @@ pub fn try_to_map(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::Map
         .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be a Map", field_name)))
 }
 
+/// Convert a JS value to a String.
+///
+/// Uses `JsValue::as_string()` to extract the string value.
+/// Returns an error if the value is not a string.
+pub fn try_to_string(value: JsValue, field_name: &str) -> WasmDppResult<String> {
+    value
+        .as_string()
+        .ok_or_else(|| WasmDppError::invalid_argument(format!("'{}' must be a string", field_name)))
+}
+
 /// Convert a JS value to bytes (Vec<u8>) with type validation.
 ///
 /// Validates that the value is a Uint8Array using `dyn_into()`.
