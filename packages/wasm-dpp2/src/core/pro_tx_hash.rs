@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_to_array, try_to_fixed_bytes};
+use crate::utils::{IntoWasm, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
@@ -67,24 +67,6 @@ impl TryFrom<ProTxHashLikeNullableJs> for Option<ProTxHash> {
         }
         ProTxHashWasm::try_from(js_value).map(|w| Some(ProTxHash::from(w)))
     }
-}
-
-/// Helper function to convert a JavaScript array of ProTxHashLike values to Vec<ProTxHash>
-pub fn pro_tx_hashes_from_js_array(
-    array: ProTxHashLikeArrayJs,
-) -> Result<Vec<ProTxHash>, WasmDppError> {
-    let js_value: JsValue = array.into();
-    let js_array = try_to_array(js_value, "proTxHashes")?;
-    js_array
-        .iter()
-        .map(|v| {
-            ProTxHashWasm::try_from(v)
-                .map(ProTxHash::from)
-                .map_err(|err| {
-                    WasmDppError::invalid_argument(format!("Invalid ProTxHash: {}", err))
-                })
-        })
-        .collect()
 }
 
 #[wasm_bindgen(js_name = "ProTxHash")]

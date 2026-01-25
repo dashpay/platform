@@ -398,6 +398,42 @@ pub fn try_to_array(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::A
     Ok(js_sys::Array::from(&value))
 }
 
+/// Convert a JS array to a Vec of Rust types via WASM wrappers.
+///
+/// This generic function converts a JavaScript array where each element can be converted
+/// to a WASM wrapper type `W`, which is then converted to the final Rust type `T`.
+///
+/// # Type Parameters
+///
+/// - `W`: The WASM wrapper type that implements `TryFrom<JsValue>`
+/// - `T`: The final Rust type that implements `From<W>`
+/// - `A`: The array input type that implements `Into<JsValue>`
+///
+/// # Example
+///
+/// ```ignore
+/// // Convert JS array of identifiers to Vec<Identifier>
+/// let identifiers: Vec<Identifier> = try_to_vec::<IdentifierWasm, _, _>(
+///     js_array, "identifiers", "identifier"
+/// )?;
+/// ```
+pub fn try_to_vec<W, T, A>(array: A, field_name: &str, type_name: &str) -> WasmDppResult<Vec<T>>
+where
+    A: Into<JsValue>,
+    W: TryFrom<JsValue, Error = WasmDppError>,
+    T: From<W>,
+{
+    let js_array = try_to_array(array.into(), field_name)?;
+    js_array
+        .iter()
+        .map(|v| {
+            W::try_from(v)
+                .map(T::from)
+                .map_err(|err| WasmDppError::invalid_argument(format!("Invalid {}: {}", type_name, err)))
+        })
+        .collect()
+}
+
 /// Convert a JS value to Map with validation.
 ///
 /// Uses `dyn_into()` to safely convert, returning an error if the value is not a Map.

@@ -1,7 +1,7 @@
 use crate::core::network::NetworkLikeJs;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_to_array};
+use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
 use js_sys::Uint8Array;
@@ -54,24 +54,6 @@ impl TryFrom<PlatformAddressLikeJs> for PlatformAddress {
         let wasm: PlatformAddressWasm = value.try_into()?;
         Ok(PlatformAddress::from(wasm))
     }
-}
-
-/// Helper function to convert an array of PlatformAddressLike to Vec<PlatformAddress>
-pub fn platform_addresses_from_js_array(
-    array: PlatformAddressLikeArrayJs,
-) -> Result<Vec<PlatformAddress>, WasmDppError> {
-    let js_value: JsValue = array.into();
-    let js_array = try_to_array(js_value, "platformAddresses")?;
-    js_array
-        .iter()
-        .map(|v| {
-            PlatformAddressWasm::try_from(v)
-                .map(PlatformAddress::from)
-                .map_err(|err| {
-                    WasmDppError::invalid_argument(format!("Invalid platform address: {}", err))
-                })
-        })
-        .collect()
 }
 
 impl From<PlatformAddressWasm> for PlatformAddress {

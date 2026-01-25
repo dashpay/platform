@@ -15,7 +15,8 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::utils::JsMapExt;
-use wasm_dpp2::{pro_tx_hashes_from_js_array, ProTxHashLikeArrayJs, ProTxHashWasm};
+use wasm_dpp2::utils::try_to_vec;
+use wasm_dpp2::{ProTxHashLikeArrayJs, ProTxHashWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
 const EPOCHS_QUERY_TS: &'static str = r#"
@@ -320,7 +321,8 @@ impl WasmSdk {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
         // Parse the ProTxHash values using helper function
-        let pro_tx_hashes: Vec<ProTxHash> = pro_tx_hashes_from_js_array(ids)?;
+        let pro_tx_hashes: Vec<ProTxHash> =
+            try_to_vec::<ProTxHashWasm, _, _>(ids, "proTxHashes", "proTxHash")?;
 
         // Use FetchMany to get block counts for specific IDs
         let counts =
@@ -504,7 +506,8 @@ impl WasmSdk {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
         // Parse the ProTxHash values using helper function
-        let parsed_hashes: Vec<ProTxHash> = pro_tx_hashes_from_js_array(pro_tx_hashes)?;
+        let parsed_hashes: Vec<ProTxHash> =
+            try_to_vec::<ProTxHashWasm, _, _>(pro_tx_hashes, "proTxHashes", "proTxHash")?;
 
         // Use FetchMany with proof to get block counts for specific IDs
         let (counts, metadata, proof) = ProposerBlockCountById::fetch_many_with_metadata_and_proof(

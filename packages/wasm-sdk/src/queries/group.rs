@@ -785,15 +785,14 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "dataContractIds")]
         data_contract_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
-        use wasm_dpp2::identifier::identifiers_from_js_array;
+        use wasm_dpp2::utils::try_to_vec;
 
-        let contract_identifiers = identifiers_from_js_array(data_contract_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract IDs: {}", err)))?;
+        let contract_identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(data_contract_ids, "dataContractIds", "identifier")?;
 
         let contracts_map = Map::new();
 
         for contract_id in contract_identifiers {
-
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
             // Fetch all groups for this contract
@@ -1082,14 +1081,14 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "dataContractIds")]
         data_contract_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        use wasm_dpp2::identifier::identifiers_from_js_array;
+        use wasm_dpp2::utils::try_to_vec;
 
         let contracts_map = Map::new();
         let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
         let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
-        let contract_identifiers = identifiers_from_js_array(data_contract_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract IDs: {}", err)))?;
+        let contract_identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(data_contract_ids, "dataContractIds", "identifier")?;
 
         for contract_id in contract_identifiers {
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));

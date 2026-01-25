@@ -664,11 +664,11 @@ impl WasmSdk {
         identity_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::IdentityBalance;
-        use wasm_dpp2::identifier::identifiers_from_js_array;
+        use wasm_dpp2::utils::try_to_vec;
 
         // Convert JS identifiers to native Identifiers
-        let identifiers: Vec<Identifier> = identifiers_from_js_array(identity_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
+        let identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         let balances_result: drive_proof_verifier::types::IdentityBalances =
             IdentityBalance::fetch_many(self.as_ref(), identifiers.clone()).await?;
@@ -815,14 +815,14 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
-        use wasm_dpp2::identifier::identifiers_from_js_array;
+        use wasm_dpp2::utils::try_to_vec;
 
         let identity_id: Identifier = identity_id.try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         // Convert token IDs to Identifiers
-        let token_identifiers: Vec<Identifier> = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let token_identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         let query = IdentityTokenBalancesQuery {
             identity_id,
@@ -945,11 +945,11 @@ impl WasmSdk {
         identity_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::IdentityBalance;
-        use wasm_dpp2::identifier::identifiers_from_js_array;
+        use wasm_dpp2::utils::try_to_vec;
 
         // Convert JS identifiers to native Identifiers
-        let identifiers: Vec<Identifier> = identifiers_from_js_array(identity_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
+        let identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         let (balances_result, metadata, proof): (
             drive_proof_verifier::types::IdentityBalances,
@@ -1144,14 +1144,14 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
-        use wasm_dpp2::identifier::identifiers_from_js_array;
+        use wasm_dpp2::utils::try_to_vec;
 
         let identity_id: Identifier = identity_id.try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         // Convert token IDs to Identifiers
-        let token_identifiers: Vec<Identifier> = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let token_identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         let query = IdentityTokenBalancesQuery {
             identity_id,

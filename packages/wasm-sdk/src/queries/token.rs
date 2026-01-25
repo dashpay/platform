@@ -14,9 +14,8 @@ use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::{
-    IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm, identifiers_from_js_array,
-};
+use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::tokens::{IdentityTokenInfoWasm, TokenContractInfoWasm, TokenStatusWasm};
 
 #[wasm_bindgen(js_name = "TokenPriceInfo")]
@@ -262,8 +261,8 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js_array(identity_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenBalancesQuery {
@@ -306,8 +305,8 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         // Parse token IDs
-        let tokens = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Create query
         let query = IdentityTokenInfosQuery {
@@ -351,8 +350,8 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js_array(identity_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenInfosQuery {
@@ -389,8 +388,8 @@ impl WasmSdk {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
         // Parse token IDs
-        let tokens = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token statuses
         let statuses_result: TokenStatuses =
@@ -420,8 +419,8 @@ impl WasmSdk {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
 
         // Parse token IDs
-        let tokens = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token prices - use slice reference
         let prices_result: TokenDirectPurchasePrices =
@@ -549,8 +548,8 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js_array(identity_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenBalancesQuery {
@@ -591,8 +590,8 @@ impl WasmSdk {
         token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse token IDs
-        let tokens = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token statuses with proof
         let (statuses_result, metadata, proof) =
@@ -670,8 +669,8 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
 
         // Parse token IDs
-        let tokens = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Create query
         let query = IdentityTokenInfosQuery {
@@ -718,8 +717,8 @@ impl WasmSdk {
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js_array(identity_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity IDs: {}", err)))?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenInfosQuery {
@@ -759,8 +758,8 @@ impl WasmSdk {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
 
         // Parse token IDs
-        let tokens = identifiers_from_js_array(token_ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token IDs: {}", err)))?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token prices with proof - use slice reference
         let (prices_result, metadata, proof): (TokenDirectPurchasePrices, _, _) =

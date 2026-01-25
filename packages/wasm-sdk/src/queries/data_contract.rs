@@ -9,9 +9,8 @@ use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::{
-    IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm, identifiers_from_js_array,
-};
+use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::DataContractWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -172,8 +171,8 @@ impl WasmSdk {
         ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         // Parse all contract IDs
-        let identifiers = identifiers_from_js_array(ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid data contract IDs: {}", err)))?;
+        let identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(ids, "ids", "identifier")?;
 
         // Fetch all contracts
         let contracts_result: DataContracts =
@@ -234,8 +233,8 @@ impl WasmSdk {
         ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse all contract IDs
-        let identifiers = identifiers_from_js_array(ids)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid data contract IDs: {}", err)))?;
+        let identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(ids, "ids", "identifier")?;
 
         // Fetch all contracts with proof
         let (contracts_result, metadata, proof) =

@@ -35,7 +35,6 @@ pub use core::network::{NetworkLikeJs, NetworkWasm};
 pub use core::private_key::PrivateKeyWasm;
 pub use core::pro_tx_hash::{
     ProTxHashLikeArrayJs, ProTxHashLikeJs, ProTxHashLikeNullableJs, ProTxHashWasm,
-    pro_tx_hashes_from_js_array,
 };
 pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
@@ -48,7 +47,6 @@ pub use epoch::*;
 pub use group::*;
 pub use identifier::{
     IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierLikeOrUndefinedJs, IdentifierWasm,
-    identifiers_from_js_array,
 };
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
@@ -62,7 +60,6 @@ pub use platform_address::{
     PlatformAddressLikeJs, PlatformAddressOutputWasm, PlatformAddressSignerWasm,
     PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
     fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
-    platform_addresses_from_js_array,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;

@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_to_array};
+use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
@@ -333,21 +333,3 @@ impl IdentifierWasm {
 }
 
 impl_wasm_type_info!(IdentifierWasm, Identifier);
-
-/// Convert a JavaScript array of identifier-like values to a Vec of Identifiers.
-///
-/// Accepts an array where each element can be an Identifier, Uint8Array, or string.
-pub fn identifiers_from_js_array(array: IdentifierLikeArrayJs) -> WasmDppResult<Vec<Identifier>> {
-    let js_value: JsValue = array.into();
-    let js_array = try_to_array(js_value, "identifiers")?;
-    js_array
-        .iter()
-        .map(|v| {
-            IdentifierWasm::try_from(v)
-                .map(Identifier::from)
-                .map_err(|err| {
-                    WasmDppError::invalid_argument(format!("Invalid identifier: {}", err))
-                })
-        })
-        .collect()
-}

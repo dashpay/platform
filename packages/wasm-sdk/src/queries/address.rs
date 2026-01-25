@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::{PlatformAddressLikeArrayJs, PlatformAddressLikeJs, PlatformAddressWasm, platform_addresses_from_js_array};
+use wasm_dpp2::utils::try_to_vec;
+use wasm_dpp2::{PlatformAddressLikeArrayJs, PlatformAddressLikeJs, PlatformAddressWasm};
 
 /// Information about a Platform address including its nonce and balance.
 #[wasm_bindgen(js_name = "PlatformAddressInfo")]
@@ -122,10 +123,10 @@ impl WasmSdk {
         &self,
         addresses: PlatformAddressLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
-        let platform_addresses: BTreeSet<PlatformAddress> = platform_addresses_from_js_array(addresses)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid platform addresses: {}", err)))?
-            .into_iter()
-            .collect();
+        let platform_addresses: BTreeSet<PlatformAddress> =
+            try_to_vec::<PlatformAddressWasm, _, _>(addresses, "addresses", "address")?
+                .into_iter()
+                .collect();
 
         let address_infos: AddressInfos =
             AddressInfo::fetch_many(self.as_ref(), platform_addresses.clone()).await?;
@@ -159,10 +160,10 @@ impl WasmSdk {
         &self,
         addresses: PlatformAddressLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let platform_addresses: BTreeSet<PlatformAddress> = platform_addresses_from_js_array(addresses)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid platform addresses: {}", err)))?
-            .into_iter()
-            .collect();
+        let platform_addresses: BTreeSet<PlatformAddress> =
+            try_to_vec::<PlatformAddressWasm, _, _>(addresses, "addresses", "address")?
+                .into_iter()
+                .collect();
 
         let (address_infos, metadata, proof): (AddressInfos, _, _) =
             AddressInfo::fetch_many_with_metadata_and_proof(
