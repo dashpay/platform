@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { NETWORK_LOCAL, NETWORK_MAINNET } from '../../constants.js';
-import { ERRORS } from '../../ssl/zerossl/validateZeroSslCertificateFactory.js';
+import { ERRORS as LETSENCRYPT_ERRORS } from '../../ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
+import { ERRORS as ZEROSSL_ERRORS } from '../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import { SEVERITY } from '../Prescription.js';
 import Problem from '../Problem.js';
 
@@ -82,50 +83,79 @@ Private key file path: {bold.cyanBright ${ssl?.data?.privateFilePath}}
 Or use ZeroSSL https://docs.dash.org/en/stable/masternodes/dashmate.html#ssl-certificate`,
               },
               // ZeroSSL validation errors
-              [ERRORS.API_KEY_IS_NOT_SET]: {
+              [ZEROSSL_ERRORS.API_KEY_IS_NOT_SET]: {
                 description: 'ZeroSSL API key is not set.',
                 solution: chalk`Please obtain your API key from {underline.cyanBright https://app.zerossl.com/developer}
 And then update your configuration with {block.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.zerossl.apiKey [KEY]}`,
               },
-              [ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
+              [ZEROSSL_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
                 description: 'External IP is not set.',
                 solution: chalk`Please update your configuration to include your external IP using {block.cyanBright dashmate config set externalIp [IP]}`,
               },
-              [ERRORS.CERTIFICATE_ID_IS_NOT_SET]: {
+              [ZEROSSL_ERRORS.CERTIFICATE_ID_IS_NOT_SET]: {
                 description: 'ZeroSSL certificate is not configured',
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new certificate`,
               },
-              [ERRORS.PRIVATE_KEY_IS_NOT_PRESENT]: {
+              [ZEROSSL_ERRORS.PRIVATE_KEY_IS_NOT_PRESENT]: {
                 description: chalk`ZeroSSL private key file not found in ${ssl?.data?.privateKeyFilePath}.`,
                 solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
-              [ERRORS.EXTERNAL_IP_MISMATCH]: {
+              [ZEROSSL_ERRORS.EXTERNAL_IP_MISMATCH]: {
                 description: chalk`ZeroSSL IP ${ssl?.data?.certificate.common_name} does not match external IP ${ssl?.data?.externalIp}.`,
                 solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
             and revoke the previous certificate in the ZeroSSL dashboard`,
               },
-              [ERRORS.CSR_FILE_IS_NOT_PRESENT]: {
+              [ZEROSSL_ERRORS.CSR_FILE_IS_NOT_PRESENT]: {
                 description: chalk`ZeroSSL certificate request file not found in ${ssl?.data?.csrFilePath}.
 This makes auto-renewal impossible.`,
                 solution: chalk`If you need auto renew, please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --force}
 and revoke the previous certificate in the ZeroSSL dashboard`,
               },
-              [ERRORS.CERTIFICATE_EXPIRES_SOON]: {
+              [ZEROSSL_ERRORS.CERTIFICATE_EXPIRES_SOON]: {
                 description: chalk`ZeroSSL certificate expires at ${ssl?.data?.certificate.expires}.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to get a new one`,
               },
-              [ERRORS.CERTIFICATE_IS_NOT_VALIDATED]: {
+              [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALIDATED]: {
                 description: chalk`ZeroSSL certificate is not approved.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain} to confirm certificate`,
               },
-              [ERRORS.CERTIFICATE_IS_NOT_VALID]: {
+              [ZEROSSL_ERRORS.CERTIFICATE_IS_NOT_VALID]: {
                 description: chalk`ZeroSSL certificate is not valid.`,
                 solution: chalk`Please run {bold.cyanBright dashmate ssl zerossl obtain} to get a new one.`,
               },
-              [ERRORS.ZERO_SSL_API_ERROR]: {
+              [ZEROSSL_ERRORS.ZERO_SSL_API_ERROR]: {
                 description: ssl?.data?.error?.message,
                 solution: chalk`Please contact ZeroSSL support if needed.`,
+              },
+              // Let's Encrypt validation errors
+              [LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET]: {
+                description: "Let's Encrypt email is not set.",
+                solution: chalk`Please update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}`,
+              },
+              [LETSENCRYPT_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
+                description: 'External IP is not set.',
+                solution: chalk`Please update your configuration to include your external IP using {bold.cyanBright dashmate config set externalIp [IP]}`,
+              },
+              [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_FOUND]: {
+                description: "Let's Encrypt certificate is not configured",
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to get a new certificate`,
+              },
+              [LETSENCRYPT_ERRORS.PRIVATE_KEY_NOT_FOUND]: {
+                description: chalk`Let's Encrypt private key file not found.`,
+                solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --provider=letsencrypt --force}`,
+              },
+              [LETSENCRYPT_ERRORS.CERTIFICATE_IP_MISMATCH]: {
+                description: chalk`Let's Encrypt certificate does not match external IP ${ssl?.data?.externalIp}.`,
+                solution: chalk`Please regenerate the certificate using {bold.cyanBright dashmate ssl obtain --provider=letsencrypt --force}`,
+              },
+              [LETSENCRYPT_ERRORS.CERTIFICATE_EXPIRES_SOON]: {
+                description: chalk`Let's Encrypt certificate expires at ${ssl?.data?.certificate?.expires}.`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to renew`,
+              },
+              [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_VALID]: {
+                description: chalk`Let's Encrypt certificate is not valid.`,
+                solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt --force} to get a new one.`,
               },
             }[ssl.error] ?? {};
 

@@ -37,17 +37,47 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   function obtainLetsEncryptCertificateTask(config) {
     return new Listr([
       {
+        title: 'Initialize configuration',
+        task: async (ctx) => {
+          // Always load config values (needed even when --force is used)
+          ctx.email = config.get('platform.gateway.ssl.providerConfigs.letsencrypt.email');
+          ctx.externalIp = config.get('externalIp');
+          ctx.legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
+          ctx.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+
+          if (!ctx.email) {
+            throw new Error("Let's Encrypt email is not set. Please set it in the config file");
+          }
+
+          if (!ctx.externalIp) {
+            throw new Error('External IP is not set. Please set it in the config file');
+          }
+
+          // Ensure lego directories exist
+          fs.mkdirSync(ctx.legoDir, { recursive: true });
+          fs.mkdirSync(path.join(ctx.legoDir, 'certificates'), { recursive: true });
+          fs.mkdirSync(path.join(ctx.legoDir, 'accounts'), { recursive: true });
+
+          // Set paths
+          ctx.legoCertPath = path.join(ctx.legoDir, 'certificates', `${ctx.externalIp}.crt`);
+          ctx.legoKeyPath = path.join(ctx.legoDir, 'certificates', `${ctx.externalIp}.key`);
+
+          // When force is used, skip validation and obtain new certificate
+          if (ctx.force) {
+            ctx.certificateValid = false;
+            ctx.isRenewal = false;
+          }
+        },
+      },
+      {
         title: 'Check if certificate already exists and is valid',
         skip: (ctx) => ctx.force,
         task: async (ctx, task) => {
           const expirationDays = ctx.expirationDays ?? LegoCertificate.EXPIRATION_LIMIT_DAYS;
           const { error, data } = await validateLetsEncryptCertificate(config, expirationDays);
 
+          // Merge validation data (but don't overwrite already-set values)
           Object.assign(ctx, data);
-
-          // Ensure lego directory exists
-          fs.mkdirSync(ctx.legoDir, { recursive: true });
-          fs.mkdirSync(path.join(ctx.legoDir, 'certificates'), { recursive: true });
 
           switch (error) {
             case undefined:
@@ -109,6 +139,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
 
           // Build lego command arguments
           // --disable-cn is needed for IP address certificates
+          // --key-type rsa2048 is needed because node-forge doesn't support ECDSA
           const legoArgs = [
             '--server=https://acme-v02.api.letsencrypt.org/directory',
             '--email', ctx.email,
@@ -117,6 +148,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             '--http.port', ':80',
             '--domains', ctx.externalIp,
             '--disable-cn',
+            '--key-type', 'rsa2048',
             '--path', '/data',
             command,
           ];
