@@ -2,13 +2,13 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_to_array, try_to_map, try_to_u64, JsMapExt};
+use crate::utils::{try_to_map, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
 use dpp::prelude::{Identifier, TimestampMillis};
-use js_sys::{BigInt, Map, Reflect};
+use js_sys::{BigInt, Map};
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -59,25 +59,12 @@ fn distribution_amounts_from_map(
 ) -> WasmDppResult<BTreeMap<Identifier, TokenAmount>> {
     let mut amounts = BTreeMap::new();
 
-    let entries = amounts_map.entries();
-    loop {
-        let next = entries.next().map_err(|e| {
+    for entry in amounts_map.entries().into_iter() {
+        let entry = entry.map_err(|e| {
             WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let done = Reflect::get(&next, &JsValue::from_str("done"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'done' property"))?
-            .as_bool()
-            .unwrap_or(true);
-
-        if done {
-            break;
-        }
-
-        let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
-
-        let entry_array = try_to_array(entry_value, "map entry")?;
+        let entry_array = js_sys::Array::from(&entry);
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 
@@ -98,25 +85,12 @@ pub fn distributions_from_map(
 ) -> WasmDppResult<BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>> {
     let mut distributions = BTreeMap::new();
 
-    let entries = distributions_map.entries();
-    loop {
-        let next = entries.next().map_err(|e| {
+    for entry in distributions_map.entries().into_iter() {
+        let entry = entry.map_err(|e| {
             WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let done = Reflect::get(&next, &JsValue::from_str("done"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'done' property"))?
-            .as_bool()
-            .unwrap_or(true);
-
-        if done {
-            break;
-        }
-
-        let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
-
-        let entry_array = try_to_array(entry_value, "map entry")?;
+        let entry_array = js_sys::Array::from(&entry);
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 
@@ -143,23 +117,30 @@ pub fn distributions_from_map(
 fn distribution_amounts_to_map(
     amounts: &BTreeMap<Identifier, TokenAmount>,
 ) -> DistributionAmountsMapJs {
-    Map::from_entries(amounts.iter().map(|(identifier, amount)| {
-        let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
-        let value: JsValue = BigInt::from(*amount).into();
-        (key, value)
-    }))
-    .into()
+    let js_map = Map::new();
+
+    for (identifier, amount) in amounts {
+        let identifier_wasm = IdentifierWasm::from(*identifier);
+        js_map.set(
+            &identifier_wasm.to_base58().into(),
+            &BigInt::from(*amount).into(),
+        );
+    }
+
+    js_map.into()
 }
 
 fn distributions_to_map(
     distributions: &BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
 ) -> PreProgrammedDistributionsMapJs {
-    Map::from_entries(distributions.iter().map(|(timestamp, amounts)| {
-        let key = JsValue::from(timestamp.to_string());
-        let value: JsValue = distribution_amounts_to_map(amounts).into();
-        (key, value)
-    }))
-    .into()
+    let js_map = Map::new();
+
+    for (timestamp, amounts) in distributions {
+        let amounts_map = distribution_amounts_to_map(amounts);
+        js_map.set(&JsValue::from(timestamp.to_string()), &amounts_map.into());
+    }
+
+    js_map.into()
 }
 
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]

@@ -3,12 +3,12 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{try_to_array, try_to_map, JsMapExt};
+use crate::utils::{try_to_map, JsMapExt};
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
 use dpp::prelude::Identifier;
-use js_sys::{Map, Reflect};
+use js_sys::Map;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -74,26 +74,12 @@ pub fn members_map_to_btree(
 ) -> WasmDppResult<BTreeMap<Identifier, GroupMemberPower>> {
     let mut members = BTreeMap::new();
 
-    // Iterate using entries()
-    let entries = members_map.entries();
-    loop {
-        let next = entries.next().map_err(|e| {
+    for entry in members_map.entries().into_iter() {
+        let entry = entry.map_err(|e| {
             WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let done = Reflect::get(&next, &JsValue::from_str("done"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'done' property"))?
-            .as_bool()
-            .unwrap_or(true);
-
-        if done {
-            break;
-        }
-
-        let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
-
-        let entry_array = try_to_array(entry_value, "map entry")?;
+        let entry_array = js_sys::Array::from(&entry);
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 

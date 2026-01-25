@@ -9,7 +9,7 @@ use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::prelude::Identifier;
-use js_sys::{BigInt, Map, Reflect};
+use js_sys::{BigInt, Map};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
@@ -123,26 +123,12 @@ impl FinalizedEpochInfoWasm {
 fn block_proposers_from_map(js_map: &Map) -> WasmDppResult<BTreeMap<Identifier, u64>> {
     let mut map = BTreeMap::new();
 
-    // Iterate using entries()
-    let entries = js_map.entries();
-    loop {
-        let next = entries.next().map_err(|e| {
+    for entry in js_map.entries().into_iter() {
+        let entry = entry.map_err(|e| {
             WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let done = Reflect::get(&next, &JsValue::from_str("done"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'done' property"))?
-            .as_bool()
-            .unwrap_or(true);
-
-        if done {
-            break;
-        }
-
-        let entry_value = Reflect::get(&next, &JsValue::from_str("value"))
-            .map_err(|_| WasmDppError::invalid_argument("Failed to get 'value' property"))?;
-
-        let entry_array = js_sys::Array::from(&entry_value);
+        let entry_array = js_sys::Array::from(&entry);
         let key = entry_array.get(0);
         let value = entry_array.get(1);
 
