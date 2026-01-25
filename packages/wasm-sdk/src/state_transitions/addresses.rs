@@ -8,7 +8,7 @@ use crate::error::WasmSdkError;
 use crate::queries::address::PlatformAddressInfoWasm;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
-use crate::settings::{parse_put_settings, PutSettingsJs};
+use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::core_script::CoreScript;
@@ -23,6 +23,7 @@ use drive_proof_verifier::types::{AddressInfo, IndexMap};
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::utils::try_from_options_optional;
 use wasm_dpp2::{
     fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
     CoreScriptWasm, FeeStrategyStepWasm, IdentitySignerWasm, IdentityWasm,
@@ -87,22 +88,6 @@ fn deserialize_transfer_options(
     }
 
     Ok(parsed)
-}
-
-/// Extracts PutSettings from the 'settings' field of an options object.
-fn extract_settings_from_options(
-    options: &JsValue,
-) -> Result<Option<dash_sdk::platform::transition::put_settings::PutSettings>, WasmSdkError> {
-    let settings_js = js_sys::Reflect::get(options, &JsValue::from_str("settings"))
-        .map_err(|e| WasmSdkError::generic(format!("Failed to extract settings: {:?}", e)))?;
-
-    if settings_js.is_undefined() || settings_js.is_null() {
-        return Ok(None);
-    }
-
-    // Convert JsValue to PutSettingsJs and parse
-    let settings_typed: PutSettingsJs = settings_js.into();
-    parse_put_settings(Some(settings_typed))
 }
 
 /// TypeScript interface for address transfer options
@@ -186,7 +171,7 @@ impl WasmSdk {
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Use the SDK's transfer_address_funds method which handles nonces, building, and broadcasting
         let address_infos = self
@@ -315,7 +300,7 @@ impl WasmSdk {
         let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Use the SDK's top_up_from_addresses method
         let (address_infos, new_balance) = identity
@@ -473,7 +458,7 @@ impl WasmSdk {
         let pooling = parsed.pooling.into();
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Use the SDK's withdraw_address_funds method which handles nonces, building, and broadcasting
         let address_infos = self
@@ -534,7 +519,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Use the SDK's transfer_credits_to_addresses method
         let (address_infos, new_balance) = identity
@@ -779,7 +764,7 @@ impl WasmSdk {
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Use the SDK's top_up method for addresses
         let address_infos = outputs_map
@@ -954,7 +939,7 @@ impl WasmSdk {
         )?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Use the SDK's put_with_address_funding method
         let (created_identity, address_infos) = identity

@@ -4,7 +4,7 @@
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
-use crate::settings::{extract_settings_from_options, get_user_fee_increase};
+use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::DataContractWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::utils::try_from_options_optional;
 use wasm_dpp2::IdentitySignerWasm;
 
 // ============================================================================
@@ -98,7 +99,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Create and broadcast the contract
         // Note: The SDK will set the actual contract ID based on the identity nonce
@@ -198,7 +199,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Get identity contract nonce
         let identity_contract_nonce = self

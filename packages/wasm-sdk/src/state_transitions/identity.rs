@@ -6,7 +6,7 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
-use crate::settings::extract_settings_from_options;
+use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
@@ -21,7 +21,10 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{IntoWasm, try_from_options_optional_with, try_from_options_with, try_to_array, try_to_u64};
+use wasm_dpp2::utils::{
+    try_from_options_optional, try_from_options_optional_with, try_from_options_with, try_to_array,
+    try_to_u64, IntoWasm,
+};
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -108,7 +111,7 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Put identity to platform and wait
         identity
@@ -198,7 +201,7 @@ impl WasmSdk {
             PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Top up the identity
         let new_balance = identity
@@ -331,7 +334,7 @@ impl WasmSdk {
                 .map(|k| k.into());
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Transfer credits using rs-sdk method
         let (sender_balance, recipient_balance) = identity
@@ -489,7 +492,7 @@ impl WasmSdk {
                 .map(|k| k.into());
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Perform the withdrawal
         let remaining_balance = identity
@@ -677,7 +680,7 @@ impl WasmSdk {
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Get identity nonce
         let identity_nonce = self
@@ -841,7 +844,7 @@ impl WasmSdk {
         let vote = Vote::ResourceVote(resource_vote);
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
 
         // Submit the vote using PutVote trait
         use dash_sdk::platform::transition::vote::PutVote;

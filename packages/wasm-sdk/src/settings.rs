@@ -9,6 +9,8 @@ use rs_dapi_client::RequestSettings;
 use serde::Deserialize;
 use std::time::Duration;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::error::WasmDppError;
+use wasm_dpp2::utils::try_from_options_optional;
 
 // ============================================================================
 // RequestSettings - for queries and basic requests
@@ -188,10 +190,11 @@ struct StateTransitionCreationOptionsInput {
     allow_signing_with_any_purpose: bool,
 }
 
-/// Internal struct for deserializing PutSettings from JavaScript.
+/// Struct for deserializing PutSettings from JavaScript.
+/// Used with `try_from_options_optional::<PutSettingsInput>(...).map(Into::into)`.
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct PutSettingsInput {
+pub struct PutSettingsInput {
     #[serde(flatten)]
     request: RequestSettingsInput,
     // Put-specific fields
@@ -199,6 +202,15 @@ struct PutSettingsInput {
     user_fee_increase: Option<u16>,
     identity_nonce_stale_time_s: Option<u64>,
     state_transition_creation_options: Option<StateTransitionCreationOptionsInput>,
+}
+
+impl TryFrom<&JsValue> for PutSettingsInput {
+    type Error = wasm_dpp2::error::WasmDppError;
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        serde_wasm_bindgen::from_value(value.clone())
+            .map_err(|e| WasmDppError::serialization(format!("Failed to parse put settings: {}", e)))
+    }
 }
 
 impl From<PutSettingsInput> for PutSettings {
@@ -252,25 +264,6 @@ pub fn parse_put_settings(
     let input: PutSettingsInput = serde_wasm_bindgen::from_value(js_value)
         .map_err(|e| WasmSdkError::serialization(format!("Failed to parse put settings: {}", e)))?;
     Ok(Some(input.into()))
-}
-
-/// Extracts PutSettings from the 'settings' field of an options object.
-///
-/// This helper is useful when you have a typed options JS object and want to
-/// extract the optional settings field.
-pub fn extract_settings_from_options(
-    options: &JsValue,
-) -> Result<Option<PutSettings>, WasmSdkError> {
-    let settings_js = js_sys::Reflect::get(options, &JsValue::from_str("settings"))
-        .map_err(|e| WasmSdkError::generic(format!("Failed to extract settings: {:?}", e)))?;
-
-    if settings_js.is_undefined() || settings_js.is_null() {
-        return Ok(None);
-    }
-
-    // Convert JsValue to PutSettingsJs and parse
-    let settings_typed: PutSettingsJs = settings_js.into();
-    parse_put_settings(Some(settings_typed))
 }
 
 /// Extracts user_fee_increase from optional PutSettings, defaulting to 0.

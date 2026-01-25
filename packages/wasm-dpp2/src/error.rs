@@ -30,7 +30,7 @@ pub struct WasmDppError {
 }
 
 impl WasmDppError {
-    pub(crate) fn new(
+    fn new(
         kind: WasmDppErrorKind,
         message: impl Into<String>,
         code: Option<i32>,
@@ -46,21 +46,19 @@ impl WasmDppError {
         Self::new(WasmDppErrorKind::Protocol, message, None)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn invalid_argument(message: impl Into<String>) -> Self {
+    pub fn invalid_argument(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::InvalidArgument, message, None)
     }
 
-    pub(crate) fn serialization(message: impl Into<String>) -> Self {
+    pub fn serialization(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::Serialization, message, None)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn conversion(message: impl Into<String>) -> Self {
+    pub fn conversion(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::Conversion, message, None)
     }
 
-    pub(crate) fn generic(message: impl Into<String>) -> Self {
+    pub fn generic(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::Generic, message, None)
     }
 }
