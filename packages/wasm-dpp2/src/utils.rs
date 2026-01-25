@@ -669,6 +669,53 @@ macro_rules! impl_wasm_type_info {
     };
 }
 
+/// Macro to implement `try_from_options` static methods for WASM wrapper types.
+///
+/// This adds static methods for extracting values from JS option objects.
+/// The type must already implement `TryFrom<&JsValue>`.
+///
+/// # Usage
+///
+/// ```ignore
+/// impl_try_from_options!(IdentityWasm);
+/// ```
+///
+/// This generates:
+/// ```ignore
+/// impl IdentityWasm {
+///     pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> { ... }
+///     pub fn try_from_optional_options(options: &JsValue, field_name: &str) -> WasmDppResult<Option<Self>> { ... }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_try_from_options {
+    ($wrapper:ty) => {
+        impl $wrapper {
+            /// Extract this type from a JS options object by field name.
+            ///
+            /// Returns `Err` if the property is missing, null, or conversion fails.
+            pub fn try_from_options(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Self> {
+                $crate::utils::try_from_options(options, field_name)
+            }
+
+            /// Extract this type from a JS options object by field name, returning None if missing.
+            ///
+            /// Returns `Ok(None)` if the property is undefined or null.
+            /// Returns `Ok(Some(T))` if the property exists and conversion succeeds.
+            /// Returns `Err` if the property exists but conversion fails.
+            pub fn try_from_optional_options(
+                options: &wasm_bindgen::JsValue,
+                field_name: &str,
+            ) -> $crate::error::WasmDppResult<Option<Self>> {
+                $crate::utils::try_from_options_optional(options, field_name)
+            }
+        }
+    };
+}
+
 /// Macro to implement `From` traits for wasm-bindgen extern types.
 ///
 /// This macro helps convert Rust/WASM types to JavaScript extern types,

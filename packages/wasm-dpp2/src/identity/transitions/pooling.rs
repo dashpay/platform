@@ -1,4 +1,5 @@
 use crate::error::WasmDppError;
+use crate::impl_try_from_options;
 use dpp::withdrawal::Pooling;
 use serde::{Deserialize, Deserializer};
 use wasm_bindgen::JsValue;
@@ -158,3 +159,5 @@ impl From<PoolingWasm> for String {
         }
     }
 }
+
+impl_try_from_options!(PoolingWasm);

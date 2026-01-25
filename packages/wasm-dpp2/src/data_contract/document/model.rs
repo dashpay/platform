@@ -2,10 +2,11 @@ use crate::data_contract::DataContractWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    ToSerdeJSONExt, try_from_options_optional, try_from_options_optional_with, try_from_options,
+    ToSerdeJSONExt, try_from_options_optional, try_from_options_optional_with,
     try_from_options_with, try_to_fixed_bytes, try_to_string, try_to_u64,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
@@ -186,10 +187,10 @@ impl DocumentWasm {
         })?;
 
         let data_contract_id: Identifier =
-            try_from_options::<IdentifierWasm>(&options_obj, "dataContractId")?.into();
+            IdentifierWasm::try_from_options(&options_obj, "dataContractId")?.into();
 
         let owner_id: Identifier =
-            try_from_options::<IdentifierWasm>(&options_obj, "ownerId")?.into();
+            IdentifierWasm::try_from_options(&options_obj, "ownerId")?.into();
 
         let properties = try_from_options_with(&options_obj, "properties", |v| {
             v.with_serde_to_platform_value_map()
@@ -770,4 +771,5 @@ impl DocumentWasm {
 }
 
 impl_try_from_js_value!(DocumentWasm, "Document");
+impl_try_from_options!(DocumentWasm);
 impl_wasm_type_info!(DocumentWasm, Document);

@@ -6,6 +6,7 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::base::GroupStateTransitionInfoWasm;
 use dpp::data_contract::GroupContractPosition;
@@ -122,6 +123,7 @@ impl_try_from_js_value!(
     GroupStateTransitionInfoStatusWasm,
     "GroupStateTransitionInfoStatus"
 );
+impl_try_from_options!(GroupStateTransitionInfoStatusWasm);
 impl_wasm_type_info!(
     GroupStateTransitionInfoStatusWasm,
     GroupStateTransitionInfoStatus

@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use super::network::{NetworkLikeJs, NetworkWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::public_key::PublicKeyWasm;
 use dpp::dashcore::PrivateKey;
@@ -114,4 +115,5 @@ impl PrivateKeyWasm {
 }
 
 impl_try_from_js_value!(PrivateKeyWasm, "PrivateKey");
+impl_try_from_options!(PrivateKeyWasm);
 impl_wasm_type_info!(PrivateKeyWasm, PrivateKey);

@@ -5,6 +5,7 @@ use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
 use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
@@ -455,4 +456,5 @@ impl IdentityPublicKeyWasm {
 }
 
 impl_try_from_js_value!(IdentityPublicKeyWasm, "IdentityPublicKey");
+impl_try_from_options!(IdentityPublicKeyWasm);
 impl_wasm_type_info!(IdentityPublicKeyWasm, IdentityPublicKey);

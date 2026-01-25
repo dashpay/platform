@@ -193,3 +193,15 @@ impl TryFrom<&JsValue> for IdentitySignerWasm {
             .map_err(|_| WasmDppError::invalid_argument("Expected an IdentitySigner object"))
     }
 }
+
+impl IdentitySignerWasm {
+    /// Extract signer from JS options using default field name "signer".
+    pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> {
+        crate::utils::try_from_options(options, "signer")
+    }
+
+    /// Extract signer from JS options using a custom field name.
+    pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
+        crate::utils::try_from_options(options, field_name)
+    }
+}

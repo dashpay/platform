@@ -5,6 +5,7 @@ use crate::enums::lock_types::AssetLockProofTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, get_class_type, try_from_options};
 use dpp::prelude::AssetLockProof;
@@ -288,4 +289,5 @@ impl AssetLockProofWasm {
 }
 
 impl_try_from_js_value!(AssetLockProofWasm, "AssetLockProof");
+impl_try_from_options!(AssetLockProofWasm);
 impl_wasm_type_info!(AssetLockProofWasm, AssetLockProof);

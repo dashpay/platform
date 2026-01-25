@@ -912,7 +912,6 @@ impl WasmSdk {
         options: IdentityCreateFromAddressesOptionsJs,
     ) -> Result<IdentityCreateFromAddressesResultWasm, WasmSdkError> {
         use dash_sdk::platform::transition::put_identity::PutIdentity;
-        use wasm_dpp2::utils::try_from_options;
 
         let options_value: JsValue = options.into();
 
@@ -921,7 +920,7 @@ impl WasmSdk {
 
         // Extract identity from options
         let identity: Identity =
-            try_from_options::<wasm_dpp2::IdentityWasm>(&options_value, "identity")?.into();
+            wasm_dpp2::IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Convert inputs to map (address -> amount)
         let inputs_map = outputs_to_btree_map(parsed.inputs);

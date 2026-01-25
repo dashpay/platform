@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
@@ -680,4 +681,5 @@ impl DataContractWasm {
 }
 
 impl_try_from_js_value!(DataContractWasm, "DataContract");
+impl_try_from_options!(DataContractWasm);
 impl_wasm_type_info!(DataContractWasm, DataContract);

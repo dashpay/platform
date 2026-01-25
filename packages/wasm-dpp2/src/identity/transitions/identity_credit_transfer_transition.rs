@@ -4,8 +4,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options_optional_with, try_from_options, try_from_options_with, try_to_object,
-    try_to_u16, try_to_u64,
+    try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u64,
 };
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -86,10 +85,10 @@ impl IdentityCreditTransferWasm {
             try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
 
         let sender: Identifier =
-            try_from_options::<IdentifierWasm>(&options_obj, "senderId")?.into();
+            IdentifierWasm::try_from_options(&options_obj, "senderId")?.into();
 
         let recipient: Identifier =
-            try_from_options::<IdentifierWasm>(&options_obj, "recipientId")?.into();
+            IdentifierWasm::try_from_options(&options_obj, "recipientId")?.into();
 
         let nonce =
             try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;

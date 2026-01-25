@@ -2,6 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -201,4 +202,5 @@ impl IdentityWasm {
 }
 
 impl_try_from_js_value!(IdentityWasm, "Identity");
+impl_try_from_options!(IdentityWasm);
 impl_wasm_type_info!(IdentityWasm, Identity);

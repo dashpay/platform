@@ -8,8 +8,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
-    try_to_object, try_to_u16, try_to_u32, try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16,
+    try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -98,7 +98,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let options_obj = try_to_object(options.into(), "options")?;
 
         let identity_id: Identifier =
-            try_from_options::<IdentifierWasm>(&options_obj, "identityId")?.into();
+            IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
 
         let amount =
             try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
@@ -107,7 +107,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
             try_to_u32(v, "coreFeePerByte")
         })?;
 
-        let pooling: PoolingWasm = try_from_options(&options_obj, "pooling")?;
+        let pooling: PoolingWasm = PoolingWasm::try_from_options(&options_obj, "pooling")?;
 
         let output_script: Option<CoreScript> =
             try_from_options_optional_with(&options_obj, "outputScript", |v| {
