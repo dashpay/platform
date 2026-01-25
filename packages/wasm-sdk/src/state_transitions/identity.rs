@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::{IntoWasm, get_optional_property_with, get_required_property, try_to_array, try_to_object};
+use wasm_dpp2::utils::{IntoWasm, try_from_options_optional_with, try_from_options_with, try_to_array, try_to_u64};
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -318,9 +318,9 @@ impl WasmSdk {
             IdentifierWasm::try_from_options(&options_value, "recipientId")?.into();
 
         // Extract amount from options
-        let options_obj = try_to_object(options_value.clone(), "options")?;
-        let amount_js = get_required_property(&options_obj, "amount")?;
-        let amount = wasm_dpp2::utils::try_to_u64(amount_js, "amount")?;
+        let amount: u64 = try_from_options_with(&options_value, "amount", |v| {
+            try_to_u64(v, "amount").map_err(Into::into)
+        })?;
 
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
@@ -641,12 +641,10 @@ impl WasmSdk {
             })?;
 
         // Parse keys to add from options
-        let options_obj = try_to_object(options_value.clone(), "options")?;
-
-        let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) = get_optional_property_with(
-            &options_obj,
+        let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) = try_from_options_optional_with(
+            &options_value,
             "addPublicKeys",
-            |v| try_to_array(v, "addPublicKeys"),
+            |v| try_to_array(v, "addPublicKeys").map_err(Into::into),
         )? {
             let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
             let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {
