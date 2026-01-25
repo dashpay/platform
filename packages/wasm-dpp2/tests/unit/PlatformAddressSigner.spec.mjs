@@ -91,7 +91,8 @@ describe('PlatformAddressSigner', () => {
 
     it('should return false for unknown address', () => {
       const signer = new wasm.PlatformAddressSigner();
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const addr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       expect(signer.hasKey(addr)).to.be.false();

@@ -78,10 +78,10 @@ describe('IdentityCreateTransition', () => {
       expect(transition.userFeeIncrease).to.equal(0);
     });
 
-    it('should allow to get AssetLock', () => {
+    it('should allow to get AssetLockProof', () => {
       const transition = wasm.IdentityCreateTransition.default(1);
 
-      expect(transition.assetLock).to.be.an.instanceof(wasm.AssetLockProof);
+      expect(transition.assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);
     });
 
     it('should allow to get Identifier', () => {

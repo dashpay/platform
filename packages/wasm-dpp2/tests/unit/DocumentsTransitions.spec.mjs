@@ -470,7 +470,7 @@ describe('DocumentsTransitions', () => {
         const documentInstance = createDocument();
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
-        expect(transferTransition.recipientId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
+        expect(transferTransition.recipientOwnerId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
       });
     });
 
@@ -643,9 +643,9 @@ describe('DocumentsTransitions', () => {
 
         const newRecipient = new Uint8Array(32);
 
-        transferTransition.recipientId = newRecipient;
+        transferTransition.recipientOwnerId = newRecipient;
 
-        expect(transferTransition.recipientId.toBytes()).to.deep.equal(newRecipient);
+        expect(transferTransition.recipientOwnerId.toBytes()).to.deep.equal(newRecipient);
       });
     });
 

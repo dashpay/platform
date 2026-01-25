@@ -215,7 +215,7 @@ describe('PlatformAddress', () => {
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = addr.toBech32m('testnet');
       expect(bech32m).to.be.a('string');
-      expect(bech32m.startsWith('tdashevo1')).to.be.true();
+      expect(bech32m.startsWith('tevo1')).to.be.true();
     });
 
     it('should convert to mainnet bech32m', () => {

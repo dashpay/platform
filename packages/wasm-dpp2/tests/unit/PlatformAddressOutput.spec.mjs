@@ -9,7 +9,8 @@ before(async () => {
 describe('PlatformAddressOutput', () => {
   describe('construction', () => {
     it('should create from PlatformAddress object', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       const output = new wasm.PlatformAddressOutput(platformAddr, BigInt(500000));
@@ -18,7 +19,8 @@ describe('PlatformAddressOutput', () => {
     });
 
     it('should create from bech32m address string', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
       const bech32m = platformAddr.toBech32m('testnet');
 
@@ -28,7 +30,8 @@ describe('PlatformAddressOutput', () => {
     });
 
     it('should create from Uint8Array', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
 
       const output = new wasm.PlatformAddressOutput(addressBytes, BigInt(100000));
       expect(output).to.exist;
@@ -36,7 +39,8 @@ describe('PlatformAddressOutput', () => {
     });
 
     it('should handle large amounts', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       const largeAmount = BigInt('10000000000000000');
@@ -45,7 +49,8 @@ describe('PlatformAddressOutput', () => {
     });
 
     it('should handle zero amount', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       const output = new wasm.PlatformAddressOutput(platformAddr, BigInt(0));
@@ -53,7 +58,8 @@ describe('PlatformAddressOutput', () => {
     });
 
     it('should reject negative amount', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       expect(() => {
@@ -65,7 +71,8 @@ describe('PlatformAddressOutput', () => {
 
   describe('getters', () => {
     it('should return the address', () => {
-      const addressBytes = new Uint8Array([0x01, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0x80 is P2SH address type
+      const addressBytes = new Uint8Array([0x80, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       const output = new wasm.PlatformAddressOutput(platformAddr, BigInt(100000));
@@ -75,7 +82,8 @@ describe('PlatformAddressOutput', () => {
     });
 
     it('should return the amount', () => {
-      const addressBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      // 0xb0 is P2PKH address type
+      const addressBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       const output = new wasm.PlatformAddressOutput(platformAddr, BigInt(999999));
