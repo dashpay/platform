@@ -4,8 +4,8 @@ use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, JsValueExt, try_from_options_optional_with, try_from_options,
-    try_from_options_with, try_to_array, try_to_object, try_to_u64,
+    IntoWasm, JsValueExt, try_from_options, try_from_options_optional_with, try_from_options_with,
+    try_to_array, try_to_object, try_to_u64,
 };
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
@@ -84,13 +84,13 @@ impl PartialIdentityWasm {
             value_to_loaded_public_keys(&v)
         })?;
 
-        let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
-            try_to_u64(v, "balance")
-        })?;
+        let balance: Option<Credits> =
+            try_from_options_optional_with(&options_obj, "balance", |v| try_to_u64(v, "balance"))?;
 
-        let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
-            try_to_u64(v, "revision")
-        })?;
+        let revision: Option<Revision> =
+            try_from_options_optional_with(&options_obj, "revision", |v| {
+                try_to_u64(v, "revision")
+            })?;
 
         let not_found_public_keys: Option<Array> =
             try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
@@ -223,14 +223,14 @@ impl PartialIdentityWasm {
         })?;
 
         // balance - can be BigInt, number, or undefined
-        let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
-            try_to_u64(v, "balance")
-        })?;
+        let balance: Option<Credits> =
+            try_from_options_optional_with(&options_obj, "balance", |v| try_to_u64(v, "balance"))?;
 
         // revision - can be BigInt, number, or undefined
-        let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
-            try_to_u64(v, "revision")
-        })?;
+        let revision: Option<Revision> =
+            try_from_options_optional_with(&options_obj, "revision", |v| {
+                try_to_u64(v, "revision")
+            })?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
@@ -262,14 +262,14 @@ impl PartialIdentityWasm {
         })?;
 
         // balance - can be BigInt, number, or string (JSON doesn't support BigInt natively)
-        let balance: Option<Credits> = try_from_options_optional_with(&options_obj, "balance", |v| {
-            try_to_u64(v, "balance")
-        })?;
+        let balance: Option<Credits> =
+            try_from_options_optional_with(&options_obj, "balance", |v| try_to_u64(v, "balance"))?;
 
         // revision - can be BigInt, number, or string (JSON doesn't support BigInt natively)
-        let revision: Option<Revision> = try_from_options_optional_with(&options_obj, "revision", |v| {
-            try_to_u64(v, "revision")
-        })?;
+        let revision: Option<Revision> =
+            try_from_options_optional_with(&options_obj, "revision", |v| {
+                try_to_u64(v, "revision")
+            })?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
@@ -306,14 +306,11 @@ pub fn value_to_loaded_public_keys(
 
     for key in keys.iter() {
         // Object.keys() returns strings, so we need to parse them
-        let key_str = key.as_string().ok_or_else(|| {
-            WasmDppError::invalid_argument("Key identifier must be a string")
-        })?;
+        let key_str = key
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("Key identifier must be a string"))?;
         let key_val: f64 = key_str.parse().map_err(|_| {
-            WasmDppError::invalid_argument(format!(
-                "Key identifier '{}' must be numeric",
-                key_str
-            ))
+            WasmDppError::invalid_argument(format!("Key identifier '{}' must be numeric", key_str))
         })?;
 
         if key_val > u32::MAX as f64 {

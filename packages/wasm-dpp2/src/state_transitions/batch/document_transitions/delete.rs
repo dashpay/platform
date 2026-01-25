@@ -26,7 +26,9 @@ impl DocumentDeleteTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
-        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<
+            TokenPaymentInfoWasm,
+        >,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         let rs_delete_transition = generate_delete_transition(
             document,

@@ -247,7 +247,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the mint transition using rs-sdk builder
         let mut builder = TokenMintTransitionBuilder::new(
@@ -281,8 +282,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -489,7 +493,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the burn transition using rs-sdk builder
         let mut builder = TokenBurnTransitionBuilder::new(
@@ -518,8 +523,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -742,7 +750,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the transfer transition using rs-sdk builder
         let mut builder = TokenTransferTransitionBuilder::new(
@@ -764,8 +773,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -963,7 +975,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the freeze transition using rs-sdk builder
         let mut builder = TokenFreezeTransitionBuilder::new(
@@ -992,8 +1005,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1186,7 +1202,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the unfreeze transition using rs-sdk builder
         let mut builder = TokenUnfreezeTransitionBuilder::new(
@@ -1215,8 +1232,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1395,7 +1415,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the destroy frozen transition using rs-sdk builder
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
@@ -1424,8 +1445,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1608,7 +1632,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the emergency action transition using rs-sdk builder
         // Use the appropriate constructor based on the action
@@ -1649,8 +1674,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1833,7 +1861,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the claim transition using rs-sdk builder
         let mut builder = TokenClaimTransitionBuilder::new(
@@ -1854,8 +1883,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -2071,7 +2103,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the set price transition using rs-sdk builder
         let mut builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
@@ -2104,8 +2137,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -2305,7 +2341,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build the direct purchase transition using rs-sdk builder
         let mut builder = TokenDirectPurchaseTransitionBuilder::new(
@@ -2322,8 +2359,11 @@ impl WasmSdk {
         }
 
         // Add user fee increase from settings
-        let user_fee_increase =
-            get_user_fee_increase(try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into).as_ref());
+        let user_fee_increase = get_user_fee_increase(
+            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+                .map(Into::into)
+                .as_ref(),
+        );
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }

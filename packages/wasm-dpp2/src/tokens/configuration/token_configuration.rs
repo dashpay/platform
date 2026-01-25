@@ -132,18 +132,16 @@ impl TokenConfigurationWasm {
         })?;
 
         // Extract manualMintingRules (required)
-        let manual_minting_rules =
-            try_from_options_with(&object, "manualMintingRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let manual_minting_rules = try_from_options_with(&object, "manualMintingRules", |v| {
+            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract manualBurningRules (required)
-        let manual_burning_rules =
-            try_from_options_with(&object, "manualBurningRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let manual_burning_rules = try_from_options_with(&object, "manualBurningRules", |v| {
+            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract freezeRules (required)
         let freeze_rules = try_from_options_with(&object, "freezeRules", |v| {
@@ -165,11 +163,10 @@ impl TokenConfigurationWasm {
             })?;
 
         // Extract emergencyActionRules (required)
-        let emergency_action_rules =
-            try_from_options_with(&object, "emergencyActionRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let emergency_action_rules = try_from_options_with(&object, "emergencyActionRules", |v| {
+            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
+                .map(|r| r.clone())
+        })?;
 
         // Extract mainControlGroupCanBeModified (required)
         let main_control_group_can_be_modified =

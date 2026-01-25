@@ -157,7 +157,9 @@ impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(setter = "tokenPaymentInfo")]
     pub fn set_token_payment_info(
         &mut self,
-        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<
+            TokenPaymentInfoWasm,
+        >,
     ) {
         match token_payment_info {
             Some(info) => self.0.set_token_payment_info(info.into()),

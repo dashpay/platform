@@ -58,16 +58,14 @@ impl TokenTransferTransitionWasm {
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let base: TokenBaseTransitionWasm =
-            try_from_options_with(&options_obj, "base", |v| {
-                v.to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")
-                    .map(|r| r.clone())
-            })?;
+        let base: TokenBaseTransitionWasm = try_from_options_with(&options_obj, "base", |v| {
+            v.to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")
+                .map(|r| r.clone())
+        })?;
 
         let recipient_id: IdentifierWasm = try_from_options(&options_obj, "recipientId")?;
 
-        let amount =
-            try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
+        let amount = try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
 
         let public_note: Option<String> =
             try_from_options_optional_with(&options_obj, "publicNote", |v| {

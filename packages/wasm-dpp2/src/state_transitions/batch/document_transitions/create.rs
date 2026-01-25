@@ -44,8 +44,12 @@ impl DocumentCreateTransitionWasm {
     pub fn constructor(
         document: &DocumentWasm,
         #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
-        #[wasm_bindgen(js_name = "prefundedVotingBalance")] prefunded_voting_balance: Option<PrefundedVotingBalanceWasm>,
-        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<TokenPaymentInfoWasm>,
+        #[wasm_bindgen(js_name = "prefundedVotingBalance")] prefunded_voting_balance: Option<
+            PrefundedVotingBalanceWasm,
+        >,
+        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<
+            TokenPaymentInfoWasm,
+        >,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
         let rs_create_transition = generate_create_transition(
             document,
@@ -115,7 +119,8 @@ impl DocumentCreateTransitionWasm {
     #[wasm_bindgen(setter = "prefundedVotingBalance")]
     pub fn set_prefunded_voting_balance(
         &mut self,
-        #[wasm_bindgen(js_name = "prefundedVotingBalance")] prefunded_voting_balance: &PrefundedVotingBalanceWasm,
+        #[wasm_bindgen(js_name = "prefundedVotingBalance")]
+        prefunded_voting_balance: &PrefundedVotingBalanceWasm,
     ) {
         self.0.set_prefunded_voting_balance(
             prefunded_voting_balance.index_name(),

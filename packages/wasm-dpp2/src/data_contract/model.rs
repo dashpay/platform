@@ -7,8 +7,8 @@ use crate::serialization;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
-    IntoWasm, JsValueExt, try_from_options_optional, try_from_options_optional_with, try_from_options,
-    try_from_options_with,
+    IntoWasm, JsValueExt, try_from_options, try_from_options_optional,
+    try_from_options_optional_with, try_from_options_with,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -195,13 +195,18 @@ impl DataContractWasm {
         })?;
 
         // Extract definitions (optional)
-        let definitions: Option<Value> =
-            try_from_options_optional_with(&object, "definitions", serialization::platform_value_from_object)?;
+        let definitions: Option<Value> = try_from_options_optional_with(
+            &object,
+            "definitions",
+            serialization::platform_value_from_object,
+        )?;
 
         // Extract tokens (optional)
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
-            try_from_options_optional_with(&object, "tokens", |v| tokens_configuration_from_js_value(&v))?
-                .unwrap_or_default();
+            try_from_options_optional_with(&object, "tokens", |v| {
+                tokens_configuration_from_js_value(&v)
+            })?
+            .unwrap_or_default();
 
         // Extract platformVersion (optional)
         let platform_version: PlatformVersion =

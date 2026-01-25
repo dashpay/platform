@@ -95,10 +95,7 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(setter = "outputIndex")]
-    pub fn set_output_index(
-        &mut self,
-        #[wasm_bindgen(js_name = "outputIndex")] output_index: u32,
-    ) {
+    pub fn set_output_index(&mut self, #[wasm_bindgen(js_name = "outputIndex")] output_index: u32) {
         self.0.output_index = output_index;
     }
 

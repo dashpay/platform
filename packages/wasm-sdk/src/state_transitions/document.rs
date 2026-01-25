@@ -127,7 +127,8 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use PutDocument trait for creation
         document
@@ -232,7 +233,8 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use PutDocument trait for replacement (revision > INITIAL_REVISION triggers replace)
         document
@@ -373,7 +375,8 @@ impl WasmSdk {
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Build and execute delete transition using DocumentDeleteTransitionBuilder
         let builder = DocumentDeleteTransitionBuilder::new(
@@ -498,7 +501,8 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use TransferDocument trait
         document
@@ -602,9 +606,8 @@ impl WasmSdk {
             IdentifierWasm::try_from_options(&options_value, "buyerId")?.into();
 
         // Extract price from options
-        let price: Credits = try_from_options_with(&options_value, "price", |v| {
-            try_to_u64(v, "price")
-        })?;
+        let price: Credits =
+            try_from_options_with(&options_value, "price", |v| try_to_u64(v, "price"))?;
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -621,7 +624,8 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use PurchaseDocument trait
         document
@@ -717,9 +721,8 @@ impl WasmSdk {
         let document_type_name = document_wasm.document_type_name();
 
         // Extract price from options
-        let price: Credits = try_from_options_with(&options_value, "price", |v| {
-            try_to_u64(v, "price")
-        })?;
+        let price: Credits =
+            try_from_options_with(&options_value, "price", |v| try_to_u64(v, "price"))?;
 
         // Extract identity key from options
         let identity_key_wasm =
@@ -736,7 +739,8 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use UpdatePriceOfDocument trait
         document

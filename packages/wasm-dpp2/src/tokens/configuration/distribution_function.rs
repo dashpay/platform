@@ -90,8 +90,7 @@ impl DistributionFunctionWasm {
 
     #[wasm_bindgen(js_name = "Stepwise")]
     pub fn stepwise(
-        #[wasm_bindgen(unchecked_param_type = "Record<string, bigint>")]
-        steps_with_amount: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, bigint>")] steps_with_amount: JsValue,
     ) -> WasmDppResult<DistributionFunctionWasm> {
         let obj = Object::from(steps_with_amount);
 

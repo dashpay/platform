@@ -37,9 +37,7 @@ impl PublicKeyWasm {
 
             let bytes: [u8; constants::PUBLIC_KEY_SIZE] =
                 public_key_bytes.try_into().map_err(|_| {
-                    WasmDppError::invalid_argument(
-                        "compressed public key must contain 33 bytes",
-                    )
+                    WasmDppError::invalid_argument("compressed public key must contain 33 bytes")
                 })?;
             secp256k1::PublicKey::from_byte_array_compressed(&bytes)
         } else {
@@ -52,9 +50,7 @@ impl PublicKeyWasm {
 
             let bytes: [u8; constants::UNCOMPRESSED_PUBLIC_KEY_SIZE] =
                 public_key_bytes.try_into().map_err(|_| {
-                    WasmDppError::invalid_argument(
-                        "uncompressed public key must contain 65 bytes",
-                    )
+                    WasmDppError::invalid_argument("uncompressed public key must contain 65 bytes")
                 })?;
 
             secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)

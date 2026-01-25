@@ -6,7 +6,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with};
+use crate::utils::{
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
+};
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -292,10 +294,7 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(
-        &mut self,
-        #[wasm_bindgen(js_name = "keyId")] key_id: u32,
-    ) {
+    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: u32) {
         self.0.set_id(key_id)
     }
 
@@ -327,27 +326,18 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = "isReadOnly")]
-    pub fn set_is_read_only(
-        &mut self,
-        #[wasm_bindgen(js_name = "isReadOnly")] is_read_only: bool,
-    ) {
+    pub fn set_is_read_only(&mut self, #[wasm_bindgen(js_name = "isReadOnly")] is_read_only: bool) {
         self.0.set_read_only(is_read_only)
     }
 
     #[wasm_bindgen(setter = data)]
-    pub fn set_data(
-        &mut self,
-        #[wasm_bindgen(js_name = "binaryData")] binary_data: Vec<u8>,
-    ) {
+    pub fn set_data(&mut self, #[wasm_bindgen(js_name = "binaryData")] binary_data: Vec<u8>) {
         let data = BinaryData::from(binary_data);
         self.0.set_data(data)
     }
 
     #[wasm_bindgen(setter = signature)]
-    pub fn set_signature(
-        &mut self,
-        #[wasm_bindgen(js_name = "binaryData")] binary_data: Vec<u8>,
-    ) {
+    pub fn set_signature(&mut self, #[wasm_bindgen(js_name = "binaryData")] binary_data: Vec<u8>) {
         let signature = BinaryData::from(binary_data);
         self.0.set_signature(signature)
     }

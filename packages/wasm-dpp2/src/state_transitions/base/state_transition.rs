@@ -128,8 +128,10 @@ impl StateTransitionWasm {
     pub fn verify_public_key(
         &self,
         #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
-        #[wasm_bindgen(js_name = "allowSigningWithAnySecurityLevel")] allow_signing_with_any_security_level: Option<bool>,
-        #[wasm_bindgen(js_name = "allowSigningWithAnyPurpose")] allow_signing_with_any_purpose: Option<bool>,
+        #[wasm_bindgen(js_name = "allowSigningWithAnySecurityLevel")]
+        allow_signing_with_any_security_level: Option<bool>,
+        #[wasm_bindgen(js_name = "allowSigningWithAnyPurpose")]
+        allow_signing_with_any_purpose: Option<bool>,
     ) -> WasmDppResult<()> {
         let allow_signing_with_any_security_level =
             allow_signing_with_any_security_level.unwrap_or(false);

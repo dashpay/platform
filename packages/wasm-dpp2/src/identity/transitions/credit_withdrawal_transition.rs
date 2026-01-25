@@ -100,8 +100,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let identity_id: Identifier =
             IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
 
-        let amount =
-            try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
+        let amount = try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
 
         let core_fee_per_byte = try_from_options_with(&options_obj, "coreFeePerByte", |v| {
             try_to_u32(v, "coreFeePerByte")

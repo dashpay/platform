@@ -4,7 +4,6 @@ use crate::queries::utils::{
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
-use wasm_dpp2::serialization::conversions::js_value_to_platform_value;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::FetchMany;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
@@ -14,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::serialization::conversions::js_value_to_platform_value;
 
 #[wasm_bindgen(typescript_custom_section)]
 const VOTE_POLLS_BY_DOCUMENT_TYPE_QUERY_TS: &'static str = r#"

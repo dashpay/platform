@@ -30,11 +30,7 @@ pub struct WasmDppError {
 }
 
 impl WasmDppError {
-    fn new(
-        kind: WasmDppErrorKind,
-        message: impl Into<String>,
-        code: Option<i32>,
-    ) -> Self {
+    fn new(kind: WasmDppErrorKind, message: impl Into<String>, code: Option<i32>) -> Self {
         Self {
             kind,
             message: message.into(),

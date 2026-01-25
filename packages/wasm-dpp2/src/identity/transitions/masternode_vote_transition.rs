@@ -6,7 +6,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
     try_to_bytes, try_to_object, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
@@ -99,8 +99,7 @@ impl MasternodeVoteTransitionWasm {
 
         let pro_tx_hash: IdentifierWasm = try_from_options(&options_obj, "proTxHash")?;
 
-        let voter_identity_id: IdentifierWasm =
-            try_from_options(&options_obj, "voterIdentityId")?;
+        let voter_identity_id: IdentifierWasm = try_from_options(&options_obj, "voterIdentityId")?;
 
         let vote: VoteWasm = try_from_options_with(&options_obj, "vote", |v| {
             v.to_wasm::<VoteWasm>("Vote").map(|r| r.clone())
@@ -114,11 +113,10 @@ impl MasternodeVoteTransitionWasm {
             })?
             .unwrap_or(0);
 
-        let signature: Vec<u8> =
-            try_from_options_optional_with(&options_obj, "signature", |v| {
-                try_to_bytes(v, "signature")
-            })?
-            .unwrap_or_default();
+        let signature: Vec<u8> = try_from_options_optional_with(&options_obj, "signature", |v| {
+            try_to_bytes(v, "signature")
+        })?
+        .unwrap_or_default();
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {

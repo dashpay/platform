@@ -9,7 +9,7 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options, try_to_fixed_bytes,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_to_fixed_bytes,
 };
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -280,10 +280,7 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(
-        &mut self,
-        #[wasm_bindgen(js_name = "keyId")] key_id: u32,
-    ) {
+    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: u32) {
         self.0.set_id(key_id)
     }
 
@@ -315,10 +312,7 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = "isReadOnly")]
-    pub fn set_is_read_only(
-        &mut self,
-        #[wasm_bindgen(js_name = "isReadOnly")] is_read_only: bool,
-    ) {
+    pub fn set_is_read_only(&mut self, #[wasm_bindgen(js_name = "isReadOnly")] is_read_only: bool) {
         self.0.set_read_only(is_read_only)
     }
 
@@ -335,10 +329,7 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = disabledAt)]
-    pub fn set_disabled_at(
-        &mut self,
-        #[wasm_bindgen(js_name = "disabledAt")] disabled_at: u64,
-    ) {
+    pub fn set_disabled_at(&mut self, #[wasm_bindgen(js_name = "disabledAt")] disabled_at: u64) {
         self.0.set_disabled_at(disabled_at)
     }
 

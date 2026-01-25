@@ -3,7 +3,7 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::utils::{
-    try_from_options_with, try_to_map, try_to_object, try_to_u32, try_to_u64, JsMapExt,
+    JsMapExt, try_from_options_with, try_to_map, try_to_object, try_to_u32, try_to_u64,
 };
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
@@ -201,20 +201,18 @@ impl FinalizedEpochInfoWasm {
                 try_to_u64(v, "totalCreatedStorageFees")
             })?;
 
-        let core_block_rewards =
-            try_from_options_with(&options_obj, "coreBlockRewards", |v| {
-                try_to_u64(v, "coreBlockRewards")
-            })?;
+        let core_block_rewards = try_from_options_with(&options_obj, "coreBlockRewards", |v| {
+            try_to_u64(v, "coreBlockRewards")
+        })?;
 
-        let block_proposers =
-            try_from_options_with(&options_obj, "blockProposers", |v| {
-                if !v.is_instance_of::<Map>() {
-                    return Err(WasmDppError::invalid_argument(
-                        "'blockProposers' must be a Map",
-                    ));
-                }
-                block_proposers_from_map(&Map::unchecked_from_js(v))
-            })?;
+        let block_proposers = try_from_options_with(&options_obj, "blockProposers", |v| {
+            if !v.is_instance_of::<Map>() {
+                return Err(WasmDppError::invalid_argument(
+                    "'blockProposers' must be a Map",
+                ));
+            }
+            block_proposers_from_map(&Map::unchecked_from_js(v))
+        })?;
 
         let fee_multiplier_permille =
             try_from_options_with(&options_obj, "feeMultiplierPermille", |v| {
@@ -343,7 +341,8 @@ impl FinalizedEpochInfoWasm {
     #[wasm_bindgen(setter = "nextEpochStartCoreBlockHeight")]
     pub fn set_next_epoch_start_core_block_height(
         &mut self,
-        #[wasm_bindgen(js_name = "nextEpochStartCoreBlockHeight")] next_epoch_start_core_block_height: u32,
+        #[wasm_bindgen(js_name = "nextEpochStartCoreBlockHeight")]
+        next_epoch_start_core_block_height: u32,
     ) {
         self.v0_mut().next_epoch_start_core_block_height = next_epoch_start_core_block_height;
     }
@@ -359,7 +358,8 @@ impl FinalizedEpochInfoWasm {
     #[wasm_bindgen(setter = "totalDistributedStorageFees")]
     pub fn set_total_distributed_storage_fees(
         &mut self,
-        #[wasm_bindgen(js_name = "totalDistributedStorageFees")] total_distributed_storage_fees: u64,
+        #[wasm_bindgen(js_name = "totalDistributedStorageFees")]
+        total_distributed_storage_fees: u64,
     ) {
         self.v0_mut().total_distributed_storage_fees = total_distributed_storage_fees;
     }

@@ -100,9 +100,8 @@ impl IdentityCreateTransitionWasm {
         let object = Object::from(options.clone());
 
         // Extract publicKeys (required array)
-        let js_public_keys_array = try_from_options_with(&object, "publicKeys", |v| {
-            try_to_array(v, "publicKeys")
-        })?;
+        let js_public_keys_array =
+            try_from_options_with(&object, "publicKeys", |v| try_to_array(v, "publicKeys"))?;
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 

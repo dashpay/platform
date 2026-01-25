@@ -14,8 +14,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::utils::JsMapExt;
 use wasm_dpp2::utils::try_to_vec;
+use wasm_dpp2::utils::JsMapExt;
 use wasm_dpp2::{ProTxHashLikeArrayJs, ProTxHashWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -406,13 +406,12 @@ impl WasmSdk {
             ExtendedEpochInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let epochs_map = Map::from_entries(epochs_result.into_iter().map(
-            |(epoch_index, epoch_info)| {
+        let epochs_map =
+            Map::from_entries(epochs_result.into_iter().map(|(epoch_index, epoch_info)| {
                 let key: JsValue = Number::from(epoch_index as u32).into();
                 let value = JsValue::from(epoch_info.map(ExtendedEpochInfoWasm::from));
                 (key, value)
-            },
-        ));
+            }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
@@ -480,13 +479,12 @@ impl WasmSdk {
         let (epochs_result, metadata, proof) = dash_sdk::dpp::block::finalized_epoch_info::FinalizedEpochInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
             .await?;
 
-        let epochs_map = Map::from_entries(epochs_result.into_iter().map(
-            |(epoch_index, epoch_info)| {
+        let epochs_map =
+            Map::from_entries(epochs_result.into_iter().map(|(epoch_index, epoch_info)| {
                 let key: JsValue = Number::from(epoch_index as u32).into();
                 let value = JsValue::from(epoch_info.map(FinalizedEpochInfoWasm::from));
                 (key, value)
-            },
-        ));
+            }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
@@ -500,8 +498,7 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
-        #[wasm_bindgen(js_name = "proTxHashes")]
-        pro_tx_hashes: ProTxHashLikeArrayJs,
+        #[wasm_bindgen(js_name = "proTxHashes")] pro_tx_hashes: ProTxHashLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 

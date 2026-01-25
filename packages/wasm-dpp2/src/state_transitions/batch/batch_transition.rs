@@ -160,9 +160,7 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "allConflictingIndexCollateralVotingFunds")]
-    pub fn all_conflicting_index_collateral_voting_funds(
-        &self,
-    ) -> WasmDppResult<Option<Credits>> {
+    pub fn all_conflicting_index_collateral_voting_funds(&self) -> WasmDppResult<Option<Credits>> {
         self.0
             .all_conflicting_index_collateral_voting_funds()
             .map_err(Into::into)

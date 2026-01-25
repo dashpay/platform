@@ -133,13 +133,13 @@ impl WasmSdk {
     /// ```
     #[wasm_bindgen(js_name = "calculateTokenIdFromContract")]
     pub fn calculate_token_id_from_contract(
-        #[wasm_bindgen(js_name = "contractId")]
-        contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<String, WasmSdkError> {
         // Parse contract ID
-        let contract_identifier: Identifier = contract_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
+        let contract_identifier: Identifier = contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Calculate token ID
         let token_id = Identifier::from(calculate_token_id(
@@ -179,13 +179,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPriceByContract")]
     pub async fn get_token_price_by_contract(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<TokenPriceInfoWasm, WasmSdkError> {
         // Parse contract ID
-        let contract_identifier: Identifier = contract_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
+        let contract_identifier: Identifier = contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Calculate token ID
         let token_identifier = Identifier::from(calculate_token_id(
@@ -248,16 +248,15 @@ impl WasmSdk {
     )]
     pub async fn get_identities_token_balances(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        identity_ids: IdentifierLikeArrayJs,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
         use drive_proof_verifier::types::identity_token_balance::IdentitiesTokenBalances;
 
         // Parse token ID
-        let token_identifier: Identifier = token_id.try_into()
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
@@ -292,17 +291,16 @@ impl WasmSdk {
     )]
     pub async fn get_identity_token_infos(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        token_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentityTokenInfos;
 
         // Parse identity ID
-        let identity_identifier: Identifier = identity_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Parse token IDs
         let tokens: Vec<Identifier> =
@@ -337,16 +335,15 @@ impl WasmSdk {
     )]
     pub async fn get_identities_token_infos(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        identity_ids: IdentifierLikeArrayJs,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
 
         // Parse token ID
-        let token_identifier: Identifier = token_id.try_into()
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
@@ -382,8 +379,7 @@ impl WasmSdk {
     )]
     pub async fn get_token_statuses(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        token_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
@@ -413,8 +409,7 @@ impl WasmSdk {
     )]
     pub async fn get_token_direct_purchase_prices(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        token_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
 
@@ -464,15 +459,15 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
     pub async fn get_token_contract_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
     ) -> Result<Option<TokenContractInfoWasm>, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
 
         // Parse contract ID
-        let contract_id: Identifier = data_contract_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Fetch token contract info
         let info_result = TokenContractInfo::fetch(self.as_ref(), contract_id).await?;
@@ -483,15 +478,15 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaim")]
     pub async fn get_token_perpetual_distribution_last_claim(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Option<RewardDistributionMomentWasm>, WasmSdkError> {
         // Parse IDs
-        let identity_identifier: Identifier = identity_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
-        let token_identifier: Identifier = token_id.try_into()
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Prefetch token configuration and add to context provider cache
@@ -512,14 +507,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
     pub async fn get_token_total_supply(
         &self,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Option<TokenTotalSupplyWasm>, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
 
         // Parse token ID
-        let token_identifier: Identifier = token_id.try_into()
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch total supply
@@ -536,15 +531,14 @@ impl WasmSdk {
     )]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        identity_ids: IdentifierLikeArrayJs,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
 
         // Parse token ID
-        let token_identifier: Identifier = token_id.try_into()
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
@@ -586,8 +580,7 @@ impl WasmSdk {
     )]
     pub async fn get_token_statuses_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        token_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse token IDs
         let tokens: Vec<Identifier> =
@@ -620,14 +613,14 @@ impl WasmSdk {
     )]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
 
         // Parse token ID
-        let token_identifier: Identifier = token_id.try_into()
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch total supply with proof
@@ -656,17 +649,16 @@ impl WasmSdk {
     )]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        token_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentityTokenInfos;
 
         // Parse identity ID
-        let identity_identifier: Identifier = identity_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Parse token IDs
         let tokens: Vec<Identifier> =
@@ -704,16 +696,15 @@ impl WasmSdk {
     )]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        identity_ids: IdentifierLikeArrayJs,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
 
         // Parse token ID
-        let token_identifier: Identifier = token_id.try_into()
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
@@ -752,8 +743,7 @@ impl WasmSdk {
     )]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        token_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
 
@@ -812,15 +802,15 @@ impl WasmSdk {
     )]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
 
         // Parse contract ID
-        let contract_id: Identifier = data_contract_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?;
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Fetch token contract info with proof
         let (info_result, metadata, proof) =
@@ -842,19 +832,19 @@ impl WasmSdk {
     )]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "tokenId")]
-        token_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
         use dash_sdk::platform::query::TokenLastClaimQuery;
         use dash_sdk::platform::Fetch;
 
         // Parse IDs
-        let identity_identifier: Identifier = identity_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
-        let token_identifier: Identifier = token_id.try_into()
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
+        let token_identifier: Identifier = token_id
+            .try_into()
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Prefetch token configuration and add to context provider cache

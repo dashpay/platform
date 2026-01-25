@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
     try_to_object, try_to_u16, try_to_u64,
 };
 use dpp::group::GroupStateTransitionInfo;
@@ -65,8 +65,7 @@ impl TokenBaseTransitionWasm {
                 try_to_u16(v, "tokenContractPosition")
             })?;
 
-        let data_contract_id: IdentifierWasm =
-            try_from_options(&options_obj, "dataContractId")?;
+        let data_contract_id: IdentifierWasm = try_from_options(&options_obj, "dataContractId")?;
 
         let token_id: IdentifierWasm = try_from_options(&options_obj, "tokenId")?;
 

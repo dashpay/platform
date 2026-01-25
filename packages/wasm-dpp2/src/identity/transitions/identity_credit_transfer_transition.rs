@@ -81,17 +81,14 @@ impl IdentityCreditTransferWasm {
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let amount =
-            try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
+        let amount = try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
 
-        let sender: Identifier =
-            IdentifierWasm::try_from_options(&options_obj, "senderId")?.into();
+        let sender: Identifier = IdentifierWasm::try_from_options(&options_obj, "senderId")?.into();
 
         let recipient: Identifier =
             IdentifierWasm::try_from_options(&options_obj, "recipientId")?.into();
 
-        let nonce =
-            try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
+        let nonce = try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
 
         let user_fee_increase: UserFeeIncrease =
             try_from_options_optional_with(&options_obj, "userFeeIncrease", |v| {

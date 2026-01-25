@@ -67,10 +67,9 @@ impl WasmSdk {
         &self,
         address: PlatformAddressLikeJs,
     ) -> Result<Option<PlatformAddressInfoWasm>, WasmSdkError> {
-        let platform_address: PlatformAddress = address.try_into()
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
-            })?;
+        let platform_address: PlatformAddress = address.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
+        })?;
 
         let address_info = AddressInfo::fetch(self.as_ref(), platform_address).await?;
 
@@ -89,10 +88,9 @@ impl WasmSdk {
         &self,
         address: PlatformAddressLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let platform_address: PlatformAddress = address.try_into()
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
-            })?;
+        let platform_address: PlatformAddress = address.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
+        })?;
 
         let (address_info, metadata, proof) =
             AddressInfo::fetch_with_metadata_and_proof(self.as_ref(), platform_address, None)

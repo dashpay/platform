@@ -140,8 +140,7 @@ impl WasmSdk {
     )]
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
-        #[wasm_bindgen(js_name = "startProTxHash")]
-        start_pro_tx_hash: ProTxHashLikeNullableJs,
+        #[wasm_bindgen(js_name = "startProTxHash")] start_pro_tx_hash: ProTxHashLikeNullableJs,
         count: u32,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
@@ -226,8 +225,7 @@ impl WasmSdk {
     )]
     pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "startProTxHash")]
-        start_pro_tx_hash: ProTxHashLikeNullableJs,
+        #[wasm_bindgen(js_name = "startProTxHash")] start_pro_tx_hash: ProTxHashLikeNullableJs,
         count: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::{FetchMany, LimitQuery};

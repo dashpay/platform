@@ -139,7 +139,8 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "tokenContractPosition")]
     pub fn set_token_contract_position(
         &mut self,
-        #[wasm_bindgen(js_name = "tokenContractPosition")] token_contract_position: TokenContractPosition,
+        #[wasm_bindgen(js_name = "tokenContractPosition")]
+        token_contract_position: TokenContractPosition,
     ) {
         self.0.set_token_contract_position(token_contract_position)
     }

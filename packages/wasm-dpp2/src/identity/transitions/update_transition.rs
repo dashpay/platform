@@ -91,14 +91,12 @@ impl IdentityUpdateTransitionWasm {
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let identity_id =
-            IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
+        let identity_id = IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
 
         let revision =
             try_from_options_with(&options_obj, "revision", |v| try_to_u64(v, "revision"))?;
 
-        let nonce =
-            try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
+        let nonce = try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
 
         let add_public_keys_array = try_from_options_with(&options_obj, "addPublicKeys", |v| {
             try_to_array(v, "addPublicKeys")

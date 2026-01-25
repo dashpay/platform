@@ -90,7 +90,10 @@ impl From<AssetLockProof> for InstantAssetLockProofWasm {
 impl AssetLockProofWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(unchecked_param_type = "ChainAssetLockProof | InstantAssetLockProof", js_name = "assetLockProof")]
+        #[wasm_bindgen(
+            unchecked_param_type = "ChainAssetLockProof | InstantAssetLockProof",
+            js_name = "assetLockProof"
+        )]
         asset_lock_proof: &JsValue,
     ) -> WasmDppResult<AssetLockProofWasm> {
         match get_class_type(asset_lock_proof)?.as_str() {
@@ -264,7 +267,9 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(#[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: String) -> WasmDppResult<AssetLockProofWasm> {
+    pub fn from_hex(
+        #[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: String,
+    ) -> WasmDppResult<AssetLockProofWasm> {
         let bytes = hex::decode(asset_lock_proof)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())

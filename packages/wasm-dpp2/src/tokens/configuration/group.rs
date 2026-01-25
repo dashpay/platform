@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{try_to_map, JsMapExt};
+use crate::utils::{JsMapExt, try_to_map};
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
@@ -138,7 +138,10 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(setter = "requiredPower")]
-    pub fn set_required_power(&mut self, #[wasm_bindgen(js_name = "requiredPower")] required_power: GroupRequiredPower) {
+    pub fn set_required_power(
+        &mut self,
+        #[wasm_bindgen(js_name = "requiredPower")] required_power: GroupRequiredPower,
+    ) {
         self.0.set_required_power(required_power);
     }
 

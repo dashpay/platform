@@ -97,7 +97,10 @@ pub struct ContestedResourceVoteWinnerWasm {
 }
 
 impl ContestedResourceVoteWinnerWasm {
-    pub(crate) fn from_parts(info: ContestedDocumentVotePollWinnerInfo, block: BlockInfoWasm) -> Self {
+    pub(crate) fn from_parts(
+        info: ContestedDocumentVotePollWinnerInfo,
+        block: BlockInfoWasm,
+    ) -> Self {
         Self {
             info: info.into(),
             block,
@@ -127,7 +130,10 @@ pub struct ContestedResourceContenderWasm {
 }
 
 impl ContestedResourceContenderWasm {
-    pub(crate) fn from_parts(identity: Identifier, contender: ContenderWithSerializedDocument) -> Self {
+    pub(crate) fn from_parts(
+        identity: Identifier,
+        contender: ContenderWithSerializedDocument,
+    ) -> Self {
         Self {
             identity_id: identity,
             contender: contender.into(),

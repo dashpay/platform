@@ -117,14 +117,11 @@ impl TokenDistributionRulesWasm {
                 })
             })?;
 
-        let minting_allow_choosing_destination_rules = try_from_options_with(
-            &options_obj,
-            "mintingAllowChoosingDestinationRules",
-            |v| {
+        let minting_allow_choosing_destination_rules =
+            try_from_options_with(&options_obj, "mintingAllowChoosingDestinationRules", |v| {
                 v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
                     .map(|r| r.clone())
-            },
-        )?;
+            })?;
 
         let change_direct_purchase_pricing_rules =
             try_from_options_with(&options_obj, "changeDirectPurchasePricingRules", |v| {

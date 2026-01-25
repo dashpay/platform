@@ -111,7 +111,8 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Put identity to platform and wait
         identity
@@ -201,7 +202,8 @@ impl WasmSdk {
             PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Top up the identity
         let new_balance = identity
@@ -321,9 +323,8 @@ impl WasmSdk {
             IdentifierWasm::try_from_options(&options_value, "recipientId")?.into();
 
         // Extract amount from options
-        let amount: u64 = try_from_options_with(&options_value, "amount", |v| {
-            try_to_u64(v, "amount")
-        })?;
+        let amount: u64 =
+            try_from_options_with(&options_value, "amount", |v| try_to_u64(v, "amount"))?;
 
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
@@ -334,7 +335,8 @@ impl WasmSdk {
                 .map(|k| k.into());
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Transfer credits using rs-sdk method
         let (sender_balance, recipient_balance) = identity
@@ -492,7 +494,8 @@ impl WasmSdk {
                 .map(|k| k.into());
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Perform the withdrawal
         let remaining_balance = identity
@@ -644,11 +647,10 @@ impl WasmSdk {
             })?;
 
         // Parse keys to add from options
-        let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) = try_from_options_optional_with(
-            &options_value,
-            "addPublicKeys",
-            |v| try_to_array(v, "addPublicKeys"),
-        )? {
+        let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) =
+            try_from_options_optional_with(&options_value, "addPublicKeys", |v| {
+                try_to_array(v, "addPublicKeys")
+            })? {
             let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
             let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {
                 WasmSdkError::invalid_argument("Key ID overflow: identity has too many keys")
@@ -680,7 +682,8 @@ impl WasmSdk {
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Get identity nonce
         let identity_nonce = self
@@ -844,7 +847,8 @@ impl WasmSdk {
         let vote = Vote::ResourceVote(resource_vote);
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Submit the vote using PutVote trait
         use dash_sdk::platform::transition::vote::PutVote;

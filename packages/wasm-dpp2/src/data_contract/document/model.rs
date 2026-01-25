@@ -203,9 +203,10 @@ impl DocumentWasm {
 
         let id: Option<IdentifierWasm> = try_from_options_optional(&options_obj, "id")?;
 
-        let entropy: Option<[u8; 32]> = try_from_options_optional_with(&options_obj, "entropy", |v| {
-            try_to_fixed_bytes::<32>(v, "entropy")
-        })?;
+        let entropy: Option<[u8; 32]> =
+            try_from_options_optional_with(&options_obj, "entropy", |v| {
+                try_to_fixed_bytes::<32>(v, "entropy")
+            })?;
 
         let entropy: [u8; 32] = entropy.map_or_else(
             || {
@@ -443,7 +444,9 @@ impl DocumentWasm {
     #[wasm_bindgen(setter=transferredAtBlockHeight)]
     pub fn set_transferred_at_block_height(
         &mut self,
-        #[wasm_bindgen(js_name = "transferredAtBlockHeight")] transferred_at_block_height: Option<u64>,
+        #[wasm_bindgen(js_name = "transferredAtBlockHeight")] transferred_at_block_height: Option<
+            u64,
+        >,
     ) {
         self.document
             .set_transferred_at_block_height(transferred_at_block_height);
@@ -452,7 +455,9 @@ impl DocumentWasm {
     #[wasm_bindgen(setter=createdAtCoreBlockHeight)]
     pub fn set_created_at_core_block_height(
         &mut self,
-        #[wasm_bindgen(js_name = "createdAtCoreBlockHeight")] created_at_core_block_height: Option<u32>,
+        #[wasm_bindgen(js_name = "createdAtCoreBlockHeight")] created_at_core_block_height: Option<
+            u32,
+        >,
     ) {
         self.document
             .set_created_at_core_block_height(created_at_core_block_height);
@@ -461,7 +466,9 @@ impl DocumentWasm {
     #[wasm_bindgen(setter=updatedAtCoreBlockHeight)]
     pub fn set_updated_at_core_block_height(
         &mut self,
-        #[wasm_bindgen(js_name = "updatedAtCoreBlockHeight")] updated_at_core_block_height: Option<u32>,
+        #[wasm_bindgen(js_name = "updatedAtCoreBlockHeight")] updated_at_core_block_height: Option<
+            u32,
+        >,
     ) {
         self.document
             .set_updated_at_core_block_height(updated_at_core_block_height);

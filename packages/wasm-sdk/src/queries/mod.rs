@@ -253,7 +253,11 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn constructor(data: JsValue, metadata: ResponseMetadataWasm, proof: ProofInfoWasm) -> Self {
+    pub fn constructor(
+        data: JsValue,
+        metadata: ResponseMetadataWasm,
+        proof: ProofInfoWasm,
+    ) -> Self {
         // Store data as-is. Conversion to JSON happens in to_serde()/toJSON().
         // This allows WASM objects (like DataContractWasm) to be stored directly
         // and their toJSON() method will be called when serializing.

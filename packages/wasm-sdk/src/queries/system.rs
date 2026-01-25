@@ -771,14 +771,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        let identity_identifier: Identifier = identity_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
@@ -952,14 +952,14 @@ impl WasmSdk {
     )]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        let identity_identifier: Identifier = identity_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Fetch prefunded specialized balance with proof
         let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(

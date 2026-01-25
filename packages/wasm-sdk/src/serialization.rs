@@ -29,7 +29,8 @@ macro_rules! impl_wasm_serde_conversions {
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
             pub fn from_object(obj: js_sys::Object) -> Result<$ty, $crate::WasmSdkError> {
-                wasm_dpp2::serialization::from_object(obj.into()).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::from_object(obj.into())
+                    .map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
@@ -54,7 +55,8 @@ macro_rules! impl_wasm_serde_conversions {
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
             pub fn from_object(obj: js_sys::Object) -> Result<$ty, $crate::WasmSdkError> {
-                wasm_dpp2::serialization::from_object(obj.into()).map_err($crate::WasmSdkError::from)
+                wasm_dpp2::serialization::from_object(obj.into())
+                    .map_err($crate::WasmSdkError::from)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]

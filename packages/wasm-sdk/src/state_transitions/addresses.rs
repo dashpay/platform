@@ -171,7 +171,8 @@ impl WasmSdk {
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use the SDK's transfer_address_funds method which handles nonces, building, and broadcasting
         let address_infos = self
@@ -300,7 +301,8 @@ impl WasmSdk {
         let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use the SDK's top_up_from_addresses method
         let (address_infos, new_balance) = identity
@@ -458,7 +460,8 @@ impl WasmSdk {
         let pooling = parsed.pooling.into();
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use the SDK's withdraw_address_funds method which handles nonces, building, and broadcasting
         let address_infos = self
@@ -519,7 +522,8 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use the SDK's transfer_credits_to_addresses method
         let (address_infos, new_balance) = identity
@@ -764,7 +768,8 @@ impl WasmSdk {
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use the SDK's top_up method for addresses
         let address_infos = outputs_map
@@ -938,7 +943,8 @@ impl WasmSdk {
         )?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Use the SDK's put_with_address_funding method
         let (created_identity, address_infos) = identity

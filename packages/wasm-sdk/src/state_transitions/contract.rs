@@ -99,7 +99,8 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Create and broadcast the contract
         // Note: The SDK will set the actual contract ID based on the identity nonce
@@ -199,7 +200,8 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?.map(Into::into);
+        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+            .map(Into::into);
 
         // Get identity contract nonce
         let identity_contract_nonce = self

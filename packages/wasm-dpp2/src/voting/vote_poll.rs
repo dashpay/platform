@@ -1,7 +1,9 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with};
-use crate::{impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info};
+use crate::{
+    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
+};
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
@@ -196,10 +198,7 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexName")]
-    pub fn set_index_name(
-        &mut self,
-        #[wasm_bindgen(js_name = "indexName")] index_name: String,
-    ) {
+    pub fn set_index_name(&mut self, #[wasm_bindgen(js_name = "indexName")] index_name: String) {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.index_name = index_name;

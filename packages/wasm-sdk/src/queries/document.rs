@@ -395,18 +395,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocument")]
     pub async fn get_document(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "documentType")] document_type: &str,
-        #[wasm_bindgen(js_name = "documentId")]
-        document_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentId")] document_id: IdentifierLikeJs,
     ) -> Result<Option<DocumentWasm>, WasmSdkError> {
         // Parse IDs
-        let contract_id: Identifier = data_contract_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err)))?;
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+        })?;
 
-        let doc_id: Identifier = document_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?;
+        let doc_id: Identifier = document_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err))
+        })?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -433,18 +433,18 @@ impl WasmSdk {
     )]
     pub async fn get_document_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        data_contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "documentType")] document_type: &str,
-        #[wasm_bindgen(js_name = "documentId")]
-        document_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentId")] document_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse IDs
-        let contract_id: Identifier = data_contract_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err)))?;
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+        })?;
 
-        let doc_id: Identifier = document_id.try_into()
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?;
+        let doc_id: Identifier = document_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err))
+        })?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;

@@ -105,9 +105,7 @@ impl WasmSdk {
 
     /// Generate a new random key pair
     #[wasm_bindgen(js_name = "generateKeyPair")]
-    pub fn generate_key_pair(
-        network: NetworkLikeJs,
-    ) -> Result<KeyPairWasm, WasmSdkError> {
+    pub fn generate_key_pair(network: NetworkLikeJs) -> Result<KeyPairWasm, WasmSdkError> {
         let network_wasm: NetworkWasm = network.try_into()?;
         let net: Network = network_wasm.into();
         Self::generate_key_pair_internal(net, &network_wasm)
@@ -198,10 +196,7 @@ impl WasmSdk {
 
     /// Validate a Dash address
     #[wasm_bindgen(js_name = "validateAddress")]
-    pub fn validate_address(
-        address: &str,
-        network: NetworkLikeJs,
-    ) -> bool {
+    pub fn validate_address(address: &str, network: NetworkLikeJs) -> bool {
         let Ok(network_wasm): Result<NetworkWasm, _> = network.try_into() else {
             return false;
         };

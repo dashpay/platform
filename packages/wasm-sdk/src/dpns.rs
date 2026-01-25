@@ -54,7 +54,11 @@ pub struct DpnsUsernameInfoWasm {
 #[wasm_bindgen(js_class = DpnsUsernameInfo)]
 impl DpnsUsernameInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(username: String, identity_id: IdentifierWasm, document_id: IdentifierWasm) -> Self {
+    pub fn constructor(
+        username: String,
+        identity_id: IdentifierWasm,
+        document_id: IdentifierWasm,
+    ) -> Self {
         Self {
             username,
             identity_id,
@@ -527,8 +531,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDpnsUsername")]
     pub async fn get_dpns_username(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<Option<String>, WasmSdkError> {
         let identity_id_parsed = IdentifierWasm::try_from(identity_id)?.into();
 
@@ -566,8 +569,7 @@ impl WasmSdk {
     )]
     pub async fn get_dpns_username_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let identity_id_parsed = IdentifierWasm::try_from(identity_id)?.into();
 

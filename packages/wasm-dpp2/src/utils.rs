@@ -172,21 +172,19 @@ pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
 /// ```ignore
 /// let id: IdentifierWasm = try_from_options(&options, "id")?;
 /// ```
-pub fn try_from_options<T>(
-    options: &JsValue,
-    property_name: &str,
-) -> WasmDppResult<T>
+pub fn try_from_options<T>(options: &JsValue, property_name: &str) -> WasmDppResult<T>
 where
     for<'a> T: TryFrom<&'a JsValue>,
     for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-        let message = err.error_message();
-        WasmDppError::generic(format!(
-            "failed to read '{}' from options: {}",
-            property_name, message
-        ))
-    })?;
+    let value =
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "failed to read '{}' from options: {}",
+                property_name, message
+            ))
+        })?;
 
     if value.is_undefined() || value.is_null() {
         return Err(WasmDppError::invalid_argument(format!(
@@ -219,13 +217,14 @@ pub fn try_from_options_with<T, F>(
 where
     F: FnOnce(JsValue) -> WasmDppResult<T>,
 {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-        let message = err.error_message();
-        WasmDppError::generic(format!(
-            "failed to read '{}' from options: {}",
-            property_name, message
-        ))
-    })?;
+    let value =
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "failed to read '{}' from options: {}",
+                property_name, message
+            ))
+        })?;
 
     if value.is_undefined() || value.is_null() {
         return Err(WasmDppError::invalid_argument(format!(
@@ -258,13 +257,14 @@ where
     for<'a> T: TryFrom<&'a JsValue>,
     for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-        let message = err.error_message();
-        WasmDppError::generic(format!(
-            "failed to read '{}' from options: {}",
-            property_name, message
-        ))
-    })?;
+    let value =
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "failed to read '{}' from options: {}",
+                property_name, message
+            ))
+        })?;
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
@@ -296,13 +296,14 @@ pub fn try_from_options_optional_with<T, F>(
 where
     F: FnOnce(JsValue) -> WasmDppResult<T>,
 {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-        let message = err.error_message();
-        WasmDppError::generic(format!(
-            "failed to read '{}' from options: {}",
-            property_name, message
-        ))
-    })?;
+    let value =
+        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "failed to read '{}' from options: {}",
+                property_name, message
+            ))
+        })?;
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
@@ -427,9 +428,9 @@ where
     js_array
         .iter()
         .map(|v| {
-            W::try_from(v)
-                .map(T::from)
-                .map_err(|err| WasmDppError::invalid_argument(format!("Invalid {}: {}", type_name, err)))
+            W::try_from(v).map(T::from).map_err(|err| {
+                WasmDppError::invalid_argument(format!("Invalid {}: {}", type_name, err))
+            })
         })
         .collect()
 }
