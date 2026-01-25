@@ -603,7 +603,7 @@ impl WasmSdk {
 
         // Extract price from options
         let price: Credits = try_from_options_with(&options_value, "price", |v| {
-            try_to_u64(v, "price").map_err(Into::into)
+            try_to_u64(v, "price")
         })?;
 
         // Extract identity key from options
@@ -718,7 +718,7 @@ impl WasmSdk {
 
         // Extract price from options
         let price: Credits = try_from_options_with(&options_value, "price", |v| {
-            try_to_u64(v, "price").map_err(Into::into)
+            try_to_u64(v, "price")
         })?;
 
         // Extract identity key from options

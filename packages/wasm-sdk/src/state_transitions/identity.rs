@@ -322,7 +322,7 @@ impl WasmSdk {
 
         // Extract amount from options
         let amount: u64 = try_from_options_with(&options_value, "amount", |v| {
-            try_to_u64(v, "amount").map_err(Into::into)
+            try_to_u64(v, "amount")
         })?;
 
         // Extract signer from options
@@ -647,7 +647,7 @@ impl WasmSdk {
         let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) = try_from_options_optional_with(
             &options_value,
             "addPublicKeys",
-            |v| try_to_array(v, "addPublicKeys").map_err(Into::into),
+            |v| try_to_array(v, "addPublicKeys"),
         )? {
             let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
             let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {

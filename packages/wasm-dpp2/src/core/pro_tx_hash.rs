@@ -113,7 +113,7 @@ impl TryFrom<JsValue> for ProTxHashWasm {
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         // Try as ProTxHash object first
         if let Ok(wasm) = value.to_wasm::<ProTxHashWasm>("ProTxHash") {
-            return Ok(wasm.clone());
+            return Ok(*wasm);
         }
 
         // Try as string (hex format)

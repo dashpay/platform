@@ -18,7 +18,6 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::encode;
 use dpp::platform_value::{Value, ValueMapHelper};
-use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
@@ -198,9 +197,9 @@ impl DocumentWasm {
 
         // Extract optional properties
         let revision = try_from_options_optional_with(&options_obj, "revision", |v| {
-            try_to_u64(v, "revision").map(Revision::from)
+            try_to_u64(v, "revision")
         })?
-        .unwrap_or(Revision::from(1u64));
+        .unwrap_or(1);
 
         let id: Option<IdentifierWasm> = try_from_options_optional(&options_obj, "id")?;
 
