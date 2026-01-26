@@ -1,5 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
@@ -86,4 +87,5 @@ impl AuthorizedActionTakersWasm {
     }
 }
 
+impl_try_from_js_value!(AuthorizedActionTakersWasm, "AuthorizedActionTakers");
 impl_wasm_type_info!(AuthorizedActionTakersWasm, AuthorizedActionTakers);

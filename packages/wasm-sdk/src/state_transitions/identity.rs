@@ -664,7 +664,7 @@ impl WasmSdk {
                         .clone();
 
                     // Set the key ID to the next available ID
-                    key_in_creation.set_key_id(next_key_id);
+                    key_in_creation.set_key_id(next_key_id.into())?;
 
                     // Convert to IdentityPublicKey using From impl
                     let public_key: IdentityPublicKey = key_in_creation.into();

@@ -24,7 +24,7 @@ use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::identity::IdentityWasm;
-use wasm_dpp2::utils::{try_from_options_with, try_to_string};
+use wasm_dpp2::utils::{try_from_options_optional_with, try_from_options_with, try_to_string};
 use wasm_dpp2::IdentitySignerWasm;
 
 #[wasm_bindgen(js_name = "RegisterDpnsNameResult")]
@@ -201,18 +201,14 @@ fn extract_callback_from_options(
     options: &JsValue,
     field_name: &str,
 ) -> Result<Option<js_sys::Function>, WasmSdkError> {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-        .map_err(|_| WasmSdkError::invalid_argument(format!("Failed to get {}", field_name)))?;
-
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-
-    let func = value.dyn_into::<js_sys::Function>().map_err(|_| {
-        WasmSdkError::invalid_argument(format!("{} must be a function", field_name))
-    })?;
-
-    Ok(Some(func))
+    Ok(try_from_options_optional_with(options, field_name, |v| {
+        v.clone().dyn_into::<js_sys::Function>().map_err(|_| {
+            wasm_dpp2::error::WasmDppError::invalid_argument(format!(
+                "{} must be a function",
+                field_name
+            ))
+        })
+    })?)
 }
 
 /// DPNS contract ID constant

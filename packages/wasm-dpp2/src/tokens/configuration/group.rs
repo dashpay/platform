@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{JsMapExt, try_to_map};
@@ -180,4 +181,5 @@ impl GroupWasm {
     }
 }
 
+impl_try_from_js_value!(GroupWasm, "Group");
 impl_wasm_type_info!(GroupWasm, Group);

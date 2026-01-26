@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
@@ -83,6 +84,8 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
         configuration.0
     }
 }
+
+impl_try_from_js_value!(TokenConfigurationWasm, "TokenConfiguration");
 
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {

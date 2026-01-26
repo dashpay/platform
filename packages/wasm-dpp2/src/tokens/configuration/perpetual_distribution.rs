@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::distribution_recipient::TokenDistributionRecipientWasm;
 use crate::tokens::configuration::reward_distribution_type::RewardDistributionTypeWasm;
@@ -69,4 +70,5 @@ impl TokenPerpetualDistributionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenPerpetualDistributionWasm, "TokenPerpetualDistribution");
 impl_wasm_type_info!(TokenPerpetualDistributionWasm, TokenPerpetualDistribution);

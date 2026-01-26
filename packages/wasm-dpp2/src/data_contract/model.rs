@@ -8,7 +8,7 @@ use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
     IntoWasm, JsValueExt, try_from_options, try_from_options_optional,
-    try_from_options_optional_with, try_from_options_with, try_to_u32,
+    try_from_options_optional_with, try_from_options_with, try_to_u16, try_to_u32,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -150,33 +150,18 @@ pub fn tokens_configuration_from_js_value(
     let configuration_object = Object::from(configuration.clone());
     let configuration_keys = Object::keys(&configuration_object);
 
-    let mut configuration: BTreeMap<TokenContractPosition, TokenConfiguration> = BTreeMap::new();
+    let mut result: BTreeMap<TokenContractPosition, TokenConfiguration> = BTreeMap::new();
 
     for key in configuration_keys.iter() {
-        let contract_position = match key.as_string() {
-            None => Err(WasmDppError::invalid_argument(
-                "Cannot read timestamp in distribution rules",
-            )),
-            Some(contract_position) => Ok(contract_position
-                .parse::<GroupContractPosition>()
-                .map_err(|e| WasmDppError::serialization(e.to_string()))?),
-        }?;
+        let contract_position = try_to_u16(&key, "contract position")?;
 
-        let js_config = Reflect::get(&configuration_object, &key)
-            .map_err(|err| {
-                let message = err.error_message();
-                WasmDppError::invalid_argument(format!(
-                    "unable to read token configuration at contract position '{}': {}",
-                    contract_position, message
-                ))
-            })?
-            .to_wasm::<TokenConfigurationWasm>("TokenConfiguration")?
-            .clone();
+        let token_config: TokenConfigurationWasm =
+            try_from_options(&configuration_object.clone().into(), &contract_position.to_string())?;
 
-        configuration.insert(contract_position, js_config.into());
+        result.insert(contract_position, token_config.into());
     }
 
-    Ok(configuration)
+    Ok(result)
 }
 
 #[wasm_bindgen(js_class = DataContract)]

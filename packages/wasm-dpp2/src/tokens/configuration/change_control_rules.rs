@@ -1,17 +1,20 @@
 use crate::enums::token::action_goal::ActionGoalWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierLikeJs;
+use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::action_taker::ActionTakerWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::group::GroupWasm;
-use crate::utils::{IntoWasm, JsValueExt, try_from_options_with};
+use crate::utils::{
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
+};
 use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::group::Group;
 use dpp::prelude::Identifier;
-use js_sys::{Object, Reflect};
+use js_sys::Object;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
@@ -37,12 +40,24 @@ export interface ChangeControlRulesOptions {
     isChangingAdminActionTakersToNoOneAllowed?: boolean;
     isSelfChangingAdminActionTakersAllowed?: boolean;
 }
+
+export interface CanChangeAdminActionTakersOptions {
+    adminActionTakers: AuthorizedActionTakers;
+    contractOwnerId: IdentifierLike;
+    mainGroup?: number;
+    groups: Record<number, Group>;
+    actionTaker: ActionTaker;
+    goal: ActionGoal | string;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "ChangeControlRulesOptions")]
     pub type ChangeControlRulesOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "CanChangeAdminActionTakersOptions")]
+    pub type CanChangeAdminActionTakersOptionsJs;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -204,56 +219,53 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(js_name = "canChangeAdminActionTakers")]
     pub fn can_change_admin_action_takers(
         &self,
-        #[wasm_bindgen(js_name = "adminActionTakers")]
-        admin_action_takers: &AuthorizedActionTakersWasm,
-        #[wasm_bindgen(js_name = "contractOwnerId")] contract_owner_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "mainGroup")] main_group: Option<GroupContractPosition>,
-        #[wasm_bindgen(js_name = "groupsValue")] groups_value: &JsValue,
-        #[wasm_bindgen(js_name = "actionTaker")] action_taker: &ActionTakerWasm,
-        goal: &JsValue,
+        options: CanChangeAdminActionTakersOptionsJs,
     ) -> WasmDppResult<bool> {
-        let contract_owner_id: Identifier = contract_owner_id.try_into()?;
-        let goal = ActionGoalWasm::try_from(goal.clone())?;
+        let options: JsValue = options.into();
+        let object = Object::from(options);
 
-        let groups_object = Object::from(groups_value.clone());
+        let admin_action_takers: AuthorizedActionTakersWasm =
+            try_from_options(&object, "adminActionTakers")?;
+
+        let contract_owner_id: Identifier =
+            try_from_options::<IdentifierWasm>(&object, "contractOwnerId")?.into();
+
+        let main_group: Option<GroupContractPosition> =
+            try_from_options_optional_with(&object, "mainGroup", |v| try_to_u16(v, "mainGroup"))?;
+
+        let action_taker: ActionTakerWasm = try_from_options(&object, "actionTaker")?;
+
+        let goal = try_from_options_with(&object, "goal", |v| {
+            ActionGoalWasm::try_from(v.clone())
+        })?;
+
+        // Extract groups
+        let groups_value: JsValue =
+            try_from_options_with(&object, "groups", |v| Ok::<_, WasmDppError>(v.clone()))?;
+        let groups_object = Object::from(groups_value);
         let groups_keys = Object::keys(&groups_object);
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();
 
         for key in groups_keys.iter() {
-            let key_str = key.as_string().ok_or_else(|| {
-                WasmDppError::invalid_argument("Cannot read group contract position")
-            })?;
+            let contract_position = try_to_u16(&key, "group contract position")?;
 
-            let contract_position = key_str.parse::<GroupContractPosition>().map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "Invalid group contract position '{}': {}",
-                    key_str, err
-                ))
-            })?;
-
-            let group_value = Reflect::get(groups_value, &key).map_err(|err| {
-                let message = err.error_message();
-                WasmDppError::invalid_argument(format!(
-                    "unable to read group at contract position '{}': {}",
-                    key_str, message
-                ))
-            })?;
-
-            let group = group_value.to_wasm::<GroupWasm>("Group")?.clone();
+            let group: GroupWasm =
+                try_from_options(&groups_object.clone().into(), &contract_position.to_string())?;
 
             groups.insert(contract_position, group.into());
         }
 
         Ok(self.0.can_change_admin_action_takers(
-            &admin_action_takers.clone().into(),
+            &admin_action_takers.into(),
             &contract_owner_id,
             main_group,
             &groups,
-            &action_taker.clone().into(),
-            goal.clone().into(),
+            &action_taker.into(),
+            goal.into(),
         ))
     }
 }
 
+impl_try_from_js_value!(ChangeControlRulesWasm, "ChangeControlRules");
 impl_wasm_type_info!(ChangeControlRulesWasm, ChangeControlRules);

@@ -4,7 +4,7 @@ use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, JsValueExt, try_from_options, try_from_options_optional_with, try_from_options_with,
+    JsValueExt, try_from_options, try_from_options_optional_with, try_from_options_with,
     try_to_array, try_to_object, try_to_u32, try_to_u64,
 };
 use dpp::fee::Credits;
@@ -308,19 +308,10 @@ pub fn value_to_loaded_public_keys(
         // Object.keys() returns strings, try_to_u32 handles string parsing
         let key_id = KeyID::from(try_to_u32(&key, "key identifier")?);
 
-        let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "unable to access loaded public key '{}': {}",
-                key_id, message
-            ))
-        })?;
+        let public_key: IdentityPublicKeyWasm =
+            try_from_options(&pub_keys_object.clone().into(), &key_id.to_string())?;
 
-        let public_key = js_key
-            .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
-            .clone();
-
-        map.insert(key_id, IdentityPublicKey::from(public_key));
+        map.insert(key_id, public_key.into());
     }
 
     Ok(map)

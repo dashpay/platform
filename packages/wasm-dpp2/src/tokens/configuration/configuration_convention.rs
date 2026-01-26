@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::localization::TokenConfigurationLocalizationWasm;
-use crate::utils::{try_to_u8, JsValueExt};
+use crate::utils::{JsValueExt, try_from_options, try_to_string, try_to_u8};
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
@@ -107,21 +107,12 @@ fn value_to_localizations(
     let mut localizations = BTreeMap::new();
 
     for key in Object::keys(&js_object) {
-        let key_str = key
-            .as_string()
-            .ok_or_else(|| WasmDppError::invalid_argument("Localization key must be string"))?;
+        let key_str = try_to_string(&key, "localization key")?;
 
-        let js_value = Reflect::get(&js_object, &key).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "unable to read localization '{}': {}",
-                key_str, message
-            ))
-        })?;
+        let localization: TokenConfigurationLocalizationWasm =
+            try_from_options(&js_object.clone().into(), &key_str)?;
 
-        let localization = TokenConfigurationLocalizationWasm::from_js_value(&js_value)?;
-
-        localizations.insert(key_str, localization);
+        localizations.insert(key_str, localization.into());
     }
 
     Ok(localizations)

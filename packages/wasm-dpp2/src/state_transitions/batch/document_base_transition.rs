@@ -2,14 +2,14 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::{IntoWasm, try_from_options, try_to_u64};
+use crate::utils::{try_from_options, try_from_options_optional, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
-use js_sys::{Object, Reflect};
+use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -70,19 +70,9 @@ impl DocumentBaseTransitionWasm {
         let data_contract_id: IdentifierWasm = try_from_options(&object, "dataContractId")?;
 
         // Extract tokenPaymentInfo (optional)
-        let js_token_payment_info = Reflect::get(&object, &JsValue::from_str("tokenPaymentInfo"))
-            .unwrap_or(JsValue::UNDEFINED);
         let token_payment_info: Option<TokenPaymentInfo> =
-            if js_token_payment_info.is_null() || js_token_payment_info.is_undefined() {
-                None
-            } else {
-                Some(
-                    js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
-                        .clone()
-                        .into(),
-                )
-            };
+            try_from_options_optional::<TokenPaymentInfoWasm>(&object, "tokenPaymentInfo")?
+                .map(Into::into);
 
         // Extract simple fields via serde
         let opts: DocumentBaseTransitionOptions = serde_wasm_bindgen::from_value(options)

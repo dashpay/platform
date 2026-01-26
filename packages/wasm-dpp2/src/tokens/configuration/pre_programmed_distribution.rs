@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::utils::{try_to_map, try_to_u64};
 use dpp::balances::credits::TokenAmount;
@@ -178,6 +179,7 @@ impl TokenPreProgrammedDistributionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenPreProgrammedDistributionWasm, "TokenPreProgrammedDistribution");
 impl_wasm_type_info!(
     TokenPreProgrammedDistributionWasm,
     TokenPreProgrammedDistribution

@@ -1,4 +1,4 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::IntoWasm;
@@ -130,21 +130,19 @@ impl TokenConfigurationLocalizationWasm {
     }
 }
 
-impl TokenConfigurationLocalizationWasm {
-    pub(crate) fn from_js_value(
-        js_value: &JsValue,
-    ) -> WasmDppResult<TokenConfigurationLocalization> {
+impl TryFrom<&JsValue> for TokenConfigurationLocalizationWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         // First, check if it's already a WASM wrapper
         if let Ok(wasm_localization) =
-            js_value.to_wasm::<TokenConfigurationLocalizationWasm>("TokenConfigurationLocalization")
+            value.to_wasm::<TokenConfigurationLocalizationWasm>("TokenConfigurationLocalization")
         {
-            return Ok(TokenConfigurationLocalization::from(
-                wasm_localization.clone(),
-            ));
+            return Ok(wasm_localization.clone());
         }
 
         // Deserialize as a versioned object (with $format_version)
-        serialization::from_object(js_value.clone())
+        serialization::from_object(value.clone()).map(TokenConfigurationLocalizationWasm)
     }
 }
 

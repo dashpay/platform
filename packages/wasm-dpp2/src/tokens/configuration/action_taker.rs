@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
@@ -108,4 +109,5 @@ impl ActionTakerWasm {
     }
 }
 
+impl_try_from_js_value!(ActionTakerWasm, "ActionTaker");
 impl_wasm_type_info!(ActionTakerWasm, ActionTaker);

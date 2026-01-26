@@ -4,13 +4,14 @@ use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_object};
+use crate::utils::{
+    try_from_options, try_from_options_optional, try_from_options_with, try_to_object, IntoWasm,
+};
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
-use js_sys::Reflect;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -58,55 +59,28 @@ impl TokenDistributionRulesWasm {
     ) -> WasmDppResult<TokenDistributionRulesWasm> {
         let options_obj = try_to_object(options.into(), "options")?;
 
-        let js_perpetual_distribution = Reflect::get(&options_obj, &"perpetualDistribution".into())
-            .unwrap_or(JsValue::UNDEFINED);
-        let perpetual_distribution = if js_perpetual_distribution.is_undefined() {
-            None
-        } else {
-            Some(
-                js_perpetual_distribution
-                    .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
-                    .clone()
-                    .into(),
-            )
-        };
+        let perpetual_distribution = try_from_options_optional::<TokenPerpetualDistributionWasm>(
+            &options_obj,
+            "perpetualDistribution",
+        )?
+        .map(Into::into);
 
-        let perpetual_distribution_rules =
-            try_from_options_with(&options_obj, "perpetualDistributionRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let perpetual_distribution_rules: ChangeControlRulesWasm =
+            try_from_options(&options_obj, "perpetualDistributionRules")?;
 
-        let js_pre_programmed_distribution =
-            Reflect::get(&options_obj, &"preProgrammedDistribution".into())
-                .unwrap_or(JsValue::UNDEFINED);
-        let pre_programmed_distribution = if js_pre_programmed_distribution.is_undefined() {
-            None
-        } else {
-            Some(
-                js_pre_programmed_distribution
-                    .to_wasm::<TokenPreProgrammedDistributionWasm>(
-                        "TokenPreProgrammedDistribution",
-                    )?
-                    .clone()
-                    .into(),
-            )
-        };
+        let pre_programmed_distribution = try_from_options_optional::<
+            TokenPreProgrammedDistributionWasm,
+        >(&options_obj, "preProgrammedDistribution")?
+        .map(Into::into);
 
-        let js_new_tokens_destination_identity =
-            Reflect::get(&options_obj, &"newTokensDestinationIdentity".into())
-                .unwrap_or(JsValue::UNDEFINED);
-        let new_tokens_destination_identity = if js_new_tokens_destination_identity.is_undefined() {
-            None
-        } else {
-            Some(IdentifierWasm::try_from(&js_new_tokens_destination_identity)?.into())
-        };
+        let new_tokens_destination_identity = try_from_options_optional::<IdentifierWasm>(
+            &options_obj,
+            "newTokensDestinationIdentity",
+        )?
+        .map(Into::into);
 
-        let new_tokens_destination_identity_rules =
-            try_from_options_with(&options_obj, "newTokensDestinationIdentityRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let new_tokens_destination_identity_rules: ChangeControlRulesWasm =
+            try_from_options(&options_obj, "newTokensDestinationIdentityRules")?;
 
         let minting_allow_choosing_destination =
             try_from_options_with(&options_obj, "mintingAllowChoosingDestination", |v| {
@@ -117,17 +91,11 @@ impl TokenDistributionRulesWasm {
                 })
             })?;
 
-        let minting_allow_choosing_destination_rules =
-            try_from_options_with(&options_obj, "mintingAllowChoosingDestinationRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let minting_allow_choosing_destination_rules: ChangeControlRulesWasm =
+            try_from_options(&options_obj, "mintingAllowChoosingDestinationRules")?;
 
-        let change_direct_purchase_pricing_rules =
-            try_from_options_with(&options_obj, "changeDirectPurchasePricingRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
+        let change_direct_purchase_pricing_rules: ChangeControlRulesWasm =
+            try_from_options(&options_obj, "changeDirectPurchasePricingRules")?;
 
         Ok(TokenDistributionRulesWasm(TokenDistributionRules::V0(
             TokenDistributionRulesV0 {
