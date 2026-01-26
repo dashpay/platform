@@ -20,8 +20,6 @@ module.exports = {
       rules: {
         // Ignore require('dev-dependency') errors for tests
         'import/no-extraneous-dependencies': 'off',
-        // Allow any for test flexibility
-        '@typescript-eslint/no-explicit-any': 'off',
         // Common relaxations for tests
         'no-await-in-loop': 'off',
         'import/extensions': ['error', 'ignorePackages'],

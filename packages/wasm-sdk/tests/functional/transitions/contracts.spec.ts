@@ -17,7 +17,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 describe('Contract State Transitions', function describeContractStateTransitions() {
   this.timeout(120000);
 
-  let client;
+  let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
 
   // Store contract ID for use across tests
@@ -60,15 +60,12 @@ describe('Contract State Transitions', function describeContractStateTransitions
       // Create the data contract
       // Note: We use nonce 0 as a placeholder - the actual contract ID will be
       // assigned by the SDK during publishing based on the current identity nonce
-      const dataContract = new sdk.DataContract(
-        testData.identityId, // owner ID
-        0n, // placeholder nonce (SDK will assign actual ID during publish)
-        schema, // document schemas
-        undefined, // definitions (optional)
-        undefined, // tokens (optional)
-        true, // full validation
-        undefined, // platform version (use default)
-      );
+      const dataContract = new sdk.DataContract({
+        ownerId: testData.identityId,
+        identityNonce: 0n, // placeholder nonce (SDK will assign actual ID during publish)
+        schemas: schema,
+        fullValidation: true,
+      });
 
       // Publish the contract and get the published version with actual ID
       const publishedContract = await client.contractPublish({
@@ -112,7 +109,7 @@ describe('Contract State Transitions', function describeContractStateTransitions
       const currentVersion = existingContract.version;
 
       // Get existing schemas and add a new one
-      const existingSchemas = existingContract.getSchemas();
+      const existingSchemas = existingContract.schemas;
       const updatedSchemas = {
         ...existingSchemas,
         task: {

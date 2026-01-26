@@ -1,25 +1,37 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('SystemFacade', () => {
-  let wasmSdk;
-  let client;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+
+  // Stub references for type-safe assertions
+  let getStatusStub: SinonStub;
+  let getCurrentQuorumsInfoStub: SinonStub;
+  let getTotalCreditsInPlatformStub: SinonStub;
+  let getTotalCreditsInPlatformWithProofInfoStub: SinonStub;
+  let getPrefundedSpecializedBalanceStub: SinonStub;
+  let getPrefundedSpecializedBalanceWithProofInfoStub: SinonStub;
+  let waitForStateTransitionResultStub: SinonStub;
+  let getPathElementsStub: SinonStub;
+  let getPathElementsWithProofInfoStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
-    this.sinon.stub(wasmSdk, 'getStatus').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getCurrentQuorumsInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatform').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatformWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalance').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalanceWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'waitForStateTransitionResult').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getPathElements').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getPathElementsWithProofInfo').resolves('ok');
+    getStatusStub = this.sinon.stub(wasmSdk, 'getStatus').resolves('ok');
+    getCurrentQuorumsInfoStub = this.sinon.stub(wasmSdk, 'getCurrentQuorumsInfo').resolves('ok');
+    getTotalCreditsInPlatformStub = this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatform').resolves('ok');
+    getTotalCreditsInPlatformWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatformWithProofInfo').resolves('ok');
+    getPrefundedSpecializedBalanceStub = this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalance').resolves('ok');
+    getPrefundedSpecializedBalanceWithProofInfoStub = this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalanceWithProofInfo').resolves('ok');
+    waitForStateTransitionResultStub = this.sinon.stub(wasmSdk, 'waitForStateTransitionResult').resolves('ok');
+    getPathElementsStub = this.sinon.stub(wasmSdk, 'getPathElements').resolves('ok');
+    getPathElementsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getPathElementsWithProofInfo').resolves('ok');
   });
 
   it('forwards all methods to instance methods', async () => {
@@ -32,14 +44,14 @@ describe('SystemFacade', () => {
     await client.system.waitForStateTransitionResult('h');
     await client.system.pathElements(['p'], ['k']);
     await client.system.pathElementsWithProof(['p2'], ['k2']);
-    expect(wasmSdk.getStatus).to.be.calledOnce();
-    expect(wasmSdk.getCurrentQuorumsInfo).to.be.calledOnce();
-    expect(wasmSdk.getTotalCreditsInPlatform).to.be.calledOnce();
-    expect(wasmSdk.getTotalCreditsInPlatformWithProofInfo).to.be.calledOnce();
-    expect(wasmSdk.getPrefundedSpecializedBalance).to.be.calledOnce();
-    expect(wasmSdk.getPrefundedSpecializedBalanceWithProofInfo).to.be.calledOnce();
-    expect(wasmSdk.waitForStateTransitionResult).to.be.calledOnce();
-    expect(wasmSdk.getPathElements).to.be.calledOnce();
-    expect(wasmSdk.getPathElementsWithProofInfo).to.be.calledOnce();
+    expect(getStatusStub).to.be.calledOnce();
+    expect(getCurrentQuorumsInfoStub).to.be.calledOnce();
+    expect(getTotalCreditsInPlatformStub).to.be.calledOnce();
+    expect(getTotalCreditsInPlatformWithProofInfoStub).to.be.calledOnce();
+    expect(getPrefundedSpecializedBalanceStub).to.be.calledOnce();
+    expect(getPrefundedSpecializedBalanceWithProofInfoStub).to.be.calledOnce();
+    expect(waitForStateTransitionResultStub).to.be.calledOnce();
+    expect(getPathElementsStub).to.be.calledOnce();
+    expect(getPathElementsWithProofInfoStub).to.be.calledOnce();
   });
 });

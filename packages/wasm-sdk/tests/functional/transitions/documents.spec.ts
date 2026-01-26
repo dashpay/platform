@@ -22,7 +22,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 describe('Document State Transitions', function describeDocumentStateTransitions() {
   this.timeout(180000);
 
-  let client;
+  let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
 
   // Store contract and document IDs for use across tests
@@ -50,18 +50,17 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       // Using hash of salted domain label
       const saltedDomainHash = `${Date.now()}`.padStart(64, '0');
 
-      const document = new sdk.Document(
-        {
+      const document = new sdk.Document({
+        properties: {
           saltedDomainHash: Uint8Array.from(
             saltedDomainHash.match(/.{2}/g).map((byte) => parseInt(byte, 16)),
           ),
         },
-        'preorder',
-        BigInt(1), // Revision must be BigInt
-        testData.dpnsContractId,
-        testData.identityId,
-        undefined, // Document ID will be generated
-      );
+        documentTypeName: 'preorder',
+        revision: 1,
+        dataContractId: testData.dpnsContractId,
+        ownerId: testData.identityId,
+      });
 
       await client.documentCreate({
         document,
@@ -121,15 +120,12 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       // Create the data contract
       // Note: We use nonce 0 as a placeholder - the actual contract ID will be
       // assigned by the SDK during publishing based on the current identity nonce
-      const dataContract = new sdk.DataContract(
-        testData.identityId, // owner ID
-        0n, // placeholder nonce (SDK will assign actual ID during publish)
-        schema, // document schemas
-        undefined, // definitions (optional)
-        undefined, // tokens (optional)
-        true, // full validation
-        undefined, // platform version (use default)
-      );
+      const dataContract = new sdk.DataContract({
+        ownerId: testData.identityId,
+        identityNonce: 0n, // placeholder nonce (SDK will assign actual ID during publish)
+        schemas: schema,
+        fullValidation: true,
+      });
 
       // Publish the contract and get the published version with actual ID
       const publishedContract = await client.contractPublish({
@@ -156,14 +152,13 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
       // First, create a mutable document
-      const document = new sdk.Document(
-        { message: 'Original message' },
-        'mutableNote',
-        BigInt(1), // Revision 1 for creation
-        testContractId,
-        testData.identityId,
-        undefined, // Document ID will be generated
-      );
+      const document = new sdk.Document({
+        properties: { message: 'Original message' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
 
       await client.documentCreate({
         document,
@@ -179,14 +174,14 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       // Now replace the document with updated content
       // Increment revision to 2 for the update
-      const updatedDocument = new sdk.Document(
-        { message: 'Updated message' },
-        'mutableNote',
-        BigInt(2), // Revision 2 for replacement
-        testContractId,
-        testData.identityId,
-        mutableDocumentId, // Use the same document ID
-      );
+      const updatedDocument = new sdk.Document({
+        properties: { message: 'Updated message' },
+        documentTypeName: 'mutableNote',
+        revision: 2, // Revision 2 for replacement
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+        id: mutableDocumentId, // Use the same document ID
+      });
 
       await client.documentReplace({
         document: updatedDocument,
@@ -204,14 +199,13 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
       // First, create a document to delete
-      const document = new sdk.Document(
-        { message: 'Document to be deleted' },
-        'mutableNote',
-        BigInt(1),
-        testContractId,
-        testData.identityId,
-        undefined,
-      );
+      const document = new sdk.Document({
+        properties: { message: 'Document to be deleted' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
 
       await client.documentCreate({
         document,
@@ -247,14 +241,13 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
       // First, create a transferable document
-      const document = new sdk.Document(
-        { name: 'Transferable Item' },
-        'transferableItem',
-        BigInt(1),
-        testContractId,
-        testData.identityId,
-        undefined,
-      );
+      const document = new sdk.Document({
+        properties: { name: 'Transferable Item' },
+        documentTypeName: 'transferableItem',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
 
       await client.documentCreate({
         document,
@@ -269,14 +262,14 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
 
       // Create document object for transfer (revision incremented)
-      const documentForTransfer = new sdk.Document(
-        { name: 'Transferable Item' },
-        'transferableItem',
-        BigInt(2), // Increment revision for transfer
-        testContractId,
-        testData.identityId,
-        documentId,
-      );
+      const documentForTransfer = new sdk.Document({
+        properties: { name: 'Transferable Item' },
+        documentTypeName: 'transferableItem',
+        revision: 2, // Increment revision for transfer
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+        id: documentId,
+      });
 
       // Transfer the document to Identity 2
       await client.documentTransfer({

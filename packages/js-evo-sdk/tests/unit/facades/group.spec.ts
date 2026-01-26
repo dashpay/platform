@@ -1,41 +1,62 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('GroupFacade', () => {
-  let wasmSdk;
-  let client;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+
+  // Stub references for type-safe assertions
+  let getGroupInfoStub: SinonStub;
+  let getGroupInfoWithProofInfoStub: SinonStub;
+  let getGroupInfosStub: SinonStub;
+  let getGroupInfosWithProofInfoStub: SinonStub;
+  let getGroupMembersStub: SinonStub;
+  let getGroupMembersWithProofInfoStub: SinonStub;
+  let getIdentityGroupsStub: SinonStub;
+  let getIdentityGroupsWithProofInfoStub: SinonStub;
+  let getGroupActionsStub: SinonStub;
+  let getGroupActionsWithProofInfoStub: SinonStub;
+  let getGroupActionSignersStub: SinonStub;
+  let getGroupActionSignersWithProofInfoStub: SinonStub;
+  let getGroupsDataContractsStub: SinonStub;
+  let getGroupsDataContractsWithProofInfoStub: SinonStub;
+  let getContestedResourcesStub: SinonStub;
+  let getContestedResourcesWithProofInfoStub: SinonStub;
+  let getContestedResourceVotersForIdentityStub: SinonStub;
+  let getContestedResourceVotersForIdentityWithProofInfoStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
-    this.sinon.stub(wasmSdk, 'getGroupInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupInfoWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupInfos').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupInfosWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupMembers').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupMembersWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentityGroups').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getIdentityGroupsWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupActions').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupActionsWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupActionSigners').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupActionSignersWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupsDataContracts').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getGroupsDataContractsWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getContestedResources').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getContestedResourcesWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentity').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentityWithProofInfo').resolves('ok');
+    getGroupInfoStub = this.sinon.stub(wasmSdk, 'getGroupInfo').resolves('ok');
+    getGroupInfoWithProofInfoStub = this.sinon.stub(wasmSdk, 'getGroupInfoWithProofInfo').resolves('ok');
+    getGroupInfosStub = this.sinon.stub(wasmSdk, 'getGroupInfos').resolves('ok');
+    getGroupInfosWithProofInfoStub = this.sinon.stub(wasmSdk, 'getGroupInfosWithProofInfo').resolves('ok');
+    getGroupMembersStub = this.sinon.stub(wasmSdk, 'getGroupMembers').resolves('ok');
+    getGroupMembersWithProofInfoStub = this.sinon.stub(wasmSdk, 'getGroupMembersWithProofInfo').resolves('ok');
+    getIdentityGroupsStub = this.sinon.stub(wasmSdk, 'getIdentityGroups').resolves('ok');
+    getIdentityGroupsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityGroupsWithProofInfo').resolves('ok');
+    getGroupActionsStub = this.sinon.stub(wasmSdk, 'getGroupActions').resolves('ok');
+    getGroupActionsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getGroupActionsWithProofInfo').resolves('ok');
+    getGroupActionSignersStub = this.sinon.stub(wasmSdk, 'getGroupActionSigners').resolves('ok');
+    getGroupActionSignersWithProofInfoStub = this.sinon.stub(wasmSdk, 'getGroupActionSignersWithProofInfo').resolves('ok');
+    getGroupsDataContractsStub = this.sinon.stub(wasmSdk, 'getGroupsDataContracts').resolves('ok');
+    getGroupsDataContractsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getGroupsDataContractsWithProofInfo').resolves('ok');
+    getContestedResourcesStub = this.sinon.stub(wasmSdk, 'getContestedResources').resolves('ok');
+    getContestedResourcesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getContestedResourcesWithProofInfo').resolves('ok');
+    getContestedResourceVotersForIdentityStub = this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentity').resolves('ok');
+    getContestedResourceVotersForIdentityWithProofInfoStub = this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentityWithProofInfo').resolves('ok');
   });
 
   it('info queries forward to wasm', async () => {
     await client.group.info('contract', 1);
     await client.group.infoWithProof('contract', 2);
-    expect(wasmSdk.getGroupInfo).to.be.calledOnceWithExactly('contract', 1);
-    expect(wasmSdk.getGroupInfoWithProofInfo).to.be.calledOnceWithExactly('contract', 2);
+    expect(getGroupInfoStub).to.be.calledOnceWithExactly('contract', 1);
+    expect(getGroupInfoWithProofInfoStub).to.be.calledOnceWithExactly('contract', 2);
   });
 
   it('infos() forwards optional args with null defaults', async () => {
@@ -43,8 +64,8 @@ describe('GroupFacade', () => {
     await client.group.infos(query);
     const proofQuery = { dataContractId: 'contract' };
     await client.group.infosWithProof(proofQuery);
-    expect(wasmSdk.getGroupInfos).to.be.calledOnceWithExactly(query);
-    expect(wasmSdk.getGroupInfosWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
+    expect(getGroupInfosStub).to.be.calledOnceWithExactly(query);
+    expect(getGroupInfosWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('members() forwards list and optional filters', async () => {
@@ -58,8 +79,8 @@ describe('GroupFacade', () => {
     await client.group.members(query);
     const proofQuery = { dataContractId: 'contract', groupContractPosition: 1 };
     await client.group.membersWithProof(proofQuery);
-    expect(wasmSdk.getGroupMembers).to.be.calledOnceWithExactly(query);
-    expect(wasmSdk.getGroupMembersWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
+    expect(getGroupMembersStub).to.be.calledOnceWithExactly(query);
+    expect(getGroupMembersWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('identityGroups() forwards optional contract filters', async () => {
@@ -72,8 +93,8 @@ describe('GroupFacade', () => {
     await client.group.identityGroups(query);
     const proofQuery = { identityId: 'identity' };
     await client.group.identityGroupsWithProof(proofQuery);
-    expect(wasmSdk.getIdentityGroups).to.be.calledOnceWithExactly(query);
-    expect(wasmSdk.getIdentityGroupsWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
+    expect(getIdentityGroupsStub).to.be.calledOnceWithExactly(query);
+    expect(getIdentityGroupsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('group actions helpers forward to wasm', async () => {
@@ -99,17 +120,17 @@ describe('GroupFacade', () => {
     };
     await client.group.actionSigners(signersQuery);
     await client.group.actionSignersWithProof(signersQuery);
-    expect(wasmSdk.getGroupActions).to.be.calledOnceWithExactly(query);
-    expect(wasmSdk.getGroupActionsWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
-    expect(wasmSdk.getGroupActionSigners).to.be.calledOnceWithExactly(signersQuery);
-    expect(wasmSdk.getGroupActionSignersWithProofInfo).to.be.calledOnceWithExactly(signersQuery);
+    expect(getGroupActionsStub).to.be.calledOnceWithExactly(query);
+    expect(getGroupActionsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+    expect(getGroupActionSignersStub).to.be.calledOnceWithExactly(signersQuery);
+    expect(getGroupActionSignersWithProofInfoStub).to.be.calledOnceWithExactly(signersQuery);
   });
 
   it('groupsDataContracts() forwards', async () => {
     await client.group.groupsDataContracts(['a', 'b']);
     await client.group.groupsDataContractsWithProof(['a']);
-    expect(wasmSdk.getGroupsDataContracts).to.be.calledOnceWithExactly(['a', 'b']);
-    expect(wasmSdk.getGroupsDataContractsWithProofInfo).to.be.calledOnceWithExactly(['a']);
+    expect(getGroupsDataContractsStub).to.be.calledOnceWithExactly(['a', 'b']);
+    expect(getGroupsDataContractsWithProofInfoStub).to.be.calledOnceWithExactly(['a']);
   });
 
   it('forwards contestedResources and voters queries', async () => {
@@ -147,11 +168,11 @@ describe('GroupFacade', () => {
       contestantId: 'id',
     };
     await client.group.contestedResourceVotersForIdentityWithProof(votersProofQuery);
-    expect(wasmSdk.getContestedResources).to.be.calledOnceWithExactly(contestedQuery);
-    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be
+    expect(getContestedResourcesStub).to.be.calledOnceWithExactly(contestedQuery);
+    expect(getContestedResourcesWithProofInfoStub).to.be
       .calledOnceWithExactly(contestedProofQuery);
-    expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnceWithExactly(votersQuery);
-    expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo)
+    expect(getContestedResourceVotersForIdentityStub).to.be.calledOnceWithExactly(votersQuery);
+    expect(getContestedResourceVotersForIdentityWithProofInfoStub)
       .to.be.calledOnceWithExactly(votersProofQuery);
   });
 });

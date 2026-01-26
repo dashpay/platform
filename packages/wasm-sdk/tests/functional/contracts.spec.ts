@@ -7,7 +7,7 @@ describe('Data contract queries', function describeDataContractQueries() {
 
   const { dpnsContractId, tokenContracts } = wasmFunctionalTestRequirements();
 
-  let client;
+  let client: sdk.WasmSdk;
 
   before(async () => {
     await init();

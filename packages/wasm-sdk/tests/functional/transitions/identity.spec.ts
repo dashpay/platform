@@ -23,7 +23,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 describe('Identity State Transitions', function describeIdentityStateTransitions() {
   this.timeout(60000);
 
-  let client;
+  let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
 
   before(async () => {
@@ -87,7 +87,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       expect(identity).to.exist();
 
       // Get the current number of public keys
-      const publicKeysBefore = identity.getPublicKeys();
+      const publicKeysBefore = identity.publicKeys;
       const keyCountBefore = publicKeysBefore.length;
 
       // Generate a new random key pair for the new public key
@@ -102,16 +102,14 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       signer.addKey(newPrivateKey);
 
       // Create a new public key to add
-      const newPublicKeyInCreation = new sdk.IdentityPublicKeyInCreation(
-        0, // keyId - will be overwritten by SDK to next available
-        'AUTHENTICATION',
-        'MEDIUM', // MEDIUM so it can be disabled later if needed
-        'ECDSA_SECP256K1',
-        false, // read only
-        newPublicKeyData,
-        undefined, // signature
-        undefined, // contract bounds
-      );
+      const newPublicKeyInCreation = new sdk.IdentityPublicKeyInCreation({
+        keyId: 0, // will be overwritten by SDK to next available
+        purpose: 'AUTHENTICATION',
+        securityLevel: 'MEDIUM', // MEDIUM so it can be disabled later if needed
+        keyType: 'ECDSA_SECP256K1',
+        isReadOnly: false,
+        data: newPublicKeyData,
+      });
 
       await client.identityUpdate({
         identity,
@@ -124,7 +122,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
       // Verify the update by fetching the identity again
       const updatedIdentity = await client.getIdentity(testData.identityId);
-      const publicKeysAfter = updatedIdentity.getPublicKeys();
+      const publicKeysAfter = updatedIdentity.publicKeys;
       expect(publicKeysAfter.length).to.equal(keyCountBefore + 1);
     });
 
@@ -137,7 +135,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       expect(identity).to.exist();
 
       // Find a key that can be disabled (MEDIUM or lower security level, not master)
-      const publicKeys = identity.getPublicKeys();
+      const publicKeys = identity.publicKeys;
       const keyToDisable = publicKeys.find(
         (key) => key.securityLevel === 'MEDIUM' && key.purpose === 'AUTHENTICATION',
       );
@@ -158,7 +156,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
 
       // Verify the key was disabled by fetching the identity again
       const updatedIdentity = await client.getIdentity(testData.identityId);
-      const disabledKey = updatedIdentity.getPublicKeys()
+      const disabledKey = updatedIdentity.publicKeys
         .find((key) => key.keyId === keyIdToDisable);
 
       // The key should still exist but have a disabledAt timestamp

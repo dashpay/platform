@@ -1,19 +1,50 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('IdentitiesFacade', () => {
-  let wasmSdk;
-  let client;
-  let identity;
-  let signer;
-  let assetLockProof;
-  let assetLockPrivateKey;
-  let publicKeyInCreation;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+  let identity: wasmSDKPackage.Identity;
+  let signer: wasmSDKPackage.IdentitySigner;
+  let assetLockProof: wasmSDKPackage.AssetLockProof;
+  let assetLockPrivateKey: wasmSDKPackage.PrivateKey;
+  let publicKeyInCreation: wasmSDKPackage.IdentityPublicKeyInCreation;
+
+  // Stub references for type-safe assertions
+  let getIdentityStub: SinonStub;
+  let getIdentityWithProofInfoStub: SinonStub;
+  let getIdentityUnprovedStub: SinonStub;
+  let getIdentityKeysStub: SinonStub;
+  let getIdentityKeysWithProofInfoStub: SinonStub;
+  let getIdentityNonceStub: SinonStub;
+  let getIdentityNonceWithProofInfoStub: SinonStub;
+  let getIdentityContractNonceStub: SinonStub;
+  let getIdentityContractNonceWithProofInfoStub: SinonStub;
+  let getIdentityBalanceStub: SinonStub;
+  let getIdentityBalanceWithProofInfoStub: SinonStub;
+  let getIdentitiesBalancesStub: SinonStub;
+  let getIdentitiesBalancesWithProofInfoStub: SinonStub;
+  let getIdentityBalanceAndRevisionStub: SinonStub;
+  let getIdentityBalanceAndRevisionWithProofInfoStub: SinonStub;
+  let getIdentityByPublicKeyHashStub: SinonStub;
+  let getIdentityByPublicKeyHashWithProofInfoStub: SinonStub;
+  let getIdentityByNonUniquePublicKeyHashStub: SinonStub;
+  let getIdentityByNonUniquePublicKeyHashWithProofInfoStub: SinonStub;
+  let getIdentitiesContractKeysStub: SinonStub;
+  let getIdentitiesContractKeysWithProofInfoStub: SinonStub;
+  let getIdentityTokenBalancesStub: SinonStub;
+  let getIdentityTokenBalancesWithProofInfoStub: SinonStub;
+  let identityCreateStub: SinonStub;
+  let identityTopUpStub: SinonStub;
+  let identityCreditTransferStub: SinonStub;
+  let identityCreditWithdrawalStub: SinonStub;
+  let identityUpdateStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
     // Create mock objects
@@ -24,86 +55,90 @@ describe('IdentitiesFacade', () => {
     publicKeyInCreation = Object.create(wasmSDKPackage.IdentityPublicKeyInCreation.prototype);
 
     // Stub query methods
-    this.sinon.stub(wasmSdk, 'getIdentity').resolves(identity);
-    this.sinon.stub(wasmSdk, 'getIdentityWithProofInfo').resolves({
+    getIdentityStub = this.sinon.stub(wasmSdk, 'getIdentity').resolves(identity);
+    getIdentityWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityWithProofInfo').resolves({
       data: identity,
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityUnproved').resolves(identity);
-    this.sinon.stub(wasmSdk, 'getIdentityKeys').resolves([]);
-    this.sinon.stub(wasmSdk, 'getIdentityKeysWithProofInfo').resolves({
+    getIdentityUnprovedStub = this.sinon.stub(wasmSdk, 'getIdentityUnproved').resolves(identity);
+    getIdentityKeysStub = this.sinon.stub(wasmSdk, 'getIdentityKeys').resolves([]);
+    getIdentityKeysWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityKeysWithProofInfo').resolves({
       data: [],
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityNonce').resolves(BigInt(1));
-    this.sinon.stub(wasmSdk, 'getIdentityNonceWithProofInfo').resolves({
+    getIdentityNonceStub = this.sinon.stub(wasmSdk, 'getIdentityNonce').resolves(BigInt(1));
+    getIdentityNonceWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityNonceWithProofInfo').resolves({
       data: BigInt(1),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityContractNonce').resolves(BigInt(0));
-    this.sinon.stub(wasmSdk, 'getIdentityContractNonceWithProofInfo').resolves({
+    getIdentityContractNonceStub = this.sinon.stub(wasmSdk, 'getIdentityContractNonce').resolves(BigInt(0));
+    getIdentityContractNonceWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityContractNonceWithProofInfo').resolves({
       data: BigInt(0),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityBalance').resolves(BigInt(100000000));
-    this.sinon.stub(wasmSdk, 'getIdentityBalanceWithProofInfo').resolves({
+    getIdentityBalanceStub = this.sinon.stub(wasmSdk, 'getIdentityBalance').resolves(BigInt(100000000));
+    getIdentityBalanceWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityBalanceWithProofInfo').resolves({
       data: BigInt(100000000),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentitiesBalances').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getIdentitiesBalancesWithProofInfo').resolves({
+    getIdentitiesBalancesStub = this.sinon.stub(wasmSdk, 'getIdentitiesBalances').resolves(new Map());
+    getIdentitiesBalancesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentitiesBalancesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityBalanceAndRevision').resolves({
+    getIdentityBalanceAndRevisionStub = this.sinon.stub(wasmSdk, 'getIdentityBalanceAndRevision').resolves({
       balance: BigInt(100000000),
       revision: BigInt(1),
     });
-    this.sinon.stub(wasmSdk, 'getIdentityBalanceAndRevisionWithProofInfo').resolves({
-      data: { balance: BigInt(100000000), revision: BigInt(1) },
-      proof: {},
-      metadata: {},
-    });
-    this.sinon.stub(wasmSdk, 'getIdentityByPublicKeyHash').resolves(identity);
-    this.sinon.stub(wasmSdk, 'getIdentityByPublicKeyHashWithProofInfo').resolves({
-      data: identity,
-      proof: {},
-      metadata: {},
-    });
-    this.sinon.stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHash').resolves([]);
-    this.sinon.stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHashWithProofInfo').resolves({
-      data: [],
-      proof: {},
-      metadata: {},
-    });
-    this.sinon.stub(wasmSdk, 'getIdentitiesContractKeys').resolves([]);
-    this.sinon.stub(wasmSdk, 'getIdentitiesContractKeysWithProofInfo').resolves({
-      data: [],
-      proof: {},
-      metadata: {},
-    });
-    this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
+    getIdentityBalanceAndRevisionWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityBalanceAndRevisionWithProofInfo').resolves({
+        data: { balance: BigInt(100000000), revision: BigInt(1) },
+        proof: {},
+        metadata: {},
+      });
+    getIdentityByPublicKeyHashStub = this.sinon.stub(wasmSdk, 'getIdentityByPublicKeyHash').resolves(identity);
+    getIdentityByPublicKeyHashWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityByPublicKeyHashWithProofInfo').resolves({
+        data: identity,
+        proof: {},
+        metadata: {},
+      });
+    getIdentityByNonUniquePublicKeyHashStub = this.sinon.stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHash').resolves([]);
+    getIdentityByNonUniquePublicKeyHashWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHashWithProofInfo').resolves({
+        data: [],
+        proof: {},
+        metadata: {},
+      });
+    getIdentitiesContractKeysStub = this.sinon.stub(wasmSdk, 'getIdentitiesContractKeys').resolves([]);
+    getIdentitiesContractKeysWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentitiesContractKeysWithProofInfo').resolves({
+        data: [],
+        proof: {},
+        metadata: {},
+      });
+    getIdentityTokenBalancesStub = this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves(new Map());
+    getIdentityTokenBalancesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
 
     // Stub transition methods
-    this.sinon.stub(wasmSdk, 'identityCreate').resolves();
-    this.sinon.stub(wasmSdk, 'identityTopUp').resolves(BigInt(200000000));
-    this.sinon.stub(wasmSdk, 'identityCreditTransfer').resolves({
+    identityCreateStub = this.sinon.stub(wasmSdk, 'identityCreate').resolves();
+    identityTopUpStub = this.sinon.stub(wasmSdk, 'identityTopUp').resolves(BigInt(200000000));
+    identityCreditTransferStub = this.sinon.stub(wasmSdk, 'identityCreditTransfer').resolves({
       senderBalance: BigInt(50000000),
       recipientBalance: BigInt(50000000),
     });
-    this.sinon.stub(wasmSdk, 'identityCreditWithdrawal').resolves(BigInt(80000000));
-    this.sinon.stub(wasmSdk, 'identityUpdate').resolves();
+    identityCreditWithdrawalStub = this.sinon.stub(wasmSdk, 'identityCreditWithdrawal').resolves(BigInt(80000000));
+    identityUpdateStub = this.sinon.stub(wasmSdk, 'identityUpdate').resolves();
   });
 
   describe('Query Methods', () => {
@@ -112,7 +147,7 @@ describe('IdentitiesFacade', () => {
 
       const result = await client.identities.fetch(identityId);
 
-      expect(wasmSdk.getIdentity).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentityStub).to.be.calledOnceWithExactly(identityId);
       expect(result).to.be.instanceOf(wasmSDKPackage.Identity);
     });
 
@@ -121,7 +156,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.fetchWithProof(identityId);
 
-      expect(wasmSdk.getIdentityWithProofInfo).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentityWithProofInfoStub).to.be.calledOnceWithExactly(identityId);
     });
 
     it('fetchUnproved() returns identity without proof verification', async () => {
@@ -129,7 +164,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.fetchUnproved(identityId);
 
-      expect(wasmSdk.getIdentityUnproved).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentityUnprovedStub).to.be.calledOnceWithExactly(identityId);
     });
 
     it('getKeys() fetches identity public keys', async () => {
@@ -145,7 +180,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.getKeys(query);
 
-      expect(wasmSdk.getIdentityKeys).to.be.calledOnceWithExactly(query);
+      expect(getIdentityKeysStub).to.be.calledOnceWithExactly(query);
     });
 
     it('getKeysWithProof() fetches identity keys with proof', async () => {
@@ -156,7 +191,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.getKeysWithProof(query);
 
-      expect(wasmSdk.getIdentityKeysWithProofInfo).to.be.calledOnceWithExactly(query);
+      expect(getIdentityKeysWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
     it('nonce() and nonceWithProof() fetch identity nonce', async () => {
@@ -165,8 +200,8 @@ describe('IdentitiesFacade', () => {
       await client.identities.nonce(identityId);
       await client.identities.nonceWithProof(identityId);
 
-      expect(wasmSdk.getIdentityNonce).to.be.calledOnceWithExactly(identityId);
-      expect(wasmSdk.getIdentityNonceWithProofInfo).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentityNonceStub).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentityNonceWithProofInfoStub).to.be.calledOnceWithExactly(identityId);
     });
 
     it('contractNonce() fetches contract-specific nonce', async () => {
@@ -176,9 +211,9 @@ describe('IdentitiesFacade', () => {
       await client.identities.contractNonce(identityId, contractId);
       await client.identities.contractNonceWithProof(identityId, contractId);
 
-      expect(wasmSdk.getIdentityContractNonce)
+      expect(getIdentityContractNonceStub)
         .to.be.calledOnceWithExactly(identityId, contractId);
-      expect(wasmSdk.getIdentityContractNonceWithProofInfo)
+      expect(getIdentityContractNonceWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, contractId);
     });
 
@@ -194,10 +229,10 @@ describe('IdentitiesFacade', () => {
       await client.identities.balances(identityIds);
       await client.identities.balancesWithProof(identityIds);
 
-      expect(wasmSdk.getIdentityBalance).to.be.calledOnceWithExactly(identityId);
-      expect(wasmSdk.getIdentityBalanceWithProofInfo).to.be.calledOnceWithExactly(identityId);
-      expect(wasmSdk.getIdentitiesBalances).to.be.calledOnceWithExactly(identityIds);
-      expect(wasmSdk.getIdentitiesBalancesWithProofInfo).to.be.calledOnceWithExactly(identityIds);
+      expect(getIdentityBalanceStub).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentityBalanceWithProofInfoStub).to.be.calledOnceWithExactly(identityId);
+      expect(getIdentitiesBalancesStub).to.be.calledOnceWithExactly(identityIds);
+      expect(getIdentitiesBalancesWithProofInfoStub).to.be.calledOnceWithExactly(identityIds);
     });
 
     it('balanceAndRevision() fetches balance and revision together', async () => {
@@ -206,9 +241,9 @@ describe('IdentitiesFacade', () => {
       await client.identities.balanceAndRevision(identityId);
       await client.identities.balanceAndRevisionWithProof(identityId);
 
-      expect(wasmSdk.getIdentityBalanceAndRevision)
+      expect(getIdentityBalanceAndRevisionStub)
         .to.be.calledOnceWithExactly(identityId);
-      expect(wasmSdk.getIdentityBalanceAndRevisionWithProofInfo)
+      expect(getIdentityBalanceAndRevisionWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId);
     });
 
@@ -218,9 +253,9 @@ describe('IdentitiesFacade', () => {
       await client.identities.byPublicKeyHash(publicKeyHash);
       await client.identities.byPublicKeyHashWithProof(publicKeyHash);
 
-      expect(wasmSdk.getIdentityByPublicKeyHash)
+      expect(getIdentityByPublicKeyHashStub)
         .to.be.calledOnceWithExactly(publicKeyHash);
-      expect(wasmSdk.getIdentityByPublicKeyHashWithProofInfo)
+      expect(getIdentityByPublicKeyHashWithProofInfoStub)
         .to.be.calledOnceWithExactly(publicKeyHash);
     });
 
@@ -231,9 +266,9 @@ describe('IdentitiesFacade', () => {
       await client.identities.byNonUniquePublicKeyHash(publicKeyHash, startAfter);
       await client.identities.byNonUniquePublicKeyHashWithProof(publicKeyHash);
 
-      expect(wasmSdk.getIdentityByNonUniquePublicKeyHash)
+      expect(getIdentityByNonUniquePublicKeyHashStub)
         .to.be.calledOnceWithExactly(publicKeyHash, startAfter);
-      expect(wasmSdk.getIdentityByNonUniquePublicKeyHashWithProofInfo)
+      expect(getIdentityByNonUniquePublicKeyHashWithProofInfoStub)
         .to.be.calledOnceWithExactly(publicKeyHash, undefined);
     });
 
@@ -246,7 +281,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.contractKeys(query);
 
-      expect(wasmSdk.getIdentitiesContractKeys).to.be.calledOnceWithExactly(query);
+      expect(getIdentitiesContractKeysStub).to.be.calledOnceWithExactly(query);
     });
 
     it('tokenBalances() fetches identity token balances', async () => {
@@ -256,9 +291,9 @@ describe('IdentitiesFacade', () => {
       await client.identities.tokenBalances(identityId, tokenIds);
       await client.identities.tokenBalancesWithProof(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenBalances)
+      expect(getIdentityTokenBalancesStub)
         .to.be.calledOnceWithExactly(identityId, tokenIds);
-      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo)
+      expect(getIdentityTokenBalancesWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
   });
@@ -274,7 +309,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.create(options);
 
-      expect(wasmSdk.identityCreate).to.be.calledOnceWithExactly(options);
+      expect(identityCreateStub).to.be.calledOnceWithExactly(options);
     });
 
     it('topUp() tops up identity balance with asset lock', async () => {
@@ -286,7 +321,7 @@ describe('IdentitiesFacade', () => {
 
       const newBalance = await client.identities.topUp(options);
 
-      expect(wasmSdk.identityTopUp).to.be.calledOnceWithExactly(options);
+      expect(identityTopUpStub).to.be.calledOnceWithExactly(options);
       expect(newBalance).to.equal(BigInt(200000000));
     });
 
@@ -301,7 +336,7 @@ describe('IdentitiesFacade', () => {
 
       const result = await client.identities.creditTransfer(options);
 
-      expect(wasmSdk.identityCreditTransfer).to.be.calledOnceWithExactly(options);
+      expect(identityCreditTransferStub).to.be.calledOnceWithExactly(options);
       expect(result.senderBalance).to.equal(BigInt(50000000));
       expect(result.recipientBalance).to.equal(BigInt(50000000));
     });
@@ -317,7 +352,7 @@ describe('IdentitiesFacade', () => {
 
       const remainingBalance = await client.identities.creditWithdrawal(options);
 
-      expect(wasmSdk.identityCreditWithdrawal).to.be.calledOnceWithExactly(options);
+      expect(identityCreditWithdrawalStub).to.be.calledOnceWithExactly(options);
       expect(remainingBalance).to.equal(BigInt(80000000));
     });
 
@@ -331,7 +366,7 @@ describe('IdentitiesFacade', () => {
 
       await client.identities.update(options);
 
-      expect(wasmSdk.identityUpdate).to.be.calledOnceWithExactly(options);
+      expect(identityUpdateStub).to.be.calledOnceWithExactly(options);
     });
   });
 });

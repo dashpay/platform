@@ -4,8 +4,8 @@ import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.ts';
 describe('Contested resources & voting', function describeContestedResources() {
   this.timeout(60000);
 
-  let client;
-  let builder;
+  let client: sdk.WasmSdk;
+  let builder: sdk.WasmSdkBuilder;
   const { dpnsContractId, dpnsDomain } = wasmFunctionalTestRequirements();
 
   before(async () => {

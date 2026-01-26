@@ -1,10 +1,11 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('VotingFacade', () => {
-  let wasmSdk;
-  let client;
-  let signer;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+  let signer: wasmSDKPackage.IdentitySigner;
 
   // Realistic identifiers
   const dataContractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
@@ -12,22 +13,31 @@ describe('VotingFacade', () => {
   const contenderId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
   const masternodeProTxHash = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2';
 
+  // Stub references for type-safe assertions
+  let getContestedResourceVoteStateStub: SinonStub;
+  let getContestedResourceVoteStateWithProofInfoStub: SinonStub;
+  let getContestedResourceIdentityVotesStub: SinonStub;
+  let getContestedResourceIdentityVotesWithProofInfoStub: SinonStub;
+  let getVotePollsByEndDateStub: SinonStub;
+  let getVotePollsByEndDateWithProofInfoStub: SinonStub;
+  let masternodeVoteStub: SinonStub;
+
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
     // Create mock objects
     signer = Object.create(wasmSDKPackage.IdentitySigner.prototype);
 
     // Stub query methods
-    this.sinon.stub(wasmSdk, 'getContestedResourceVoteState').resolves({
+    getContestedResourceVoteStateStub = this.sinon.stub(wasmSdk, 'getContestedResourceVoteState').resolves({
       contenders: new Map(),
       abstainVoteCount: 0,
       lockVoteCount: 0,
     });
-    this.sinon.stub(wasmSdk, 'getContestedResourceVoteStateWithProofInfo').resolves({
+    getContestedResourceVoteStateWithProofInfoStub = this.sinon.stub(wasmSdk, 'getContestedResourceVoteStateWithProofInfo').resolves({
       data: {
         contenders: new Map(),
         abstainVoteCount: 0,
@@ -36,21 +46,21 @@ describe('VotingFacade', () => {
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getContestedResourceIdentityVotes').resolves([]);
-    this.sinon.stub(wasmSdk, 'getContestedResourceIdentityVotesWithProofInfo').resolves({
+    getContestedResourceIdentityVotesStub = this.sinon.stub(wasmSdk, 'getContestedResourceIdentityVotes').resolves([]);
+    getContestedResourceIdentityVotesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getContestedResourceIdentityVotesWithProofInfo').resolves({
       data: [],
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getVotePollsByEndDate').resolves([]);
-    this.sinon.stub(wasmSdk, 'getVotePollsByEndDateWithProofInfo').resolves({
+    getVotePollsByEndDateStub = this.sinon.stub(wasmSdk, 'getVotePollsByEndDate').resolves([]);
+    getVotePollsByEndDateWithProofInfoStub = this.sinon.stub(wasmSdk, 'getVotePollsByEndDateWithProofInfo').resolves({
       data: [],
       proof: {},
       metadata: {},
     });
 
     // Stub transition method
-    this.sinon.stub(wasmSdk, 'masternodeVote').resolves({
+    masternodeVoteStub = this.sinon.stub(wasmSdk, 'masternodeVote').resolves({
       success: true,
     });
   });
@@ -67,7 +77,7 @@ describe('VotingFacade', () => {
 
       await client.voting.contestedResourceVoteState(query);
 
-      expect(wasmSdk.getContestedResourceVoteState).to.be.calledOnceWithExactly(query);
+      expect(getContestedResourceVoteStateStub).to.be.calledOnceWithExactly(query);
     });
 
     it('contestedResourceVoteStateWithProof() fetches vote state with proof and pagination', async () => {
@@ -85,7 +95,7 @@ describe('VotingFacade', () => {
 
       await client.voting.contestedResourceVoteStateWithProof(query);
 
-      expect(wasmSdk.getContestedResourceVoteStateWithProofInfo).to.be.calledOnceWithExactly(query);
+      expect(getContestedResourceVoteStateWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
     it('contestedResourceIdentityVotes() fetches votes cast by an identity', async () => {
@@ -98,7 +108,7 @@ describe('VotingFacade', () => {
 
       await client.voting.contestedResourceIdentityVotes(query);
 
-      expect(wasmSdk.getContestedResourceIdentityVotes).to.be.calledOnceWithExactly(query);
+      expect(getContestedResourceIdentityVotesStub).to.be.calledOnceWithExactly(query);
     });
 
     it('contestedResourceIdentityVotesWithProof() fetches identity votes with proof', async () => {
@@ -111,7 +121,7 @@ describe('VotingFacade', () => {
 
       await client.voting.contestedResourceIdentityVotesWithProof(query);
 
-      expect(wasmSdk.getContestedResourceIdentityVotesWithProofInfo)
+      expect(getContestedResourceIdentityVotesWithProofInfoStub)
         .to.be.calledOnceWithExactly(query);
     });
 
@@ -128,7 +138,7 @@ describe('VotingFacade', () => {
 
       await client.voting.votePollsByEndDate(query);
 
-      expect(wasmSdk.getVotePollsByEndDate).to.be.calledOnceWithExactly(query);
+      expect(getVotePollsByEndDateStub).to.be.calledOnceWithExactly(query);
     });
 
     it('votePollsByEndDateWithProof() fetches vote polls with proof', async () => {
@@ -142,7 +152,7 @@ describe('VotingFacade', () => {
 
       await client.voting.votePollsByEndDateWithProof(query);
 
-      expect(wasmSdk.getVotePollsByEndDateWithProofInfo).to.be.calledOnceWithExactly(query);
+      expect(getVotePollsByEndDateWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
   });
 
@@ -160,7 +170,7 @@ describe('VotingFacade', () => {
 
       await client.voting.masternodeVote(options);
 
-      expect(wasmSdk.masternodeVote).to.be.calledOnceWithExactly(options);
+      expect(masternodeVoteStub).to.be.calledOnceWithExactly(options);
     });
 
     it('masternodeVote() supports different vote choices', async () => {
@@ -177,7 +187,7 @@ describe('VotingFacade', () => {
 
       await client.voting.masternodeVote(abstainOptions);
 
-      expect(wasmSdk.masternodeVote).to.be.calledWithExactly(abstainOptions);
+      expect(masternodeVoteStub).to.be.calledWithExactly(abstainOptions);
     });
 
     it('masternodeVote() supports lock vote choice', async () => {
@@ -193,7 +203,7 @@ describe('VotingFacade', () => {
 
       await client.voting.masternodeVote(lockOptions);
 
-      expect(wasmSdk.masternodeVote).to.be.calledWithExactly(lockOptions);
+      expect(masternodeVoteStub).to.be.calledWithExactly(lockOptions);
     });
   });
 });

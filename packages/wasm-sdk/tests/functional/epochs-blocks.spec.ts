@@ -4,8 +4,8 @@ import init, * as sdk from '../../dist/sdk.compressed.js';
 describe('Epochs and evonode blocks', function describeEpochs() {
   this.timeout(60000);
 
-  let client;
-  let evonodeProTxHash;
+  let client: sdk.WasmSdk;
+  let evonodeProTxHash: string;
 
   before(async () => {
     await init();

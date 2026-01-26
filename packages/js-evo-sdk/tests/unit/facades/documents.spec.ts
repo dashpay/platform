@@ -1,17 +1,30 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('DocumentsFacade', () => {
-  let wasmSdk;
-  let client;
-  let document;
-  let identityKey;
-  let signer;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+  let document: wasmSDKPackage.Document;
+  let identityKey: wasmSDKPackage.IdentityPublicKey;
+  let signer: wasmSDKPackage.IdentitySigner;
+
+  // Stub references for type-safe assertions
+  let getDocumentsStub: SinonStub;
+  let getDocumentsWithProofInfoStub: SinonStub;
+  let getDocumentStub: SinonStub;
+  let getDocumentWithProofInfoStub: SinonStub;
+  let documentCreateStub: SinonStub;
+  let documentReplaceStub: SinonStub;
+  let documentDeleteStub: SinonStub;
+  let documentTransferStub: SinonStub;
+  let documentPurchaseStub: SinonStub;
+  let documentSetPriceStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
     // Create mock objects
@@ -20,26 +33,26 @@ describe('DocumentsFacade', () => {
     signer = Object.create(wasmSDKPackage.IdentitySigner.prototype);
 
     // Stub query methods
-    this.sinon.stub(wasmSdk, 'getDocuments').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getDocumentsWithProofInfo').resolves({
+    getDocumentsStub = this.sinon.stub(wasmSdk, 'getDocuments').resolves(new Map());
+    getDocumentsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getDocument').resolves(document);
-    this.sinon.stub(wasmSdk, 'getDocumentWithProofInfo').resolves({
+    getDocumentStub = this.sinon.stub(wasmSdk, 'getDocument').resolves(document);
+    getDocumentWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentWithProofInfo').resolves({
       data: document,
       proof: {},
       metadata: {},
     });
 
     // Stub transition methods
-    this.sinon.stub(wasmSdk, 'documentCreate').resolves();
-    this.sinon.stub(wasmSdk, 'documentReplace').resolves();
-    this.sinon.stub(wasmSdk, 'documentDelete').resolves();
-    this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
-    this.sinon.stub(wasmSdk, 'documentPurchase').resolves();
-    this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
+    documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves();
+    documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
+    documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
+    documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
+    documentPurchaseStub = this.sinon.stub(wasmSdk, 'documentPurchase').resolves();
+    documentSetPriceStub = this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
   });
 
   describe('Query Methods', () => {
@@ -54,7 +67,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.query(query);
 
-      expect(wasmSdk.getDocuments).to.be.calledOnceWithExactly(query);
+      expect(getDocumentsStub).to.be.calledOnceWithExactly(query);
     });
 
     it('queryWithProof() fetches documents with proof metadata', async () => {
@@ -65,7 +78,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.queryWithProof(query);
 
-      expect(wasmSdk.getDocumentsWithProofInfo).to.be.calledOnceWithExactly(query);
+      expect(getDocumentsWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
     it('get() fetches a single document by ID', async () => {
@@ -75,7 +88,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.get(contractId, documentTypeName, documentId);
 
-      expect(wasmSdk.getDocument)
+      expect(getDocumentStub)
         .to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
     });
 
@@ -86,7 +99,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.getWithProof(contractId, documentTypeName, documentId);
 
-      expect(wasmSdk.getDocumentWithProofInfo)
+      expect(getDocumentWithProofInfoStub)
         .to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
     });
   });
@@ -101,7 +114,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.create(options);
 
-      expect(wasmSdk.documentCreate).to.be.calledOnceWithExactly(options);
+      expect(documentCreateStub).to.be.calledOnceWithExactly(options);
     });
 
     it('replace() replaces an existing document', async () => {
@@ -114,7 +127,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.replace(options);
 
-      expect(wasmSdk.documentReplace).to.be.calledOnceWithExactly(options);
+      expect(documentReplaceStub).to.be.calledOnceWithExactly(options);
     });
 
     it('delete() deletes a document', async () => {
@@ -126,7 +139,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.delete(options);
 
-      expect(wasmSdk.documentDelete).to.be.calledOnceWithExactly(options);
+      expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
     });
 
     it('delete() accepts document identifiers instead of Document instance', async () => {
@@ -143,7 +156,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.delete(options);
 
-      expect(wasmSdk.documentDelete).to.be.calledOnceWithExactly(options);
+      expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
     });
 
     it('transfer() transfers document ownership to another identity', async () => {
@@ -157,7 +170,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.transfer(options);
 
-      expect(wasmSdk.documentTransfer).to.be.calledOnceWithExactly(options);
+      expect(documentTransferStub).to.be.calledOnceWithExactly(options);
     });
 
     it('purchase() purchases a document from another identity', async () => {
@@ -172,7 +185,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.purchase(options);
 
-      expect(wasmSdk.documentPurchase).to.be.calledOnceWithExactly(options);
+      expect(documentPurchaseStub).to.be.calledOnceWithExactly(options);
     });
 
     it('setPrice() sets a price on a document for sale', async () => {
@@ -185,7 +198,7 @@ describe('DocumentsFacade', () => {
 
       await client.documents.setPrice(options);
 
-      expect(wasmSdk.documentSetPrice).to.be.calledOnceWithExactly(options);
+      expect(documentSetPriceStub).to.be.calledOnceWithExactly(options);
     });
   });
 });

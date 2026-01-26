@@ -1,25 +1,37 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('DPNSFacade', () => {
-  let wasmSdk;
-  let client;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+
+  // Stub references for type-safe assertions
+  let dpnsIsNameAvailableStub: SinonStub;
+  let dpnsResolveNameStub: SinonStub;
+  let dpnsRegisterNameStub: SinonStub;
+  let getDpnsUsernamesStub: SinonStub;
+  let getDpnsUsernameStub: SinonStub;
+  let getDpnsUsernamesWithProofInfoStub: SinonStub;
+  let getDpnsUsernameWithProofInfoStub: SinonStub;
+  let getDpnsUsernameByNameStub: SinonStub;
+  let getDpnsUsernameByNameWithProofInfoStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
-    this.sinon.stub(wasmSdk, 'dpnsIsNameAvailable').resolves(true);
-    this.sinon.stub(wasmSdk, 'dpnsResolveName').resolves({});
-    this.sinon.stub(wasmSdk, 'dpnsRegisterName').resolves({});
-    this.sinon.stub(wasmSdk, 'getDpnsUsernames').resolves([]);
-    this.sinon.stub(wasmSdk, 'getDpnsUsername').resolves({});
-    this.sinon.stub(wasmSdk, 'getDpnsUsernamesWithProofInfo').resolves({});
-    this.sinon.stub(wasmSdk, 'getDpnsUsernameWithProofInfo').resolves({});
-    this.sinon.stub(wasmSdk, 'getDpnsUsernameByName').resolves({});
-    this.sinon.stub(wasmSdk, 'getDpnsUsernameByNameWithProofInfo').resolves({});
+    dpnsIsNameAvailableStub = this.sinon.stub(wasmSdk, 'dpnsIsNameAvailable').resolves(true);
+    dpnsResolveNameStub = this.sinon.stub(wasmSdk, 'dpnsResolveName').resolves({});
+    dpnsRegisterNameStub = this.sinon.stub(wasmSdk, 'dpnsRegisterName').resolves({});
+    getDpnsUsernamesStub = this.sinon.stub(wasmSdk, 'getDpnsUsernames').resolves([]);
+    getDpnsUsernameStub = this.sinon.stub(wasmSdk, 'getDpnsUsername').resolves({});
+    getDpnsUsernamesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDpnsUsernamesWithProofInfo').resolves({});
+    getDpnsUsernameWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDpnsUsernameWithProofInfo').resolves({});
+    getDpnsUsernameByNameStub = this.sinon.stub(wasmSdk, 'getDpnsUsernameByName').resolves({});
+    getDpnsUsernameByNameWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDpnsUsernameByNameWithProofInfo').resolves({});
   });
 
   it('convertToHomographSafe/isValidUsername/isContestedUsername await wasm statics', async () => {
@@ -52,14 +64,14 @@ describe('DPNSFacade', () => {
     await client.dpns.getUsernameByName('u.dash');
     await client.dpns.getUsernameByNameWithProof('u.dash');
 
-    expect(wasmSdk.dpnsIsNameAvailable).to.be.calledOnceWithExactly('label');
-    expect(wasmSdk.dpnsResolveName).to.be.calledOnceWithExactly('name');
-    expect(wasmSdk.dpnsRegisterName).to.be.calledOnce();
-    expect(wasmSdk.getDpnsUsernames).to.be.calledOnceWithExactly({ identityId: 'i', limit: 2 });
-    expect(wasmSdk.getDpnsUsername).to.be.calledOnceWithExactly('i');
-    expect(wasmSdk.getDpnsUsernamesWithProofInfo).to.be.calledOnceWithExactly({ identityId: 'i', limit: 3 });
-    expect(wasmSdk.getDpnsUsernameWithProofInfo).to.be.calledOnceWithExactly('i');
-    expect(wasmSdk.getDpnsUsernameByName).to.be.calledOnceWithExactly('u.dash');
-    expect(wasmSdk.getDpnsUsernameByNameWithProofInfo).to.be.calledOnceWithExactly('u.dash');
+    expect(dpnsIsNameAvailableStub).to.be.calledOnceWithExactly('label');
+    expect(dpnsResolveNameStub).to.be.calledOnceWithExactly('name');
+    expect(dpnsRegisterNameStub).to.be.calledOnce();
+    expect(getDpnsUsernamesStub).to.be.calledOnceWithExactly({ identityId: 'i', limit: 2 });
+    expect(getDpnsUsernameStub).to.be.calledOnceWithExactly('i');
+    expect(getDpnsUsernamesWithProofInfoStub).to.be.calledOnceWithExactly({ identityId: 'i', limit: 3 });
+    expect(getDpnsUsernameWithProofInfoStub).to.be.calledOnceWithExactly('i');
+    expect(getDpnsUsernameByNameStub).to.be.calledOnceWithExactly('u.dash');
+    expect(getDpnsUsernameByNameWithProofInfoStub).to.be.calledOnceWithExactly('u.dash');
   });
 });

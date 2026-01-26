@@ -4,8 +4,8 @@ import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.ts';
 describe('Group queries', function describeGroupQueries() {
   this.timeout(60000);
 
-  let client;
-  let builder;
+  let client: sdk.WasmSdk;
+  let builder: sdk.WasmSdkBuilder;
 
   before(async () => {
     await init();

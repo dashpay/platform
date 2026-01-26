@@ -5,8 +5,8 @@ import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.ts';
 describe('Token pricing', function describeTokenPricing() {
   this.timeout(60000);
 
-  let client;
-  let builder;
+  let client: sdk.WasmSdk;
+  let builder: sdk.WasmSdkBuilder;
 
   before(async () => {
     await init();

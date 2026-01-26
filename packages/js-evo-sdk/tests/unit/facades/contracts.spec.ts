@@ -1,17 +1,28 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('ContractsFacade', () => {
-  let wasmSdk;
-  let client;
-  let dataContract;
-  let identityKey;
-  let signer;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+  let dataContract: wasmSDKPackage.DataContract;
+  let identityKey: wasmSDKPackage.IdentityPublicKey;
+  let signer: wasmSDKPackage.IdentitySigner;
+
+  // Stub references for type-safe assertions
+  let getDataContractStub: SinonStub;
+  let getDataContractWithProofInfoStub: SinonStub;
+  let getDataContractHistoryStub: SinonStub;
+  let getDataContractHistoryWithProofInfoStub: SinonStub;
+  let getDataContractsStub: SinonStub;
+  let getDataContractsWithProofInfoStub: SinonStub;
+  let contractPublishStub: SinonStub;
+  let contractUpdateStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
     // Create mock objects
@@ -20,28 +31,28 @@ describe('ContractsFacade', () => {
     signer = Object.create(wasmSDKPackage.IdentitySigner.prototype);
 
     // Stub query methods
-    this.sinon.stub(wasmSdk, 'getDataContract').resolves(dataContract);
-    this.sinon.stub(wasmSdk, 'getDataContractWithProofInfo').resolves({
+    getDataContractStub = this.sinon.stub(wasmSdk, 'getDataContract').resolves(dataContract);
+    getDataContractWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractWithProofInfo').resolves({
       data: dataContract,
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getDataContractHistory').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getDataContractHistoryWithProofInfo').resolves({
+    getDataContractHistoryStub = this.sinon.stub(wasmSdk, 'getDataContractHistory').resolves(new Map());
+    getDataContractHistoryWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractHistoryWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getDataContracts').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getDataContractsWithProofInfo').resolves({
+    getDataContractsStub = this.sinon.stub(wasmSdk, 'getDataContracts').resolves(new Map());
+    getDataContractsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDataContractsWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
 
     // Stub transition methods
-    this.sinon.stub(wasmSdk, 'contractPublish').resolves(dataContract);
-    this.sinon.stub(wasmSdk, 'contractUpdate').resolves();
+    contractPublishStub = this.sinon.stub(wasmSdk, 'contractPublish').resolves(dataContract);
+    contractUpdateStub = this.sinon.stub(wasmSdk, 'contractUpdate').resolves();
   });
 
   describe('Query Methods', () => {
@@ -50,7 +61,7 @@ describe('ContractsFacade', () => {
 
       const result = await client.contracts.fetch(contractId);
 
-      expect(wasmSdk.getDataContract).to.be.calledOnceWithExactly(contractId);
+      expect(getDataContractStub).to.be.calledOnceWithExactly(contractId);
       expect(result).to.be.instanceOf(wasmSDKPackage.DataContract);
     });
 
@@ -59,7 +70,7 @@ describe('ContractsFacade', () => {
 
       await client.contracts.fetchWithProof(contractId);
 
-      expect(wasmSdk.getDataContractWithProofInfo).to.be.calledOnceWithExactly(contractId);
+      expect(getDataContractWithProofInfoStub).to.be.calledOnceWithExactly(contractId);
     });
 
     it('getHistory() fetches contract version history', async () => {
@@ -71,7 +82,7 @@ describe('ContractsFacade', () => {
 
       await client.contracts.getHistory(query);
 
-      expect(wasmSdk.getDataContractHistory).to.be.calledOnceWithExactly(query);
+      expect(getDataContractHistoryStub).to.be.calledOnceWithExactly(query);
     });
 
     it('getHistoryWithProof() fetches contract version history with proof', async () => {
@@ -81,7 +92,7 @@ describe('ContractsFacade', () => {
 
       await client.contracts.getHistoryWithProof(query);
 
-      expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly(query);
+      expect(getDataContractHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
     it('getMany() fetches multiple contracts by IDs', async () => {
@@ -92,7 +103,7 @@ describe('ContractsFacade', () => {
 
       await client.contracts.getMany(contractIds);
 
-      expect(wasmSdk.getDataContracts).to.be.calledOnceWithExactly(contractIds);
+      expect(getDataContractsStub).to.be.calledOnceWithExactly(contractIds);
     });
 
     it('getManyWithProof() fetches multiple contracts with proof', async () => {
@@ -100,7 +111,7 @@ describe('ContractsFacade', () => {
 
       await client.contracts.getManyWithProof(contractIds);
 
-      expect(wasmSdk.getDataContractsWithProofInfo).to.be.calledOnceWithExactly(contractIds);
+      expect(getDataContractsWithProofInfoStub).to.be.calledOnceWithExactly(contractIds);
     });
   });
 
@@ -115,7 +126,7 @@ describe('ContractsFacade', () => {
 
       const result = await client.contracts.publish(options);
 
-      expect(wasmSdk.contractPublish).to.be.calledOnceWithExactly(options);
+      expect(contractPublishStub).to.be.calledOnceWithExactly(options);
       expect(result).to.be.instanceOf(wasmSDKPackage.DataContract);
     });
 
@@ -128,7 +139,7 @@ describe('ContractsFacade', () => {
 
       await client.contracts.update(options);
 
-      expect(wasmSdk.contractUpdate).to.be.calledOnceWithExactly(options);
+      expect(contractUpdateStub).to.be.calledOnceWithExactly(options);
     });
   });
 });

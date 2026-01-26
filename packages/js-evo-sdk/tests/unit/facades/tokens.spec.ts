@@ -1,11 +1,12 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('TokensFacade', () => {
-  let wasmSdk;
-  let client;
-  let identityKey;
-  let signer;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+  let identityKey: wasmSDKPackage.IdentityPublicKey;
+  let signer: wasmSDKPackage.IdentitySigner;
 
   // Realistic identifiers
   const contractId = 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv';
@@ -13,10 +14,41 @@ describe('TokensFacade', () => {
   const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
   const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
 
+  // Stub references for type-safe assertions
+  let getTokenPriceByContractStub: SinonStub;
+  let getTokenTotalSupplyStub: SinonStub;
+  let getTokenTotalSupplyWithProofInfoStub: SinonStub;
+  let getTokenStatusesStub: SinonStub;
+  let getTokenStatusesWithProofInfoStub: SinonStub;
+  let getIdentitiesTokenBalancesStub: SinonStub;
+  let getIdentitiesTokenBalancesWithProofInfoStub: SinonStub;
+  let getIdentityTokenBalancesStub: SinonStub;
+  let getIdentityTokenBalancesWithProofInfoStub: SinonStub;
+  let getIdentityTokenInfosStub: SinonStub;
+  let getIdentitiesTokenInfosStub: SinonStub;
+  let getIdentityTokenInfosWithProofInfoStub: SinonStub;
+  let getIdentitiesTokenInfosWithProofInfoStub: SinonStub;
+  let getTokenDirectPurchasePricesStub: SinonStub;
+  let getTokenDirectPurchasePricesWithProofInfoStub: SinonStub;
+  let getTokenContractInfoStub: SinonStub;
+  let getTokenContractInfoWithProofInfoStub: SinonStub;
+  let getTokenPerpetualDistributionLastClaimStub: SinonStub;
+  let getTokenPerpetualDistributionLastClaimWithProofInfoStub: SinonStub;
+  let tokenMintStub: SinonStub;
+  let tokenBurnStub: SinonStub;
+  let tokenTransferStub: SinonStub;
+  let tokenFreezeStub: SinonStub;
+  let tokenUnfreezeStub: SinonStub;
+  let tokenDestroyFrozenStub: SinonStub;
+  let tokenEmergencyActionStub: SinonStub;
+  let tokenSetPriceStub: SinonStub;
+  let tokenDirectPurchaseStub: SinonStub;
+  let tokenClaimStub: SinonStub;
+
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
     // Create mock objects
@@ -24,95 +56,95 @@ describe('TokensFacade', () => {
     signer = Object.create(wasmSDKPackage.IdentitySigner.prototype);
 
     // Stub query methods
-    this.sinon.stub(wasmSdk, 'getTokenPriceByContract').resolves({
+    getTokenPriceByContractStub = this.sinon.stub(wasmSdk, 'getTokenPriceByContract').resolves({
       price: BigInt(1000000),
       currencyId: tokenId,
     });
-    this.sinon.stub(wasmSdk, 'getTokenTotalSupply').resolves({
+    getTokenTotalSupplyStub = this.sinon.stub(wasmSdk, 'getTokenTotalSupply').resolves({
       totalSupply: BigInt(1000000000),
       tokenId,
     });
-    this.sinon.stub(wasmSdk, 'getTokenTotalSupplyWithProofInfo').resolves({
+    getTokenTotalSupplyWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTokenTotalSupplyWithProofInfo').resolves({
       data: { totalSupply: BigInt(1000000000), tokenId },
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getTokenStatuses').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getTokenStatusesWithProofInfo').resolves({
+    getTokenStatusesStub = this.sinon.stub(wasmSdk, 'getTokenStatuses').resolves(new Map());
+    getTokenStatusesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTokenStatusesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalances').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalancesWithProofInfo').resolves({
+    getIdentitiesTokenBalancesStub = this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalances').resolves(new Map());
+    getIdentitiesTokenBalancesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalancesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
+    getIdentityTokenBalancesStub = this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves(new Map());
+    getIdentityTokenBalancesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentityTokenInfos').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfos').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getIdentityTokenInfosWithProofInfo').resolves({
+    getIdentityTokenInfosStub = this.sinon.stub(wasmSdk, 'getIdentityTokenInfos').resolves(new Map());
+    getIdentitiesTokenInfosStub = this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfos').resolves(new Map());
+    getIdentityTokenInfosWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityTokenInfosWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfosWithProofInfo').resolves({
+    getIdentitiesTokenInfosWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfosWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePrices').resolves(new Map());
-    this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePricesWithProofInfo').resolves({
+    getTokenDirectPurchasePricesStub = this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePrices').resolves(new Map());
+    getTokenDirectPurchasePricesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTokenDirectPurchasePricesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getTokenContractInfo').resolves({
+    getTokenContractInfoStub = this.sinon.stub(wasmSdk, 'getTokenContractInfo').resolves({
       contractId,
       tokenPosition: 0,
     });
-    this.sinon.stub(wasmSdk, 'getTokenContractInfoWithProofInfo').resolves({
+    getTokenContractInfoWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTokenContractInfoWithProofInfo').resolves({
       data: { contractId, tokenPosition: 0 },
       proof: {},
       metadata: {},
     });
-    this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaim').resolves(undefined);
-    this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaimWithProofInfo').resolves({
+    getTokenPerpetualDistributionLastClaimStub = this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaim').resolves(undefined);
+    getTokenPerpetualDistributionLastClaimWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTokenPerpetualDistributionLastClaimWithProofInfo').resolves({
       data: undefined,
       proof: {},
       metadata: {},
     });
 
     // Stub transition methods - all return result objects
-    this.sinon.stub(wasmSdk, 'tokenMint').resolves({
+    tokenMintStub = this.sinon.stub(wasmSdk, 'tokenMint').resolves({
       tokenId,
       balance: BigInt(100000000),
     });
-    this.sinon.stub(wasmSdk, 'tokenBurn').resolves({
+    tokenBurnStub = this.sinon.stub(wasmSdk, 'tokenBurn').resolves({
       tokenId,
       balance: BigInt(50000000),
     });
-    this.sinon.stub(wasmSdk, 'tokenTransfer').resolves({
+    tokenTransferStub = this.sinon.stub(wasmSdk, 'tokenTransfer').resolves({
       tokenId,
       senderBalance: BigInt(40000000),
       recipientBalance: BigInt(60000000),
     });
-    this.sinon.stub(wasmSdk, 'tokenFreeze').resolves({ tokenId });
-    this.sinon.stub(wasmSdk, 'tokenUnfreeze').resolves({ tokenId });
-    this.sinon.stub(wasmSdk, 'tokenDestroyFrozen').resolves({ tokenId });
-    this.sinon.stub(wasmSdk, 'tokenEmergencyAction').resolves({ tokenId });
-    this.sinon.stub(wasmSdk, 'tokenSetPrice').resolves({ tokenId });
-    this.sinon.stub(wasmSdk, 'tokenDirectPurchase').resolves({
+    tokenFreezeStub = this.sinon.stub(wasmSdk, 'tokenFreeze').resolves({ tokenId });
+    tokenUnfreezeStub = this.sinon.stub(wasmSdk, 'tokenUnfreeze').resolves({ tokenId });
+    tokenDestroyFrozenStub = this.sinon.stub(wasmSdk, 'tokenDestroyFrozen').resolves({ tokenId });
+    tokenEmergencyActionStub = this.sinon.stub(wasmSdk, 'tokenEmergencyAction').resolves({ tokenId });
+    tokenSetPriceStub = this.sinon.stub(wasmSdk, 'tokenSetPrice').resolves({ tokenId });
+    tokenDirectPurchaseStub = this.sinon.stub(wasmSdk, 'tokenDirectPurchase').resolves({
       tokenId,
       balance: BigInt(10000000),
     });
-    this.sinon.stub(wasmSdk, 'tokenClaim').resolves({
+    tokenClaimStub = this.sinon.stub(wasmSdk, 'tokenClaim').resolves({
       tokenId,
       claimedAmount: BigInt(5000000),
     });
@@ -131,20 +163,20 @@ describe('TokensFacade', () => {
 
       await client.tokens.priceByContract(contractId, tokenPosition);
 
-      expect(wasmSdk.getTokenPriceByContract)
+      expect(getTokenPriceByContractStub)
         .to.be.calledOnceWithExactly(contractId, tokenPosition);
     });
 
     it('totalSupply() fetches total supply of a token', async () => {
       await client.tokens.totalSupply(tokenId);
 
-      expect(wasmSdk.getTokenTotalSupply).to.be.calledOnceWithExactly(tokenId);
+      expect(getTokenTotalSupplyStub).to.be.calledOnceWithExactly(tokenId);
     });
 
     it('totalSupplyWithProof() fetches total supply with proof', async () => {
       await client.tokens.totalSupplyWithProof(tokenId);
 
-      expect(wasmSdk.getTokenTotalSupplyWithProofInfo).to.be.calledOnceWithExactly(tokenId);
+      expect(getTokenTotalSupplyWithProofInfoStub).to.be.calledOnceWithExactly(tokenId);
     });
 
     it('statuses() fetches statuses for multiple tokens', async () => {
@@ -152,7 +184,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.statuses(tokenIds);
 
-      expect(wasmSdk.getTokenStatuses).to.be.calledOnceWithExactly(tokenIds);
+      expect(getTokenStatusesStub).to.be.calledOnceWithExactly(tokenIds);
     });
 
     it('statusesWithProof() fetches token statuses with proof', async () => {
@@ -160,7 +192,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.statusesWithProof(tokenIds);
 
-      expect(wasmSdk.getTokenStatusesWithProofInfo).to.be.calledOnceWithExactly(tokenIds);
+      expect(getTokenStatusesWithProofInfoStub).to.be.calledOnceWithExactly(tokenIds);
     });
 
     it('balances() fetches token balances for multiple identities', async () => {
@@ -168,7 +200,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.balances(identityIds, tokenId);
 
-      expect(wasmSdk.getIdentitiesTokenBalances).to.be.calledOnceWithExactly(identityIds, tokenId);
+      expect(getIdentitiesTokenBalancesStub).to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
     it('balancesWithProof() fetches identity balances with proof', async () => {
@@ -176,7 +208,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.balancesWithProof(identityIds, tokenId);
 
-      expect(wasmSdk.getIdentitiesTokenBalancesWithProofInfo)
+      expect(getIdentitiesTokenBalancesWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
@@ -185,7 +217,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.identityBalances(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenBalances).to.be.calledOnceWithExactly(identityId, tokenIds);
+      expect(getIdentityTokenBalancesStub).to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
     it('identityBalancesWithProof() fetches identity token balances with proof', async () => {
@@ -193,7 +225,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.identityBalancesWithProof(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenBalancesWithProofInfo)
+      expect(getIdentityTokenBalancesWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
@@ -202,7 +234,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.identityTokenInfos(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenInfos).to.be.calledOnceWithExactly(identityId, tokenIds);
+      expect(getIdentityTokenInfosStub).to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
     it('identitiesTokenInfos() fetches token info for multiple identities', async () => {
@@ -210,7 +242,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.identitiesTokenInfos(identityIds, tokenId);
 
-      expect(wasmSdk.getIdentitiesTokenInfos).to.be.calledOnceWithExactly(identityIds, tokenId);
+      expect(getIdentitiesTokenInfosStub).to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
     it('identityTokenInfosWithProof() fetches token info with proof', async () => {
@@ -218,7 +250,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.identityTokenInfosWithProof(identityId, tokenIds);
 
-      expect(wasmSdk.getIdentityTokenInfosWithProofInfo)
+      expect(getIdentityTokenInfosWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
@@ -227,7 +259,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.identitiesTokenInfosWithProof(identityIds, tokenId);
 
-      expect(wasmSdk.getIdentitiesTokenInfosWithProofInfo)
+      expect(getIdentitiesTokenInfosWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
@@ -236,7 +268,7 @@ describe('TokensFacade', () => {
 
       await client.tokens.directPurchasePrices(tokenIds);
 
-      expect(wasmSdk.getTokenDirectPurchasePrices).to.be.calledOnceWithExactly(tokenIds);
+      expect(getTokenDirectPurchasePricesStub).to.be.calledOnceWithExactly(tokenIds);
     });
 
     it('directPurchasePricesWithProof() fetches purchase prices with proof', async () => {
@@ -244,33 +276,33 @@ describe('TokensFacade', () => {
 
       await client.tokens.directPurchasePricesWithProof(tokenIds);
 
-      expect(wasmSdk.getTokenDirectPurchasePricesWithProofInfo)
+      expect(getTokenDirectPurchasePricesWithProofInfoStub)
         .to.be.calledOnceWithExactly(tokenIds);
     });
 
     it('contractInfo() fetches token contract information', async () => {
       await client.tokens.contractInfo(contractId);
 
-      expect(wasmSdk.getTokenContractInfo).to.be.calledOnceWithExactly(contractId);
+      expect(getTokenContractInfoStub).to.be.calledOnceWithExactly(contractId);
     });
 
     it('contractInfoWithProof() fetches contract info with proof', async () => {
       await client.tokens.contractInfoWithProof(contractId);
 
-      expect(wasmSdk.getTokenContractInfoWithProofInfo).to.be.calledOnceWithExactly(contractId);
+      expect(getTokenContractInfoWithProofInfoStub).to.be.calledOnceWithExactly(contractId);
     });
 
     it('perpetualDistributionLastClaim() fetches last claim time', async () => {
       await client.tokens.perpetualDistributionLastClaim(identityId, tokenId);
 
-      expect(wasmSdk.getTokenPerpetualDistributionLastClaim)
+      expect(getTokenPerpetualDistributionLastClaimStub)
         .to.be.calledOnceWithExactly(identityId, tokenId);
     });
 
     it('perpetualDistributionLastClaimWithProof() fetches last claim with proof', async () => {
       await client.tokens.perpetualDistributionLastClaimWithProof(identityId, tokenId);
 
-      expect(wasmSdk.getTokenPerpetualDistributionLastClaimWithProofInfo)
+      expect(getTokenPerpetualDistributionLastClaimWithProofInfoStub)
         .to.be.calledOnceWithExactly(identityId, tokenId);
     });
   });
@@ -288,7 +320,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.mint(options);
 
-      expect(wasmSdk.tokenMint).to.be.calledOnceWithExactly(options);
+      expect(tokenMintStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
       expect(result.balance).to.equal(BigInt(100000000));
     });
@@ -304,7 +336,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.burn(options);
 
-      expect(wasmSdk.tokenBurn).to.be.calledOnceWithExactly(options);
+      expect(tokenBurnStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
       expect(result.balance).to.equal(BigInt(50000000));
     });
@@ -321,7 +353,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.transfer(options);
 
-      expect(wasmSdk.tokenTransfer).to.be.calledOnceWithExactly(options);
+      expect(tokenTransferStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
       expect(result.senderBalance).to.equal(BigInt(40000000));
       expect(result.recipientBalance).to.equal(BigInt(60000000));
@@ -339,7 +371,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.freeze(options);
 
-      expect(wasmSdk.tokenFreeze).to.be.calledOnceWithExactly(options);
+      expect(tokenFreezeStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
     });
 
@@ -355,7 +387,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.unfreeze(options);
 
-      expect(wasmSdk.tokenUnfreeze).to.be.calledOnceWithExactly(options);
+      expect(tokenUnfreezeStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
     });
 
@@ -371,7 +403,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.destroyFrozen(options);
 
-      expect(wasmSdk.tokenDestroyFrozen).to.be.calledOnceWithExactly(options);
+      expect(tokenDestroyFrozenStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
     });
 
@@ -386,7 +418,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.emergencyAction(options);
 
-      expect(wasmSdk.tokenEmergencyAction).to.be.calledOnceWithExactly(options);
+      expect(tokenEmergencyActionStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
     });
 
@@ -403,7 +435,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.setPrice(options);
 
-      expect(wasmSdk.tokenSetPrice).to.be.calledOnceWithExactly(options);
+      expect(tokenSetPriceStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
     });
 
@@ -418,7 +450,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.directPurchase(options);
 
-      expect(wasmSdk.tokenDirectPurchase).to.be.calledOnceWithExactly(options);
+      expect(tokenDirectPurchaseStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
       expect(result.balance).to.equal(BigInt(10000000));
     });
@@ -433,7 +465,7 @@ describe('TokensFacade', () => {
 
       const result = await client.tokens.claim(options);
 
-      expect(wasmSdk.tokenClaim).to.be.calledOnceWithExactly(options);
+      expect(tokenClaimStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
       expect(result.claimedAmount).to.equal(BigInt(5000000));
     });

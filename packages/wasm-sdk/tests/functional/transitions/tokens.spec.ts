@@ -27,7 +27,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 describe('Token State Transitions', function describeTokenStateTransitions() {
   this.timeout(120000);
 
-  let client;
+  let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
 
   before(async () => {

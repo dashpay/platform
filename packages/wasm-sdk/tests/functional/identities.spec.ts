@@ -11,8 +11,8 @@ describe('Identity queries', function describeBlock() {
     tokenContracts,
   } = wasmFunctionalTestRequirements();
 
-  let client;
-  let builder;
+  let client: sdk.WasmSdk;
+  let builder: sdk.WasmSdkBuilder;
 
   before(async () => {
     await init();
@@ -134,13 +134,13 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('gets contract nonce and keys', async () => {
-    // getIdentityContractNonce returns bigint | null
-    // null if identity never interacted with the contract
-    // Note: On a fresh platform, nonce would be null. But after running tests
-    // that create documents, the nonce will be a bigint. We accept both.
+    // getIdentityContractNonce returns bigint | null | undefined
+    // null/undefined if identity never interacted with the contract
+    // Note: On a fresh platform, nonce would be null/undefined. But after running tests
+    // that create documents, the nonce will be a bigint. We accept all three.
     const nonce = await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
-    // Nonce is either null (never used) or a bigint (has been used)
-    expect(nonce === null || typeof nonce === 'bigint').to.be.true();
+    // Nonce is either null/undefined (never used) or a bigint (has been used)
+    expect(nonce == null || typeof nonce === 'bigint').to.be.true();
 
     const keys = await client.getIdentityKeys({
       identityId: TEST_IDENTITY,

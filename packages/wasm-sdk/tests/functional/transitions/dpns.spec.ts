@@ -22,7 +22,7 @@ import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtu
 describe('DPNS State Transitions', function describeDpnsStateTransitions() {
   this.timeout(180000);
 
-  let client;
+  let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
 
   // Store results for verification

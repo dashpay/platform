@@ -54,62 +54,32 @@ export function createTestSignerAndKey(sdkModule, seed, keyIndex = 2) {
   const keys = sdkModule.WasmSdk.generateTestIdentityKeys(BigInt(seed));
   const keyInfo = keys[keyIndex];
 
-  // serde_wasm_bindgen returns Maps, so use .get() to access properties
-  const privateKeyHex = keyInfo.get('privateKeyHex');
-  const keyId = keyInfo.get('keyId');
-  const publicKeyData = keyInfo.get('publicKeyData');
-  const keyTypeStr = keyInfo.get('keyType');
-  const purposeStr = keyInfo.get('purpose');
-  const securityLevelStr = keyInfo.get('securityLevel');
+  // serde_wasm_bindgen with serialize_maps_as_objects(true) returns plain objects
+  const { privateKeyHex } = keyInfo;
+  const { keyId } = keyInfo;
+  const { publicKeyData } = keyInfo;
+  const keyTypeStr = keyInfo.keyType;
+  const purposeStr = keyInfo.purpose;
+  const securityLevelStr = keyInfo.securityLevel;
 
   // Create the signer and add the private key using PrivateKey.fromHex
   const signer = new sdkModule.IdentitySigner();
   const privateKey = sdkModule.PrivateKey.fromHex(privateKeyHex, 'testnet');
   signer.addKey(privateKey);
 
-  // Key types: ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2, BIP13_SCRIPT_HASH = 3
-  const keyTypeMap = {
-    ECDSA_SECP256K1: 0,
-    BLS12_381: 1,
-    ECDSA_HASH160: 2,
-    BIP13_SCRIPT_HASH: 3,
-  };
-  const keyType = keyTypeMap[keyTypeStr] ?? 0;
-
-  // Purposes: AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, ...
-  const purposeMap = {
-    AUTHENTICATION: 0,
-    ENCRYPTION: 1,
-    DECRYPTION: 2,
-    TRANSFER: 3,
-    SYSTEM: 4,
-    VOTING: 5,
-    OWNER: 6,
-  };
-  const purpose = purposeMap[purposeStr] ?? 0;
-
-  // Security levels: MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
-  const securityLevelMap = {
-    MASTER: 0,
-    CRITICAL: 1,
-    HIGH: 2,
-    MEDIUM: 3,
-  };
-  const securityLevel = securityLevelMap[securityLevelStr] ?? keyIndex;
-
   // Determine read_only based on key type (transfer keys are read_only)
   const readOnly = purposeStr === 'TRANSFER';
 
-  const identityKey = new sdkModule.IdentityPublicKey(
-    keyId,
-    purpose,
-    securityLevel,
-    keyType,
-    readOnly,
-    publicKeyData, // hex string (66 chars for ECDSA_SECP256K1, 40 chars for ECDSA_HASH160)
-    undefined, // disabled_at
-    undefined, // contract_bounds
-  );
+  // IdentityPublicKey constructor expects an options object with string enum values
+  // keyId might be BigInt from serialization, convert to number (u32)
+  const identityKey = new sdkModule.IdentityPublicKey({
+    keyId: Number(keyId),
+    purpose: purposeStr, // string like 'AUTHENTICATION', 'TRANSFER'
+    securityLevel: securityLevelStr, // string like 'MASTER', 'CRITICAL', 'HIGH'
+    keyType: keyTypeStr, // string like 'ECDSA_SECP256K1', 'ECDSA_HASH160'
+    isReadOnly: readOnly,
+    data: publicKeyData, // hex string
+  });
 
   return { signer, identityKey, keyInfo };
 }

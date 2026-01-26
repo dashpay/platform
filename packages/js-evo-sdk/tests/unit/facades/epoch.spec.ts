@@ -1,26 +1,39 @@
+import { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('EpochFacade', () => {
-  let wasmSdk;
-  let client;
+  let wasmSdk: wasmSDKPackage.WasmSdk;
+  let client: EvoSDK;
+
+  // Stub references for type-safe assertions
+  let getEpochsInfoStub: SinonStub;
+  let getEpochsInfoWithProofInfoStub: SinonStub;
+  let getFinalizedEpochInfosStub: SinonStub;
+  let getFinalizedEpochInfosWithProofInfoStub: SinonStub;
+  let getCurrentEpochStub: SinonStub;
+  let getCurrentEpochWithProofInfoStub: SinonStub;
+  let getEvonodesProposedEpochBlocksByIdsStub: SinonStub;
+  let getEvonodesProposedEpochBlocksByIdsWithProofInfoStub: SinonStub;
+  let getEvonodesProposedEpochBlocksByRangeStub: SinonStub;
+  let getEvonodesProposedEpochBlocksByRangeWithProofInfoStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
-    wasmSdk = builder.build();
+    wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
-    this.sinon.stub(wasmSdk, 'getEpochsInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getEpochsInfoWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getFinalizedEpochInfos').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getFinalizedEpochInfosWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getCurrentEpoch').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getCurrentEpochWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByIds').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByIdsWithProofInfo').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRange').resolves('ok');
-    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRangeWithProofInfo').resolves('ok');
+    getEpochsInfoStub = this.sinon.stub(wasmSdk, 'getEpochsInfo').resolves('ok');
+    getEpochsInfoWithProofInfoStub = this.sinon.stub(wasmSdk, 'getEpochsInfoWithProofInfo').resolves('ok');
+    getFinalizedEpochInfosStub = this.sinon.stub(wasmSdk, 'getFinalizedEpochInfos').resolves('ok');
+    getFinalizedEpochInfosWithProofInfoStub = this.sinon.stub(wasmSdk, 'getFinalizedEpochInfosWithProofInfo').resolves('ok');
+    getCurrentEpochStub = this.sinon.stub(wasmSdk, 'getCurrentEpoch').resolves('ok');
+    getCurrentEpochWithProofInfoStub = this.sinon.stub(wasmSdk, 'getCurrentEpochWithProofInfo').resolves('ok');
+    getEvonodesProposedEpochBlocksByIdsStub = this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByIds').resolves('ok');
+    getEvonodesProposedEpochBlocksByIdsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByIdsWithProofInfo').resolves('ok');
+    getEvonodesProposedEpochBlocksByRangeStub = this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRange').resolves('ok');
+    getEvonodesProposedEpochBlocksByRangeWithProofInfoStub = this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRangeWithProofInfo').resolves('ok');
   });
 
   it('epochsInfo and finalizedInfos forward queries untouched', async () => {
@@ -31,19 +44,19 @@ describe('EpochFacade', () => {
     await client.epoch.finalizedInfos(finalizedQuery);
     const finalizedProofQuery = { startEpoch: 4, count: 5 };
     await client.epoch.finalizedInfosWithProof(finalizedProofQuery);
-    expect(wasmSdk.getEpochsInfo).to.be.calledOnceWithExactly(epochsQuery);
-    expect(wasmSdk.getEpochsInfoWithProofInfo).to.be.calledOnce();
-    expect(wasmSdk.getEpochsInfoWithProofInfo.firstCall.args[0]).to.deep.equal({});
-    expect(wasmSdk.getFinalizedEpochInfos).to.be.calledOnceWithExactly(finalizedQuery);
-    expect(wasmSdk.getFinalizedEpochInfosWithProofInfo)
+    expect(getEpochsInfoStub).to.be.calledOnceWithExactly(epochsQuery);
+    expect(getEpochsInfoWithProofInfoStub).to.be.calledOnce();
+    expect(getEpochsInfoWithProofInfoStub.firstCall.args[0]).to.deep.equal({});
+    expect(getFinalizedEpochInfosStub).to.be.calledOnceWithExactly(finalizedQuery);
+    expect(getFinalizedEpochInfosWithProofInfoStub)
       .to.be.calledOnceWithExactly(finalizedProofQuery);
   });
 
   it('current and currentWithProof forward', async () => {
     await client.epoch.current();
     await client.epoch.currentWithProof();
-    expect(wasmSdk.getCurrentEpoch).to.be.calledOnce();
-    expect(wasmSdk.getCurrentEpochWithProofInfo).to.be.calledOnce();
+    expect(getCurrentEpochStub).to.be.calledOnce();
+    expect(getCurrentEpochWithProofInfoStub).to.be.calledOnce();
   });
 
   it('evonodesProposedBlocks* forward with args', async () => {
@@ -55,10 +68,10 @@ describe('EpochFacade', () => {
     await client.epoch.evonodesProposedBlocksByRange(rangeQuery);
     const rangeProofQuery = { epoch: 13 };
     await client.epoch.evonodesProposedBlocksByRangeWithProof(rangeProofQuery);
-    expect(wasmSdk.getEvonodesProposedEpochBlocksByIds).to.be.calledOnceWithExactly(10, ['a', 'b']);
-    expect(wasmSdk.getEvonodesProposedEpochBlocksByIdsWithProofInfo).to.be.calledOnceWithExactly(11, ['x']);
-    expect(wasmSdk.getEvonodesProposedEpochBlocksByRange).to.be.calledOnceWithExactly(rangeQuery);
-    expect(wasmSdk.getEvonodesProposedEpochBlocksByRangeWithProofInfo)
+    expect(getEvonodesProposedEpochBlocksByIdsStub).to.be.calledOnceWithExactly(10, ['a', 'b']);
+    expect(getEvonodesProposedEpochBlocksByIdsWithProofInfoStub).to.be.calledOnceWithExactly(11, ['x']);
+    expect(getEvonodesProposedEpochBlocksByRangeStub).to.be.calledOnceWithExactly(rangeQuery);
+    expect(getEvonodesProposedEpochBlocksByRangeWithProofInfoStub)
       .to.be.calledOnceWithExactly(rangeProofQuery);
   });
 });
