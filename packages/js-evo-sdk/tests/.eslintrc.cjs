@@ -5,9 +5,8 @@ module.exports = {
     mocha: true,
   },
   overrides: [
-    // TypeScript tests
     {
-      files: ['tests/**/*.ts'],
+      files: ['**/*.ts'],
       extends: [
         'airbnb-base',
         'plugin:@typescript-eslint/recommended',
@@ -18,40 +17,26 @@ module.exports = {
       },
       plugins: ['@typescript-eslint'],
       rules: {
-        // Ignore dirty-chai errors (both base and TypeScript rules)
         'no-unused-expressions': 'off',
         '@typescript-eslint/no-unused-expressions': 'off',
-        // Allow unused vars with underscore prefix (for intentionally unused)
         '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-        // Ignore require('dev-dependency') errors for tests
         'import/no-extraneous-dependencies': 'off',
-        // Allow any for test flexibility
         '@typescript-eslint/no-explicit-any': 'off',
-        // Common relaxations for tests
         'no-await-in-loop': 'off',
         'import/extensions': ['error', 'ignorePackages'],
-        // Increase line length limit for tests (100 is too restrictive)
         'max-len': ['error', { code: 140 }],
-        // Keep disabled - WASM bindings use underscores (__type, _wbg_ptr)
         'no-underscore-dangle': 'off',
-        // Keep disabled - legitimate use in hex conversion
         'no-bitwise': 'off',
-        // Keep disabled - for-of loops are fine in modern TS
         'no-restricted-syntax': 'off',
+        'class-methods-use-this': 'off',
+        'import/prefer-default-export': 'off',
+        'import/no-unresolved': 'off',
+        curly: ['error', 'all'],
       },
-      settings: {
-        'import/resolver': {
-          node: {
-            extensions: ['.js', '.ts'],
-          },
-        },
+      globals: {
+        expect: true,
       },
     },
   ],
-  ignorePatterns: [
-    'dist',
-    'pkg',
-    '*.d.ts',
-    'tests/karma',
-  ],
+  ignorePatterns: ['karma', '*.cjs'],
 };

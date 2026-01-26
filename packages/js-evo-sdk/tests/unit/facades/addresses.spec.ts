@@ -168,15 +168,12 @@ describe('AddressesFacade', () => {
 
     this.sinon.stub(wasmSdk, 'addressFundsWithdraw').resolves(resultMap);
 
-    // Create Core output script (P2PKH)
-    const coreScript = wasmSDKPackage.CoreScript.newP2PKH(new Uint8Array(20).fill(5));
-
     // Mock options - the actual implementation will process these
     const options = {
       inputs: [],
       coreFeePerByte: 1,
       pooling: wasmSDKPackage.PoolingWasm.Standard,
-      outputScript: coreScript,
+      outputScript: new Uint8Array(25).fill(5), // Mock P2PKH script bytes
       signer: {},
     };
 

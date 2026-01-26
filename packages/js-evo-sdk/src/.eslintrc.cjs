@@ -11,7 +11,7 @@ module.exports = {
   },
   extends: [
     'airbnb-base',
-    'airbnb-typescript/base',
+    'plugin:@typescript-eslint/recommended',
   ],
   plugins: [
     '@typescript-eslint',
@@ -19,12 +19,14 @@ module.exports = {
   rules: {
     'import/extensions': 'off',
     'import/prefer-default-export': 'off',
+    'import/no-unresolved': 'off',
     'object-curly-newline': 'off',
     'class-methods-use-this': 'off',
     'max-len': 'off',
     'no-restricted-exports': 'off',
+    'lines-between-class-members': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
-    '@typescript-eslint/lines-between-class-members': 'off',
+    '@typescript-eslint/no-namespace': 'off',
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
   },
   ignorePatterns: [
