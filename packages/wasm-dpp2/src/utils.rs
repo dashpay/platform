@@ -508,42 +508,52 @@ pub fn try_to_fixed_bytes<const N: usize>(
 ///
 /// Takes `&JsValue` to allow Deref coercion from `js_sys::Number`.
 pub fn try_to_u32(value: &JsValue, field_name: &str) -> WasmDppResult<u32> {
-    let num = value.as_f64().ok_or_else(|| {
-        WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
-    })?;
+    if let Some(num) = value.as_f64() {
+        if num.is_nan() || num.is_infinite() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be a finite number, got {}",
+                field_name,
+                if num.is_nan() { "NaN" } else { "Infinity" }
+            )));
+        }
 
-    if num.is_nan() || num.is_infinite() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be a finite number, got {}",
-            field_name,
-            if num.is_nan() { "NaN" } else { "Infinity" }
-        )));
+        if num.fract() != 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be an integer, got {}",
+                field_name, num
+            )));
+        }
+
+        if num < 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be non-negative, got {}",
+                field_name, num
+            )));
+        }
+
+        if num > u32::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be at most {}, got {}",
+                field_name,
+                u32::MAX,
+                num
+            )));
+        }
+
+        Ok(num as u32)
+    } else if let Some(s) = value.as_string() {
+        s.parse::<u32>().map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'{}' string value '{}' is not a valid u32",
+                field_name, s
+            ))
+        })
+    } else {
+        Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a number or numeric string",
+            field_name
+        )))
     }
-
-    if num.fract() != 0.0 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be an integer, got {}",
-            field_name, num
-        )));
-    }
-
-    if num < 0.0 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be non-negative, got {}",
-            field_name, num
-        )));
-    }
-
-    if num > u32::MAX as f64 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be at most {}, got {}",
-            field_name,
-            u32::MAX,
-            num
-        )));
-    }
-
-    Ok(num as u32)
 }
 
 /// Convert a JS value to u8 with validation.
@@ -556,42 +566,52 @@ pub fn try_to_u32(value: &JsValue, field_name: &str) -> WasmDppResult<u32> {
 ///
 /// Takes `&JsValue` to allow Deref coercion from `js_sys::Number`.
 pub fn try_to_u8(value: &JsValue, field_name: &str) -> WasmDppResult<u8> {
-    let num = value.as_f64().ok_or_else(|| {
-        WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
-    })?;
+    if let Some(num) = value.as_f64() {
+        if num.is_nan() || num.is_infinite() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be a finite number, got {}",
+                field_name,
+                if num.is_nan() { "NaN" } else { "Infinity" }
+            )));
+        }
 
-    if num.is_nan() || num.is_infinite() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be a finite number, got {}",
-            field_name,
-            if num.is_nan() { "NaN" } else { "Infinity" }
-        )));
+        if num.fract() != 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be an integer, got {}",
+                field_name, num
+            )));
+        }
+
+        if num < 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be non-negative, got {}",
+                field_name, num
+            )));
+        }
+
+        if num > u8::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be at most {}, got {}",
+                field_name,
+                u8::MAX,
+                num
+            )));
+        }
+
+        Ok(num as u8)
+    } else if let Some(s) = value.as_string() {
+        s.parse::<u8>().map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'{}' string value '{}' is not a valid u8",
+                field_name, s
+            ))
+        })
+    } else {
+        Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a number or numeric string",
+            field_name
+        )))
     }
-
-    if num.fract() != 0.0 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be an integer, got {}",
-            field_name, num
-        )));
-    }
-
-    if num < 0.0 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be non-negative, got {}",
-            field_name, num
-        )));
-    }
-
-    if num > u8::MAX as f64 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be at most {}, got {}",
-            field_name,
-            u8::MAX,
-            num
-        )));
-    }
-
-    Ok(num as u8)
 }
 
 /// Convert a JS value to u16 with validation.
@@ -604,42 +624,52 @@ pub fn try_to_u8(value: &JsValue, field_name: &str) -> WasmDppResult<u8> {
 ///
 /// Takes `&JsValue` to allow Deref coercion from `js_sys::Number`.
 pub fn try_to_u16(value: &JsValue, field_name: &str) -> WasmDppResult<u16> {
-    let num = value.as_f64().ok_or_else(|| {
-        WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
-    })?;
+    if let Some(num) = value.as_f64() {
+        if num.is_nan() || num.is_infinite() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be a finite number, got {}",
+                field_name,
+                if num.is_nan() { "NaN" } else { "Infinity" }
+            )));
+        }
 
-    if num.is_nan() || num.is_infinite() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be a finite number, got {}",
-            field_name,
-            if num.is_nan() { "NaN" } else { "Infinity" }
-        )));
+        if num.fract() != 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be an integer, got {}",
+                field_name, num
+            )));
+        }
+
+        if num < 0.0 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be non-negative, got {}",
+                field_name, num
+            )));
+        }
+
+        if num > u16::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "'{}' must be at most {}, got {}",
+                field_name,
+                u16::MAX,
+                num
+            )));
+        }
+
+        Ok(num as u16)
+    } else if let Some(s) = value.as_string() {
+        s.parse::<u16>().map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'{}' string value '{}' is not a valid u16",
+                field_name, s
+            ))
+        })
+    } else {
+        Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a number or numeric string",
+            field_name
+        )))
     }
-
-    if num.fract() != 0.0 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be an integer, got {}",
-            field_name, num
-        )));
-    }
-
-    if num < 0.0 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be non-negative, got {}",
-            field_name, num
-        )));
-    }
-
-    if num > u16::MAX as f64 {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be at most {}, got {}",
-            field_name,
-            u16::MAX,
-            num
-        )));
-    }
-
-    Ok(num as u16)
 }
 
 /// Generate a document ID using the v0 algorithm

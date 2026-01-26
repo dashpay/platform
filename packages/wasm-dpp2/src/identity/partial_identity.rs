@@ -5,7 +5,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     IntoWasm, JsValueExt, try_from_options, try_from_options_optional_with, try_from_options_with,
-    try_to_array, try_to_object, try_to_u64,
+    try_to_array, try_to_object, try_to_u32, try_to_u64,
 };
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
@@ -305,36 +305,22 @@ pub fn value_to_loaded_public_keys(
     let keys = Object::keys(&pub_keys_object);
 
     for key in keys.iter() {
-        // Object.keys() returns strings, so we need to parse them
-        let key_str = key
-            .as_string()
-            .ok_or_else(|| WasmDppError::invalid_argument("Key identifier must be a string"))?;
-        let key_val: f64 = key_str.parse().map_err(|_| {
-            WasmDppError::invalid_argument(format!("Key identifier '{}' must be numeric", key_str))
-        })?;
-
-        if key_val > u32::MAX as f64 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "Key id '{:?}' exceeds the maximum limit for u32.",
-                key.as_string()
-            )));
-        }
-
-        let key_id = KeyID::from(key_val as u32);
+        // Object.keys() returns strings, try_to_u32 handles string parsing
+        let key_id = KeyID::from(try_to_u32(&key, "key identifier")?);
 
         let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
             let message = err.error_message();
             WasmDppError::invalid_argument(format!(
                 "unable to access loaded public key '{}': {}",
-                key_val as u32, message
+                key_id, message
             ))
         })?;
 
-        let key = js_key
+        let public_key = js_key
             .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
             .clone();
 
-        map.insert(key_id, IdentityPublicKey::from(key));
+        map.insert(key_id, IdentityPublicKey::from(public_key));
     }
 
     Ok(map)
