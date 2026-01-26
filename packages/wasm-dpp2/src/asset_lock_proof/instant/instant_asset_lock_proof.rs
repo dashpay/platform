@@ -96,7 +96,10 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(setter = "outputIndex")]
-    pub fn set_output_index(&mut self, #[wasm_bindgen(js_name = "outputIndex")] output_index: &js_sys::Number) -> WasmDppResult<()> {
+    pub fn set_output_index(
+        &mut self,
+        #[wasm_bindgen(js_name = "outputIndex")] output_index: &js_sys::Number,
+    ) -> WasmDppResult<()> {
         self.0.output_index = try_to_u32(output_index, "outputIndex")?;
         Ok(())
     }

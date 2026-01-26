@@ -202,7 +202,10 @@ impl MasternodeVoteTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: JsValue,
     ) -> WasmDppResult<()> {
-        self.0.set_signature_public_key_id(try_to_u32(&signature_public_key_id, "signaturePublicKeyId")?);
+        self.0.set_signature_public_key_id(try_to_u32(
+            &signature_public_key_id,
+            "signaturePublicKeyId",
+        )?);
         Ok(())
     }
 
@@ -258,7 +261,8 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
     pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
-        self.0.set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+        self.0
+            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
         Ok(())
     }
 

@@ -124,7 +124,8 @@ impl DocumentBaseTransitionWasm {
 
     #[wasm_bindgen(setter = "identityContractNonce")]
     pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
-        self.0.set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+        self.0
+            .set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
         Ok(())
     }
 

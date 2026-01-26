@@ -235,9 +235,7 @@ impl ChangeControlRulesWasm {
 
         let action_taker: ActionTakerWasm = try_from_options(&object, "actionTaker")?;
 
-        let goal = try_from_options_with(&object, "goal", |v| {
-            ActionGoalWasm::try_from(v.clone())
-        })?;
+        let goal = try_from_options_with(&object, "goal", |v| ActionGoalWasm::try_from(v.clone()))?;
 
         // Extract groups
         let groups_value: JsValue =
@@ -250,8 +248,10 @@ impl ChangeControlRulesWasm {
         for key in groups_keys.iter() {
             let contract_position = try_to_u16(&key, "group contract position")?;
 
-            let group: GroupWasm =
-                try_from_options(&groups_object.clone().into(), &contract_position.to_string())?;
+            let group: GroupWasm = try_from_options(
+                &groups_object.clone().into(),
+                &contract_position.to_string(),
+            )?;
 
             groups.insert(contract_position, group.into());
         }

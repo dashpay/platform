@@ -5,7 +5,7 @@ use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional, try_from_options_with, try_to_object, IntoWasm,
+    IntoWasm, try_from_options, try_from_options_optional, try_from_options_with, try_to_object,
 };
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{

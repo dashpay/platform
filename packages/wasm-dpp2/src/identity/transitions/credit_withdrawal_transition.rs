@@ -230,7 +230,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: &js_sys::Number,
     ) -> WasmDppResult<()> {
-        self.0.set_user_fee_increase(try_to_u16(user_fee_increase, "userFeeIncrease")?);
+        self.0
+            .set_user_fee_increase(try_to_u16(user_fee_increase, "userFeeIncrease")?);
         Ok(())
     }
 
@@ -251,7 +252,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "coreFeePerByte")] core_fee_per_byte: &js_sys::Number,
     ) -> WasmDppResult<()> {
-        self.0.set_core_fee_per_byte(try_to_u32(core_fee_per_byte, "coreFeePerByte")?);
+        self.0
+            .set_core_fee_per_byte(try_to_u32(core_fee_per_byte, "coreFeePerByte")?);
         Ok(())
     }
 

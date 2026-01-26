@@ -179,7 +179,10 @@ impl TokenPreProgrammedDistributionWasm {
     }
 }
 
-impl_try_from_js_value!(TokenPreProgrammedDistributionWasm, "TokenPreProgrammedDistribution");
+impl_try_from_js_value!(
+    TokenPreProgrammedDistributionWasm,
+    "TokenPreProgrammedDistribution"
+);
 impl_wasm_type_info!(
     TokenPreProgrammedDistributionWasm,
     TokenPreProgrammedDistribution

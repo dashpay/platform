@@ -177,13 +177,15 @@ impl BatchTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "keyId")] key_id: JsValue,
     ) -> WasmDppResult<()> {
-        self.0.set_signature_public_key_id(try_to_u32(&key_id, "signaturePublicKeyId")?);
+        self.0
+            .set_signature_public_key_id(try_to_u32(&key_id, "signaturePublicKeyId")?);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
     pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
-        self.0.set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+        self.0
+            .set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
         Ok(())
     }
 

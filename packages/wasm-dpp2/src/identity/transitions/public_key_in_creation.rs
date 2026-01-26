@@ -294,7 +294,10 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: JsValue) -> WasmDppResult<()> {
+    pub fn set_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: JsValue,
+    ) -> WasmDppResult<()> {
         self.0.set_id(try_to_u32(&key_id, "keyId")?);
         Ok(())
     }

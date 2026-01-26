@@ -5,6 +5,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
+use crate::utils::try_to_u64;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -14,7 +15,6 @@ use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConv
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::utils::try_to_u64;
 
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_TYPES_TS: &str = r#"

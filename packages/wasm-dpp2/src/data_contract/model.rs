@@ -155,8 +155,10 @@ pub fn tokens_configuration_from_js_value(
     for key in configuration_keys.iter() {
         let contract_position = try_to_u16(&key, "contract position")?;
 
-        let token_config: TokenConfigurationWasm =
-            try_from_options(&configuration_object.clone().into(), &contract_position.to_string())?;
+        let token_config: TokenConfigurationWasm = try_from_options(
+            &configuration_object.clone().into(),
+            &contract_position.to_string(),
+        )?;
 
         result.insert(contract_position, token_config.into());
     }
@@ -189,7 +191,7 @@ impl DataContractWasm {
         // Extract tokens (optional)
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
             try_from_options_optional_with(&object, "tokens", |v| {
-                tokens_configuration_from_js_value(&v)
+                tokens_configuration_from_js_value(v)
             })?
             .unwrap_or_default();
 

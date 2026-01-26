@@ -186,7 +186,8 @@ impl ExtendedEpochInfoWasm {
         &mut self,
         #[wasm_bindgen(js_name = "firstCoreBlockHeight")] first_core_block_height: &js_sys::Number,
     ) -> WasmDppResult<()> {
-        self.v0_mut().first_core_block_height = try_to_u32(first_core_block_height, "firstCoreBlockHeight")?;
+        self.v0_mut().first_core_block_height =
+            try_to_u32(first_core_block_height, "firstCoreBlockHeight")?;
         Ok(())
     }
 

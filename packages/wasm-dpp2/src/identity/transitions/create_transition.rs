@@ -221,7 +221,8 @@ impl IdentityCreateTransitionWasm {
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
     pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
-        self.0.set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+        self.0
+            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
         Ok(())
     }
 

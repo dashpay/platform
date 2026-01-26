@@ -316,7 +316,8 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(setter = "baseSupply")]
     pub fn set_base_supply(&mut self, base_supply: JsValue) -> WasmDppResult<()> {
-        self.0.set_base_supply(try_to_u64(&base_supply, "baseSupply")?);
+        self.0
+            .set_base_supply(try_to_u64(&base_supply, "baseSupply")?);
         Ok(())
     }
 

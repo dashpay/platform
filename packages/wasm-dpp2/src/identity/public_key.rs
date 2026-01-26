@@ -281,7 +281,10 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: JsValue) -> WasmDppResult<()> {
+    pub fn set_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: JsValue,
+    ) -> WasmDppResult<()> {
         self.0.set_id(try_to_u32(&key_id, "keyId")?);
         Ok(())
     }
@@ -331,8 +334,12 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = disabledAt)]
-    pub fn set_disabled_at(&mut self, #[wasm_bindgen(js_name = "disabledAt")] disabled_at: JsValue) -> WasmDppResult<()> {
-        self.0.set_disabled_at(try_to_u64(&disabled_at, "disabledAt")?);
+    pub fn set_disabled_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "disabledAt")] disabled_at: JsValue,
+    ) -> WasmDppResult<()> {
+        self.0
+            .set_disabled_at(try_to_u64(&disabled_at, "disabledAt")?);
         Ok(())
     }
 

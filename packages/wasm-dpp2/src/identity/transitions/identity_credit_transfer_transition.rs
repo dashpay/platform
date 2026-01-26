@@ -183,13 +183,15 @@ impl IdentityCreditTransferWasm {
         &mut self,
         #[wasm_bindgen(js_name = "publicKeyId")] public_key_id: &js_sys::Number,
     ) -> WasmDppResult<()> {
-        self.0.set_signature_public_key_id(try_to_u32(public_key_id, "signaturePublicKeyId")?);
+        self.0
+            .set_signature_public_key_id(try_to_u32(public_key_id, "signaturePublicKeyId")?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
     pub fn set_user_fee_increase(&mut self, amount: &js_sys::Number) -> WasmDppResult<()> {
-        self.0.set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
+        self.0
+            .set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
         Ok(())
     }
 
