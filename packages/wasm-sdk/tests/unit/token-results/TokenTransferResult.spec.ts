@@ -48,9 +48,9 @@ describe('TokenTransferResult conversion methods', () => {
     };
 
     const result = sdk.TokenTransferResult.fromObject(data);
-    expect(result.senderBalance).to.be.undefined;
-    expect(result.recipientBalance).to.be.undefined;
+    expect(result.senderBalance).to.be.undefined();
+    expect(result.recipientBalance).to.be.undefined();
     expect(result.groupPower).to.equal(50);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
   });
 });

@@ -12,7 +12,7 @@ describe('PlatformAddress', () => {
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(p2pkhBytes);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
       expect(addr.isP2pkh).to.be.true();
       expect(addr.isP2sh).to.be.false();
@@ -23,7 +23,7 @@ describe('PlatformAddress', () => {
         0x80, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(p2shBytes);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2SH');
       expect(addr.isP2pkh).to.be.false();
       expect(addr.isP2sh).to.be.true();
@@ -65,7 +65,7 @@ describe('PlatformAddress', () => {
 
       // Parse it back
       const parsedAddr = wasm.PlatformAddress.fromBech32m(bech32m);
-      expect(parsedAddr).to.exist;
+      expect(parsedAddr).to.exist();
       expect(parsedAddr.addressType).to.equal('P2PKH');
     });
 
@@ -79,7 +79,7 @@ describe('PlatformAddress', () => {
       expect(bech32m.startsWith('evo1')).to.be.true();
 
       const parsedAddr = wasm.PlatformAddress.fromBech32m(bech32m);
-      expect(parsedAddr).to.exist;
+      expect(parsedAddr).to.exist();
       expect(parsedAddr.addressType).to.equal('P2PKH');
     });
 
@@ -88,7 +88,7 @@ describe('PlatformAddress', () => {
         wasm.PlatformAddress.fromBech32m('invalid-address');
         expect.fail('Should have thrown error for invalid bech32m');
       } catch (error: unknown) {
-        expect(error).to.exist;
+        expect(error).to.exist();
       }
     });
   });
@@ -97,7 +97,7 @@ describe('PlatformAddress', () => {
     it('should create address from hex string', () => {
       const hexString = `b0${'01020304050607080910111213141516171819'.padEnd(40, '0').substring(0, 40)}`;
       const addr = wasm.PlatformAddress.fromHex(hexString);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
     });
 
@@ -115,7 +115,7 @@ describe('PlatformAddress', () => {
     it('should create P2PKH address from 20-byte hash', () => {
       const hash = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const addr = wasm.PlatformAddress.fromP2pkhHash(hash);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
       expect(addr.isP2pkh).to.be.true();
     });
@@ -135,7 +135,7 @@ describe('PlatformAddress', () => {
     it('should create P2SH address from 20-byte hash', () => {
       const hash = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const addr = wasm.PlatformAddress.fromP2shHash(hash);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2SH');
       expect(addr.isP2sh).to.be.true();
     });
@@ -158,7 +158,7 @@ describe('PlatformAddress', () => {
       ]);
       const original = wasm.PlatformAddress.fromBytes(bytes);
       const copy = new wasm.PlatformAddress(original);
-      expect(copy).to.exist;
+      expect(copy).to.exist();
       expect(copy.addressType).to.equal(original.addressType);
     });
 
@@ -167,7 +167,7 @@ describe('PlatformAddress', () => {
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = new wasm.PlatformAddress(bytes);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
     });
 
@@ -179,7 +179,7 @@ describe('PlatformAddress', () => {
       const bech32m = original.toBech32m('testnet');
 
       const addr = new wasm.PlatformAddress(bech32m);
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
     });
   });

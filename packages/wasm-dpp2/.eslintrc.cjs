@@ -18,8 +18,6 @@ module.exports = {
       },
       plugins: ['@typescript-eslint'],
       rules: {
-        // Ignore dirty-chai errors
-        '@typescript-eslint/no-unused-expressions': 'off',
         // Ignore require('dev-dependency') errors for tests
         'import/no-extraneous-dependencies': 'off',
         // Allow any for test flexibility

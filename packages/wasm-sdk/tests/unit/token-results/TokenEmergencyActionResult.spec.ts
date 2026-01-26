@@ -13,7 +13,7 @@ describe('TokenEmergencyActionResult conversion methods', () => {
 
     const result = sdk.TokenEmergencyActionResult.fromObject(data);
     expect(result.groupPower).to.equal(55);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
 
     const obj = result.toObject();
     const roundtrip = sdk.TokenEmergencyActionResult.fromObject(obj);
@@ -37,7 +37,7 @@ describe('TokenEmergencyActionResult conversion methods', () => {
     const data = {};
 
     const result = sdk.TokenEmergencyActionResult.fromObject(data);
-    expect(result.groupPower).to.be.undefined;
-    expect(result.document).to.be.undefined;
+    expect(result.groupPower).to.be.undefined();
+    expect(result.document).to.be.undefined();
   });
 });

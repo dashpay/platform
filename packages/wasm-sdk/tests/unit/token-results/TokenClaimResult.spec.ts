@@ -13,7 +13,7 @@ describe('TokenClaimResult conversion methods', () => {
 
     const result = sdk.TokenClaimResult.fromObject(data);
     expect(result.groupPower).to.equal(33);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
 
     const obj = result.toObject();
     const roundtrip = sdk.TokenClaimResult.fromObject(obj);
@@ -37,7 +37,7 @@ describe('TokenClaimResult conversion methods', () => {
     const data = {};
 
     const result = sdk.TokenClaimResult.fromObject(data);
-    expect(result.groupPower).to.be.undefined;
-    expect(result.document).to.be.undefined;
+    expect(result.groupPower).to.be.undefined();
+    expect(result.document).to.be.undefined();
   });
 });

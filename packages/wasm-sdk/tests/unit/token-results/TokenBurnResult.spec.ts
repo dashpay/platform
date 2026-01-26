@@ -55,8 +55,8 @@ describe('TokenBurnResult conversion methods', () => {
 
     const result = sdk.TokenBurnResult.fromObject(data);
     expect(result.ownerId.toBase58()).to.equal(testIdentifier);
-    expect(result.groupPower).to.be.undefined;
-    expect(result.groupActionStatus).to.be.undefined;
-    expect(result.document).to.be.undefined;
+    expect(result.groupPower).to.be.undefined();
+    expect(result.groupActionStatus).to.be.undefined();
+    expect(result.document).to.be.undefined();
   });
 });

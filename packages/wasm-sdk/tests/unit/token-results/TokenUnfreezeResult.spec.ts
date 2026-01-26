@@ -47,8 +47,8 @@ describe('TokenUnfreezeResult conversion methods', () => {
     };
 
     const result = sdk.TokenUnfreezeResult.fromObject(data);
-    expect(result.unfrozenIdentityId).to.be.undefined;
+    expect(result.unfrozenIdentityId).to.be.undefined();
     expect(result.groupPower).to.equal(35);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
   });
 });

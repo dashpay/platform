@@ -21,7 +21,7 @@ describe('TokenSetPriceResult conversion methods', () => {
     expect(result.groupPower).to.equal(70);
     expect(result.groupActionStatus).to.equal('Approved');
     // pricingSchedule is skipped in serde, so it won't be present
-    expect(result.pricingSchedule).to.be.undefined;
+    expect(result.pricingSchedule).to.be.undefined();
 
     const obj = result.toObject();
     const roundtrip = sdk.TokenSetPriceResult.fromObject(obj);
@@ -54,10 +54,10 @@ describe('TokenSetPriceResult conversion methods', () => {
     };
 
     const result = sdk.TokenSetPriceResult.fromObject(data);
-    expect(result.ownerId).to.be.undefined;
+    expect(result.ownerId).to.be.undefined();
     expect(result.groupPower).to.equal(50);
     expect(result.groupActionStatus).to.equal('Pending');
-    expect(result.pricingSchedule).to.be.undefined;
-    expect(result.document).to.be.undefined;
+    expect(result.pricingSchedule).to.be.undefined();
+    expect(result.document).to.be.undefined();
   });
 });

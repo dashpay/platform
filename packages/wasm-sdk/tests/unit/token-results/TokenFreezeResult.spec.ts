@@ -47,8 +47,8 @@ describe('TokenFreezeResult conversion methods', () => {
     };
 
     const result = sdk.TokenFreezeResult.fromObject(data);
-    expect(result.frozenIdentityId).to.be.undefined;
+    expect(result.frozenIdentityId).to.be.undefined();
     expect(result.groupPower).to.equal(45);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
   });
 });

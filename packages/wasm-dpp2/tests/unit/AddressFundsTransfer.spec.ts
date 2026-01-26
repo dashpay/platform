@@ -9,7 +9,7 @@ describe('FeeStrategyStep', () => {
   describe('construction', () => {
     it('should create deductFromInput step', () => {
       const step = wasm.FeeStrategyStep.deductFromInput(0);
-      expect(step).to.exist;
+      expect(step).to.exist();
       expect(step.isDeductFromInput).to.be.true();
       expect(step.isReduceOutput).to.be.false();
       expect(step.index).to.equal(0);
@@ -23,7 +23,7 @@ describe('FeeStrategyStep', () => {
 
     it('should create reduceOutput step', () => {
       const step = wasm.FeeStrategyStep.reduceOutput(0);
-      expect(step).to.exist;
+      expect(step).to.exist();
       expect(step.isDeductFromInput).to.be.false();
       expect(step.isReduceOutput).to.be.true();
       expect(step.index).to.equal(0);
@@ -65,7 +65,7 @@ describe.skip('AddressFundsTransferTransition', () => {
         signer,
       });
 
-      expect(transition).to.exist;
+      expect(transition).to.exist();
       expect(transition).to.be.an.instanceof(wasm.AddressFundsTransferTransition);
     });
 
@@ -99,7 +99,7 @@ describe.skip('AddressFundsTransferTransition', () => {
         signer,
       });
 
-      expect(transition).to.exist;
+      expect(transition).to.exist();
     });
 
     it('should build with custom fee strategy', () => {
@@ -123,7 +123,7 @@ describe.skip('AddressFundsTransferTransition', () => {
         feeStrategy,
       });
 
-      expect(transition).to.exist;
+      expect(transition).to.exist();
     });
 
     it('should build with user fee increase', () => {
@@ -144,7 +144,7 @@ describe.skip('AddressFundsTransferTransition', () => {
         userFeeIncrease: 100,
       });
 
-      expect(transition).to.exist;
+      expect(transition).to.exist();
     });
 
     it('should fail without inputs', () => {

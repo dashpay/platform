@@ -49,7 +49,7 @@ describe('InstantLock', () => {
       const object = chainlock.toObject();
       expect(object.coreChainLockedHeight).to.equal(11);
       expect(object.outPoint).to.be.an('object');
-      expect(object.outPoint.txid).to.exist;
+      expect(object.outPoint.txid).to.exist();
       expect(object.outPoint.vout).to.equal(1);
 
       const fromObject = wasm.ChainAssetLockProof.fromObject(object);

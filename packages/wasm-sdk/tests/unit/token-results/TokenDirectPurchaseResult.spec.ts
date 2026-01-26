@@ -51,9 +51,9 @@ describe('TokenDirectPurchaseResult conversion methods', () => {
     };
 
     const result = sdk.TokenDirectPurchaseResult.fromObject(data);
-    expect(result.buyerId).to.be.undefined;
-    expect(result.newBalance).to.be.undefined;
+    expect(result.buyerId).to.be.undefined();
+    expect(result.newBalance).to.be.undefined();
     expect(result.groupPower).to.equal(30);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
   });
 });

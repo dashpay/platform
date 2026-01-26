@@ -17,9 +17,6 @@ module.exports = {
       },
       plugins: ['@typescript-eslint'],
       rules: {
-        'no-unused-expressions': 'off',
-        '@typescript-eslint/no-unused-expressions': 'off',
-        '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
         'import/no-extraneous-dependencies': 'off',
         '@typescript-eslint/no-explicit-any': 'off',
         'no-await-in-loop': 'off',

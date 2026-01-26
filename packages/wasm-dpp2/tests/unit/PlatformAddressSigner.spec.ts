@@ -14,7 +14,7 @@ describe('PlatformAddressSigner', () => {
   describe('construction', () => {
     it('should create empty signer', () => {
       const signer = new wasm.PlatformAddressSigner();
-      expect(signer).to.exist;
+      expect(signer).to.exist();
       expect(signer.keyCount).to.equal(0);
     });
   });
@@ -26,7 +26,7 @@ describe('PlatformAddressSigner', () => {
 
       const derivedAddr = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
-      expect(derivedAddr).to.exist;
+      expect(derivedAddr).to.exist();
       expect(derivedAddr.addressType).to.equal('P2PKH');
     });
 
@@ -36,7 +36,7 @@ describe('PlatformAddressSigner', () => {
 
       const derivedAddr = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
-      expect(derivedAddr).to.exist;
+      expect(derivedAddr).to.exist();
       expect(derivedAddr.addressType).to.equal('P2PKH');
     });
 
@@ -47,7 +47,7 @@ describe('PlatformAddressSigner', () => {
 
       const derivedAddr = signer.addKey(privateKey);
       expect(signer.keyCount).to.equal(1);
-      expect(derivedAddr).to.exist;
+      expect(derivedAddr).to.exist();
       expect(derivedAddr.addressType).to.equal('P2PKH');
     });
 

@@ -201,7 +201,7 @@ describe('AssetLockProof', () => {
       expect(objectRepresentation.coreChainLockedHeight).to.equal(1);
       // outPoint is {txid, vout} object
       expect(objectRepresentation.outPoint).to.be.an('object');
-      expect(objectRepresentation.outPoint.txid).to.exist;
+      expect(objectRepresentation.outPoint.txid).to.exist();
       expect(objectRepresentation.outPoint.vout).to.equal(1);
     });
   });

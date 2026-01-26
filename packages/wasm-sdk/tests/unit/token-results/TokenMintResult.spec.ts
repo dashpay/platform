@@ -22,7 +22,7 @@ describe('TokenMintResult conversion methods', () => {
     expect(result.newBalance).to.equal(1000000n);
     expect(result.groupPower).to.equal(75);
     expect(result.groupActionStatus).to.equal('Completed');
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
 
     const obj = result.toObject();
     expect(obj.groupPower).to.equal(75);
@@ -60,10 +60,10 @@ describe('TokenMintResult conversion methods', () => {
     };
 
     const result = sdk.TokenMintResult.fromObject(data);
-    expect(result.recipientId).to.be.undefined;
-    expect(result.newBalance).to.be.undefined;
+    expect(result.recipientId).to.be.undefined();
+    expect(result.newBalance).to.be.undefined();
     expect(result.groupPower).to.equal(25);
-    expect(result.groupActionStatus).to.be.undefined;
-    expect(result.document).to.be.undefined;
+    expect(result.groupActionStatus).to.be.undefined();
+    expect(result.document).to.be.undefined();
   });
 });

@@ -18,11 +18,6 @@ module.exports = {
       },
       plugins: ['@typescript-eslint'],
       rules: {
-        // Ignore dirty-chai errors (both base and TypeScript rules)
-        'no-unused-expressions': 'off',
-        '@typescript-eslint/no-unused-expressions': 'off',
-        // Allow unused vars with underscore prefix (for intentionally unused)
-        '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
         // Ignore require('dev-dependency') errors for tests
         'import/no-extraneous-dependencies': 'off',
         // Allow any for test flexibility

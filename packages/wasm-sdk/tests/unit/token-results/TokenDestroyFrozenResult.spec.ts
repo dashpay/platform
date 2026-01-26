@@ -13,7 +13,7 @@ describe('TokenDestroyFrozenResult conversion methods', () => {
 
     const result = sdk.TokenDestroyFrozenResult.fromObject(data);
     expect(result.groupPower).to.equal(90);
-    expect(result.document).to.be.undefined;
+    expect(result.document).to.be.undefined();
 
     const obj = result.toObject();
     const roundtrip = sdk.TokenDestroyFrozenResult.fromObject(obj);
@@ -37,7 +37,7 @@ describe('TokenDestroyFrozenResult conversion methods', () => {
     const data = {};
 
     const result = sdk.TokenDestroyFrozenResult.fromObject(data);
-    expect(result.groupPower).to.be.undefined;
-    expect(result.document).to.be.undefined;
+    expect(result.groupPower).to.be.undefined();
+    expect(result.document).to.be.undefined();
   });
 });

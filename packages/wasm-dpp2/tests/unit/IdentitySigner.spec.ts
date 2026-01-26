@@ -14,7 +14,7 @@ describe('IdentitySigner', () => {
   describe('construction', () => {
     it('should create empty signer', () => {
       const signer = new wasm.IdentitySigner();
-      expect(signer).to.exist;
+      expect(signer).to.exist();
       expect(signer.keyCount).to.equal(0);
     });
   });

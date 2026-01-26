@@ -15,7 +15,7 @@ describe('PlatformAddressOutput', () => {
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       const output = new wasm.PlatformAddressOutput(platformAddr, BigInt(500000));
-      expect(output).to.exist;
+      expect(output).to.exist();
       expect(output.amount).to.equal(BigInt(500000));
     });
 
@@ -28,7 +28,7 @@ describe('PlatformAddressOutput', () => {
       const bech32m = platformAddr.toBech32m('testnet');
 
       const output = new wasm.PlatformAddressOutput(bech32m, BigInt(90000));
-      expect(output).to.exist;
+      expect(output).to.exist();
       expect(output.amount).to.equal(BigInt(90000));
     });
 
@@ -39,7 +39,7 @@ describe('PlatformAddressOutput', () => {
       ]);
 
       const output = new wasm.PlatformAddressOutput(addressBytes, BigInt(100000));
-      expect(output).to.exist;
+      expect(output).to.exist();
       expect(output.amount).to.equal(BigInt(100000));
     });
 
@@ -90,7 +90,7 @@ describe('PlatformAddressOutput', () => {
 
       const output = new wasm.PlatformAddressOutput(platformAddr, BigInt(100000));
       const addr = output.address;
-      expect(addr).to.exist;
+      expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2SH');
     });
 
