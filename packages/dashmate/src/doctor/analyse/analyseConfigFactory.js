@@ -130,7 +130,7 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
               },
               // Let's Encrypt validation errors
               [LETSENCRYPT_ERRORS.EMAIL_IS_NOT_SET]: {
-                description: "Let's Encrypt email is not set.",
+                description: 'Let\'s Encrypt email is not set.',
                 solution: chalk`Please update your configuration with {bold.cyanBright dashmate config set platform.gateway.ssl.providerConfigs.letsencrypt.email [EMAIL]}`,
               },
               [LETSENCRYPT_ERRORS.EXTERNAL_IP_IS_NOT_SET]: {
@@ -138,7 +138,7 @@ and revoke the previous certificate in the ZeroSSL dashboard`,
                 solution: chalk`Please update your configuration to include your external IP using {bold.cyanBright dashmate config set externalIp [IP]}`,
               },
               [LETSENCRYPT_ERRORS.CERTIFICATE_NOT_FOUND]: {
-                description: "Let's Encrypt certificate is not configured",
+                description: 'Let\'s Encrypt certificate is not configured',
                 solution: chalk`Please run {bold.cyanBright dashmate ssl obtain --provider=letsencrypt} to get a new certificate`,
               },
               [LETSENCRYPT_ERRORS.PRIVATE_KEY_NOT_FOUND]: {

@@ -77,7 +77,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           const { error, data } = await validateLetsEncryptCertificate(config, expirationDays);
 
           // Merge validation data (but don't overwrite already-set values)
-          Object.assign(ctx, data);
+          Object.keys(data).forEach((key) => {
+            if (ctx[key] === undefined) {
+              ctx[key] = data[key];
+            }
+          });
 
           switch (error) {
             case undefined:
