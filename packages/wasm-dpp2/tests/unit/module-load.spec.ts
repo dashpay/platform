@@ -6,11 +6,11 @@ describe('wasm-dpp2 module', () => {
     await init();
   });
 
-  it('exposes state transition bindings', () => {
+  it('should expose state transition bindings', () => {
     expect(StateTransition).to.be.a('function');
   });
 
-  it('exposes consensus error helpers', () => {
+  it('should expose consensus error helpers', () => {
     expect(ConsensusError).to.be.a('function');
     expect(ConsensusError.deserialize).to.be.a('function');
   });

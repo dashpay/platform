@@ -18,12 +18,12 @@ describe('System info', function describeSystemInfo() {
     if (client) { client.free(); }
   });
 
-  it('getCurrentQuorumsInfo', async () => {
+  it('should get current quorums info', async () => {
     const r = await client.getCurrentQuorumsInfo();
     expect(r).to.be.ok();
   });
 
-  it('getTotalCreditsInPlatform', async () => {
+  it('should get total credits in platform', async () => {
     const r = await client.getTotalCreditsInPlatform();
     expect(typeof r).to.equal('bigint');
     expect(String(r)).to.match(/^\d+$/);

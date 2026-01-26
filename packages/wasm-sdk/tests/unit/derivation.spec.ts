@@ -7,7 +7,7 @@ describe('Key derivation', () => {
   });
 
   describe('Path helpers (BIP44/DIP9/DIP13)', () => {
-    it('BIP44 mainnet/testnet', () => {
+    it('should derive BIP44 mainnet/testnet paths', () => {
       const m = sdk.WasmSdk.derivationPathBip44Mainnet(0, 0, 0);
       expect(m.purpose).to.equal(44);
       expect(m.coinType).to.equal(5);
@@ -23,7 +23,7 @@ describe('Key derivation', () => {
       expect(expectedTest).to.equal("m/44'/1'/0'/0/0");
     });
 
-    it('DIP9 mainnet/testnet', () => {
+    it('should derive DIP9 mainnet/testnet paths', () => {
       const m = sdk.WasmSdk.derivationPathDip9Mainnet(5, 0, 0);
       expect(m.purpose).to.equal(9);
       expect(m.coinType).to.equal(5);
@@ -37,7 +37,7 @@ describe('Key derivation', () => {
       expect(expectedTest).to.equal("m/9'/1'/5'/0/0");
     });
 
-    it('DIP13 mainnet/testnet', () => {
+    it('should derive DIP13 mainnet/testnet paths', () => {
       const m = sdk.WasmSdk.derivationPathDip13Mainnet(0);
       expect(m.path).to.equal("m/9'/5'/0'");
       expect(m.purpose).to.equal(9);
@@ -51,7 +51,7 @@ describe('Key derivation', () => {
   describe('Derive by path', () => {
     const seed = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
-    it('BIP44 mainnet key', () => {
+    it('should derive BIP44 mainnet key', () => {
       const path = "m/44'/5'/0'/0/0";
       const r = sdk.WasmSdk.deriveKeyFromSeedWithPath({
         mnemonic: seed, passphrase: null, path, network: 'mainnet',
@@ -62,7 +62,7 @@ describe('Key derivation', () => {
       expect(r.network).to.equal('mainnet');
     });
 
-    it('DIP13 authentication key', () => {
+    it('should derive DIP13 authentication key', () => {
       const path = "m/9'/5'/5'/0'/0'/0'/0'";
       const r = sdk.WasmSdk.deriveKeyFromSeedWithPath({
         mnemonic: seed, passphrase: null, path, network: 'mainnet',
@@ -73,7 +73,7 @@ describe('Key derivation', () => {
       expect(r.address).to.be.a('string');
     });
 
-    it('with passphrase produces different address', () => {
+    it('should produce different address with passphrase', () => {
       const path = "m/44'/5'/0'/0/0";
       const withPass = sdk.WasmSdk.deriveKeyFromSeedWithPath({
         mnemonic: seed, passphrase: 'test passphrase', path, network: 'mainnet',
@@ -84,7 +84,7 @@ describe('Key derivation', () => {
       expect(withPass.address).to.not.equal(withoutPass.address);
     });
 
-    it('testnet address prefix', () => {
+    it('should use correct testnet address prefix', () => {
       const path = "m/44'/1'/0'/0/0";
       const r = sdk.WasmSdk.deriveKeyFromSeedWithPath({
         mnemonic: seed, passphrase: null, path, network: 'testnet',
@@ -93,7 +93,7 @@ describe('Key derivation', () => {
       expect(r.address.startsWith('y')).to.equal(true);
     });
 
-    it('DIP9 hardened vs non-hardened differ', () => {
+    it('should produce different keys for DIP9 hardened vs non-hardened', () => {
       const hardened = sdk.WasmSdk.deriveKeyFromSeedWithPath({
         mnemonic: seed, passphrase: null, path: "m/9'/5'/5'/0/0", network: 'mainnet',
       });
@@ -107,7 +107,7 @@ describe('Key derivation', () => {
   describe('DIP14 extended vectors', () => {
     const mnemonic = 'birth kingdom trash renew flavor utility donkey gasp regular alert pave layer';
 
-    it('Vector 1: mixed hardened/non-hardened', () => {
+    it('should derive Vector 1: mixed hardened/non-hardened', () => {
       const path = 'm/0x775d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3b'
         + "/0xf537439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89a6'"
         + '/0x4c4592ca670c983fc43397dfd21a6f427fac9b4ac53cb4dcdc6522ec51e81e79/0';
@@ -118,7 +118,7 @@ describe('Key derivation', () => {
       expect(r.xpub).to.be.a('string');
     });
 
-    it('Vector 2: multiple hardened with final non-hardened', () => {
+    it('should derive Vector 2: multiple hardened with final non-hardened', () => {
       const path = "m/9'/5'/15'/0'"
         + "/0x555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a'"
         + "/0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5'/0";
@@ -136,7 +136,7 @@ describe('Key derivation', () => {
     const sender = '555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a';
     const receiver = 'a137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
 
-    it('deterministic contact key for testnet', () => {
+    it('should derive deterministic contact key for testnet', () => {
       const r1 = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: sender, receiverIdentityId: receiver, account: 0, addressIndex: 0, network: 'testnet',
       });
@@ -163,7 +163,7 @@ describe('Key derivation', () => {
       expect(r1.xpub.startsWith('tpub')).to.equal(true);
     });
 
-    it('changes when sender/receiver are swapped', () => {
+    it('should change when sender/receiver are swapped', () => {
       const a = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: sender, receiverIdentityId: receiver, account: 0, addressIndex: 0, network: 'testnet',
       });
@@ -173,7 +173,7 @@ describe('Key derivation', () => {
       expect(a.privateKeyHex).to.not.equal(b.privateKeyHex);
     });
 
-    it('differs between networks (testnet vs mainnet)', () => {
+    it('should differ between networks (testnet vs mainnet)', () => {
       const t = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: sender, receiverIdentityId: receiver, account: 0, addressIndex: 0, network: 'testnet',
       });

@@ -7,7 +7,7 @@ before(async () => {
 
 describe('IdentityCreditTransferTransition', () => {
   describe('serialization / deserialization', () => {
-    it('Should create IdentityCreditTransferTransition with empty platform version', async () => {
+    it('should create IdentityCreditTransferTransition with empty platform version', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -18,7 +18,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition).to.be.an.instanceof(wasm.IdentityCreditTransfer);
     });
 
-    it('Should create IdentityCreditTransferTransition with non empty platform version', async () => {
+    it('should create IdentityCreditTransferTransition with non empty platform version', async () => {
       const sender = new wasm.Identifier('11111111111111111111111111111111');
       const recipient = new wasm.Identifier('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
 
@@ -34,7 +34,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(recipient).to.be.an.instanceof(wasm.Identifier);
     });
 
-    it('Should convert IdentityCreditTransferTransition to base64 and back', () => {
+    it('should convert IdentityCreditTransferTransition to base64 and back', () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -54,7 +54,7 @@ describe('IdentityCreditTransferTransition', () => {
   });
 
   describe('getters', () => {
-    it('Should return recipientId', async () => {
+    it('should return recipientId', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -65,7 +65,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.recipientId.toBase58()).to.deep.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
     });
 
-    it('Should return senderId', async () => {
+    it('should return senderId', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -76,7 +76,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.senderId.toBase58()).to.deep.equal('11111111111111111111111111111111');
     });
 
-    it('Should return amount', async () => {
+    it('should return amount', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -87,7 +87,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.amount).to.deep.equal(BigInt(100));
     });
 
-    it('Should return nonce', async () => {
+    it('should return nonce', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -98,7 +98,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.nonce).to.deep.equal(BigInt(199));
     });
 
-    it('Should return signature', async () => {
+    it('should return signature', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -109,7 +109,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.signature).to.deep.equal(Uint8Array.from([]));
     });
 
-    it('Should return signaturePublicKeyId', async () => {
+    it('should return signaturePublicKeyId', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -120,7 +120,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.signaturePublicKeyId).to.deep.equal(0);
     });
 
-    it('Should return userFeeIncrease', async () => {
+    it('should return userFeeIncrease', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -133,7 +133,7 @@ describe('IdentityCreditTransferTransition', () => {
   });
 
   describe('setters', () => {
-    it('Should allow to set recipientId', async () => {
+    it('should allow to set recipientId', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -153,7 +153,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(recipient).to.be.an.instanceof(wasm.Identifier);
     });
 
-    it('Should return senderId', async () => {
+    it('should return senderId', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -173,7 +173,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.senderId.toBase58()).to.deep.equal('11111111111111111111111111111111');
     });
 
-    it('Should return amount', async () => {
+    it('should return amount', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -186,7 +186,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.amount).to.deep.equal(BigInt(199));
     });
 
-    it('Should return nonce', async () => {
+    it('should return nonce', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -199,7 +199,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.nonce).to.deep.equal(BigInt(1));
     });
 
-    it('Should return signature', async () => {
+    it('should return signature', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -212,7 +212,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.signature).to.deep.equal(Uint8Array.from([1, 1]));
     });
 
-    it('Should return signaturePublicKeyId', async () => {
+    it('should return signaturePublicKeyId', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',
@@ -225,7 +225,7 @@ describe('IdentityCreditTransferTransition', () => {
       expect(transition.signaturePublicKeyId).to.deep.equal(11);
     });
 
-    it('Should return userFeeIncrease', async () => {
+    it('should return userFeeIncrease', async () => {
       const transition = new wasm.IdentityCreditTransfer({
         amount: BigInt(100),
         senderId: '11111111111111111111111111111111',

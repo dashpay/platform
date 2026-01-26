@@ -8,7 +8,7 @@ before(async () => {
 
 describe('TokenConfigurationConvention', () => {
   describe('serialization / deserialization', () => {
-    it('Should allow to create from object', () => {
+    it('should allow to create from object', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
@@ -21,7 +21,7 @@ describe('TokenConfigurationConvention', () => {
   });
 
   describe('getters', () => {
-    it('Should allow to get object of convention in JSON', () => {
+    it('should allow to get object of convention in JSON', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
@@ -32,7 +32,7 @@ describe('TokenConfigurationConvention', () => {
       expect(convention.localizations.ru.toJSON()).to.deep.equal(tokenLocalization);
     });
 
-    it('Should allow to get object of convention in wasm instance', () => {
+    it('should allow to get object of convention in wasm instance', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
@@ -44,7 +44,7 @@ describe('TokenConfigurationConvention', () => {
       expect(convention.localizations.ru.constructor.name).to.deep.equal('TokenConfigurationLocalization');
     });
 
-    it('Should allow to get decimals', () => {
+    it('should allow to get decimals', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
@@ -57,7 +57,7 @@ describe('TokenConfigurationConvention', () => {
   });
 
   describe('setters', () => {
-    it('Should allow to set localizations object ', () => {
+    it('should allow to set localizations object ', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
@@ -74,7 +74,7 @@ describe('TokenConfigurationConvention', () => {
       expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalization');
     });
 
-    it('Should allow to set localizations object with wasm ', () => {
+    it('should allow to set localizations object with wasm ', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,

@@ -16,19 +16,19 @@ describe('Identifier', () => {
   });
 
   describe('serialization / deserialization', () => {
-    it('should allows to create Identifier from base58', () => {
+    it('should allow to create Identifier from base58', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
 
-    it('should allows to create Identifier from base64', () => {
+    it('should allow to create Identifier from base64', () => {
       const identifier = wasm.Identifier.fromBase64('CSgo7cCB07oaVPBDJZuUE2jyxxiIGwap00eIOyG/4xM=');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
 
-    it('should allows to create Identifier from hex', () => {
+    it('should allow to create Identifier from hex', () => {
       const identifier = wasm.Identifier.fromHex(
         '092828edc081d3ba1a54f043259b941368f2c718881b06a9d347883b21bfe313',
       );
@@ -36,26 +36,26 @@ describe('Identifier', () => {
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
 
-    it('should allows to create Identifier from bytes', () => {
+    it('should allow to create Identifier from bytes', () => {
       const identifier = wasm.Identifier.fromBytes(identifierBytes);
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
 
-    it('should allows to create Identifier from Identifier', () => {
+    it('should allow to create Identifier from Identifier', () => {
       const identifier = wasm.Identifier.fromBytes(identifierBytes);
       const identifier2 = new wasm.Identifier(identifier);
 
       expect(identifier2.toBytes()).to.deep.equal(identifierBytes);
     });
 
-    it('should allows to create Identifier from bytes in constructor', () => {
+    it('should allow to create Identifier from bytes in constructor', () => {
       const identifier = new wasm.Identifier(identifierBytes);
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
 
-    it('should allows to create Identifier from base58 in constructor', () => {
+    it('should allow to create Identifier from base58 in constructor', () => {
       const identifier = new wasm.Identifier('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);

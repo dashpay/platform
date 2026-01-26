@@ -9,19 +9,19 @@ before(async () => {
 
 describe('PrivateKey', () => {
   describe('serialization / deserialization', () => {
-    it('should allows to create PrivateKey from wif', () => {
+    it('should allow to create PrivateKey from wif', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(pkey).to.be.an.instanceof(wasm.PrivateKey);
     });
 
-    it('should allows to create PrivateKey from bytes', () => {
+    it('should allow to create PrivateKey from bytes', () => {
       const pkey = wasm.PrivateKey.fromBytes(fromHexString(bytes), 'Mainnet');
 
       expect(pkey).to.be.an.instanceof(wasm.PrivateKey);
     });
 
-    it('should allows to create PrivateKey from hex', () => {
+    it('should allow to create PrivateKey from hex', () => {
       const pkey = wasm.PrivateKey.fromBytes(fromHexString(bytes), 'Mainnet');
 
       const pkeyFromHex = wasm.PrivateKey.fromHex(bytes, 'Mainnet');

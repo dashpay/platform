@@ -52,14 +52,14 @@ describe('GroupFacade', () => {
     getContestedResourceVotersForIdentityWithProofInfoStub = this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentityWithProofInfo').resolves('ok');
   });
 
-  it('info queries forward to wasm', async () => {
+  it('should forward info queries to wasm', async () => {
     await client.group.info('contract', 1);
     await client.group.infoWithProof('contract', 2);
     expect(getGroupInfoStub).to.be.calledOnceWithExactly('contract', 1);
     expect(getGroupInfoWithProofInfoStub).to.be.calledOnceWithExactly('contract', 2);
   });
 
-  it('infos() forwards optional args with null defaults', async () => {
+  it('should forward infos() optional args with null defaults', async () => {
     const query = { dataContractId: 'contract', startAt: { position: 10, included: true }, limit: 5 };
     await client.group.infos(query);
     const proofQuery = { dataContractId: 'contract' };
@@ -68,7 +68,7 @@ describe('GroupFacade', () => {
     expect(getGroupInfosWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
   });
 
-  it('members() forwards list and optional filters', async () => {
+  it('should forward members() list and optional filters', async () => {
     const query = {
       dataContractId: 'contract',
       groupContractPosition: 1,
@@ -83,7 +83,7 @@ describe('GroupFacade', () => {
     expect(getGroupMembersWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
   });
 
-  it('identityGroups() forwards optional contract filters', async () => {
+  it('should forward identityGroups() optional contract filters', async () => {
     const query = {
       identityId: 'identity',
       memberDataContracts: ['m'],
@@ -97,7 +97,7 @@ describe('GroupFacade', () => {
     expect(getIdentityGroupsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
   });
 
-  it('group actions helpers forward to wasm', async () => {
+  it('should forward group actions helpers to wasm', async () => {
     const query = {
       dataContractId: 'contract',
       groupContractPosition: 1,
@@ -126,14 +126,14 @@ describe('GroupFacade', () => {
     expect(getGroupActionSignersWithProofInfoStub).to.be.calledOnceWithExactly(signersQuery);
   });
 
-  it('groupsDataContracts() forwards', async () => {
+  it('should forward groupsDataContracts()', async () => {
     await client.group.groupsDataContracts(['a', 'b']);
     await client.group.groupsDataContractsWithProof(['a']);
     expect(getGroupsDataContractsStub).to.be.calledOnceWithExactly(['a', 'b']);
     expect(getGroupsDataContractsWithProofInfoStub).to.be.calledOnceWithExactly(['a']);
   });
 
-  it('forwards contestedResources and voters queries', async () => {
+  it('should forward contestedResources and voters queries', async () => {
     const contestedQuery = {
       dataContractId: 'c',
       documentTypeName: 'dt',

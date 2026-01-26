@@ -25,12 +25,12 @@ describe('Identity queries', function describeBlock() {
     if (client) { client.free(); }
   });
 
-  it('fetches identity and basic fields', async () => {
+  it('should fetch identity and basic fields', async () => {
     const r = await client.getIdentity(TEST_IDENTITY);
     expect(r).to.be.ok();
   });
 
-  it('fetches identity with proof and toJSON returns full structure', async () => {
+  it('should fetch identity with proof and toJSON returns full structure', async () => {
     const response = await client.getIdentityWithProofInfo(TEST_IDENTITY);
 
     // Basic shape check
@@ -75,7 +75,7 @@ describe('Identity queries', function describeBlock() {
     expect(json.proof).to.have.property('quorumType');
   });
 
-  it('fetches data contract with proof and toJSON returns full structure', async () => {
+  it('should fetch data contract with proof and toJSON returns full structure', async () => {
     const response = await client.getDataContractWithProofInfo(DPNS_CONTRACT);
 
     // Basic shape check
@@ -121,7 +121,7 @@ describe('Identity queries', function describeBlock() {
     expect(json.proof).to.have.property('quorumType');
   });
 
-  it('gets identity balance and nonce', async () => {
+  it('should get identity balance and nonce', async () => {
     // getIdentityBalance returns bigint | null, but for existing identity it should be present
     const balance = await client.getIdentityBalance(TEST_IDENTITY);
     expect(typeof balance).to.equal('bigint');
@@ -133,7 +133,7 @@ describe('Identity queries', function describeBlock() {
     expect(String(nonce)).to.match(/^\d+$/);
   });
 
-  it('gets contract nonce and keys', async () => {
+  it('should get contract nonce and keys', async () => {
     // getIdentityContractNonce returns bigint | null | undefined
     // null/undefined if identity never interacted with the contract
     // Note: On a fresh platform, nonce would be null/undefined. But after running tests
@@ -149,7 +149,7 @@ describe('Identity queries', function describeBlock() {
     expect(keys).to.be.an('array');
   });
 
-  it('batch identity balances and balance+revision', async () => {
+  it('should get batch identity balances and balance+revision', async () => {
     // getIdentitiesBalances returns Map<Identifier, bigint | null>
     const balances = await client.getIdentitiesBalances([TEST_IDENTITY]);
     expect(balances).to.be.instanceOf(Map);
@@ -166,7 +166,7 @@ describe('Identity queries', function describeBlock() {
     expect(typeof br.revision === 'number' || typeof br.revision === 'bigint').to.be.true();
   });
 
-  it('contract keys for identity', async () => {
+  it('should get contract keys for identity', async () => {
     const r = await client.getIdentitiesContractKeys({
       identityIds: [TEST_IDENTITY],
       contractId: DPNS_CONTRACT,
@@ -174,7 +174,7 @@ describe('Identity queries', function describeBlock() {
     expect(r).to.be.an('array');
   });
 
-  it('contract keys filtered by purpose and with proof', async () => {
+  it('should get contract keys filtered by purpose and with proof', async () => {
     const response = await client.getIdentitiesContractKeysWithProofInfo({
       identityIds: [TEST_IDENTITY],
       contractId: DPNS_CONTRACT,
@@ -198,7 +198,7 @@ describe('Identity queries', function describeBlock() {
     }
   });
 
-  it('contract keys batch handles multiple identities', async () => {
+  it('should handle multiple identities in contract keys batch', async () => {
     const r = await client.getIdentitiesContractKeys({
       identityIds: [TEST_IDENTITY, TEST_IDENTITY],
       contractId: DPNS_CONTRACT,
@@ -209,7 +209,7 @@ describe('Identity queries', function describeBlock() {
     }
   });
 
-  it('token balances/infos for identity and batches', async () => {
+  it('should get token balances/infos for identity and batches', async () => {
     const TOKEN_CONTRACT = tokenContracts[0].contractId;
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 1);
 

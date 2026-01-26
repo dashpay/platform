@@ -142,7 +142,7 @@ describe('IdentitiesFacade', () => {
   });
 
   describe('Query Methods', () => {
-    it('fetch() returns an identity by ID', async () => {
+    it('should return an identity by ID', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
 
       const result = await client.identities.fetch(identityId);
@@ -151,7 +151,7 @@ describe('IdentitiesFacade', () => {
       expect(result).to.be.instanceOf(wasmSDKPackage.Identity);
     });
 
-    it('fetchWithProof() returns identity with proof metadata', async () => {
+    it('should return identity with proof metadata', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
 
       await client.identities.fetchWithProof(identityId);
@@ -159,7 +159,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentityWithProofInfoStub).to.be.calledOnceWithExactly(identityId);
     });
 
-    it('fetchUnproved() returns identity without proof verification', async () => {
+    it('should return identity without proof verification', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
 
       await client.identities.fetchUnproved(identityId);
@@ -167,7 +167,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentityUnprovedStub).to.be.calledOnceWithExactly(identityId);
     });
 
-    it('getKeys() fetches identity public keys', async () => {
+    it('should fetch identity public keys', async () => {
       const query = {
         identityId: '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
         request: {
@@ -183,7 +183,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentityKeysStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('getKeysWithProof() fetches identity keys with proof', async () => {
+    it('should fetch identity keys with proof', async () => {
       const query = {
         identityId: '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
         request: { type: 'all' },
@@ -194,7 +194,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentityKeysWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('nonce() and nonceWithProof() fetch identity nonce', async () => {
+    it('should fetch identity nonce with and without proof', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
 
       await client.identities.nonce(identityId);
@@ -204,7 +204,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentityNonceWithProofInfoStub).to.be.calledOnceWithExactly(identityId);
     });
 
-    it('contractNonce() fetches contract-specific nonce', async () => {
+    it('should fetch contract-specific nonce', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 
@@ -217,7 +217,7 @@ describe('IdentitiesFacade', () => {
         .to.be.calledOnceWithExactly(identityId, contractId);
     });
 
-    it('balance() and balances() fetch identity credits', async () => {
+    it('should fetch identity credits for single and multiple identities', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
       const identityIds = [
         '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
@@ -235,7 +235,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentitiesBalancesWithProofInfoStub).to.be.calledOnceWithExactly(identityIds);
     });
 
-    it('balanceAndRevision() fetches balance and revision together', async () => {
+    it('should fetch balance and revision together', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
 
       await client.identities.balanceAndRevision(identityId);
@@ -247,7 +247,7 @@ describe('IdentitiesFacade', () => {
         .to.be.calledOnceWithExactly(identityId);
     });
 
-    it('byPublicKeyHash() looks up identity by public key hash', async () => {
+    it('should look up identity by public key hash', async () => {
       const publicKeyHash = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
 
       await client.identities.byPublicKeyHash(publicKeyHash);
@@ -259,7 +259,7 @@ describe('IdentitiesFacade', () => {
         .to.be.calledOnceWithExactly(publicKeyHash);
     });
 
-    it('byNonUniquePublicKeyHash() supports pagination cursor', async () => {
+    it('should support pagination cursor for non-unique public key hash lookup', async () => {
       const publicKeyHash = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
       const startAfter = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
 
@@ -272,7 +272,7 @@ describe('IdentitiesFacade', () => {
         .to.be.calledOnceWithExactly(publicKeyHash, undefined);
     });
 
-    it('contractKeys() fetches contract-bound keys for identities', async () => {
+    it('should fetch contract-bound keys for identities', async () => {
       const query = {
         identityIds: ['5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS'],
         contractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
@@ -284,7 +284,7 @@ describe('IdentitiesFacade', () => {
       expect(getIdentitiesContractKeysStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('tokenBalances() fetches identity token balances', async () => {
+    it('should fetch identity token balances', async () => {
       const identityId = '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS';
       const tokenIds = ['BpJvvpPiR2obh7ueZixjtYXsmWQdgJhiZtQJWjD7Ruus'];
 
@@ -299,7 +299,7 @@ describe('IdentitiesFacade', () => {
   });
 
   describe('Transition Methods', () => {
-    it('create() creates a new identity with asset lock', async () => {
+    it('should create a new identity with asset lock', async () => {
       const options = {
         identity,
         assetLockProof,
@@ -312,7 +312,7 @@ describe('IdentitiesFacade', () => {
       expect(identityCreateStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('topUp() tops up identity balance with asset lock', async () => {
+    it('should top up identity balance with asset lock', async () => {
       const options = {
         identity,
         assetLockProof,
@@ -325,7 +325,7 @@ describe('IdentitiesFacade', () => {
       expect(newBalance).to.equal(BigInt(200000000));
     });
 
-    it('creditTransfer() transfers credits between identities', async () => {
+    it('should transfer credits between identities', async () => {
       const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
       const options = {
         identity,
@@ -341,7 +341,7 @@ describe('IdentitiesFacade', () => {
       expect(result.recipientBalance).to.equal(BigInt(50000000));
     });
 
-    it('creditWithdrawal() withdraws credits to Dash address', async () => {
+    it('should withdraw credits to Dash address', async () => {
       const options = {
         identity,
         amount: BigInt(20000000), // 20M credits
@@ -356,7 +356,7 @@ describe('IdentitiesFacade', () => {
       expect(remainingBalance).to.equal(BigInt(80000000));
     });
 
-    it('update() adds and disables public keys', async () => {
+    it('should add and disable public keys', async () => {
       const options = {
         identity,
         addPublicKeys: [publicKeyInCreation],

@@ -27,7 +27,7 @@ describe('wallet namespace', () => {
     'signMessage',
   ];
 
-  it('exposes the expected helper functions', () => {
+  it('should expose the expected helper functions', () => {
     exportedFns.forEach((fn) => {
       expect(wallet).to.have.property(fn).that.is.a('function');
     });

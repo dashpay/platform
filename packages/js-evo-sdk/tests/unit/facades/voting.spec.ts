@@ -66,7 +66,7 @@ describe('VotingFacade', () => {
   });
 
   describe('Query Methods', () => {
-    it('contestedResourceVoteState() fetches vote state for a contested resource', async () => {
+    it('should fetch vote state for a contested resource', async () => {
       const query = {
         dataContractId,
         documentTypeName: 'domain',
@@ -80,7 +80,7 @@ describe('VotingFacade', () => {
       expect(getContestedResourceVoteStateStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('contestedResourceVoteStateWithProof() fetches vote state with proof and pagination', async () => {
+    it('should fetch vote state with proof and pagination', async () => {
       const query = {
         dataContractId,
         documentTypeName: 'domain',
@@ -98,7 +98,7 @@ describe('VotingFacade', () => {
       expect(getContestedResourceVoteStateWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('contestedResourceIdentityVotes() fetches votes cast by an identity', async () => {
+    it('should fetch votes cast by an identity', async () => {
       const query = {
         identityId,
         limit: 50,
@@ -111,7 +111,7 @@ describe('VotingFacade', () => {
       expect(getContestedResourceIdentityVotesStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('contestedResourceIdentityVotesWithProof() fetches identity votes with proof', async () => {
+    it('should fetch identity votes with proof', async () => {
       const query = {
         identityId,
         limit: 25,
@@ -125,7 +125,7 @@ describe('VotingFacade', () => {
         .to.be.calledOnceWithExactly(query);
     });
 
-    it('votePollsByEndDate() fetches active vote polls within a time range', async () => {
+    it('should fetch active vote polls within a time range', async () => {
       const query = {
         startTimeMs: 1704067200000, // 2024-01-01 00:00:00 UTC
         startTimeIncluded: true,
@@ -141,7 +141,7 @@ describe('VotingFacade', () => {
       expect(getVotePollsByEndDateStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('votePollsByEndDateWithProof() fetches vote polls with proof', async () => {
+    it('should fetch vote polls with proof', async () => {
       const query = {
         startTimeMs: 1704067200000,
         endTimeMs: 1706745600000,
@@ -157,7 +157,7 @@ describe('VotingFacade', () => {
   });
 
   describe('Transition Methods', () => {
-    it('masternodeVote() casts a vote on a contested resource', async () => {
+    it('should cast a vote on a contested resource', async () => {
       const options = {
         masternodeProTxHash,
         contractId: dataContractId,
@@ -173,7 +173,7 @@ describe('VotingFacade', () => {
       expect(masternodeVoteStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('masternodeVote() supports different vote choices', async () => {
+    it('should support different vote choices', async () => {
       // Test abstain vote
       const abstainOptions = {
         masternodeProTxHash,
@@ -190,7 +190,7 @@ describe('VotingFacade', () => {
       expect(masternodeVoteStub).to.be.calledWithExactly(abstainOptions);
     });
 
-    it('masternodeVote() supports lock vote choice', async () => {
+    it('should support lock vote choice', async () => {
       const lockOptions = {
         masternodeProTxHash,
         contractId: dataContractId,

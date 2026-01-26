@@ -18,7 +18,7 @@ describe('Status endpoint', function describeBlock() {
     if (client) { client.free(); }
   });
 
-  it('getStatus', async () => {
+  it('should get status', async () => {
     const status = await client.getStatus();
     expect(status).to.be.ok();
   });

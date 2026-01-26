@@ -49,7 +49,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
   });
 
   describe('identityCreditTransfer', () => {
-    it('transfers credits between identities', async () => {
+    it('should transfer credits between identities', async () => {
       // Identity 1 transfers credits to Identity 2
       // Key index 3 is the TRANSFER purpose key (ECDSA_HASH160)
       const { signer } = createTestSignerAndKey(sdk, 1, 3);
@@ -75,7 +75,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
   });
 
   describe('identityUpdate', () => {
-    it('adds a new public key to identity', async () => {
+    it('should add a new public key to identity', async () => {
       // Wait for previous operations to be fully processed
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
 
@@ -126,7 +126,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       expect(publicKeysAfter.length).to.equal(keyCountBefore + 1);
     });
 
-    it('disables a public key on identity', async () => {
+    it('should disable a public key on identity', async () => {
       // Identity update requires MASTER key (key index 0)
       const { signer } = createTestSignerAndKey(sdk, 1, 0);
 
@@ -166,7 +166,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
   });
 
   describe('identityWithdrawal', () => {
-    it('withdraws credits from platform', async () => {
+    it('should withdraw credits from platform', async () => {
       // Use the TRANSFER key (index 3) for withdrawal
       const { signer } = createTestSignerAndKey(sdk, 1, 3);
 

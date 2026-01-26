@@ -54,7 +54,7 @@ describe('TokenConfiguration', () => {
   }
 
   describe('serialization / deserialization', () => {
-    it('Should allow to create from values', () => {
+    it('should allow to create from values', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {

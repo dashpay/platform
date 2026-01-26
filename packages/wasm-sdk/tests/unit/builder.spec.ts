@@ -6,7 +6,7 @@ describe('WasmSdkBuilder', () => {
     await init();
   });
 
-  it('WasmSdkBuilder static methods exist', () => {
+  it('should have WasmSdkBuilder static methods', () => {
     expect(sdk.WasmSdkBuilder).to.be.a('function');
     expect(sdk.WasmSdkBuilder.getLatestVersionNumber).to.be.a('function');
     expect(sdk.WasmSdkBuilder.mainnet).to.be.a('function');
@@ -15,7 +15,7 @@ describe('WasmSdkBuilder', () => {
     expect(sdk.WasmSdkBuilder.testnetTrusted).to.be.a('function');
   });
 
-  it('builds testnet builder and sets version', async () => {
+  it('should build testnet builder and set version', async () => {
     let builder = sdk.WasmSdkBuilder.testnet();
     expect(builder).to.be.ok();
     // note: builder methods consume and return a new builder
@@ -25,7 +25,7 @@ describe('WasmSdkBuilder', () => {
     built.free();
   });
 
-  it('applies custom settings (timeouts, retries, ban flag)', async () => {
+  it('should apply custom settings (timeouts, retries, ban flag)', async () => {
     // withSettings(connect_timeout_ms, timeout_ms, retries, ban_failed_address)
     let builder = sdk.WasmSdkBuilder.testnet();
     builder = builder.withSettings(5000, 10000, 3, true);

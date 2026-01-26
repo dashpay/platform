@@ -52,13 +52,13 @@ describe('IdentityUpdateTransition', () => {
   }
 
   describe('serialization / deserialization', () => {
-    it('Should create IdentityUpdateTransition', () => {
+    it('should create IdentityUpdateTransition', () => {
       const transition = createUpdateTransition();
 
       expect(transition).to.be.an.instanceof(wasm.IdentityUpdateTransition);
     });
 
-    it('Should create IdentityUpdateTransition with key', () => {
+    it('should create IdentityUpdateTransition with key', () => {
       const key = createPublicKeyInCreation();
 
       const transition = createUpdateTransition({ addPublicKeys: [key] });
@@ -67,7 +67,7 @@ describe('IdentityUpdateTransition', () => {
       expect(key).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
     });
 
-    it('Should convert IdentityUpdateTransition to base64 and back', () => {
+    it('should convert IdentityUpdateTransition to base64 and back', () => {
       const transition = createUpdateTransition();
 
       const base64 = transition.toBase64();
@@ -82,31 +82,31 @@ describe('IdentityUpdateTransition', () => {
   });
 
   describe('getters', () => {
-    it('Should return revision', () => {
+    it('should return revision', () => {
       const transition = createUpdateTransition();
 
       expect(transition.revision).to.deep.equal(BigInt(1));
     });
 
-    it('Should return nonce', () => {
+    it('should return nonce', () => {
       const transition = createUpdateTransition();
 
       expect(transition.nonce).to.deep.equal(BigInt(1));
     });
 
-    it('Should return identityIdentifier', () => {
+    it('should return identityIdentifier', () => {
       const transition = createUpdateTransition();
 
       expect(transition.identityIdentifier.toBase58()).to.deep.equal('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
     });
 
-    it('Should return publicKeyIdsToDisable', () => {
+    it('should return publicKeyIdsToDisable', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       expect(Array.from(transition.publicKeyIdsToDisable)).to.deep.equal([11]);
     });
 
-    it('Should return publicKeyIdsToAdd', () => {
+    it('should return publicKeyIdsToAdd', () => {
       const key = createPublicKeyInCreation();
 
       const transition = createUpdateTransition({ addPublicKeys: [key], disablePublicKeys: [11] });
@@ -114,19 +114,19 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.publicKeyIdsToAdd.length).to.deep.equal(1);
     });
 
-    it('Should return userFeeIncrease', () => {
+    it('should return userFeeIncrease', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11], userFeeIncrease: 1 });
 
       expect(transition.userFeeIncrease).to.deep.equal(1);
     });
 
-    it('Should return signature', () => {
+    it('should return signature', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11], userFeeIncrease: 1 });
 
       expect(transition.signature).to.deep.equal(Uint8Array.from([]));
     });
 
-    it('Should return signature public key id', () => {
+    it('should return signature public key id', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       expect(transition.signaturePublicKeyId).to.deep.equal(0);
@@ -134,7 +134,7 @@ describe('IdentityUpdateTransition', () => {
   });
 
   describe('setters', () => {
-    it('Should allow to set identityIdentifier', () => {
+    it('should allow to set identityIdentifier', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       transition.identityIdentifier = '11Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3';
@@ -142,7 +142,7 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.identityIdentifier.toBase58()).to.deep.equal('11Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
     });
 
-    it('Should allow to set revision', () => {
+    it('should allow to set revision', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       transition.revision = BigInt(11111);
@@ -150,7 +150,7 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.revision).to.deep.equal(BigInt(11111));
     });
 
-    it('Should allow to set nonce', () => {
+    it('should allow to set nonce', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       transition.nonce = BigInt(11111);
@@ -158,7 +158,7 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.nonce).to.deep.equal(BigInt(11111));
     });
 
-    it('Should allow to set publicKeyIdsToDisable', () => {
+    it('should allow to set publicKeyIdsToDisable', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       transition.publicKeyIdsToDisable = [1, 2, 3, 4];
@@ -166,7 +166,7 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.publicKeyIdsToDisable).to.deep.equal(Uint32Array.from([1, 2, 3, 4]));
     });
 
-    it('Should allow to set publicKeyIdsToAdd', () => {
+    it('should allow to set publicKeyIdsToAdd', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       const key = createPublicKeyInCreation();
@@ -177,7 +177,7 @@ describe('IdentityUpdateTransition', () => {
       expect(key).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
     });
 
-    it('Should allow to set signature', () => {
+    it('should allow to set signature', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       transition.signature = [0, 1, 2, 3, 5];
@@ -185,7 +185,7 @@ describe('IdentityUpdateTransition', () => {
       expect(transition.signature).to.deep.equal(Uint8Array.from([0, 1, 2, 3, 5]));
     });
 
-    it('Should allow to set signature public key id', () => {
+    it('should allow to set signature public key id', () => {
       const transition = createUpdateTransition({ disablePublicKeys: [11] });
 
       transition.signaturePublicKeyId = 11;

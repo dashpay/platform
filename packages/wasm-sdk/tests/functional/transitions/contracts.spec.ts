@@ -35,7 +35,7 @@ describe('Contract State Transitions', function describeContractStateTransitions
   });
 
   describe('contractPublish', () => {
-    it('creates a new data contract', async () => {
+    it('should create a new data contract', async () => {
       // Contract operations require at least HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -86,7 +86,7 @@ describe('Contract State Transitions', function describeContractStateTransitions
   });
 
   describe('contractUpdate', () => {
-    it('updates an existing data contract', async () => {
+    it('should update an existing data contract', async () => {
       // Requires contract from previous test
       expect(createdContractId).to.exist();
 

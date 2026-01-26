@@ -33,19 +33,19 @@ describe('AddressesFacade', () => {
     });
   });
 
-  it('get() forwards address to getAddressInfo', async () => {
+  it('should forward address to getAddressInfo', async () => {
     const address = 'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
     await client.addresses.get(address);
     expect(getAddressInfoStub).to.be.calledOnceWithExactly(address);
   });
 
-  it('getWithProof() forwards address to getAddressInfoWithProofInfo', async () => {
+  it('should forward address to getAddressInfoWithProofInfo', async () => {
     const address = 'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
     await client.addresses.getWithProof(address);
     expect(getAddressInfoWithProofInfoStub).to.be.calledOnceWithExactly(address);
   });
 
-  it('getMany() forwards array of addresses to getAddressesInfos', async () => {
+  it('should forward array of addresses to getAddressesInfos', async () => {
     const addresses = [
       'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4',
       'tevo1abc123def456ghi789jkl012mno345pqr678st',
@@ -54,7 +54,7 @@ describe('AddressesFacade', () => {
     expect(getAddressesInfosStub).to.be.calledOnceWithExactly(addresses);
   });
 
-  it('getManyWithProof() forwards array of addresses to getAddressesInfosWithProofInfo', async () => {
+  it('should forward array of addresses to getAddressesInfosWithProofInfo', async () => {
     const addresses = [
       'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4',
     ];
@@ -62,13 +62,13 @@ describe('AddressesFacade', () => {
     expect(getAddressesInfosWithProofInfoStub).to.be.calledOnceWithExactly(addresses);
   });
 
-  it('get() accepts Uint8Array address', async () => {
+  it('should accept Uint8Array address', async () => {
     const addressBytes = new Uint8Array(21);
     await client.addresses.get(addressBytes);
     expect(getAddressInfoStub).to.be.calledOnceWithExactly(addressBytes);
   });
 
-  it('getMany() accepts mixed address formats', async () => {
+  it('should accept mixed address formats', async () => {
     const bech32Address = 'tevo1qr4nl2m5z7v7g7d2c4z6k8x9w3y2f5p6h0s1t4';
     const bytesAddress = new Uint8Array(21);
     const mixedAddresses = [bech32Address, bytesAddress];
@@ -76,7 +76,7 @@ describe('AddressesFacade', () => {
     expect(getAddressesInfosStub).to.be.calledOnceWithExactly(mixedAddresses);
   });
 
-  it('transfer() forwards options to addressFundsTransfer with PlatformAddressSigner', async () => {
+  it('should forward options to addressFundsTransfer with PlatformAddressSigner', async () => {
     // Create proper PlatformAddress objects
     const recipientAddr = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0xb0, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
@@ -106,7 +106,7 @@ describe('AddressesFacade', () => {
     expect(result.addressInfos[0].address.addressType).to.equal('P2PKH');
   });
 
-  it('transfer() handles success result type', async () => {
+  it('should handle success result type for transfer', async () => {
     addressFundsTransferStub.resolves({
       type: 'Success',
       message: 'Address funds transfer completed successfully',
@@ -139,7 +139,7 @@ describe('AddressesFacade', () => {
     expect(result.message).to.include('successfully');
   });
 
-  it('topUpIdentity() forwards options to identityTopUpFromAddresses', async function topUpTest() {
+  it('should forward options to identityTopUpFromAddresses', async function topUpTest() {
     // Create mock address and result
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -165,7 +165,7 @@ describe('AddressesFacade', () => {
     expect(result.newBalance).to.equal(150000n);
   });
 
-  it('withdraw() forwards options to addressFundsWithdraw', async function withdrawTest() {
+  it('should forward options to addressFundsWithdraw', async function withdrawTest() {
     // Create mock address and result map
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -190,7 +190,7 @@ describe('AddressesFacade', () => {
     expect(result).to.be.instanceOf(Map);
   });
 
-  it('transferFromIdentity() forwards options to identityTransferToAddresses', async function transferFromIdentityTest() {
+  it('should forward options to identityTransferToAddresses', async function transferFromIdentityTest() {
     // Create mock address
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -216,7 +216,7 @@ describe('AddressesFacade', () => {
     expect(result.newBalance).to.equal(400000n);
   });
 
-  it('fundFromAssetLock() forwards options to addressFundingFromAssetLock', async function fundFromAssetLockTest() {
+  it('should forward options to addressFundingFromAssetLock', async function fundFromAssetLockTest() {
     // Create mock address and result map
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
@@ -240,7 +240,7 @@ describe('AddressesFacade', () => {
     expect(result).to.be.instanceOf(Map);
   });
 
-  it('createIdentity() forwards options to identityCreateFromAddresses', async function createIdentityTest() {
+  it('should forward options to identityCreateFromAddresses', async function createIdentityTest() {
     // Create mock address
     const mockAddress = wasmSDKPackage.PlatformAddress.fromBytes(
       new Uint8Array([0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),

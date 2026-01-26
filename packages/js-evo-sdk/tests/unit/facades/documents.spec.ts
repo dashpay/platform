@@ -56,7 +56,7 @@ describe('DocumentsFacade', () => {
   });
 
   describe('Query Methods', () => {
-    it('query() fetches documents matching criteria', async () => {
+    it('should fetch documents matching criteria', async () => {
       const query = {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
@@ -70,7 +70,7 @@ describe('DocumentsFacade', () => {
       expect(getDocumentsStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('queryWithProof() fetches documents with proof metadata', async () => {
+    it('should fetch documents with proof metadata', async () => {
       const query = {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         documentTypeName: 'note',
@@ -81,7 +81,7 @@ describe('DocumentsFacade', () => {
       expect(getDocumentsWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('get() fetches a single document by ID', async () => {
+    it('should fetch a single document by ID', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
       const documentTypeName = 'note';
       const documentId = '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah';
@@ -92,7 +92,7 @@ describe('DocumentsFacade', () => {
         .to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
     });
 
-    it('getWithProof() fetches a single document with proof', async () => {
+    it('should fetch a single document with proof', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
       const documentTypeName = 'note';
       const documentId = '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah';
@@ -105,7 +105,7 @@ describe('DocumentsFacade', () => {
   });
 
   describe('Transition Methods', () => {
-    it('create() creates a new document', async () => {
+    it('should create a new document', async () => {
       const options = {
         document,
         identityKey,
@@ -117,7 +117,7 @@ describe('DocumentsFacade', () => {
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('replace() replaces an existing document', async () => {
+    it('should replace an existing document', async () => {
       const options = {
         document,
         identityKey,
@@ -130,7 +130,7 @@ describe('DocumentsFacade', () => {
       expect(documentReplaceStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('delete() deletes a document', async () => {
+    it('should delete a document', async () => {
       const options = {
         document,
         identityKey,
@@ -142,7 +142,7 @@ describe('DocumentsFacade', () => {
       expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('delete() accepts document identifiers instead of Document instance', async () => {
+    it('should accept document identifiers instead of Document instance for delete', async () => {
       const options = {
         document: {
           id: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
@@ -159,7 +159,7 @@ describe('DocumentsFacade', () => {
       expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('transfer() transfers document ownership to another identity', async () => {
+    it('should transfer document ownership to another identity', async () => {
       const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
       const options = {
         document,
@@ -173,7 +173,7 @@ describe('DocumentsFacade', () => {
       expect(documentTransferStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('purchase() purchases a document from another identity', async () => {
+    it('should purchase a document from another identity', async () => {
       const buyerId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
       const options = {
         document,
@@ -188,7 +188,7 @@ describe('DocumentsFacade', () => {
       expect(documentPurchaseStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('setPrice() sets a price on a document for sale', async () => {
+    it('should set a price on a document for sale', async () => {
       const options = {
         document,
         price: BigInt(5000000), // 5M credits

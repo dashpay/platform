@@ -34,7 +34,7 @@ describe('SystemFacade', () => {
     getPathElementsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getPathElementsWithProofInfo').resolves('ok');
   });
 
-  it('forwards all methods to instance methods', async () => {
+  it('should forward all methods to instance methods', async () => {
     await client.system.status();
     await client.system.currentQuorumsInfo();
     await client.system.totalCreditsInPlatform();

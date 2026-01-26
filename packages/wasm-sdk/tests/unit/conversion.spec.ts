@@ -84,7 +84,7 @@ describe('serde conversions (unit)', () => {
     });
   });
 
-  it('ResponseMetadata: getter returns Uint8Array, toJSON returns base64', () => {
+  it('should return Uint8Array from ResponseMetadata getter and base64 from toJSON', () => {
     const chainId = new Uint8Array([1, 2, 3, 4]);
     const meta = new sdk.ResponseMetadata(1n, 2, 3, 4n, 5, chainId);
 
@@ -195,7 +195,7 @@ describe('serde conversions (unit)', () => {
     });
   });
 
-  it('Identifier-backed structs: toObject returns bytes, toJSON returns Base58', () => {
+  it('should return bytes from toObject and Base58 from toJSON for Identifier-backed structs', () => {
     const bytes = new Uint8Array(32).fill(7);
     const expectedBase58 = sdk.Identifier.fromBytes(Array.from(bytes)).toBase58();
     const identifier = sdk.Identifier.fromBase58(expectedBase58);

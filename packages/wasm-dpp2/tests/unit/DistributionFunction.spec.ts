@@ -129,7 +129,7 @@ describe('DistributionFunction', () => {
 
   describe('getters', () => {
     describe('function name', () => {
-      it('FixedAmountDistribution', () => {
+      it('should get FixedAmountDistribution', () => {
         const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
           BigInt(111),
         );
@@ -137,7 +137,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('FixedAmount');
       });
 
-      it('Random', () => {
+      it('should get Random', () => {
         const distributionFunction = wasm.DistributionFunction.Random(
           BigInt(111),
           BigInt(113),
@@ -146,7 +146,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('Random');
       });
 
-      it('StepDecreasingAmount', () => {
+      it('should get StepDecreasingAmount', () => {
         const distributionFunction = wasm.DistributionFunction.StepDecreasingAmount(
           11,
           11,
@@ -161,7 +161,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('StepDecreasingAmount');
       });
 
-      it('Stepwise', () => {
+      it('should get Stepwise', () => {
         const distributionFunction = wasm.DistributionFunction.Stepwise(
           {
             11111111121: BigInt(111),
@@ -171,7 +171,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('Stepwise');
       });
 
-      it('Linear', () => {
+      it('should get Linear', () => {
         const distributionFunction = wasm.DistributionFunction.Linear(
           BigInt(111),
           BigInt(113),
@@ -184,7 +184,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('Linear');
       });
 
-      it('Polynomial', () => {
+      it('should get Polynomial', () => {
         const distributionFunction = wasm.DistributionFunction.Polynomial(
           BigInt(111),
           BigInt(113),
@@ -200,7 +200,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('Polynomial');
       });
 
-      it('Exponential', () => {
+      it('should get Exponential', () => {
         const distributionFunction = wasm.DistributionFunction.Exponential(
           BigInt(111),
           BigInt(113),
@@ -216,7 +216,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('Exponential');
       });
 
-      it('Logarithmic', () => {
+      it('should get Logarithmic', () => {
         const distributionFunction = wasm.DistributionFunction.Logarithmic(
           BigInt(111),
           BigInt(113),
@@ -232,7 +232,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionName).to.deep.equal('Logarithmic');
       });
 
-      it('InvertedLogarithmic', () => {
+      it('should get InvertedLogarithmic', () => {
         const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
           BigInt(111),
           BigInt(113),
@@ -249,7 +249,7 @@ describe('DistributionFunction', () => {
       });
     });
     describe('function value', () => {
-      it('FixedAmountDistribution', () => {
+      it('should get FixedAmountDistribution', () => {
         const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
           BigInt(111),
         );
@@ -257,7 +257,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.amount).to.deep.equal(111n);
       });
 
-      it('Random', () => {
+      it('should get Random', () => {
         const distributionFunction = wasm.DistributionFunction.Random(
           BigInt(111),
           BigInt(113),
@@ -267,7 +267,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.max).to.deep.equal(113n);
       });
 
-      it('StepDecreasingAmount', () => {
+      it('should get StepDecreasingAmount', () => {
         const distributionFunction = wasm.DistributionFunction.StepDecreasingAmount(
           11,
           11,
@@ -289,7 +289,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.minValue).to.deep.equal(1n);
       });
 
-      it('Stepwise', () => {
+      it('should get Stepwise', () => {
         const distributionFunction = wasm.DistributionFunction.Stepwise(
           {
             11111111121: BigInt(111),
@@ -301,7 +301,7 @@ describe('DistributionFunction', () => {
         });
       });
 
-      it('Linear', () => {
+      it('should get Linear', () => {
         const distributionFunction = wasm.DistributionFunction.Linear(
           BigInt(111),
           BigInt(113),
@@ -319,7 +319,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined);
       });
 
-      it('Polynomial', () => {
+      it('should get Polynomial', () => {
         const distributionFunction = wasm.DistributionFunction.Polynomial(
           BigInt(111),
           BigInt(113),
@@ -343,7 +343,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined);
       });
 
-      it('Exponential', () => {
+      it('should get Exponential', () => {
         const distributionFunction = wasm.DistributionFunction.Exponential(
           BigInt(111),
           BigInt(113),
@@ -367,7 +367,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined);
       });
 
-      it('Logarithmic', () => {
+      it('should get Logarithmic', () => {
         const distributionFunction = wasm.DistributionFunction.Logarithmic(
           BigInt(111),
           BigInt(113),
@@ -391,7 +391,7 @@ describe('DistributionFunction', () => {
         expect(distributionFunction.functionValue.maxValue).to.deep.equal(undefined);
       });
 
-      it('InvertedLogarithmic', () => {
+      it('should get InvertedLogarithmic', () => {
         const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
           BigInt(111),
           BigInt(113),

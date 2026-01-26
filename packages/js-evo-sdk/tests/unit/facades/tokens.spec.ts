@@ -151,14 +151,14 @@ describe('TokensFacade', () => {
   });
 
   describe('Static Methods', () => {
-    it('calculateId() computes token ID from contract ID and position', async () => {
+    it('should compute token ID from contract ID and position', async () => {
       const result = await client.tokens.calculateId(contractId, 0);
       expect(result).to.equal(tokenId);
     });
   });
 
   describe('Query Methods', () => {
-    it('priceByContract() fetches token price by contract ID', async () => {
+    it('should fetch token price by contract ID', async () => {
       const tokenPosition = 0;
 
       await client.tokens.priceByContract(contractId, tokenPosition);
@@ -167,19 +167,19 @@ describe('TokensFacade', () => {
         .to.be.calledOnceWithExactly(contractId, tokenPosition);
     });
 
-    it('totalSupply() fetches total supply of a token', async () => {
+    it('should fetch total supply of a token', async () => {
       await client.tokens.totalSupply(tokenId);
 
       expect(getTokenTotalSupplyStub).to.be.calledOnceWithExactly(tokenId);
     });
 
-    it('totalSupplyWithProof() fetches total supply with proof', async () => {
+    it('should fetch total supply with proof', async () => {
       await client.tokens.totalSupplyWithProof(tokenId);
 
       expect(getTokenTotalSupplyWithProofInfoStub).to.be.calledOnceWithExactly(tokenId);
     });
 
-    it('statuses() fetches statuses for multiple tokens', async () => {
+    it('should fetch statuses for multiple tokens', async () => {
       const tokenIds = [tokenId, 'AnotherTokenId123456789abcdefghijklmnop'];
 
       await client.tokens.statuses(tokenIds);
@@ -187,7 +187,7 @@ describe('TokensFacade', () => {
       expect(getTokenStatusesStub).to.be.calledOnceWithExactly(tokenIds);
     });
 
-    it('statusesWithProof() fetches token statuses with proof', async () => {
+    it('should fetch token statuses with proof', async () => {
       const tokenIds = [tokenId];
 
       await client.tokens.statusesWithProof(tokenIds);
@@ -195,7 +195,7 @@ describe('TokensFacade', () => {
       expect(getTokenStatusesWithProofInfoStub).to.be.calledOnceWithExactly(tokenIds);
     });
 
-    it('balances() fetches token balances for multiple identities', async () => {
+    it('should fetch token balances for multiple identities', async () => {
       const identityIds = [identityId, recipientId];
 
       await client.tokens.balances(identityIds, tokenId);
@@ -203,7 +203,7 @@ describe('TokensFacade', () => {
       expect(getIdentitiesTokenBalancesStub).to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
-    it('balancesWithProof() fetches identity balances with proof', async () => {
+    it('should fetch identity balances with proof', async () => {
       const identityIds = [identityId];
 
       await client.tokens.balancesWithProof(identityIds, tokenId);
@@ -212,7 +212,7 @@ describe('TokensFacade', () => {
         .to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
-    it('identityBalances() fetches balances for multiple tokens of one identity', async () => {
+    it('should fetch balances for multiple tokens of one identity', async () => {
       const tokenIds = [tokenId];
 
       await client.tokens.identityBalances(identityId, tokenIds);
@@ -220,7 +220,7 @@ describe('TokensFacade', () => {
       expect(getIdentityTokenBalancesStub).to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
-    it('identityBalancesWithProof() fetches identity token balances with proof', async () => {
+    it('should fetch identity token balances with proof', async () => {
       const tokenIds = [tokenId];
 
       await client.tokens.identityBalancesWithProof(identityId, tokenIds);
@@ -229,7 +229,7 @@ describe('TokensFacade', () => {
         .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
-    it('identityTokenInfos() fetches token info for an identity', async () => {
+    it('should fetch token info for an identity', async () => {
       const tokenIds = [tokenId, 'AnotherTokenId123456789abcdefghijklmnop'];
 
       await client.tokens.identityTokenInfos(identityId, tokenIds);
@@ -237,7 +237,7 @@ describe('TokensFacade', () => {
       expect(getIdentityTokenInfosStub).to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
-    it('identitiesTokenInfos() fetches token info for multiple identities', async () => {
+    it('should fetch token info for multiple identities', async () => {
       const identityIds = [identityId];
 
       await client.tokens.identitiesTokenInfos(identityIds, tokenId);
@@ -245,7 +245,7 @@ describe('TokensFacade', () => {
       expect(getIdentitiesTokenInfosStub).to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
-    it('identityTokenInfosWithProof() fetches token info with proof', async () => {
+    it('should fetch token info with proof', async () => {
       const tokenIds = [tokenId];
 
       await client.tokens.identityTokenInfosWithProof(identityId, tokenIds);
@@ -254,7 +254,7 @@ describe('TokensFacade', () => {
         .to.be.calledOnceWithExactly(identityId, tokenIds);
     });
 
-    it('identitiesTokenInfosWithProof() fetches multiple identities info with proof', async () => {
+    it('should fetch multiple identities info with proof', async () => {
       const identityIds = [identityId];
 
       await client.tokens.identitiesTokenInfosWithProof(identityIds, tokenId);
@@ -263,7 +263,7 @@ describe('TokensFacade', () => {
         .to.be.calledOnceWithExactly(identityIds, tokenId);
     });
 
-    it('directPurchasePrices() fetches purchase prices for tokens', async () => {
+    it('should fetch purchase prices for tokens', async () => {
       const tokenIds = [tokenId];
 
       await client.tokens.directPurchasePrices(tokenIds);
@@ -271,7 +271,7 @@ describe('TokensFacade', () => {
       expect(getTokenDirectPurchasePricesStub).to.be.calledOnceWithExactly(tokenIds);
     });
 
-    it('directPurchasePricesWithProof() fetches purchase prices with proof', async () => {
+    it('should fetch purchase prices with proof', async () => {
       const tokenIds = [tokenId];
 
       await client.tokens.directPurchasePricesWithProof(tokenIds);
@@ -280,26 +280,26 @@ describe('TokensFacade', () => {
         .to.be.calledOnceWithExactly(tokenIds);
     });
 
-    it('contractInfo() fetches token contract information', async () => {
+    it('should fetch token contract information', async () => {
       await client.tokens.contractInfo(contractId);
 
       expect(getTokenContractInfoStub).to.be.calledOnceWithExactly(contractId);
     });
 
-    it('contractInfoWithProof() fetches contract info with proof', async () => {
+    it('should fetch contract info with proof', async () => {
       await client.tokens.contractInfoWithProof(contractId);
 
       expect(getTokenContractInfoWithProofInfoStub).to.be.calledOnceWithExactly(contractId);
     });
 
-    it('perpetualDistributionLastClaim() fetches last claim time', async () => {
+    it('should fetch last claim time', async () => {
       await client.tokens.perpetualDistributionLastClaim(identityId, tokenId);
 
       expect(getTokenPerpetualDistributionLastClaimStub)
         .to.be.calledOnceWithExactly(identityId, tokenId);
     });
 
-    it('perpetualDistributionLastClaimWithProof() fetches last claim with proof', async () => {
+    it('should fetch last claim with proof', async () => {
       await client.tokens.perpetualDistributionLastClaimWithProof(identityId, tokenId);
 
       expect(getTokenPerpetualDistributionLastClaimWithProofInfoStub)
@@ -308,7 +308,7 @@ describe('TokensFacade', () => {
   });
 
   describe('Transition Methods', () => {
-    it('mint() mints new tokens to an identity', async () => {
+    it('should mint new tokens to an identity', async () => {
       const options = {
         tokenId,
         amount: BigInt(50000000), // 50M tokens
@@ -325,7 +325,7 @@ describe('TokensFacade', () => {
       expect(result.balance).to.equal(BigInt(100000000));
     });
 
-    it('burn() burns tokens from an identity', async () => {
+    it('should burn tokens from an identity', async () => {
       const options = {
         tokenId,
         amount: BigInt(10000000), // 10M tokens
@@ -341,7 +341,7 @@ describe('TokensFacade', () => {
       expect(result.balance).to.equal(BigInt(50000000));
     });
 
-    it('transfer() transfers tokens between identities', async () => {
+    it('should transfer tokens between identities', async () => {
       const options = {
         tokenId,
         amount: BigInt(25000000), // 25M tokens
@@ -359,7 +359,7 @@ describe('TokensFacade', () => {
       expect(result.recipientBalance).to.equal(BigInt(60000000));
     });
 
-    it('freeze() freezes tokens for an identity', async () => {
+    it('should freeze tokens for an identity', async () => {
       const frozenIdentityId = recipientId;
       const options = {
         tokenId,
@@ -375,7 +375,7 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
     });
 
-    it('unfreeze() unfreezes previously frozen tokens', async () => {
+    it('should unfreeze previously frozen tokens', async () => {
       const frozenIdentityId = recipientId;
       const options = {
         tokenId,
@@ -391,7 +391,7 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
     });
 
-    it('destroyFrozen() destroys frozen tokens', async () => {
+    it('should destroy frozen tokens', async () => {
       const frozenIdentityId = recipientId;
       const options = {
         tokenId,
@@ -407,7 +407,7 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
     });
 
-    it('emergencyAction() executes emergency token action', async () => {
+    it('should execute emergency token action', async () => {
       const options = {
         tokenId,
         action: 'pause',
@@ -422,7 +422,7 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
     });
 
-    it('setPrice() sets direct purchase price for tokens', async () => {
+    it('should set direct purchase price for tokens', async () => {
       const options = {
         tokenId,
         price: {
@@ -439,7 +439,7 @@ describe('TokensFacade', () => {
       expect(result.tokenId).to.equal(tokenId);
     });
 
-    it('directPurchase() purchases tokens directly', async () => {
+    it('should purchase tokens directly', async () => {
       const options = {
         tokenId,
         amount: BigInt(5000000), // 5M tokens
@@ -455,7 +455,7 @@ describe('TokensFacade', () => {
       expect(result.balance).to.equal(BigInt(10000000));
     });
 
-    it('claim() claims token distribution rewards', async () => {
+    it('should claim token distribution rewards', async () => {
       const options = {
         tokenId,
         identityKey,

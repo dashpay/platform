@@ -42,7 +42,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenTransfer', () => {
-    it('transfers tokens between identities', async () => {
+    it('should transfer tokens between identities', async () => {
       // Identity 1 transfers to Identity 3 (which exists in genesis state)
       // Identity 1 has 100 tokens on TOKEN_0
       // Token operations require CRITICAL security level (key index 1)
@@ -66,7 +66,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenBurn', () => {
-    it('burns tokens via group action', async () => {
+    it('should burn tokens via group action', async () => {
       // Token 2 has group burning with Group 2 (Identity 1 and 3, required power = 1)
       // Identity 1 has power 1, so can burn alone as proposer
       // Token operations require CRITICAL security level (key index 1)
@@ -92,7 +92,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenMint', () => {
-    it('mints tokens via group action', async () => {
+    it('should mint tokens via group action', async () => {
       // Token 0 has group minting with Group 0 (Identity 1 and 2, required power = 1)
       // Identity 1 has power 1, so can mint alone as proposer
       // Token operations require CRITICAL security level (key index 1)
@@ -119,7 +119,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenFreeze', () => {
-    it('freezes an identity token balance', async () => {
+    it('should freeze an identity token balance', async () => {
       // Contract owner (Identity 1) can freeze tokens
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -138,7 +138,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenUnfreeze', () => {
-    it('unfreezes an identity token balance', async () => {
+    it('should unfreeze an identity token balance', async () => {
       // Wait for previous freeze to be processed
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
 
@@ -161,7 +161,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenEmergencyAction', () => {
-    it('pauses a token', async () => {
+    it('should pause a token', async () => {
       // Contract owner (Identity 1) can pause/resume tokens
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
@@ -178,7 +178,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
       expect(result).to.exist();
     });
 
-    it('resumes a paused token', async () => {
+    it('should resume a paused token', async () => {
       // Wait for previous pause to be processed
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
 
@@ -200,7 +200,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
   });
 
   describe('tokenSetPrice', () => {
-    it('sets a direct purchase price for tokens', async () => {
+    it('should set a direct purchase price for tokens', async () => {
       // Contract owner (Identity 1) can set token prices
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);

@@ -24,7 +24,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     if (client) { client.free(); }
   });
 
-  it('gets epochs info and finalized epochs', async () => {
+  it('should get epochs info and finalized epochs', async () => {
     // Get current epoch info
     const current = await client.getCurrentEpoch().catch(() => null);
     const currentIndex = current ? Number(current.index) : 0;
@@ -44,7 +44,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     expect(finalized).to.be.instanceOf(Map);
   });
 
-  it('queries evonode proposed blocks by id/range', async () => {
+  it('should query evonode proposed blocks by id/range', async () => {
     // Get current epoch
     const current = await client.getCurrentEpoch().catch(() => null);
     const epochIndex = current ? Number(current.index) : 0;
@@ -64,7 +64,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     }
   });
 
-  it('queries evonode proposed blocks by ids with proof', async () => {
+  it('should query evonode proposed blocks by ids with proof', async () => {
     const current = await client.getCurrentEpoch().catch(() => null);
     const epochIndex = current ? Number(current.index) : 0;
 
@@ -100,7 +100,7 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     }
   });
 
-  it('queries evonode proposed blocks by range with proof', async () => {
+  it('should query evonode proposed blocks by range with proof', async () => {
     const current = await client.getCurrentEpoch().catch(() => null);
     const epochIndex = current ? Number(current.index) : 0;
 

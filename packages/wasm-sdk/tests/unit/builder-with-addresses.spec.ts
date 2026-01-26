@@ -11,12 +11,12 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     await init();
   });
 
-  it('withAddresses() method exists', () => {
+  it('should have withAddresses() method', () => {
     expect(sdk.WasmSdkBuilder.withAddresses).to.be.a('function');
   });
 
   describe('valid configurations', () => {
-    it('builds with single testnet address', async () => {
+    it('should build with single testnet address', async () => {
       const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'testnet',
@@ -30,7 +30,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       built.free();
     });
 
-    it('builds with multiple testnet addresses', async () => {
+    it('should build with multiple testnet addresses', async () => {
       const builder = sdk.WasmSdkBuilder.withAddresses(
         [
           TEST_ADDRESS_1,
@@ -45,7 +45,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       built.free();
     });
 
-    it('builds with mainnet address', async () => {
+    it('should build with mainnet address', async () => {
       const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'mainnet',
@@ -56,7 +56,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       built.free();
     });
 
-    it('builds with local address', async () => {
+    it('should build with local address', async () => {
       const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'local',
@@ -69,7 +69,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
   });
 
   describe('network validation', () => {
-    it('rejects devnet', async () => {
+    it('should reject devnet', async () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
@@ -81,7 +81,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       }
     });
 
-    it('rejects invalid network name', async () => {
+    it('should reject invalid network name', async () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
@@ -93,7 +93,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       }
     });
 
-    it('is case-insensitive for network names', async () => {
+    it('should be case-insensitive for network names', async () => {
       const builder1 = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'TESTNET',
@@ -115,7 +115,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
   });
 
   describe('address validation', () => {
-    it('fails to build with empty address array', () => {
+    it('should fail to build with empty address array', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [],
@@ -127,7 +127,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       }
     });
 
-    it('rejects URI without host', () => {
+    it('should reject URI without host', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           ['https://'],
@@ -142,7 +142,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
   });
 
   describe('builder method chaining', () => {
-    it('chains with withSettings()', async () => {
+    it('should chain with withSettings()', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'testnet',
@@ -156,7 +156,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       built.free();
     });
 
-    it('chains with withVersion()', async () => {
+    it('should chain with withVersion()', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'testnet',
@@ -170,7 +170,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       built.free();
     });
 
-    it('chains multiple methods', async () => {
+    it('should chain multiple methods', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'testnet',

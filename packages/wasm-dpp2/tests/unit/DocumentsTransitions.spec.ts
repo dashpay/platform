@@ -453,28 +453,28 @@ describe('DocumentsTransitions', () => {
   });
   describe('getters', () => {
     describe('document Create transition', () => {
-      it('get data', () => {
+      it('should get data', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
         expect(createTransition.data).to.deep.equal(document);
       });
 
-      it('get base', () => {
+      it('should get base', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
         expect(createTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
-      it('get entropy', () => {
+      it('should get entropy', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
         expect(createTransition.entropy).to.deep.equal(documentInstance.entropy);
       });
 
-      it('get prefunded voting balance', () => {
+      it('should get prefunded voting balance', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -483,7 +483,7 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Delete transition', () => {
-      it('get base', () => {
+      it('should get base', () => {
         const documentInstance = createDocument();
         const deleteTransition = new wasm.DocumentDeleteTransition(documentInstance, BigInt(1));
 
@@ -492,21 +492,21 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Replace transition', () => {
-      it('get data', () => {
+      it('should get data', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
         expect(replaceTransition.data).to.deep.equal(document);
       });
 
-      it('get base', () => {
+      it('should get base', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
         expect(replaceTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
-      it('get revision', () => {
+      it('should get revision', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
@@ -515,14 +515,14 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Transfer transition', () => {
-      it('get base', () => {
+      it('should get base', () => {
         const documentInstance = createDocument();
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
         expect(transferTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
-      it('get recipient', () => {
+      it('should get recipient', () => {
         const documentInstance = createDocument();
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
@@ -531,14 +531,14 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Update Price transition', () => {
-      it('get base', () => {
+      it('should get base', () => {
         const documentInstance = createDocument();
         const updatePriceTransition = new wasm.DocumentUpdatePriceTransition(documentInstance, BigInt(1), BigInt(100));
 
         expect(updatePriceTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
-      it('get price', () => {
+      it('should get price', () => {
         const documentInstance = createDocument();
         const updatePriceTransition = new wasm.DocumentUpdatePriceTransition(documentInstance, BigInt(1), BigInt(100));
 
@@ -547,14 +547,14 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Purchase transition', () => {
-      it('get base', () => {
+      it('should get base', () => {
         const documentInstance = createDocument();
         const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
 
         expect(purchaseTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
-      it('get price', () => {
+      it('should get price', () => {
         const documentInstance = createDocument();
         const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
 
@@ -565,7 +565,7 @@ describe('DocumentsTransitions', () => {
 
   describe('setters', () => {
     describe('document Create transition', () => {
-      it('set data', () => {
+      it('should set data', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -576,7 +576,7 @@ describe('DocumentsTransitions', () => {
         expect(createTransition.data).to.deep.equal(newData);
       });
 
-      it('set base', () => {
+      it('should set base', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -593,7 +593,7 @@ describe('DocumentsTransitions', () => {
         expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
-      it('set entropy', () => {
+      it('should set entropy', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -604,7 +604,7 @@ describe('DocumentsTransitions', () => {
         expect(createTransition.entropy).to.deep.equal(newEntropy);
       });
 
-      it('set prefunded voting balance', () => {
+      it('should set prefunded voting balance', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -618,7 +618,7 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Delete transition', () => {
-      it('set base', () => {
+      it('should set base', () => {
         const documentInstance = createDocument();
         const deleteTransition = new wasm.DocumentDeleteTransition(documentInstance, BigInt(1));
 
@@ -637,7 +637,7 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Replace transition', () => {
-      it('set data', () => {
+      it('should set data', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
@@ -648,7 +648,7 @@ describe('DocumentsTransitions', () => {
         expect(replaceTransition.data).to.deep.equal(newData);
       });
 
-      it('set base', () => {
+      it('should set base', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
@@ -665,7 +665,7 @@ describe('DocumentsTransitions', () => {
         expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
-      it('set revision', () => {
+      it('should set revision', () => {
         const documentInstance = createDocument();
         const replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
 
@@ -676,7 +676,7 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Transfer transition', () => {
-      it('set base', () => {
+      it('should set base', () => {
         const documentInstance = createDocument();
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
@@ -693,7 +693,7 @@ describe('DocumentsTransitions', () => {
         expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
-      it('set recipient', () => {
+      it('should set recipient', () => {
         const documentInstance = createDocument();
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
@@ -706,7 +706,7 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Update Price transition', () => {
-      it('set base', () => {
+      it('should set base', () => {
         const documentInstance = createDocument();
         const updatePriceTransition = new wasm.DocumentUpdatePriceTransition(documentInstance, BigInt(1), BigInt(100));
 
@@ -723,7 +723,7 @@ describe('DocumentsTransitions', () => {
         expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
-      it('set price', () => {
+      it('should set price', () => {
         const documentInstance = createDocument();
         const updatePriceTransition = new wasm.DocumentUpdatePriceTransition(documentInstance, BigInt(1), BigInt(100));
 
@@ -734,7 +734,7 @@ describe('DocumentsTransitions', () => {
     });
 
     describe('document Purchase transition', () => {
-      it('set base', () => {
+      it('should set base', () => {
         const documentInstance = createDocument();
         const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
 
@@ -751,7 +751,7 @@ describe('DocumentsTransitions', () => {
         expect(newBase).to.be.an.instanceof(wasm.DocumentBaseTransition);
       });
 
-      it('set price', () => {
+      it('should set price', () => {
         const documentInstance = createDocument();
         const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
 
@@ -760,7 +760,7 @@ describe('DocumentsTransitions', () => {
         expect(purchaseTransition.price).to.deep.equal(BigInt(1111));
       });
 
-      it('set revision', () => {
+      it('should set revision', () => {
         const documentInstance = createDocument();
         const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
 

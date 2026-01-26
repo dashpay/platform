@@ -22,7 +22,7 @@ describe('DataContract', () => {
   });
 
   describe('serialization / deserialization', () => {
-    it('should allows to create DataContract from schema without full validation', () => {
+    it('should allow to create DataContract from schema without full validation', () => {
       const dataContract = new wasm.DataContract({
         ownerId: object.ownerId,
         identityNonce: BigInt(2),
@@ -34,7 +34,7 @@ describe('DataContract', () => {
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
-    it('should allows to create DataContract from schema with full validation', () => {
+    it('should allow to create DataContract from schema with full validation', () => {
       const dataContract = new wasm.DataContract({
         ownerId: object.ownerId,
         identityNonce: BigInt(2),
@@ -46,13 +46,13 @@ describe('DataContract', () => {
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
-    it('should allows to create DataContract from value with full validation and without platform version', () => {
+    it('should allow to create DataContract from value with full validation and without platform version', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
 
-    it('should allows to convert DataContract to bytes and from bytes', () => {
+    it('should allow to convert DataContract to bytes and from bytes', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContract = wasm.DataContract.fromJSON(json, true);
@@ -70,7 +70,7 @@ describe('DataContract', () => {
       expect(dataContractFromBytes.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
     });
 
-    it('should allows to create DataContract from bytes without full validation', () => {
+    it('should allow to create DataContract from bytes without full validation', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(
@@ -83,7 +83,7 @@ describe('DataContract', () => {
       expect(dataContractFromBytes.toObject()).to.deep.equal(dataContractFromValue.toObject());
     });
 
-    it('should allows to create DataContract from bytes with full validation and without version', () => {
+    it('should allow to create DataContract from bytes with full validation and without version', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(

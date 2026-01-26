@@ -56,7 +56,7 @@ describe('ContractsFacade', () => {
   });
 
   describe('Query Methods', () => {
-    it('fetch() returns a DataContract for valid ID', async () => {
+    it('should return a DataContract for valid ID', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 
       const result = await client.contracts.fetch(contractId);
@@ -65,7 +65,7 @@ describe('ContractsFacade', () => {
       expect(result).to.be.instanceOf(wasmSDKPackage.DataContract);
     });
 
-    it('fetchWithProof() returns DataContract with proof metadata', async () => {
+    it('should return DataContract with proof metadata', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 
       await client.contracts.fetchWithProof(contractId);
@@ -73,7 +73,7 @@ describe('ContractsFacade', () => {
       expect(getDataContractWithProofInfoStub).to.be.calledOnceWithExactly(contractId);
     });
 
-    it('getHistory() fetches contract version history', async () => {
+    it('should fetch contract version history', async () => {
       const query = {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         limit: 10,
@@ -85,7 +85,7 @@ describe('ContractsFacade', () => {
       expect(getDataContractHistoryStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('getHistoryWithProof() fetches contract version history with proof', async () => {
+    it('should fetch contract version history with proof', async () => {
       const query = {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
       };
@@ -95,7 +95,7 @@ describe('ContractsFacade', () => {
       expect(getDataContractHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
 
-    it('getMany() fetches multiple contracts by IDs', async () => {
+    it('should fetch multiple contracts by IDs', async () => {
       const contractIds = [
         'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
         '5mjGWa9mruHnLBht3ntBi8CZ6sNk3hZZsQMgTvgQobjS',
@@ -106,7 +106,7 @@ describe('ContractsFacade', () => {
       expect(getDataContractsStub).to.be.calledOnceWithExactly(contractIds);
     });
 
-    it('getManyWithProof() fetches multiple contracts with proof', async () => {
+    it('should fetch multiple contracts with proof', async () => {
       const contractIds = ['GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'];
 
       await client.contracts.getManyWithProof(contractIds);
@@ -116,7 +116,7 @@ describe('ContractsFacade', () => {
   });
 
   describe('Transition Methods', () => {
-    it('publish() publishes a new data contract', async () => {
+    it('should publish a new data contract', async () => {
       const options = {
         dataContract,
         identityKey,
@@ -130,7 +130,7 @@ describe('ContractsFacade', () => {
       expect(result).to.be.instanceOf(wasmSDKPackage.DataContract);
     });
 
-    it('update() updates an existing data contract', async () => {
+    it('should update an existing data contract', async () => {
       const options = {
         dataContract,
         identityKey,

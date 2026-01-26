@@ -21,7 +21,7 @@ describe('Contested resources & voting', function describeContestedResources() {
     }
   });
 
-  it('lists contested resources and vote state', async () => {
+  it('should list contested resources and vote state', async () => {
     const DPNS_CONTRACT = dpnsContractId;
     const PARENT = dpnsDomain.parent;
     const LABEL = dpnsDomain.label;

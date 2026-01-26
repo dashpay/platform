@@ -42,7 +42,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
   });
 
   describe('documentCreate', () => {
-    it('creates a new document', async () => {
+    it('should create a new document', async () => {
       // Document operations require at least HIGH security level (key index 2) for signing
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -74,7 +74,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
   });
 
   describe('Custom contract for mutable documents', () => {
-    it('creates a contract with mutable document types', async () => {
+    it('should create a contract with mutable document types', async () => {
       // Contract operations require at least HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -145,7 +145,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
   });
 
   describe('documentReplace', () => {
-    it('replaces an existing document', async () => {
+    it('should replace an existing document', async () => {
       // Requires contract from previous test
       expect(testContractId).to.exist();
 
@@ -192,7 +192,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
   });
 
   describe('documentDelete', () => {
-    it('deletes a document', async () => {
+    it('should delete a document', async () => {
       // Requires contract from previous test
       expect(testContractId).to.exist();
 
@@ -234,7 +234,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
   });
 
   describe('documentTransfer', () => {
-    it('transfers document ownership', async () => {
+    it('should transfer document ownership', async () => {
       // Requires contract from previous test
       expect(testContractId).to.exist();
 

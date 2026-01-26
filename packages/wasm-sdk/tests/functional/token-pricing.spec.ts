@@ -19,7 +19,7 @@ describe('Token pricing', function describeTokenPricing() {
     if (client) { client.free(); }
   });
 
-  it('calculates token id and fetches price by contract', async () => {
+  it('should calculate token id and fetch price by contract', async () => {
     const CONTRACT_ID = wasmFunctionalTestRequirements().tokenContracts[0].contractId;
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(CONTRACT_ID, 0);
     expect(tokenId).to.be.a('string');

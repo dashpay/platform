@@ -45,19 +45,19 @@ describe('Document', () => {
   }
 
   describe('serialization / deserialization', () => {
-    it('should allows to create Document from values', () => {
+    it('should allow to create Document from values', () => {
       const documentInstance = createDocument();
 
       expect(documentInstance).to.be.an.instanceof(wasm.Document);
     });
 
-    it('should allows to create Document from values with custom id', () => {
+    it('should allow to create Document from values with custom id', () => {
       const documentInstance = createDocument({ id });
 
       expect(documentInstance).to.be.an.instanceof(wasm.Document);
     });
 
-    it('should allows to create Document from bytes and convert to bytes', () => {
+    it('should allow to create Document from bytes and convert to bytes', () => {
       const dataContract = wasm.DataContract.fromJSON(dataContractValue, false);
       const documentInstance = wasm.Document.fromBytes(
         fromHexString(documentBytes),

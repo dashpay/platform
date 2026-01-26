@@ -23,7 +23,7 @@ describe('Key Generation Tests', function describeKeyGeneration() {
   });
 
   describe('generateTestIdentityKeys', () => {
-    it('generates deterministic keys for seed 1', () => {
+    it('should generate deterministic keys for seed 1', () => {
       const keys = sdk.WasmSdk.generateTestIdentityKeys(BigInt(1));
 
       expect(keys).to.be.an('array');
@@ -58,7 +58,7 @@ describe('Key Generation Tests', function describeKeyGeneration() {
       expect(keys[3].securityLevel).to.equal('CRITICAL');
     });
 
-    it('generates different keys for different seeds', () => {
+    it('should generate different keys for different seeds', () => {
       const keys1 = sdk.WasmSdk.generateTestIdentityKeys(BigInt(1));
       const keys2 = sdk.WasmSdk.generateTestIdentityKeys(BigInt(2));
 
@@ -66,7 +66,7 @@ describe('Key Generation Tests', function describeKeyGeneration() {
       expect(keys1[0].publicKeyData).to.not.equal(keys2[0].publicKeyData);
     });
 
-    it('generates same keys for same seed (deterministic)', () => {
+    it('should generate same keys for same seed (deterministic)', () => {
       const keys1 = sdk.WasmSdk.generateTestIdentityKeys(BigInt(1));
       const keys2 = sdk.WasmSdk.generateTestIdentityKeys(BigInt(1));
 
@@ -76,7 +76,7 @@ describe('Key Generation Tests', function describeKeyGeneration() {
   });
 
   describe('createTestSignerAndKey', () => {
-    it('creates a signer and identity key', () => {
+    it('should create a signer and identity key', () => {
       const { signer, identityKey, keyInfo } = createTestSignerAndKey(sdk, 1, 2);
 
       expect(signer).to.exist();

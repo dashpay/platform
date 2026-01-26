@@ -36,7 +36,7 @@ describe('EpochFacade', () => {
     getEvonodesProposedEpochBlocksByRangeWithProofInfoStub = this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRangeWithProofInfo').resolves('ok');
   });
 
-  it('epochsInfo and finalizedInfos forward queries untouched', async () => {
+  it('should forward epochsInfo and finalizedInfos queries untouched', async () => {
     const epochsQuery = { startEpoch: 1, count: 2, ascending: true };
     await client.epoch.epochsInfo(epochsQuery);
     await client.epoch.epochsInfoWithProof();
@@ -52,14 +52,14 @@ describe('EpochFacade', () => {
       .to.be.calledOnceWithExactly(finalizedProofQuery);
   });
 
-  it('current and currentWithProof forward', async () => {
+  it('should forward current and currentWithProof', async () => {
     await client.epoch.current();
     await client.epoch.currentWithProof();
     expect(getCurrentEpochStub).to.be.calledOnce();
     expect(getCurrentEpochWithProofInfoStub).to.be.calledOnce();
   });
 
-  it('evonodesProposedBlocks* forward with args', async () => {
+  it('should forward evonodesProposedBlocks* with args', async () => {
     await client.epoch.evonodesProposedBlocksByIds(10, ['a', 'b']);
     await client.epoch.evonodesProposedBlocksByIdsWithProof(11, ['x']);
     const rangeQuery = {

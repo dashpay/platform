@@ -6,14 +6,14 @@ describe('Address validation', () => {
     await init();
   });
 
-  it('validates known malformed prefixes correctly', () => {
+  it('should validate known malformed prefixes correctly', () => {
     const mainnetAddress = 'XdRhagDMpNbHZSvgMXqkcCCWmrDYYty5Nh';
     const testnetAddress = 'yXdRhagDMpNbHZSvgMXqkcCCWmrDYYty5Nh';
     expect(sdk.WasmSdk.validateAddress(mainnetAddress, 'mainnet')).to.be.a('boolean');
     expect(sdk.WasmSdk.validateAddress(testnetAddress, 'testnet')).to.be.a('boolean');
   });
 
-  it('validates generated addresses for each network', () => {
+  it('should validate generated addresses for each network', () => {
     const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
     const kM = sdk.WasmSdk.deriveKeyFromSeedWithPath({
       mnemonic, passphrase: null, path: "m/44'/5'/0'/0/0", network: 'mainnet',

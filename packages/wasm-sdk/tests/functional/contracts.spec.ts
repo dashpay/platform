@@ -20,13 +20,13 @@ describe('Data contract queries', function describeDataContractQueries() {
     if (client) { client.free(); }
   });
 
-  it('getDataContract() returns data contract', async () => {
+  it('should return data contract via getDataContract()', async () => {
     const res = await client.getDataContract(dpnsContractId);
     expect(res).to.be.ok();
     expect(res.id.toString()).to.equal(dpnsContractId);
   });
 
-  it('getDataContractWithProofInfo() returns proof info', async () => {
+  it('should return proof info via getDataContractWithProofInfo()', async () => {
     const res = await client.getDataContractWithProofInfo(dpnsContractId);
     expect(res).to.be.ok();
     expect(res.data).to.be.ok();
@@ -34,7 +34,7 @@ describe('Data contract queries', function describeDataContractQueries() {
     expect(res.proof).to.be.ok();
   });
 
-  it('getDataContracts() returns multiple contracts', async () => {
+  it('should return multiple contracts via getDataContracts()', async () => {
     const contractIds = [dpnsContractId];
     if (tokenContracts.length > 0) {
       contractIds.push(tokenContracts[0].contractId);
@@ -45,7 +45,7 @@ describe('Data contract queries', function describeDataContractQueries() {
     expect(res.size).to.be.at.least(1);
   });
 
-  it('getDataContractsWithProofInfo() returns proof info for multiple contracts', async () => {
+  it('should return proof info for multiple contracts via getDataContractsWithProofInfo()', async () => {
     const contractIds = [dpnsContractId];
 
     const res = await client.getDataContractsWithProofInfo(contractIds);

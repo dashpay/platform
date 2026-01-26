@@ -21,7 +21,7 @@ describe('Document queries', function describeDocumentQueries() {
     if (client) { client.free(); }
   });
 
-  it('lists DPNS documents (no filters)', async () => {
+  it('should list DPNS documents (no filters)', async () => {
     const docs = await client.getDocuments({
       dataContractId: dpnsContractId,
       documentTypeName: 'domain',
@@ -30,7 +30,7 @@ describe('Document queries', function describeDocumentQueries() {
     expect(docs).to.be.instanceOf(Map);
   });
 
-  it('queries with where clause', async () => {
+  it('should query with where clause', async () => {
     const docs = await client.getDocuments({
       dataContractId: dpnsContractId,
       documentTypeName: 'domain',
@@ -42,7 +42,7 @@ describe('Document queries', function describeDocumentQueries() {
     expect(docs).to.be.instanceOf(Map);
   });
 
-  it('queries with orderBy', async () => {
+  it('should query with orderBy', async () => {
     const docs = await client.getDocuments({
       dataContractId: dpnsContractId,
       documentTypeName: 'domain',
@@ -54,7 +54,7 @@ describe('Document queries', function describeDocumentQueries() {
     expect(docs).to.be.instanceOf(Map);
   });
 
-  it('complex where + orderBy', async () => {
+  it('should query with complex where + orderBy', async () => {
     const docs = await client.getDocuments({
       dataContractId: dpnsContractId,
       documentTypeName: 'domain',
@@ -71,13 +71,13 @@ describe('Document queries', function describeDocumentQueries() {
     expect(docs).to.be.instanceOf(Map);
   });
 
-  it('getDocument by id (should handle invalid id gracefully)', async () => {
+  it('should handle invalid id gracefully in getDocument by id', async () => {
     await expect(
       client.getDocument(dpnsContractId, 'domain', 'invalidDocumentId'),
     ).to.be.rejected();
   });
 
-  it('fetches usernames for a known identity and verifies fields', async () => {
+  it('should fetch usernames for a known identity and verify fields', async () => {
     const list = await client.getDpnsUsernames({ identityId, limit: 10 });
     expect(list).to.be.an('array');
   });

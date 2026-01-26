@@ -22,12 +22,12 @@ describe('Protocol versions', function describeProtocolVersions() {
     if (client) { client.free(); }
   });
 
-  it('fetches protocol upgrade state', async () => {
+  it('should fetch protocol upgrade state', async () => {
     const state = await client.getProtocolVersionUpgradeState();
     expect(state).to.be.ok();
   });
 
-  it('fetches protocol upgrade state with proof', async () => {
+  it('should fetch protocol upgrade state with proof', async () => {
     const res = await client.getProtocolVersionUpgradeStateWithProofInfo();
     expect(res).to.be.ok();
     expect(res.data).to.be.ok();
@@ -35,14 +35,14 @@ describe('Protocol versions', function describeProtocolVersions() {
     expect(res.metadata).to.be.ok();
   });
 
-  it('lists protocol upgrade vote statuses', async () => {
+  it('should list protocol upgrade vote statuses', async () => {
     // Use evonodeProTxHash if available, otherwise start from beginning with empty string
     const startProTxHash = evonodeProTxHash || '';
     const res = await client.getProtocolVersionUpgradeVoteStatus(startProTxHash, 50);
     expect(res).to.be.instanceOf(Map);
   });
 
-  it('lists protocol upgrade vote statuses with proof', async () => {
+  it('should list protocol upgrade vote statuses with proof', async () => {
     // Use evonodeProTxHash if available, otherwise start from beginning with empty string
     const startProTxHash = evonodeProTxHash || '';
     const res = await client.getProtocolVersionUpgradeVoteStatusWithProofInfo(startProTxHash, 50);

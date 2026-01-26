@@ -29,7 +29,7 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     if (client) { client.free(); }
   });
 
-  it('getAddressInfo() returns address info for funded address', async () => {
+  it('should return address info for funded address via getAddressInfo()', async () => {
     const testAddress = sdk.PlatformAddress.fromP2pkhHash(testHash1);
     const res = await client.getAddressInfo(testAddress);
     // PLATFORM_ADDRESS_1 has nonce=5, balance=1_000_000
@@ -38,7 +38,7 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     expect(res.balance).to.equal(1000000n);
   });
 
-  it('getAddressInfoWithProofInfo() returns proof info for address query', async () => {
+  it('should return proof info for address query via getAddressInfoWithProofInfo()', async () => {
     const testAddress = sdk.PlatformAddress.fromP2pkhHash(testHash1);
     const res = await client.getAddressInfoWithProofInfo(testAddress);
     expect(res).to.be.ok();
@@ -50,7 +50,7 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     expect(res.data.balance).to.equal(1000000n);
   });
 
-  it('getAddressesInfos() returns map of address infos', async () => {
+  it('should return map of address infos via getAddressesInfos()', async () => {
     const testAddress1 = sdk.PlatformAddress.fromP2pkhHash(testHash1);
     const testAddress2 = sdk.PlatformAddress.fromP2shHash(testHash2);
     const testAddresses = [testAddress1, testAddress2];
@@ -73,7 +73,7 @@ describe('Platform address queries', function describePlatformAddressQueries() {
     expect(info2[1].balance).to.equal(2000000n);
   });
 
-  it('getAddressesInfosWithProofInfo() returns proof info for multiple addresses', async () => {
+  it('should return proof info for multiple addresses via getAddressesInfosWithProofInfo()', async () => {
     const testAddress1 = sdk.PlatformAddress.fromP2pkhHash(testHash1);
     const testAddress2 = sdk.PlatformAddress.fromP2shHash(testHash2);
     const testAddresses = [testAddress1, testAddress2];

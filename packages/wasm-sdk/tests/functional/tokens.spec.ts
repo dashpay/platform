@@ -25,26 +25,26 @@ describe('Token queries', function describeTokenQueries() {
     if (client) { client.free(); }
   });
 
-  it('getTokenTotalSupply using derived token id', async () => {
+  it('should get token total supply using derived token id', async () => {
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
     const total = await client.getTokenTotalSupply(tokenId);
     // Returns total supply (might be 0 for tokens without minting)
     expect(total).to.exist();
   });
 
-  it('getTokenStatuses for multiple tokens', async () => {
+  it('should get token statuses for multiple tokens', async () => {
     await client.getTokenStatuses([TOKEN_CONTRACT]);
   });
 
-  it('getTokenDirectPurchasePrices', async () => {
+  it('should get token direct purchase prices', async () => {
     await client.getTokenDirectPurchasePrices([TOKEN_CONTRACT_2]);
   });
 
-  it('getTokenContractInfo', async () => {
+  it('should get token contract info', async () => {
     await client.getTokenContractInfo(TOKEN_CONTRACT_3);
   });
 
-  it('getTokenPerpetualDistributionLastClaim', async () => {
+  it('should get token perpetual distribution last claim', async () => {
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT_3, 0);
     await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, tokenId);
   });

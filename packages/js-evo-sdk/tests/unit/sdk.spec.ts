@@ -7,7 +7,7 @@ const TEST_ADDRESS_3 = 'https://node-3.test:1443';
 const TEST_ADDRESSES = [TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3];
 
 describe('EvoSDK', () => {
-  it('exposes constructor and factories', () => {
+  it('should expose constructor and factories', () => {
     expect(EvoSDK).to.be.a('function');
     expect(EvoSDK.testnet).to.be.a('function');
     expect(EvoSDK.mainnet).to.be.a('function');
@@ -16,7 +16,7 @@ describe('EvoSDK', () => {
     expect(EvoSDK.withAddresses).to.be.a('function');
   });
 
-  it('fromWasm() marks instance as connected', () => {
+  it('should mark instance as connected when using fromWasm()', () => {
     const wasmStub = { version: () => 1 };
     const sdk = EvoSDK.fromWasm(wasmStub);
     expect(sdk.isConnected).to.equal(true);
@@ -24,35 +24,35 @@ describe('EvoSDK', () => {
   });
 
   describe('EvoSDK.withAddresses()', () => {
-    it('creates SDK instance with specific addresses', () => {
+    it('should create SDK instance with specific addresses', () => {
       const sdk = EvoSDK.withAddresses([TEST_ADDRESS_1], 'testnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('defaults to testnet when network not specified', () => {
+    it('should default to testnet when network not specified', () => {
       const sdk = EvoSDK.withAddresses([TEST_ADDRESS_1]);
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('accepts mainnet network', () => {
+    it('should accept mainnet network', () => {
       const sdk = EvoSDK.withAddresses([TEST_ADDRESS_2], 'mainnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('mainnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('accepts multiple addresses', () => {
+    it('should accept multiple addresses', () => {
       const sdk = EvoSDK.withAddresses(TEST_ADDRESSES, 'testnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.options.addresses).to.deep.equal(TEST_ADDRESSES);
     });
 
-    it('accepts additional connection options', () => {
+    it('should accept additional connection options', () => {
       const sdk = EvoSDK.withAddresses(
         [TEST_ADDRESS_1],
         'testnet',
@@ -84,7 +84,7 @@ describe('EvoSDK', () => {
   });
 
   describe('constructor with addresses option', () => {
-    it('accepts addresses in options', () => {
+    it('should accept addresses in options', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_1],
         network: 'testnet',
@@ -95,7 +95,7 @@ describe('EvoSDK', () => {
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('works with testnet default', () => {
+    it('should work with testnet default', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_1],
       });
@@ -104,7 +104,7 @@ describe('EvoSDK', () => {
       expect(sdk.options.trusted).to.be.false();
     });
 
-    it('works with mainnet', () => {
+    it('should work with mainnet', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_2],
         network: 'mainnet',
@@ -114,7 +114,7 @@ describe('EvoSDK', () => {
       expect(sdk.options.trusted).to.be.false();
     });
 
-    it('combines addresses with other options', () => {
+    it('should combine addresses with other options', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_1],
         network: 'testnet',
@@ -142,7 +142,7 @@ describe('EvoSDK', () => {
       expect(sdk.options.settings.banFailedAddress).to.be.true();
     });
 
-    it('prioritizes addresses over network presets when both provided', () => {
+    it('should prioritize addresses over network presets when both provided', () => {
       // When addresses are provided, they should be used instead of default network addresses
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_3],
@@ -155,7 +155,7 @@ describe('EvoSDK', () => {
       expect(sdk.options.trusted).to.be.true();
     });
 
-    it('withAddresses() and constructor with addresses produce equivalent SDKs', () => {
+    it('should produce equivalent SDKs from withAddresses() and constructor with addresses', () => {
       const addresses = [TEST_ADDRESS_1];
       const options = { version: 1, proofs: true };
 
@@ -170,7 +170,7 @@ describe('EvoSDK', () => {
   });
 
   describe('factory methods for standard configurations', () => {
-    it('testnet() creates testnet instance', () => {
+    it('should create testnet instance with testnet()', () => {
       const sdk = EvoSDK.testnet();
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -179,7 +179,7 @@ describe('EvoSDK', () => {
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('mainnet() creates mainnet instance', () => {
+    it('should create mainnet instance with mainnet()', () => {
       const sdk = EvoSDK.mainnet();
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('mainnet');
@@ -187,7 +187,7 @@ describe('EvoSDK', () => {
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('testnetTrusted() creates trusted testnet instance', () => {
+    it('should create trusted testnet instance with testnetTrusted()', () => {
       const sdk = EvoSDK.testnetTrusted();
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -195,7 +195,7 @@ describe('EvoSDK', () => {
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('mainnetTrusted() creates trusted mainnet instance', () => {
+    it('should create trusted mainnet instance with mainnetTrusted()', () => {
       const sdk = EvoSDK.mainnetTrusted();
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('mainnet');
@@ -203,7 +203,7 @@ describe('EvoSDK', () => {
       expect(sdk.isConnected).to.equal(false);
     });
 
-    it('factory methods accept connection options', () => {
+    it('should accept connection options in factory methods', () => {
       const sdk = EvoSDK.testnet({
         version: 1,
         proofs: false,

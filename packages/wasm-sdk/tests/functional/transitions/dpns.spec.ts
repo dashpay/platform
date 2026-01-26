@@ -40,7 +40,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
   });
 
   describe('dpnsRegisterName', () => {
-    it('registers a DPNS username', async () => {
+    it('should register a DPNS username', async () => {
       // DPNS registration requires HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
@@ -83,7 +83,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
       registeredUsername = result.fullDomainName;
     });
 
-    it('resolves a registered username to identity', async () => {
+    it('should resolve a registered username to identity', async () => {
       // Skip if previous test didn't register a username
       if (!registeredUsername) {
         // eslint-disable-next-line no-console
@@ -102,14 +102,14 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
   });
 
   describe('dpnsIsNameAvailable', () => {
-    it('returns true for an available name', async () => {
+    it('should return true for an available name', async () => {
       const uniqueName = `available${Date.now()}`;
       const isAvailable = await client.dpnsIsNameAvailable(uniqueName);
 
       expect(isAvailable).to.be.true();
     });
 
-    it('returns false for a taken name', async () => {
+    it('should return false for a taken name', async () => {
       // Skip if previous test didn't register a username
       if (!registeredUsername) {
         // eslint-disable-next-line no-console
@@ -129,7 +129,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
   });
 
   describe('DPNS utility functions', () => {
-    it('validates usernames correctly', async () => {
+    it('should validate usernames correctly', async () => {
       // Valid usernames
       expect(sdk.WasmSdk.dpnsIsValidUsername('alice')).to.be.true();
       expect(sdk.WasmSdk.dpnsIsValidUsername('test-user')).to.be.true();
@@ -142,7 +142,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
       expect(sdk.WasmSdk.dpnsIsValidUsername('has space')).to.be.false(); // contains space
     });
 
-    it('converts to homograph-safe characters', async () => {
+    it('should convert to homograph-safe characters', async () => {
       const result = sdk.WasmSdk.dpnsConvertToHomographSafe('alice');
       expect(result).to.equal('a11ce'); // 'l' and 'i' become '1'
 
@@ -150,7 +150,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
       expect(result2).to.equal('b0b'); // 'o' becomes '0'
     });
 
-    it('identifies contested usernames', async () => {
+    it('should identify contested usernames', async () => {
       // Contested usernames (3-19 chars, only [a-z01-] after normalization)
       expect(sdk.WasmSdk.dpnsIsContestedUsername('abc')).to.be.true();
       expect(sdk.WasmSdk.dpnsIsContestedUsername('dash')).to.be.true();

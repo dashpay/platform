@@ -110,7 +110,7 @@ describe('Identity', () => {
   });
 
   describe('setters', () => {
-    it('should allows to set public key', () => {
+    it('should allow to set public key', () => {
       const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
@@ -129,7 +129,7 @@ describe('Identity', () => {
       expect(identity.getPublicKeyById(keyId).toBytes()).to.deep.equal(pubKey.toBytes());
     });
 
-    it('should allows to set balance', () => {
+    it('should allow to set balance', () => {
       const identity = new wasm.Identity(identifier);
 
       identity.balance = balance;
@@ -137,7 +137,7 @@ describe('Identity', () => {
       expect(identity.balance).to.equal(balance);
     });
 
-    it('should allows to set revision', () => {
+    it('should allow to set revision', () => {
       const identity = new wasm.Identity(identifier);
 
       identity.revision = revision;

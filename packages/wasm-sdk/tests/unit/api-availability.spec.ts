@@ -5,7 +5,7 @@ describe('API availability (exports and methods)', () => {
   before(async () => {
     await init();
   });
-  it('query methods are available on WasmSdk instance', () => {
+  it('should have query methods available on WasmSdk instance', () => {
     const instanceFns = [
       // Identity
       'getIdentity',

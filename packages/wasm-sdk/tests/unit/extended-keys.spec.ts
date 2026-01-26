@@ -9,7 +9,7 @@ describe('Extended keys', () => {
   });
 
   describe('deriveChildPublicKey - basic functionality', () => {
-    it('derives non-hardened child xpubs that differ by index', () => {
+    it('should derive non-hardened child xpubs that differ by index', () => {
       const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
         mnemonic: TEST_MNEMONIC,
         passphrase: null,
@@ -29,7 +29,7 @@ describe('Extended keys', () => {
   });
 
   describe('xprvToXpub - basic functionality', () => {
-    it('converts xprv to the expected xpub', () => {
+    it('should convert xprv to the expected xpub', () => {
       const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
         mnemonic: TEST_MNEMONIC,
         passphrase: null,
@@ -44,7 +44,7 @@ describe('Extended keys', () => {
   });
 
   describe('deriveChildPublicKey - error handling', () => {
-    it('throws when hardened=true', () => {
+    it('should throw when hardened=true', () => {
       const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
         mnemonic: TEST_MNEMONIC,
         passphrase: null,
@@ -56,7 +56,7 @@ describe('Extended keys', () => {
         .to.throw('Cannot derive hardened child from extended public key');
     });
 
-    it('throws when index is in hardened range', () => {
+    it('should throw when index is in hardened range', () => {
       const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
         mnemonic: TEST_MNEMONIC,
         passphrase: null,
@@ -69,14 +69,14 @@ describe('Extended keys', () => {
         .to.throw('Index is in hardened range');
     });
 
-    it('throws for invalid xpub input', () => {
+    it('should throw for invalid xpub input', () => {
       expect(() => sdk.WasmSdk.deriveChildPublicKey('invalid_xpub', 0, false))
         .to.throw('Invalid extended public key');
     });
   });
 
   describe('xprvToXpub - error handling', () => {
-    it('throws for invalid xprv input', () => {
+    it('should throw for invalid xprv input', () => {
       expect(() => sdk.WasmSdk.xprvToXpub('invalid_xprv'))
         .to.throw('Invalid extended private key');
     });

@@ -6,7 +6,7 @@ describe('WasmSdkError shape (unit)', () => {
     await init();
   });
 
-  it('invalid network on generateKeyPair exposes InvalidArgument', () => {
+  it('should expose InvalidArgument for invalid network on generateKeyPair', () => {
     try {
       sdk.WasmSdk.generateKeyPair('invalid_network');
       expect.fail('expected to throw');
@@ -20,7 +20,7 @@ describe('WasmSdkError shape (unit)', () => {
     }
   });
 
-  it('invalid hex on keyPairFromHex exposes InvalidArgument', () => {
+  it('should expose InvalidArgument for invalid hex on keyPairFromHex', () => {
     try {
       sdk.WasmSdk.keyPairFromHex('zzzz', 'mainnet');
       expect.fail('expected to throw');
@@ -33,7 +33,7 @@ describe('WasmSdkError shape (unit)', () => {
     }
   });
 
-  it('invalid derivation path network exposes InvalidArgument', () => {
+  it('should expose InvalidArgument for invalid derivation path network', () => {
     const seed = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
     const path = "m/44'/5'/0'/0/0";
     try {
