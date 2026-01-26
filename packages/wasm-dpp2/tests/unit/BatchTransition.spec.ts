@@ -49,27 +49,7 @@ describe('BatchTransition', () => {
 
   describe('serialization / deserialization', () => {
     describe('documents', () => {
-      it('should allow to create from v0 transition', () => {
-        const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
-
-        const documentTransition = createTransition.toDocumentTransition();
-
-        const batchedTransition = new wasm.BatchedTransition(documentTransition);
-
-        const batch = wasm.BatchTransition.fromBatchedTransitions(
-          [batchedTransition, batchedTransition],
-          documentInstance.ownerId,
-          1,
-        );
-
-        expect(documentInstance).to.be.an.instanceof(wasm.Document);
-        expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
-        expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
-        expect(batch).to.be.an.instanceof(wasm.BatchTransition);
-      });
-
-      it('should allow to create from v1 transition', () => {
+      it('should allow to create batch transition from document transitions', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
