@@ -1,4 +1,4 @@
-import { SinonStub } from 'sinon';
+import type { SinonStub } from 'sinon';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 import { EvoSDK } from '../../../dist/sdk.js';
 

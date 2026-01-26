@@ -1,6 +1,5 @@
 node-option:
-  - experimental-strip-types
-  - disable-warning=ExperimentalWarning
+  - import=ts-node/esm
 extensions:
   - ts
 recursive: true
