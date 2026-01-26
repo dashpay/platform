@@ -2,7 +2,7 @@ import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.ts';
 
-describe('Token queries', function describeTokenQueries() {
+describe('Tokens', function describeTokens() {
   this.timeout(60000);
 
   const req = wasmFunctionalTestRequirements();
@@ -25,27 +25,37 @@ describe('Token queries', function describeTokenQueries() {
     if (client) { client.free(); }
   });
 
-  it('should get token total supply using derived token id', async () => {
-    const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
-    const total = await client.getTokenTotalSupply(tokenId);
-    // Returns total supply (might be 0 for tokens without minting)
-    expect(total).to.exist();
+  describe('getTokenTotalSupply()', () => {
+    it('should return token total supply', async () => {
+      const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
+      const total = await client.getTokenTotalSupply(tokenId);
+      // Returns total supply (might be 0 for tokens without minting)
+      expect(total).to.exist();
+    });
   });
 
-  it('should get token statuses for multiple tokens', async () => {
-    await client.getTokenStatuses([TOKEN_CONTRACT]);
+  describe('getTokenStatuses()', () => {
+    it('should return token statuses for multiple tokens', async () => {
+      await client.getTokenStatuses([TOKEN_CONTRACT]);
+    });
   });
 
-  it('should get token direct purchase prices', async () => {
-    await client.getTokenDirectPurchasePrices([TOKEN_CONTRACT_2]);
+  describe('getTokenDirectPurchasePrices()', () => {
+    it('should return token direct purchase prices', async () => {
+      await client.getTokenDirectPurchasePrices([TOKEN_CONTRACT_2]);
+    });
   });
 
-  it('should get token contract info', async () => {
-    await client.getTokenContractInfo(TOKEN_CONTRACT_3);
+  describe('getTokenContractInfo()', () => {
+    it('should return token contract info', async () => {
+      await client.getTokenContractInfo(TOKEN_CONTRACT_3);
+    });
   });
 
-  it('should get token perpetual distribution last claim', async () => {
-    const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT_3, 0);
-    await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, tokenId);
+  describe('getTokenPerpetualDistributionLastClaim()', () => {
+    it('should return token perpetual distribution last claim', async () => {
+      const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT_3, 0);
+      await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, tokenId);
+    });
   });
 });

@@ -5,8 +5,8 @@ before(async () => {
   await initWasm();
 });
 
-describe('InstantLock', () => {
-  describe('serialization / deserialization', () => {
+describe('ChainAssetLockProof', () => {
+  describe('constructor()', () => {
     it('should allow to create chain lock proof from values', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
@@ -16,7 +16,9 @@ describe('InstantLock', () => {
 
       expect(chainlock).to.be.an.instanceof(wasm.ChainAssetLockProof);
     });
+  });
 
+  describe('fromObject()', () => {
     it('should allow to create chain lock proof from object', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
@@ -38,8 +40,10 @@ describe('InstantLock', () => {
       expect(chainlock.coreChainLockedHeight).to.equal(11);
       expect(chainlock.outPoint.vout).to.equal(1);
     });
+  });
 
-    it('should round-trip via object/json/bytes', () => {
+  describe('toObject()', () => {
+    it('should round-trip via object', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
         1,
@@ -57,6 +61,16 @@ describe('InstantLock', () => {
       expect(Array.from(fromObject.outPoint.toBytes())).to.deep.equal(
         Array.from(outpoint.toBytes()),
       );
+    });
+  });
+
+  describe('toJSON()', () => {
+    it('should round-trip via JSON', () => {
+      const outpoint = new wasm.OutPoint(
+        'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
+        1,
+      );
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
       const json = chainlock.toJSON();
       expect(json.coreChainLockedHeight).to.equal(11);
@@ -66,6 +80,16 @@ describe('InstantLock', () => {
       const fromJson = wasm.ChainAssetLockProof.fromJSON(json);
       expect(fromJson.coreChainLockedHeight).to.equal(11);
       expect(Array.from(fromJson.outPoint.toBytes())).to.deep.equal(Array.from(outpoint.toBytes()));
+    });
+  });
+
+  describe('toBytes()', () => {
+    it('should round-trip via bytes', () => {
+      const outpoint = new wasm.OutPoint(
+        'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
+        1,
+      );
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
       const bytes = chainlock.toBytes();
       const fromBytes = wasm.ChainAssetLockProof.fromBytes(bytes);
@@ -76,7 +100,7 @@ describe('InstantLock', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('coreChainLockedHeight', () => {
     it('should allow to get coreChainLockedHeight', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
@@ -87,18 +111,6 @@ describe('InstantLock', () => {
       expect(chainlock.coreChainLockedHeight).to.equal(11);
     });
 
-    it('should allow to get outPoint', () => {
-      const outpoint = new wasm.OutPoint(
-        'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
-        1,
-      );
-      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
-
-      expect(chainlock.outPoint.constructor.name).to.equal('OutPoint');
-    });
-  });
-
-  describe('setters', () => {
     it('should allow to set coreChainLockedHeight', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
@@ -109,6 +121,18 @@ describe('InstantLock', () => {
       chainlock.coreChainLockedHeight = 33;
 
       expect(chainlock.coreChainLockedHeight).to.equal(33);
+    });
+  });
+
+  describe('outPoint', () => {
+    it('should allow to get outPoint', () => {
+      const outpoint = new wasm.OutPoint(
+        'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
+        1,
+      );
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
+
+      expect(chainlock.outPoint.constructor.name).to.equal('OutPoint');
     });
 
     it('should allow to set outPoint', () => {

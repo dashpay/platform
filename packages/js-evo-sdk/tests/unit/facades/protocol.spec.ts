@@ -24,25 +24,43 @@ describe('ProtocolFacade', () => {
     getProtocolVersionUpgradeVoteStatusWithProofInfoStub = this.sinon.stub(wasmSdk, 'getProtocolVersionUpgradeVoteStatusWithProofInfo').resolves('ok');
   });
 
-  it('should forward versionUpgradeState and versionUpgradeStateWithProof', async () => {
-    await client.protocol.versionUpgradeState();
-    await client.protocol.versionUpgradeStateWithProof();
-    expect(getProtocolVersionUpgradeStateStub).to.be.calledOnce();
-    expect(getProtocolVersionUpgradeStateWithProofInfoStub).to.be.calledOnce();
+  describe('versionUpgradeState()', () => {
+    it('should forward to getProtocolVersionUpgradeState', async () => {
+      await client.protocol.versionUpgradeState();
+      expect(getProtocolVersionUpgradeStateStub).to.be.calledOnce();
+    });
   });
 
-  it('should forward versionUpgradeVoteStatus and withProof with positional args', async () => {
-    await client.protocol.versionUpgradeVoteStatus('h', 5);
-    await client.protocol.versionUpgradeVoteStatusWithProof('g', 3);
-    expect(getProtocolVersionUpgradeVoteStatusStub).to.be.calledOnceWithExactly('h', 5);
-    expect(getProtocolVersionUpgradeVoteStatusWithProofInfoStub).to.be.calledOnceWithExactly('g', 3);
+  describe('versionUpgradeStateWithProof()', () => {
+    it('should forward to getProtocolVersionUpgradeStateWithProofInfo', async () => {
+      await client.protocol.versionUpgradeStateWithProof();
+      expect(getProtocolVersionUpgradeStateWithProofInfoStub).to.be.calledOnce();
+    });
   });
 
-  it('should accept Uint8Array and positional args for versionUpgradeVoteStatus', async () => {
-    const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
-    await client.protocol.versionUpgradeVoteStatus(bytes, 2);
-    await client.protocol.versionUpgradeVoteStatusWithProof(bytes, 4);
-    expect(getProtocolVersionUpgradeVoteStatusStub).to.be.calledWith(bytes, 2);
-    expect(getProtocolVersionUpgradeVoteStatusWithProofInfoStub).to.be.calledWith(bytes, 4);
+  describe('versionUpgradeVoteStatus()', () => {
+    it('should forward with positional args', async () => {
+      await client.protocol.versionUpgradeVoteStatus('h', 5);
+      expect(getProtocolVersionUpgradeVoteStatusStub).to.be.calledOnceWithExactly('h', 5);
+    });
+
+    it('should accept Uint8Array and positional args', async () => {
+      const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+      await client.protocol.versionUpgradeVoteStatus(bytes, 2);
+      expect(getProtocolVersionUpgradeVoteStatusStub).to.be.calledWith(bytes, 2);
+    });
+  });
+
+  describe('versionUpgradeVoteStatusWithProof()', () => {
+    it('should forward with positional args', async () => {
+      await client.protocol.versionUpgradeVoteStatusWithProof('g', 3);
+      expect(getProtocolVersionUpgradeVoteStatusWithProofInfoStub).to.be.calledOnceWithExactly('g', 3);
+    });
+
+    it('should accept Uint8Array and positional args', async () => {
+      const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+      await client.protocol.versionUpgradeVoteStatusWithProof(bytes, 4);
+      expect(getProtocolVersionUpgradeVoteStatusWithProofInfoStub).to.be.calledWith(bytes, 4);
+    });
   });
 });

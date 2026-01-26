@@ -40,81 +40,91 @@ describe('DocumentTransition', () => {
     replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
   });
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create from documents document_transitions', () => {
+  describe('toDocumentTransition()', () => {
+    it('should create DocumentTransition from create transition', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
       expect(documentTransition).to.be.an.instanceof(wasm.DocumentTransition);
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get action type', () => {
+  describe('actionType', () => {
+    it('should return action type', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
       expect(documentTransition.actionType).to.equal('create');
     });
+  });
 
-    it('should allow to get dataContractId', () => {
+  describe('dataContractId', () => {
+    it('should return dataContractId', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
       expect(documentTransition.dataContractId.toBase58()).to.deep.equal(documentInstance.dataContractId.toBase58());
     });
 
-    it('should allow to get id', () => {
-      const documentTransition = createTransition.toDocumentTransition();
-
-      expect(documentTransition.id.toBase58()).to.deep.equal(documentInstance.id.toBase58());
-    });
-
-    it('should allow to get documentTypeName', () => {
-      const documentTransition = createTransition.toDocumentTransition();
-
-      expect(documentTransition.documentTypeName).to.equal(documentTypeName);
-    });
-
-    it('should allow to get identityContractNonce', () => {
-      const documentTransition = createTransition.toDocumentTransition();
-
-      expect(documentTransition.identityContractNonce).to.equal(BigInt(1));
-    });
-
-    it('should allow to get revision', () => {
-      const documentTransition = createTransition.toDocumentTransition();
-
-      expect(documentTransition.revision).to.equal(BigInt(1));
-    });
-
-    it('should allow to get entropy', () => {
-      const documentTransition = createTransition.toDocumentTransition();
-
-      expect(documentTransition.entropy).to.deep.equal(documentInstance.entropy);
-    });
-  });
-
-  describe('setters', () => {
-    it('should allow to set dataContractId', () => {
+    it('should set dataContractId', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
       documentTransition.dataContractId = new Uint8Array(32);
 
       expect(documentTransition.dataContractId.toBytes()).to.deep.equal(new Uint8Array(32));
     });
+  });
 
-    it('should allow to set identityContractNonce', () => {
+  describe('id', () => {
+    it('should return id', () => {
+      const documentTransition = createTransition.toDocumentTransition();
+
+      expect(documentTransition.id.toBase58()).to.deep.equal(documentInstance.id.toBase58());
+    });
+  });
+
+  describe('documentTypeName', () => {
+    it('should return documentTypeName', () => {
+      const documentTransition = createTransition.toDocumentTransition();
+
+      expect(documentTransition.documentTypeName).to.equal(documentTypeName);
+    });
+  });
+
+  describe('identityContractNonce', () => {
+    it('should return identityContractNonce', () => {
+      const documentTransition = createTransition.toDocumentTransition();
+
+      expect(documentTransition.identityContractNonce).to.equal(BigInt(1));
+    });
+
+    it('should set identityContractNonce', () => {
       const documentTransition = createTransition.toDocumentTransition();
 
       documentTransition.identityContractNonce = BigInt(3333);
 
       expect(documentTransition.identityContractNonce).to.equal(BigInt(3333));
     });
+  });
 
-    it('should allow to set revision', () => {
+  describe('revision', () => {
+    it('should return revision', () => {
+      const documentTransition = createTransition.toDocumentTransition();
+
+      expect(documentTransition.revision).to.equal(BigInt(1));
+    });
+
+    it('should set revision', () => {
       const documentTransition = replaceTransition.toDocumentTransition();
 
       documentTransition.revision = BigInt(123);
 
       expect(documentTransition.revision).to.equal(BigInt(123));
+    });
+  });
+
+  describe('entropy', () => {
+    it('should return entropy', () => {
+      const documentTransition = createTransition.toDocumentTransition();
+
+      expect(documentTransition.entropy).to.deep.equal(documentInstance.entropy);
     });
   });
 });

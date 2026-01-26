@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { wallet } from '../../dist/sdk.js';
 
-describe('wallet namespace', () => {
+describe('wallet', () => {
   const exportedFns = [
     'generateMnemonic',
     'validateMnemonic',
@@ -27,9 +27,11 @@ describe('wallet namespace', () => {
     'signMessage',
   ];
 
-  it('should expose the expected helper functions', () => {
-    exportedFns.forEach((fn) => {
-      expect(wallet).to.have.property(fn).that.is.a('function');
+  describe('exports', () => {
+    it('should expose the expected helper functions', () => {
+      exportedFns.forEach((fn) => {
+        expect(wallet).to.have.property(fn).that.is.a('function');
+      });
     });
   });
 });

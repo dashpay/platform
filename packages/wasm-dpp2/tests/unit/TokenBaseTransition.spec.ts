@@ -25,40 +25,80 @@ describe('TokenBaseTransition', () => {
     });
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values', () => {
+  describe('constructor', () => {
+    it('should create instance from values', () => {
       const baseTransition = createBaseTransition();
 
       expect(baseTransition).to.be.an.instanceof(wasm.TokenBaseTransition);
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get identityContractNonce', () => {
+  describe('identityContractNonce', () => {
+    it('should return identityContractNonce', () => {
       const baseTransition = createBaseTransition();
 
       expect(baseTransition.identityContractNonce).to.deep.equal(1n);
     });
 
-    it('should allow to get tokenContractPosition', () => {
+    it('should set identityContractNonce', () => {
+      const baseTransition = createBaseTransition();
+
+      baseTransition.identityContractNonce = 3n;
+
+      expect(baseTransition.identityContractNonce).to.deep.equal(3n);
+    });
+  });
+
+  describe('tokenContractPosition', () => {
+    it('should return tokenContractPosition', () => {
       const baseTransition = createBaseTransition();
 
       expect(baseTransition.tokenContractPosition).to.deep.equal(1);
     });
 
-    it('should allow to get dataContractId', () => {
+    it('should set tokenContractPosition', () => {
+      const baseTransition = createBaseTransition();
+
+      baseTransition.tokenContractPosition = 3;
+
+      expect(baseTransition.tokenContractPosition).to.deep.equal(3);
+    });
+  });
+
+  describe('dataContractId', () => {
+    it('should return dataContractId', () => {
       const baseTransition = createBaseTransition();
 
       expect(baseTransition.dataContractId.toBase58()).to.deep.equal(dataContractId);
     });
 
-    it('should allow to get tokenId', () => {
+    it('should set dataContractId', () => {
+      const baseTransition = createBaseTransition();
+
+      baseTransition.dataContractId = ownerId;
+
+      expect(baseTransition.dataContractId.toBase58()).to.deep.equal(ownerId);
+    });
+  });
+
+  describe('tokenId', () => {
+    it('should return tokenId', () => {
       const baseTransition = createBaseTransition();
 
       expect(baseTransition.tokenId.toBase58()).to.deep.equal(ownerId);
     });
 
-    it('should allow to get usingGroupInfo', () => {
+    it('should set tokenId', () => {
+      const baseTransition = createBaseTransition();
+
+      baseTransition.tokenId = dataContractId;
+
+      expect(baseTransition.tokenId.toBase58()).to.deep.equal(dataContractId);
+    });
+  });
+
+  describe('usingGroupInfo', () => {
+    it('should return usingGroupInfo', () => {
       const groupStInfo = new wasm.GroupStateTransitionInfo(2, dataContractId, false);
 
       const baseTransition = createBaseTransition({ usingGroupInfo: groupStInfo });
@@ -66,42 +106,8 @@ describe('TokenBaseTransition', () => {
       expect(groupStInfo).to.be.an.instanceof(wasm.GroupStateTransitionInfo);
       expect(baseTransition.usingGroupInfo.constructor.name).to.deep.equal('GroupStateTransitionInfo');
     });
-  });
 
-  describe('setters', () => {
-    it('should allow to set identityContractNonce', () => {
-      const baseTransition = createBaseTransition();
-
-      baseTransition.identityContractNonce = 3n;
-
-      expect(baseTransition.identityContractNonce).to.deep.equal(3n);
-    });
-
-    it('should allow to set tokenContractPosition', () => {
-      const baseTransition = createBaseTransition();
-
-      baseTransition.tokenContractPosition = 3;
-
-      expect(baseTransition.tokenContractPosition).to.deep.equal(3);
-    });
-
-    it('should allow to set dataContractId', () => {
-      const baseTransition = createBaseTransition();
-
-      baseTransition.dataContractId = ownerId;
-
-      expect(baseTransition.dataContractId.toBase58()).to.deep.equal(ownerId);
-    });
-
-    it('should allow to set tokenId', () => {
-      const baseTransition = createBaseTransition();
-
-      baseTransition.tokenId = dataContractId;
-
-      expect(baseTransition.tokenId.toBase58()).to.deep.equal(dataContractId);
-    });
-
-    it('should allow to set usingGroupInfo', () => {
+    it('should set usingGroupInfo', () => {
       const groupStInfo = new wasm.GroupStateTransitionInfo(2, dataContractId, false);
 
       const baseTransition = createBaseTransition();

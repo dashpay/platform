@@ -52,22 +52,33 @@ describe('IdentityTopUpTransition', () => {
     return new wasm.IdentityTopUpTransition(createAssetLockProof(), testIdentityId, 11);
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create IdentityTopUpTransition', () => {
+  describe('constructor()', () => {
+    it('should create IdentityTopUpTransition', () => {
       const assetLockProof = createAssetLockProof();
       const transition = new wasm.IdentityTopUpTransition(assetLockProof, testIdentityId, 11);
 
       expect(transition).to.be.an.instanceof(wasm.IdentityTopUpTransition);
       expect(assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);
     });
+  });
 
-    it('should convert IdentityTopUpTransition to base64 and back', () => {
+  describe('toBase64()', () => {
+    it('should convert IdentityTopUpTransition to base64', () => {
       const transition = createTransition();
 
       const base64 = transition.toBase64();
       const bytes = transition.toBytes();
 
       expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+    });
+  });
+
+  describe('fromBase64()', () => {
+    it('should restore IdentityTopUpTransition from base64', () => {
+      const transition = createTransition();
+
+      const base64 = transition.toBase64();
+      const bytes = transition.toBytes();
 
       const restored = wasm.IdentityTopUpTransition.fromBase64(base64);
 
@@ -75,36 +86,30 @@ describe('IdentityTopUpTransition', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to return userFeeIncrease', () => {
+  describe('userFeeIncrease', () => {
+    it('should return userFeeIncrease', () => {
       const transition = createTransition();
 
       expect(transition.userFeeIncrease).to.deep.equal(11);
     });
 
-    it('should allow to return identityIdentifier', () => {
-      const transition = createTransition();
-
-      expect(transition.identityIdentifier.toBase58()).to.deep.equal(testIdentityId);
-    });
-
-    it('should allow to return signature', () => {
-      const transition = createTransition();
-
-      expect(transition.signature).to.deep.equal(Uint8Array.from([]));
-    });
-  });
-
-  describe('setters', () => {
-    it('should allow to set userFeeIncrease', () => {
+    it('should set userFeeIncrease', () => {
       const transition = createTransition();
 
       transition.userFeeIncrease = 21;
 
       expect(transition.userFeeIncrease).to.deep.equal(21);
     });
+  });
 
-    it('should allow to set identityIdentifier', () => {
+  describe('identityIdentifier', () => {
+    it('should return identityIdentifier', () => {
+      const transition = createTransition();
+
+      expect(transition.identityIdentifier.toBase58()).to.deep.equal(testIdentityId);
+    });
+
+    it('should set identityIdentifier', () => {
       const transition = createTransition();
 
       const identifier = new wasm.Identifier('777cE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH');
@@ -115,8 +120,16 @@ describe('IdentityTopUpTransition', () => {
         '777cE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH',
       );
     });
+  });
 
-    it('should allow to set signature', () => {
+  describe('signature', () => {
+    it('should return signature', () => {
+      const transition = createTransition();
+
+      expect(transition.signature).to.deep.equal(Uint8Array.from([]));
+    });
+
+    it('should set signature', () => {
       const transition = createTransition();
 
       transition.signature = Uint8Array.from([1, 1, 1]);

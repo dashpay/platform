@@ -6,14 +6,16 @@ before(async () => {
 });
 
 describe('OutPoint', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values', () => {
+  describe('constructor()', () => {
+    it('should create OutPoint from txid and vout', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
       expect(outpoint).to.be.an.instanceof(wasm.OutPoint);
     });
+  });
 
-    it('should allow to create from bytes', () => {
+  describe('fromBytes()', () => {
+    it('should create OutPoint from bytes', () => {
       const txIdBytes = Buffer.from('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 'hex');
 
       // 32 bytes for txId and 4 bytes for vout
@@ -25,20 +27,24 @@ describe('OutPoint', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get txid', () => {
+  describe('txid', () => {
+    it('should return transaction id', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
       expect(outpoint.txid).to.equal('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d');
     });
+  });
 
-    it('should allow to get VOUT', () => {
+  describe('vout', () => {
+    it('should return output index', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
       expect(outpoint.vout).to.equal(1);
     });
+  });
 
-    it('should allow to get bytes', () => {
+  describe('toBytes()', () => {
+    it('should return bytes representation', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
       const txIdBytes = Buffer.from('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 'hex');
@@ -48,14 +54,26 @@ describe('OutPoint', () => {
 
       expect(outpoint.toBytes()).to.deep.equal(Uint8Array.from(bytes));
     });
+  });
 
-    it('should allow to get base64 representation', () => {
+  describe('toBase64()', () => {
+    it('should return base64 representation', () => {
       const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
 
       const base64 = outpoint.toBase64();
       const bytes = outpoint.toBytes();
 
       expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+    });
+  });
+
+  describe('fromBase64()', () => {
+    it('should create OutPoint from base64 string', () => {
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+
+      const base64 = outpoint.toBase64();
+      const bytes = outpoint.toBytes();
+
       expect(Buffer.from(wasm.OutPoint.fromBase64(base64).toBytes())).to.deep.equal(Buffer.from(bytes));
     });
   });

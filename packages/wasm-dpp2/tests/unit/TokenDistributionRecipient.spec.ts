@@ -7,45 +7,66 @@ before(async () => {
 });
 
 describe('TokenDistributionRecipient', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values ContractOwner', () => {
+  describe('ContractOwner()', () => {
+    it('should create ContractOwner recipient', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
     });
+  });
 
-    it('should allow to create from values Identity', () => {
+  describe('Identity()', () => {
+    it('should create Identity recipient', () => {
       const recipient = wasm.TokenDistributionRecipient.Identity(identifier);
 
       expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
     });
+  });
 
-    it('should allow to create from values EvonodesByParticipation', () => {
+  describe('EvonodesByParticipation()', () => {
+    it('should create EvonodesByParticipation recipient', () => {
       const recipient = wasm.TokenDistributionRecipient.EvonodesByParticipation();
 
       expect(recipient).to.be.an.instanceof(wasm.TokenDistributionRecipient);
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get values ContractOwner', () => {
+  describe('recipientType', () => {
+    it('should return ContractOwner for ContractOwner recipient', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       expect(recipient.recipientType).to.equal('ContractOwner');
-      expect(recipient.value).to.equal(undefined);
     });
 
-    it('should allow to get values Identity', () => {
+    it('should return Identity type for Identity recipient', () => {
       const recipient = wasm.TokenDistributionRecipient.Identity(identifier);
 
       expect(recipient.recipientType).to.equal(`Identity(${identifier})`);
-      expect(recipient.value.toBase58()).to.equal(identifier);
     });
 
-    it('should allow to get values EvonodesByParticipation', () => {
+    it('should return EvonodesByParticipation for EvonodesByParticipation recipient', () => {
       const recipient = wasm.TokenDistributionRecipient.EvonodesByParticipation();
 
       expect(recipient.recipientType).to.equal('EvonodesByParticipation');
+    });
+  });
+
+  describe('value', () => {
+    it('should return undefined for ContractOwner recipient', () => {
+      const recipient = wasm.TokenDistributionRecipient.ContractOwner();
+
+      expect(recipient.value).to.equal(undefined);
+    });
+
+    it('should return identifier for Identity recipient', () => {
+      const recipient = wasm.TokenDistributionRecipient.Identity(identifier);
+
+      expect(recipient.value.toBase58()).to.equal(identifier);
+    });
+
+    it('should return undefined for EvonodesByParticipation recipient', () => {
+      const recipient = wasm.TokenDistributionRecipient.EvonodesByParticipation();
+
       expect(recipient.value).to.equal(undefined);
     });
   });

@@ -53,8 +53,8 @@ describe('TokenConfiguration', () => {
     return new wasm.TokenPreProgrammedDistribution(outerMap);
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values', () => {
+  describe('constructor', () => {
+    it('should create instance from values', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
@@ -120,8 +120,8 @@ describe('TokenConfiguration', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get getters', () => {
+  describe('conventions', () => {
+    it('should return conventions', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {

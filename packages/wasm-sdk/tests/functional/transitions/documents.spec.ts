@@ -41,7 +41,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     if (client) { client.free(); }
   });
 
-  describe('documentCreate', () => {
+  describe('documentCreate()', () => {
     it('should create a new document', async () => {
       // Document operations require at least HIGH security level (key index 2) for signing
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
@@ -144,7 +144,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     });
   });
 
-  describe('documentReplace', () => {
+  describe('documentReplace()', () => {
     it('should replace an existing document', async () => {
       // Requires contract from previous test
       expect(testContractId).to.exist();
@@ -191,7 +191,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     });
   });
 
-  describe('documentDelete', () => {
+  describe('documentDelete()', () => {
     it('should delete a document', async () => {
       // Requires contract from previous test
       expect(testContractId).to.exist();
@@ -233,7 +233,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     });
   });
 
-  describe('documentTransfer', () => {
+  describe('documentTransfer()', () => {
     it('should transfer document ownership', async () => {
       // Requires contract from previous test
       expect(testContractId).to.exist();

@@ -7,35 +7,43 @@ before(async () => {
 });
 
 describe('AuthorizedActionTakers', () => {
-  describe('serialization / deserialization', () => {
+  describe('NoOne()', () => {
     it('should allow to create AuthorizedActionTakers with NoOne', () => {
       const actionTaker = wasm.AuthorizedActionTakers.NoOne();
 
       expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('NoOne');
     });
+  });
 
+  describe('ContractOwner()', () => {
     it('should allow to create AuthorizedActionTakers with ContractOwner', () => {
       const actionTaker = wasm.AuthorizedActionTakers.ContractOwner();
 
       expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('ContractOwner');
     });
+  });
 
+  describe('Identity()', () => {
     it('should allow to create AuthorizedActionTakers with Identity', () => {
       const actionTaker = wasm.AuthorizedActionTakers.Identity(identifier);
 
       expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal(`Identity(${identifier})`);
     });
+  });
 
+  describe('MainGroup()', () => {
     it('should allow to create AuthorizedActionTakers with MainGroup', () => {
       const actionTaker = wasm.AuthorizedActionTakers.MainGroup();
 
       expect(actionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
       expect(actionTaker.takerType).to.deep.equal('MainGroup');
     });
+  });
 
+  describe('Group()', () => {
     it('should allow to create AuthorizedActionTakers with Group', () => {
       const actionTaker = wasm.AuthorizedActionTakers.Group(12);
 
@@ -44,7 +52,7 @@ describe('AuthorizedActionTakers', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('value', () => {
     it('should allow to get value with NoOne', () => {
       const actionTaker = wasm.AuthorizedActionTakers.NoOne();
 

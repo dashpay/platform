@@ -43,12 +43,12 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
         // Ignore errors from double-free or borrow issues
         // These can happen if a test timed out with pending operations
         // eslint-disable-next-line no-console
-        console.log('Note: client.free() error (may be harmless):', err.message);
+        console.log('Note: client.free() error (may be harmless):', (err as Error).message);
       }
     }
   });
 
-  describe('identityCreditTransfer', () => {
+  describe('identityCreditTransfer()', () => {
     it('should transfer credits between identities', async () => {
       // Identity 1 transfers credits to Identity 2
       // Key index 3 is the TRANSFER purpose key (ECDSA_HASH160)
@@ -74,7 +74,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
     });
   });
 
-  describe('identityUpdate', () => {
+  describe('identityUpdate()', () => {
     it('should add a new public key to identity', async () => {
       // Wait for previous operations to be fully processed
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
@@ -93,7 +93,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       // Generate a new random key pair for the new public key
       const newKeyPair = sdk.WasmSdk.generateKeyPair('testnet');
       const newPublicKeyData = Uint8Array.from(
-        newKeyPair.publicKey.match(/.{2}/g).map((byte) => parseInt(byte, 16)),
+        newKeyPair.publicKey.match(/.{2}/g).map((byte: string) => parseInt(byte, 16)),
       );
 
       // IMPORTANT: The signer must also have the new key's private key
@@ -165,7 +165,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
     });
   });
 
-  describe('identityWithdrawal', () => {
+  describe('identityCreditWithdrawal()', () => {
     it('should withdraw credits from platform', async () => {
       // Use the TRANSFER key (index 3) for withdrawal
       const { signer } = createTestSignerAndKey(sdk, 1, 3);
@@ -194,8 +194,8 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
     });
   });
 
-  describe('identityTopUp', () => {
-    it.skip('tops up identity balance', async () => {
+  describe('identityTopUp()', () => {
+    it.skip('should top up identity balance', async () => {
       // This test requires an asset lock proof which needs:
       // 1. A funded wallet with Dash
       // 2. Creating an asset lock transaction on core chain
@@ -204,8 +204,8 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
     });
   });
 
-  describe('identityCreate', () => {
-    it.skip('creates a new identity', async () => {
+  describe('identityCreate()', () => {
+    it.skip('should create a new identity', async () => {
       // This test requires an asset lock proof from core blockchain
       // Similar complexity to identityTopUp
     });

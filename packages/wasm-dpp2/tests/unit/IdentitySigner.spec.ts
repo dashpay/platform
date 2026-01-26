@@ -11,7 +11,7 @@ describe('IdentitySigner', () => {
   // Same key in hex format (32 bytes)
   const testPrivateKeyHex = '67ad1669d882da256b6fa05e1b0ae384a6ac8aed146ea53602b8ff0e1e9c18e9';
 
-  describe('construction', () => {
+  describe('constructor()', () => {
     it('should create empty signer', () => {
       const signer = new wasm.IdentitySigner();
       expect(signer).to.exist();
@@ -19,7 +19,7 @@ describe('IdentitySigner', () => {
     });
   });
 
-  describe('addKey', () => {
+  describe('addKey()', () => {
     it('should add key from PrivateKey created from WIF', () => {
       const signer = new wasm.IdentitySigner();
       const privateKey = wasm.PrivateKey.fromWIF(testPrivateKeyWif);
@@ -73,7 +73,7 @@ describe('IdentitySigner', () => {
     });
   });
 
-  describe('addKeyFromWif', () => {
+  describe('addKeyFromWif()', () => {
     it('should add key from WIF string', () => {
       const signer = new wasm.IdentitySigner();
 

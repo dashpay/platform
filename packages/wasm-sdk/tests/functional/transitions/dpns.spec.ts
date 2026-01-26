@@ -39,7 +39,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
     if (client) { client.free(); }
   });
 
-  describe('dpnsRegisterName', () => {
+  describe('dpnsRegisterName()', () => {
     it('should register a DPNS username', async () => {
       // DPNS registration requires HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
@@ -101,7 +101,7 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
     });
   });
 
-  describe('dpnsIsNameAvailable', () => {
+  describe('dpnsIsNameAvailable()', () => {
     it('should return true for an available name', async () => {
       const uniqueName = `available${Date.now()}`;
       const isAvailable = await client.dpnsIsNameAvailable(uniqueName);
@@ -128,38 +128,44 @@ describe('DPNS State Transitions', function describeDpnsStateTransitions() {
     });
   });
 
-  describe('DPNS utility functions', () => {
-    it('should validate usernames correctly', async () => {
-      // Valid usernames
-      expect(sdk.WasmSdk.dpnsIsValidUsername('alice')).to.be.true();
-      expect(sdk.WasmSdk.dpnsIsValidUsername('test-user')).to.be.true();
-      expect(sdk.WasmSdk.dpnsIsValidUsername('user123')).to.be.true();
+  describe('DPNS Utility Functions', () => {
+    describe('dpnsIsValidUsername()', () => {
+      it('should validate usernames correctly', async () => {
+        // Valid usernames
+        expect(sdk.WasmSdk.dpnsIsValidUsername('alice')).to.be.true();
+        expect(sdk.WasmSdk.dpnsIsValidUsername('test-user')).to.be.true();
+        expect(sdk.WasmSdk.dpnsIsValidUsername('user123')).to.be.true();
 
-      // Invalid usernames
-      expect(sdk.WasmSdk.dpnsIsValidUsername('ab')).to.be.false(); // too short
-      expect(sdk.WasmSdk.dpnsIsValidUsername('-invalid')).to.be.false(); // starts with hyphen
-      expect(sdk.WasmSdk.dpnsIsValidUsername('invalid-')).to.be.false(); // ends with hyphen
-      expect(sdk.WasmSdk.dpnsIsValidUsername('has space')).to.be.false(); // contains space
+        // Invalid usernames
+        expect(sdk.WasmSdk.dpnsIsValidUsername('ab')).to.be.false(); // too short
+        expect(sdk.WasmSdk.dpnsIsValidUsername('-invalid')).to.be.false(); // starts with hyphen
+        expect(sdk.WasmSdk.dpnsIsValidUsername('invalid-')).to.be.false(); // ends with hyphen
+        expect(sdk.WasmSdk.dpnsIsValidUsername('has space')).to.be.false(); // contains space
+      });
     });
 
-    it('should convert to homograph-safe characters', async () => {
-      const result = sdk.WasmSdk.dpnsConvertToHomographSafe('alice');
-      expect(result).to.equal('a11ce'); // 'l' and 'i' become '1'
+    describe('dpnsConvertToHomographSafe()', () => {
+      it('should convert to homograph-safe characters', async () => {
+        const result = sdk.WasmSdk.dpnsConvertToHomographSafe('alice');
+        expect(result).to.equal('a11ce'); // 'l' and 'i' become '1'
 
-      const result2 = sdk.WasmSdk.dpnsConvertToHomographSafe('bob');
-      expect(result2).to.equal('b0b'); // 'o' becomes '0'
+        const result2 = sdk.WasmSdk.dpnsConvertToHomographSafe('bob');
+        expect(result2).to.equal('b0b'); // 'o' becomes '0'
+      });
     });
 
-    it('should identify contested usernames', async () => {
-      // Contested usernames (3-19 chars, only [a-z01-] after normalization)
-      expect(sdk.WasmSdk.dpnsIsContestedUsername('abc')).to.be.true();
-      expect(sdk.WasmSdk.dpnsIsContestedUsername('dash')).to.be.true();
+    describe('dpnsIsContestedUsername()', () => {
+      it('should identify contested usernames', async () => {
+        // Contested usernames (3-19 chars, only [a-z01-] after normalization)
+        expect(sdk.WasmSdk.dpnsIsContestedUsername('abc')).to.be.true();
+        expect(sdk.WasmSdk.dpnsIsContestedUsername('dash')).to.be.true();
 
-      // Not contested - too long
-      expect(sdk.WasmSdk.dpnsIsContestedUsername('twentycharacterslongname')).to.be.false();
+        // Not contested - too long
+        expect(sdk.WasmSdk.dpnsIsContestedUsername('twentycharacterslongname')).to.be.false();
 
-      // Not contested - contains invalid characters after normalization
-      expect(sdk.WasmSdk.dpnsIsContestedUsername('test123')).to.be.false(); // contains '2' and '3'
+        // Not contested - contains invalid characters after normalization
+        expect(sdk.WasmSdk.dpnsIsContestedUsername('test123')).to.be.false(); // contains '2' and '3'
+      });
     });
   });
 });

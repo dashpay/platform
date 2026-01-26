@@ -21,7 +21,7 @@ describe('DataContract', () => {
     ];
   });
 
-  describe('serialization / deserialization', () => {
+  describe('constructor()', () => {
     it('should allow to create DataContract from schema without full validation', () => {
       const dataContract = new wasm.DataContract({
         ownerId: object.ownerId,
@@ -45,13 +45,17 @@ describe('DataContract', () => {
 
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
+  });
 
+  describe('fromJSON()', () => {
     it('should allow to create DataContract from value with full validation and without platform version', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
+  });
 
+  describe('fromBytes()', () => {
     it('should allow to convert DataContract to bytes and from bytes', () => {
       const [dataContractBytes] = dataContractsBytes;
 
@@ -94,7 +98,9 @@ describe('DataContract', () => {
 
       expect(dataContractFromBytes.toObject()).to.deep.equal(dataContractFromValue.toObject());
     });
+  });
 
+  describe('fromObject()', () => {
     it('should allow to create DataContract from object produced by toObject', () => {
       const originalContract = wasm.DataContract.fromJSON(json, true);
       const objectRepresentation = originalContract.toObject(PlatformVersion.PLATFORM_V1);
@@ -109,7 +115,9 @@ describe('DataContract', () => {
         objectRepresentation,
       );
     });
+  });
 
+  describe('toBase64()', () => {
     it('should allow to convert DataContract to base64 and from base64', () => {
       const [dataContractBytes] = dataContractsBytes;
 
@@ -136,7 +144,9 @@ describe('DataContract', () => {
       );
       expect(actualBytes).to.deep.equal(Buffer.from(bytes));
     });
+  });
 
+  describe('toJSON()', () => {
     it('should allow to get json', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
@@ -144,7 +154,7 @@ describe('DataContract', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('schemas', () => {
     it('should allow to get schemas', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
@@ -152,41 +162,45 @@ describe('DataContract', () => {
 
       expect(schemas).to.deep.equal(object.documentSchemas);
     });
+  });
 
+  describe('version', () => {
     it('should allow to get version', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
       expect(dataContract.version).to.deep.equal(json.version);
     });
 
+    it('should allow to set version', () => {
+      const dataContract = wasm.DataContract.fromJSON(json, true);
+
+      dataContract.version = 20;
+
+      expect(dataContract.version).to.equal(20);
+    });
+  });
+
+  describe('id', () => {
     it('should allow to get id', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
       expect(dataContract.id.toBase58()).to.deep.equal(id);
     });
 
-    it('should allow to get owner id', () => {
-      const dataContract = wasm.DataContract.fromJSON(json, true);
-
-      expect(dataContract.ownerId.toBase58()).to.deep.equal(ownerId);
-    });
-
-    it('should allow to get config', () => {
-      const dataContract = wasm.DataContract.fromJSON(json, true);
-
-      const { config } = dataContract;
-
-      expect(config).to.deep.equal(object.config);
-    });
-  });
-
-  describe('setters', () => {
     it('should allow to set id', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
       dataContract.id = new wasm.Identifier('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
 
       expect(dataContract.id.toBase58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
+    });
+  });
+
+  describe('ownerId', () => {
+    it('should allow to get owner id', () => {
+      const dataContract = wasm.DataContract.fromJSON(json, true);
+
+      expect(dataContract.ownerId.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should allow to set owner id', () => {
@@ -198,15 +212,19 @@ describe('DataContract', () => {
         '3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL',
       );
     });
+  });
 
-    it('should allow to set version', () => {
+  describe('config', () => {
+    it('should allow to get config', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      dataContract.version = 20;
+      const { config } = dataContract;
 
-      expect(dataContract.version).to.equal(20);
+      expect(config).to.deep.equal(object.config);
     });
+  });
 
+  describe('setConfig()', () => {
     it('should allow to set config', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
@@ -218,7 +236,9 @@ describe('DataContract', () => {
 
       expect(dataContract.config).to.deep.equal(newConfig);
     });
+  });
 
+  describe('setSchemas()', () => {
     it('should allow to set schema', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
@@ -240,7 +260,7 @@ describe('DataContract', () => {
     });
   });
 
-  describe('static', () => {
+  describe('generateId()', () => {
     it('should allow to generate id', () => {
       const identifier = new wasm.Identifier('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
 

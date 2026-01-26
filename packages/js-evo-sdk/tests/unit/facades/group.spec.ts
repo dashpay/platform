@@ -52,127 +52,202 @@ describe('GroupFacade', () => {
     getContestedResourceVotersForIdentityWithProofInfoStub = this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentityWithProofInfo').resolves('ok');
   });
 
-  it('should forward info queries to wasm', async () => {
-    await client.group.info('contract', 1);
-    await client.group.infoWithProof('contract', 2);
-    expect(getGroupInfoStub).to.be.calledOnceWithExactly('contract', 1);
-    expect(getGroupInfoWithProofInfoStub).to.be.calledOnceWithExactly('contract', 2);
+  describe('info()', () => {
+    it('should forward contract ID and position to wasm', async () => {
+      await client.group.info('contract', 1);
+      expect(getGroupInfoStub).to.be.calledOnceWithExactly('contract', 1);
+    });
   });
 
-  it('should forward infos() optional args with null defaults', async () => {
-    const query = { dataContractId: 'contract', startAt: { position: 10, included: true }, limit: 5 };
-    await client.group.infos(query);
-    const proofQuery = { dataContractId: 'contract' };
-    await client.group.infosWithProof(proofQuery);
-    expect(getGroupInfosStub).to.be.calledOnceWithExactly(query);
-    expect(getGroupInfosWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+  describe('infoWithProof()', () => {
+    it('should forward contract ID and position to wasm', async () => {
+      await client.group.infoWithProof('contract', 2);
+      expect(getGroupInfoWithProofInfoStub).to.be.calledOnceWithExactly('contract', 2);
+    });
   });
 
-  it('should forward members() list and optional filters', async () => {
-    const query = {
-      dataContractId: 'contract',
-      groupContractPosition: 1,
-      memberIds: ['a'],
-      startAtMemberId: 's',
-      limit: 2,
-    };
-    await client.group.members(query);
-    const proofQuery = { dataContractId: 'contract', groupContractPosition: 1 };
-    await client.group.membersWithProof(proofQuery);
-    expect(getGroupMembersStub).to.be.calledOnceWithExactly(query);
-    expect(getGroupMembersWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+  describe('infos()', () => {
+    it('should forward query with optional args to wasm', async () => {
+      const query = { dataContractId: 'contract', startAt: { position: 10, included: true }, limit: 5 };
+      await client.group.infos(query);
+      expect(getGroupInfosStub).to.be.calledOnceWithExactly(query);
+    });
   });
 
-  it('should forward identityGroups() optional contract filters', async () => {
-    const query = {
-      identityId: 'identity',
-      memberDataContracts: ['m'],
-      ownerDataContracts: ['o'],
-      moderatorDataContracts: ['d'],
-    };
-    await client.group.identityGroups(query);
-    const proofQuery = { identityId: 'identity' };
-    await client.group.identityGroupsWithProof(proofQuery);
-    expect(getIdentityGroupsStub).to.be.calledOnceWithExactly(query);
-    expect(getIdentityGroupsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+  describe('infosWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const proofQuery = { dataContractId: 'contract' };
+      await client.group.infosWithProof(proofQuery);
+      expect(getGroupInfosWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+    });
   });
 
-  it('should forward group actions helpers to wasm', async () => {
-    const query = {
-      dataContractId: 'contract',
-      groupContractPosition: 1,
-      status: 'ACTIVE',
-      startAt: { actionId: 'cursor', included: true },
-      limit: 3,
-    };
-    await client.group.actions(query);
-    const proofQuery = {
-      dataContractId: 'contract',
-      groupContractPosition: 1,
-      status: 'CLOSED',
-    };
-    await client.group.actionsWithProof(proofQuery);
-    const signersQuery = {
-      dataContractId: 'contract',
-      groupContractPosition: 1,
-      status: 'ACTIVE',
-      actionId: 'action',
-    };
-    await client.group.actionSigners(signersQuery);
-    await client.group.actionSignersWithProof(signersQuery);
-    expect(getGroupActionsStub).to.be.calledOnceWithExactly(query);
-    expect(getGroupActionsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
-    expect(getGroupActionSignersStub).to.be.calledOnceWithExactly(signersQuery);
-    expect(getGroupActionSignersWithProofInfoStub).to.be.calledOnceWithExactly(signersQuery);
+  describe('members()', () => {
+    it('should forward query with optional filters to wasm', async () => {
+      const query = {
+        dataContractId: 'contract',
+        groupContractPosition: 1,
+        memberIds: ['a'],
+        startAtMemberId: 's',
+        limit: 2,
+      };
+      await client.group.members(query);
+      expect(getGroupMembersStub).to.be.calledOnceWithExactly(query);
+    });
   });
 
-  it('should forward groupsDataContracts()', async () => {
-    await client.group.groupsDataContracts(['a', 'b']);
-    await client.group.groupsDataContractsWithProof(['a']);
-    expect(getGroupsDataContractsStub).to.be.calledOnceWithExactly(['a', 'b']);
-    expect(getGroupsDataContractsWithProofInfoStub).to.be.calledOnceWithExactly(['a']);
+  describe('membersWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const proofQuery = { dataContractId: 'contract', groupContractPosition: 1 };
+      await client.group.membersWithProof(proofQuery);
+      expect(getGroupMembersWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+    });
   });
 
-  it('should forward contestedResources and voters queries', async () => {
-    const contestedQuery = {
-      dataContractId: 'c',
-      documentTypeName: 'dt',
-      indexName: 'i',
-      startAtValue: new Uint8Array([1]),
-      limit: 2,
-      orderAscending: false,
-    };
-    await client.group.contestedResources(contestedQuery);
-    const contestedProofQuery = {
-      dataContractId: 'c',
-      documentTypeName: 'dt',
-      indexName: 'i',
-    };
-    await client.group.contestedResourcesWithProof(contestedProofQuery);
-    const votersQuery = {
-      dataContractId: 'c',
-      documentTypeName: 'dt',
-      indexName: 'i',
-      indexValues: ['v1'],
-      contestantId: 'id',
-      startAtVoterId: 's',
-      limit: 3,
-      orderAscending: true,
-    };
-    await client.group.contestedResourceVotersForIdentity(votersQuery);
-    const votersProofQuery = {
-      dataContractId: 'c',
-      documentTypeName: 'dt',
-      indexName: 'i',
-      indexValues: ['v2'],
-      contestantId: 'id',
-    };
-    await client.group.contestedResourceVotersForIdentityWithProof(votersProofQuery);
-    expect(getContestedResourcesStub).to.be.calledOnceWithExactly(contestedQuery);
-    expect(getContestedResourcesWithProofInfoStub).to.be
-      .calledOnceWithExactly(contestedProofQuery);
-    expect(getContestedResourceVotersForIdentityStub).to.be.calledOnceWithExactly(votersQuery);
-    expect(getContestedResourceVotersForIdentityWithProofInfoStub)
-      .to.be.calledOnceWithExactly(votersProofQuery);
+  describe('identityGroups()', () => {
+    it('should forward query with optional contract filters to wasm', async () => {
+      const query = {
+        identityId: 'identity',
+        memberDataContracts: ['m'],
+        ownerDataContracts: ['o'],
+        moderatorDataContracts: ['d'],
+      };
+      await client.group.identityGroups(query);
+      expect(getIdentityGroupsStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('identityGroupsWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const proofQuery = { identityId: 'identity' };
+      await client.group.identityGroupsWithProof(proofQuery);
+      expect(getIdentityGroupsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+    });
+  });
+
+  describe('actions()', () => {
+    it('should forward query to wasm', async () => {
+      const query = {
+        dataContractId: 'contract',
+        groupContractPosition: 1,
+        status: 'ACTIVE',
+        startAt: { actionId: 'cursor', included: true },
+        limit: 3,
+      };
+      await client.group.actions(query);
+      expect(getGroupActionsStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('actionsWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const proofQuery = {
+        dataContractId: 'contract',
+        groupContractPosition: 1,
+        status: 'CLOSED',
+      };
+      await client.group.actionsWithProof(proofQuery);
+      expect(getGroupActionsWithProofInfoStub).to.be.calledOnceWithExactly(proofQuery);
+    });
+  });
+
+  describe('actionSigners()', () => {
+    it('should forward query to wasm', async () => {
+      const signersQuery = {
+        dataContractId: 'contract',
+        groupContractPosition: 1,
+        status: 'ACTIVE',
+        actionId: 'action',
+      };
+      await client.group.actionSigners(signersQuery);
+      expect(getGroupActionSignersStub).to.be.calledOnceWithExactly(signersQuery);
+    });
+  });
+
+  describe('actionSignersWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const signersQuery = {
+        dataContractId: 'contract',
+        groupContractPosition: 1,
+        status: 'ACTIVE',
+        actionId: 'action',
+      };
+      await client.group.actionSignersWithProof(signersQuery);
+      expect(getGroupActionSignersWithProofInfoStub).to.be.calledOnceWithExactly(signersQuery);
+    });
+  });
+
+  describe('groupsDataContracts()', () => {
+    it('should forward contract IDs to wasm', async () => {
+      await client.group.groupsDataContracts(['a', 'b']);
+      expect(getGroupsDataContractsStub).to.be.calledOnceWithExactly(['a', 'b']);
+    });
+  });
+
+  describe('groupsDataContractsWithProof()', () => {
+    it('should forward contract IDs to wasm', async () => {
+      await client.group.groupsDataContractsWithProof(['a']);
+      expect(getGroupsDataContractsWithProofInfoStub).to.be.calledOnceWithExactly(['a']);
+    });
+  });
+
+  describe('contestedResources()', () => {
+    it('should forward query to wasm', async () => {
+      const contestedQuery = {
+        dataContractId: 'c',
+        documentTypeName: 'dt',
+        indexName: 'i',
+        startAtValue: new Uint8Array([1]),
+        limit: 2,
+        orderAscending: false,
+      };
+      await client.group.contestedResources(contestedQuery);
+      expect(getContestedResourcesStub).to.be.calledOnceWithExactly(contestedQuery);
+    });
+  });
+
+  describe('contestedResourcesWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const contestedProofQuery = {
+        dataContractId: 'c',
+        documentTypeName: 'dt',
+        indexName: 'i',
+      };
+      await client.group.contestedResourcesWithProof(contestedProofQuery);
+      expect(getContestedResourcesWithProofInfoStub).to.be
+        .calledOnceWithExactly(contestedProofQuery);
+    });
+  });
+
+  describe('contestedResourceVotersForIdentity()', () => {
+    it('should forward query to wasm', async () => {
+      const votersQuery = {
+        dataContractId: 'c',
+        documentTypeName: 'dt',
+        indexName: 'i',
+        indexValues: ['v1'],
+        contestantId: 'id',
+        startAtVoterId: 's',
+        limit: 3,
+        orderAscending: true,
+      };
+      await client.group.contestedResourceVotersForIdentity(votersQuery);
+      expect(getContestedResourceVotersForIdentityStub).to.be.calledOnceWithExactly(votersQuery);
+    });
+  });
+
+  describe('contestedResourceVotersForIdentityWithProof()', () => {
+    it('should forward query to wasm', async () => {
+      const votersProofQuery = {
+        dataContractId: 'c',
+        documentTypeName: 'dt',
+        indexName: 'i',
+        indexValues: ['v2'],
+        contestantId: 'id',
+      };
+      await client.group.contestedResourceVotersForIdentityWithProof(votersProofQuery);
+      expect(getContestedResourceVotersForIdentityWithProofInfoStub)
+        .to.be.calledOnceWithExactly(votersProofQuery);
+    });
   });
 });

@@ -8,7 +8,7 @@ before(async () => {
 describe('ContractBounds', () => {
   const contractIdHex = '1111111111111111111111111111111111111111111111111111111111111111';
 
-  describe('constructor', () => {
+  describe('constructor()', () => {
     it('should create SingleContract bounds without document type', () => {
       const bounds = new wasm.ContractBounds(
         Buffer.from(contractIdHex, 'hex'),
@@ -31,7 +31,7 @@ describe('ContractBounds', () => {
     });
   });
 
-  describe('static constructors', () => {
+  describe('SingleContract()', () => {
     it('should create SingleContract via static method', () => {
       const bounds = wasm.ContractBounds.SingleContract(
         Buffer.from(contractIdHex, 'hex'),
@@ -39,7 +39,9 @@ describe('ContractBounds', () => {
 
       expect(bounds.contractBoundsType).to.equal('singleContract');
     });
+  });
 
+  describe('SingleContractDocumentType()', () => {
     it('should create SingleContractDocumentType via static method', () => {
       const bounds = wasm.ContractBounds.SingleContractDocumentType(
         Buffer.from(contractIdHex, 'hex'),
@@ -51,7 +53,7 @@ describe('ContractBounds', () => {
     });
   });
 
-  describe('conversion methods', () => {
+  describe('toJSON()', () => {
     it('should round-trip SingleContract via toJSON/fromJSON', () => {
       const bounds = wasm.ContractBounds.SingleContract(
         Buffer.from(contractIdHex, 'hex'),
@@ -83,7 +85,7 @@ describe('ContractBounds', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('identifier', () => {
     it('should return identifier', () => {
       const bounds = new wasm.ContractBounds(
         Buffer.from(contractIdHex, 'hex'),
@@ -93,21 +95,6 @@ describe('ContractBounds', () => {
       expect(bounds.identifier.__type).to.equal('Identifier');
     });
 
-    it('should return contractBoundsTypeNumber', () => {
-      const singleContract = wasm.ContractBounds.SingleContract(
-        Buffer.from(contractIdHex, 'hex'),
-      );
-      expect(singleContract.contractBoundsTypeNumber).to.equal(0);
-
-      const documentType = wasm.ContractBounds.SingleContractDocumentType(
-        Buffer.from(contractIdHex, 'hex'),
-        'note',
-      );
-      expect(documentType.contractBoundsTypeNumber).to.equal(1);
-    });
-  });
-
-  describe('setters', () => {
     it('should throw an error when setting invalid identifier via setter', () => {
       const bounds = new wasm.ContractBounds(
         Buffer.from(contractIdHex, 'hex'),
@@ -120,6 +107,21 @@ describe('ContractBounds', () => {
       expect(() => {
         bounds.identifier = invalidIdentifier;
       }).to.throw();
+    });
+  });
+
+  describe('contractBoundsTypeNumber', () => {
+    it('should return contractBoundsTypeNumber', () => {
+      const singleContract = wasm.ContractBounds.SingleContract(
+        Buffer.from(contractIdHex, 'hex'),
+      );
+      expect(singleContract.contractBoundsTypeNumber).to.equal(0);
+
+      const documentType = wasm.ContractBounds.SingleContractDocumentType(
+        Buffer.from(contractIdHex, 'hex'),
+        'note',
+      );
+      expect(documentType.contractBoundsTypeNumber).to.equal(1);
     });
   });
 });

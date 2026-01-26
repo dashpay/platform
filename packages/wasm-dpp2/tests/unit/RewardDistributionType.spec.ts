@@ -6,8 +6,8 @@ before(async () => {
 });
 
 describe('RewardDistributionType', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create BlockBasedDistribution', () => {
+  describe('BlockBasedDistribution()', () => {
+    it('should create BlockBasedDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
@@ -20,8 +20,10 @@ describe('RewardDistributionType', () => {
       expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
       expect(distributionType).to.be.an.instanceof(wasm.RewardDistributionType);
     });
+  });
 
-    it('should allow to create TimeBasedDistribution', () => {
+  describe('TimeBasedDistribution()', () => {
+    it('should create TimeBasedDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
@@ -34,8 +36,10 @@ describe('RewardDistributionType', () => {
       expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
       expect(distributionType).to.be.an.instanceof(wasm.RewardDistributionType);
     });
+  });
 
-    it('should allow to create EpochBasedDistribution', () => {
+  describe('EpochBasedDistribution()', () => {
+    it('should create EpochBasedDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
@@ -50,8 +54,8 @@ describe('RewardDistributionType', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow return value BlockBasedDistribution', () => {
+  describe('distribution', () => {
+    it('should return BlockBasedDistribution for block-based type', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
@@ -64,7 +68,7 @@ describe('RewardDistributionType', () => {
       expect(distributionType.distribution.constructor.name).to.equal('BlockBasedDistribution');
     });
 
-    it('should allow return value TimeBasedDistribution', () => {
+    it('should return TimeBasedDistribution for time-based type', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
@@ -77,7 +81,7 @@ describe('RewardDistributionType', () => {
       expect(distributionType.distribution.constructor.name).to.equal('TimeBasedDistribution');
     });
 
-    it('should allow return value EpochBasedDistribution', () => {
+    it('should return EpochBasedDistribution for epoch-based type', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );

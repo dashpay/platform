@@ -6,9 +6,9 @@ before(async () => {
   await initWasm();
 });
 
-describe('InstantLock', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create InstantLock from values', () => {
+describe('InstantAssetLockProof', () => {
+  describe('constructor()', () => {
+    it('should create InstantAssetLockProof from values', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -17,8 +17,10 @@ describe('InstantLock', () => {
 
       expect(instantLockProof).to.be.an.instanceof(wasm.InstantAssetLockProof);
     });
+  });
 
-    it('should allow to convert to object', () => {
+  describe('toObject()', () => {
+    it('should convert to object with Uint8Array values', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -34,7 +36,24 @@ describe('InstantLock', () => {
       expect(instantLockProof.toObject()).to.deep.equal(expected);
     });
 
-    it('should allow to create from object', () => {
+    it('should return object with Uint8Array for bytes fields', () => {
+      const instantLockProof = new wasm.InstantAssetLockProof(
+        instantLockBytes,
+        transactionBytes,
+        0,
+      );
+
+      const obj = instantLockProof.toObject();
+
+      // Object format should have Uint8Array
+      expect(obj.instantLock).to.be.instanceOf(Uint8Array);
+      expect(obj.transaction).to.be.instanceOf(Uint8Array);
+      expect(obj.outputIndex).to.equal(0);
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should create from object', () => {
       const lockObject = {
         instantLock: instantLockBytes,
         transaction: transactionBytes,
@@ -46,7 +65,22 @@ describe('InstantLock', () => {
       expect(instantLockProof).to.be.an.instanceof(wasm.InstantAssetLockProof);
     });
 
-    it('should round-trip via toJSON/fromJSON', () => {
+    it('should round-trip via toObject/fromObject', () => {
+      const instantLockProof = new wasm.InstantAssetLockProof(
+        instantLockBytes,
+        transactionBytes,
+        0,
+      );
+
+      const obj = instantLockProof.toObject();
+      const restored = wasm.InstantAssetLockProof.fromObject(obj);
+
+      expect(restored.toObject()).to.deep.equal(obj);
+    });
+  });
+
+  describe('toJSON()', () => {
+    it('should convert to JSON with base64 strings', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -63,36 +97,26 @@ describe('InstantLock', () => {
       // Verify base64 decodes to original bytes
       expect(Buffer.from(json.instantLock, 'base64')).to.deep.equal(Buffer.from(instantLockBytes));
       expect(Buffer.from(json.transaction, 'base64')).to.deep.equal(Buffer.from(transactionBytes));
-
-      // Round-trip via fromJSON
-      const restored = wasm.InstantAssetLockProof.fromJSON(json);
-
-      expect(restored.toObject()).to.deep.equal(instantLockProof.toObject());
     });
+  });
 
-    it('should round-trip via toObject/fromObject', () => {
+  describe('fromJSON()', () => {
+    it('should round-trip via toJSON/fromJSON', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
         0,
       );
 
-      const obj = instantLockProof.toObject();
+      const json = instantLockProof.toJSON();
+      const restored = wasm.InstantAssetLockProof.fromJSON(json);
 
-      // Object format should have Uint8Array
-      expect(obj.instantLock).to.be.instanceOf(Uint8Array);
-      expect(obj.transaction).to.be.instanceOf(Uint8Array);
-      expect(obj.outputIndex).to.equal(0);
-
-      // Round-trip via fromObject
-      const restored = wasm.InstantAssetLockProof.fromObject(obj);
-
-      expect(restored.toObject()).to.deep.equal(obj);
+      expect(restored.toObject()).to.deep.equal(instantLockProof.toObject());
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get output as bytes', () => {
+  describe('output', () => {
+    it('should return output as bytes', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -103,8 +127,10 @@ describe('InstantLock', () => {
       expect(output).to.be.instanceOf(Uint8Array);
       expect(output.length).to.be.greaterThan(0);
     });
+  });
 
-    it('should allow to convert to get OutPoint', () => {
+  describe('outPoint', () => {
+    it('should return OutPoint instance', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -113,8 +139,10 @@ describe('InstantLock', () => {
 
       expect(instantLockProof.outPoint.constructor.name).to.deep.equal('OutPoint');
     });
+  });
 
-    it('should allow to get output index', () => {
+  describe('outputIndex', () => {
+    it('should return output index', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -124,20 +152,7 @@ describe('InstantLock', () => {
       expect(instantLockProof.outputIndex).to.deep.equal(0);
     });
 
-    it('should allow to get instant lock as bytes', () => {
-      const instantLockProof = new wasm.InstantAssetLockProof(
-        instantLockBytes,
-        transactionBytes,
-        0,
-      );
-
-      expect(instantLockProof.instantLock).to.be.instanceOf(Uint8Array);
-      expect(instantLockProof.instantLock).to.deep.equal(instantLockBytes);
-    });
-  });
-
-  describe('setters', () => {
-    it('should allow to set output index', () => {
+    it('should set output index', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,
@@ -148,8 +163,21 @@ describe('InstantLock', () => {
 
       expect(instantLockProof.outputIndex).to.deep.equal(12);
     });
+  });
 
-    it('should allow to set instant lock from bytes', () => {
+  describe('instantLock', () => {
+    it('should return instant lock as bytes', () => {
+      const instantLockProof = new wasm.InstantAssetLockProof(
+        instantLockBytes,
+        transactionBytes,
+        0,
+      );
+
+      expect(instantLockProof.instantLock).to.be.instanceOf(Uint8Array);
+      expect(instantLockProof.instantLock).to.deep.equal(instantLockBytes);
+    });
+
+    it('should set instant lock from bytes', () => {
       const instantLockProof = new wasm.InstantAssetLockProof(
         instantLockBytes,
         transactionBytes,

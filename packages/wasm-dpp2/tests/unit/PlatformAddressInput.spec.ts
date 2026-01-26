@@ -6,7 +6,7 @@ before(async () => {
 });
 
 describe('PlatformAddressInput', () => {
-  describe('construction', () => {
+  describe('constructor()', () => {
     it('should create from PlatformAddress object', () => {
       // 0xb0 is P2PKH address type
       const addressBytes = new Uint8Array([
@@ -82,7 +82,7 @@ describe('PlatformAddressInput', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('address', () => {
     it('should return the address', () => {
       // 0xb0 is P2PKH address type
       const addressBytes = new Uint8Array([
@@ -95,7 +95,9 @@ describe('PlatformAddressInput', () => {
       expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
     });
+  });
 
+  describe('nonce', () => {
     it('should return the nonce', () => {
       // 0xb0 is P2PKH address type
       const addressBytes = new Uint8Array([
@@ -106,7 +108,9 @@ describe('PlatformAddressInput', () => {
       const input = new wasm.PlatformAddressInput(platformAddr, 42, BigInt(100000));
       expect(input.nonce).to.equal(42);
     });
+  });
 
+  describe('amount', () => {
     it('should return the amount', () => {
       // 0xb0 is P2PKH address type
       const addressBytes = new Uint8Array([

@@ -1,7 +1,7 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
-describe('System info', function describeSystemInfo() {
+describe('System', function describeSystem() {
   this.timeout(60000);
 
   let client: sdk.WasmSdk;
@@ -18,14 +18,18 @@ describe('System info', function describeSystemInfo() {
     if (client) { client.free(); }
   });
 
-  it('should get current quorums info', async () => {
-    const r = await client.getCurrentQuorumsInfo();
-    expect(r).to.be.ok();
+  describe('getCurrentQuorumsInfo()', () => {
+    it('should get current quorums info', async () => {
+      const r = await client.getCurrentQuorumsInfo();
+      expect(r).to.be.ok();
+    });
   });
 
-  it('should get total credits in platform', async () => {
-    const r = await client.getTotalCreditsInPlatform();
-    expect(typeof r).to.equal('bigint');
-    expect(String(r)).to.match(/^\d+$/);
+  describe('getTotalCreditsInPlatform()', () => {
+    it('should get total credits in platform', async () => {
+      const r = await client.getTotalCreditsInPlatform();
+      expect(typeof r).to.equal('bigint');
+      expect(String(r)).to.match(/^\d+$/);
+    });
   });
 });

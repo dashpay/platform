@@ -44,20 +44,22 @@ describe('Document', () => {
     });
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create Document from values', () => {
+  describe('constructor()', () => {
+    it('should create Document from values', () => {
       const documentInstance = createDocument();
 
       expect(documentInstance).to.be.an.instanceof(wasm.Document);
     });
 
-    it('should allow to create Document from values with custom id', () => {
+    it('should create Document from values with custom id', () => {
       const documentInstance = createDocument({ id });
 
       expect(documentInstance).to.be.an.instanceof(wasm.Document);
     });
+  });
 
-    it('should allow to create Document from bytes and convert to bytes', () => {
+  describe('toBytes()', () => {
+    it('should convert Document to bytes', () => {
       const dataContract = wasm.DataContract.fromJSON(dataContractValue, false);
       const documentInstance = wasm.Document.fromBytes(
         fromHexString(documentBytes),
@@ -68,13 +70,26 @@ describe('Document', () => {
 
       const bytes = documentInstance.toBytes(dataContract, PlatformVersion.PLATFORM_V1);
 
-      expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());
       expect(bytes).to.deep.equal(fromHexString(documentBytes));
+    });
+  });
+
+  describe('fromBytes()', () => {
+    it('should create Document from bytes', () => {
+      const dataContract = wasm.DataContract.fromJSON(dataContractValue, false);
+      const documentInstance = wasm.Document.fromBytes(
+        fromHexString(documentBytes),
+        dataContract,
+        'note',
+        PlatformVersion.PLATFORM_V1,
+      );
+
+      expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
   });
 
-  describe('toObject / fromObject', () => {
+  describe('toObject()', () => {
     it('should convert to object with binary fields as Uint8Array', () => {
       const documentInstance = createDocument({ id });
 
@@ -87,7 +102,9 @@ describe('Document', () => {
       // toObject uses BigInt for u64 values like revision to preserve precision
       expect(BigInt(obj.$revision)).to.equal(revision);
     });
+  });
 
+  describe('fromObject()', () => {
     it('should roundtrip through toObject / fromObject', () => {
       const documentInstance = createDocument({ id });
 
@@ -102,7 +119,7 @@ describe('Document', () => {
     });
   });
 
-  describe('toJSON / fromJSON', () => {
+  describe('toJSON()', () => {
     it('should convert to JSON with identifiers as Base58 strings', () => {
       const documentInstance = createDocument({ id });
 
@@ -114,7 +131,9 @@ describe('Document', () => {
       expect(json.$type).to.equal(documentTypeName);
       expect(json.$revision).to.equal(Number(revision));
     });
+  });
 
+  describe('fromJSON()', () => {
     it('should roundtrip through toJSON / fromJSON', () => {
       const documentInstance = createDocument({ id });
 
@@ -129,74 +148,78 @@ describe('Document', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('generateId()', () => {
+    it('should generate id', () => {
+      const generatedId = wasm.Document.generateId('note', ownerId, dataContractId);
+
+      expect(Array.from(generatedId).length).to.equal(32);
+    });
+  });
+
+  describe('id', () => {
     it('should return document id', () => {
       const documentInstance = createDocument({ id });
 
       expect(documentInstance.id.toBase58()).to.deep.equal(id);
     });
 
-    it('should return owner id', () => {
-      const documentInstance = createDocument({ id });
-
-      expect(documentInstance.ownerId.toBase58()).to.deep.equal(ownerId);
-    });
-
-    it('should return data contract id', () => {
-      const documentInstance = createDocument({ id });
-
-      expect(documentInstance.dataContractId.toBase58()).to.deep.equal(dataContractId);
-    });
-
-    it('should return properties', () => {
-      const documentInstance = createDocument({ id });
-
-      expect(documentInstance.properties).to.deep.equal(document);
-    });
-
-    it('should return revision', () => {
-      const documentInstance = createDocument({ id });
-
-      expect(documentInstance.revision).to.deep.equal(revision);
-    });
-  });
-
-  describe('setters', () => {
-    it('should allow to set document id', () => {
+    it('should set document id', () => {
       const documentInstance = createDocument({ id });
 
       documentInstance.id = ownerId;
 
       expect(documentInstance.id.toBase58()).to.deep.equal(ownerId);
     });
+  });
 
-    it('should allow to set document owner id', () => {
+  describe('ownerId', () => {
+    it('should return owner id', () => {
+      const documentInstance = createDocument({ id });
+
+      expect(documentInstance.ownerId.toBase58()).to.deep.equal(ownerId);
+    });
+
+    it('should set document owner id', () => {
       const documentInstance = createDocument({ id });
 
       documentInstance.ownerId = id;
 
       expect(documentInstance.ownerId.toBase58()).to.deep.equal(id);
     });
+  });
 
-    it('should allow to set entropy', () => {
+  describe('dataContractId', () => {
+    it('should return data contract id', () => {
       const documentInstance = createDocument({ id });
 
-      const newEntropy = new Array(documentInstance.entropy.length).fill(0);
+      expect(documentInstance.dataContractId.toBase58()).to.deep.equal(dataContractId);
+    });
+  });
 
-      documentInstance.entropy = newEntropy;
+  describe('properties', () => {
+    it('should return properties', () => {
+      const documentInstance = createDocument({ id });
 
-      expect(Array.from(documentInstance.entropy)).to.deep.equal(newEntropy);
+      expect(documentInstance.properties).to.deep.equal(document);
     });
 
-    it('should allow to set properties', () => {
+    it('should set properties', () => {
       const documentInstance = createDocument({ id });
 
       documentInstance.properties = document2;
 
       expect(documentInstance.properties).to.deep.equal(document2);
     });
+  });
 
-    it('should allow to set revision', () => {
+  describe('revision', () => {
+    it('should return revision', () => {
+      const documentInstance = createDocument({ id });
+
+      expect(documentInstance.revision).to.deep.equal(revision);
+    });
+
+    it('should set revision', () => {
       const documentInstance = createDocument({ id });
 
       const newRevision = BigInt(1000);
@@ -205,8 +228,22 @@ describe('Document', () => {
 
       expect(documentInstance.revision).to.deep.equal(newRevision);
     });
+  });
 
-    it('should allow to set created at', () => {
+  describe('entropy', () => {
+    it('should set entropy', () => {
+      const documentInstance = createDocument({ id });
+
+      const newEntropy = new Array(documentInstance.entropy.length).fill(0);
+
+      documentInstance.entropy = newEntropy;
+
+      expect(Array.from(documentInstance.entropy)).to.deep.equal(newEntropy);
+    });
+  });
+
+  describe('createdAt', () => {
+    it('should set created at', () => {
       const documentInstance = createDocument({ id });
 
       const createdAt = BigInt(new Date(1123).getTime());
@@ -215,8 +252,10 @@ describe('Document', () => {
 
       expect(documentInstance.createdAt).to.deep.equal(createdAt);
     });
+  });
 
-    it('should allow to set updated at', () => {
+  describe('updatedAt', () => {
+    it('should set updated at', () => {
       const documentInstance = createDocument({ id });
 
       const updatedAt = BigInt(new Date(1123).getTime());
@@ -225,8 +264,10 @@ describe('Document', () => {
 
       expect(documentInstance.updatedAt).to.deep.equal(updatedAt);
     });
+  });
 
-    it('should allow to set transferred at', () => {
+  describe('transferredAt', () => {
+    it('should set transferred at', () => {
       const documentInstance = createDocument({ id });
 
       const transferredAt = BigInt(new Date(11231).getTime());
@@ -235,8 +276,10 @@ describe('Document', () => {
 
       expect(documentInstance.transferredAt).to.deep.equal(transferredAt);
     });
+  });
 
-    it('should allow to set create at Block Height', () => {
+  describe('createdAtBlockHeight', () => {
+    it('should set created at Block Height', () => {
       const documentInstance = createDocument({ id });
 
       const createdAtHeight = BigInt(9172);
@@ -245,8 +288,10 @@ describe('Document', () => {
 
       expect(documentInstance.createdAtBlockHeight).to.deep.equal(createdAtHeight);
     });
+  });
 
-    it('should allow to set updated at Block Height', () => {
+  describe('updatedAtBlockHeight', () => {
+    it('should set updated at Block Height', () => {
       const documentInstance = createDocument({ id });
 
       const updatedAtHeight = BigInt(9172);
@@ -255,8 +300,10 @@ describe('Document', () => {
 
       expect(documentInstance.updatedAtBlockHeight).to.deep.equal(updatedAtHeight);
     });
+  });
 
-    it('should allow to set transferred at Block Height', () => {
+  describe('transferredAtBlockHeight', () => {
+    it('should set transferred at Block Height', () => {
       const documentInstance = createDocument({ id });
 
       const transferredAtHeight = BigInt(9172);
@@ -265,8 +312,10 @@ describe('Document', () => {
 
       expect(documentInstance.transferredAtBlockHeight).to.deep.equal(transferredAtHeight);
     });
+  });
 
-    it('should allow to set create at core Block Height', () => {
+  describe('createdAtCoreBlockHeight', () => {
+    it('should set created at core Block Height', () => {
       const documentInstance = createDocument({ id });
 
       const createdAtHeight = 91721;
@@ -275,8 +324,10 @@ describe('Document', () => {
 
       expect(documentInstance.createdAtCoreBlockHeight).to.deep.equal(createdAtHeight);
     });
+  });
 
-    it('should allow to set updated at Block Height', () => {
+  describe('updatedAtCoreBlockHeight', () => {
+    it('should set updated at core Block Height', () => {
       const documentInstance = createDocument({ id });
 
       const updatedAtHeight = 91722;
@@ -285,8 +336,10 @@ describe('Document', () => {
 
       expect(documentInstance.updatedAtCoreBlockHeight).to.deep.equal(updatedAtHeight);
     });
+  });
 
-    it('should allow to set transferred at Block Height', () => {
+  describe('transferredAtCoreBlockHeight', () => {
+    it('should set transferred at core Block Height', () => {
       const documentInstance = createDocument({ id });
 
       const transferredAtHeight = 91723;
@@ -295,8 +348,10 @@ describe('Document', () => {
 
       expect(documentInstance.transferredAtCoreBlockHeight).to.deep.equal(transferredAtHeight);
     });
+  });
 
-    it('should allow to set document type name', () => {
+  describe('documentTypeName', () => {
+    it('should set document type name', () => {
       const documentInstance = createDocument({ id });
 
       const newDocumentTypeName = 'bbbb';
@@ -304,14 +359,6 @@ describe('Document', () => {
       documentInstance.documentTypeName = newDocumentTypeName;
 
       expect(documentInstance.documentTypeName).to.deep.equal(newDocumentTypeName);
-    });
-  });
-
-  describe('static', () => {
-    it('should allow to generate id', () => {
-      const generatedId = wasm.Document.generateId('note', ownerId, dataContractId);
-
-      expect(Array.from(generatedId).length).to.equal(32);
     });
   });
 });

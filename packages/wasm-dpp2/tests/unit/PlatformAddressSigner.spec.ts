@@ -11,7 +11,7 @@ describe('PlatformAddressSigner', () => {
   // Same key in hex format (32 bytes)
   const testPrivateKeyHex = '67ad1669d882da256b6fa05e1b0ae384a6ac8aed146ea53602b8ff0e1e9c18e9';
 
-  describe('construction', () => {
+  describe('constructor()', () => {
     it('should create empty signer', () => {
       const signer = new wasm.PlatformAddressSigner();
       expect(signer).to.exist();
@@ -19,7 +19,7 @@ describe('PlatformAddressSigner', () => {
     });
   });
 
-  describe('addKey', () => {
+  describe('addKey()', () => {
     it('should add key and return derived address from PrivateKey created from WIF', () => {
       const signer = new wasm.PlatformAddressSigner();
       const privateKey = wasm.PrivateKey.fromWIF(testPrivateKeyWif);
@@ -82,7 +82,7 @@ describe('PlatformAddressSigner', () => {
     });
   });
 
-  describe('hasKey', () => {
+  describe('hasKey()', () => {
     it('should return true for derived address', () => {
       const signer = new wasm.PlatformAddressSigner();
       const privateKey = wasm.PrivateKey.fromHex(testPrivateKeyHex, 'testnet');
@@ -112,7 +112,7 @@ describe('PlatformAddressSigner', () => {
     });
   });
 
-  describe('getPrivateKeysBytes', () => {
+  describe('getPrivateKeysBytes()', () => {
     it('should return empty array for empty signer', () => {
       const signer = new wasm.PlatformAddressSigner();
       const keys = signer.getPrivateKeysBytes();

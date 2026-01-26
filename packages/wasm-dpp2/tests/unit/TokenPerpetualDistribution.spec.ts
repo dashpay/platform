@@ -6,8 +6,8 @@ before(async () => {
 });
 
 describe('TokenPerpetualDistribution', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values', () => {
+  describe('constructor', () => {
+    it('should create instance from values', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
@@ -31,8 +31,8 @@ describe('TokenPerpetualDistribution', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get distributionType', () => {
+  describe('distributionType', () => {
+    it('should return distributionType', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
@@ -52,30 +52,7 @@ describe('TokenPerpetualDistribution', () => {
       expect(distribution.distributionType.constructor.name).to.deep.equal('RewardDistributionType');
     });
 
-    it('should allow to get distributionRecipient', () => {
-      const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
-      );
-
-      const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
-        BigInt(111),
-        distributionFunction,
-      );
-
-      const distribution = new wasm.TokenPerpetualDistribution(
-        distributionType,
-        recipient,
-      );
-
-      expect(distribution.distributionRecipient.constructor.name).to.deep.equal('TokenDistributionRecipient');
-      expect(distribution.distributionRecipient.recipientType).to.deep.equal('ContractOwner');
-    });
-  });
-
-  describe('setters', () => {
-    it('should allow to set distributionType', () => {
+    it('should set distributionType', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
@@ -103,8 +80,31 @@ describe('TokenPerpetualDistribution', () => {
       expect(distribution.distributionType.constructor.name).to.deep.equal('RewardDistributionType');
       expect(distribution.distributionType.distribution.constructor.name).to.deep.equal('TimeBasedDistribution');
     });
+  });
 
-    it('should allow to set distributionRecipient', () => {
+  describe('distributionRecipient', () => {
+    it('should return distributionRecipient', () => {
+      const recipient = wasm.TokenDistributionRecipient.ContractOwner();
+
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
+        BigInt(111),
+      );
+
+      const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
+        BigInt(111),
+        distributionFunction,
+      );
+
+      const distribution = new wasm.TokenPerpetualDistribution(
+        distributionType,
+        recipient,
+      );
+
+      expect(distribution.distributionRecipient.constructor.name).to.deep.equal('TokenDistributionRecipient');
+      expect(distribution.distributionRecipient.recipientType).to.deep.equal('ContractOwner');
+    });
+
+    it('should set distributionRecipient', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(

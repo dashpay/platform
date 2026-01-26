@@ -1,17 +1,26 @@
 import { expect } from './helpers/chai.ts';
 import init, { StateTransition, ConsensusError } from '../../dist/dpp.compressed.js';
 
+before(async () => {
+  await init();
+});
+
 describe('wasm-dpp2 module', () => {
-  before(async () => {
-    await init();
+  describe('StateTransition', () => {
+    it('should be exposed as a function', () => {
+      expect(StateTransition).to.be.a('function');
+    });
   });
 
-  it('should expose state transition bindings', () => {
-    expect(StateTransition).to.be.a('function');
-  });
+  describe('ConsensusError', () => {
+    it('should be exposed as a function', () => {
+      expect(ConsensusError).to.be.a('function');
+    });
 
-  it('should expose consensus error helpers', () => {
-    expect(ConsensusError).to.be.a('function');
-    expect(ConsensusError.deserialize).to.be.a('function');
+    describe('deserialize()', () => {
+      it('should be exposed as a function', () => {
+        expect(ConsensusError.deserialize).to.be.a('function');
+      });
+    });
   });
 });

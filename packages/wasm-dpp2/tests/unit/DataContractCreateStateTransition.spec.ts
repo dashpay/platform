@@ -10,9 +10,9 @@ before(async () => {
   ({ PlatformVersion } = wasm);
 });
 
-describe('DataContract Create Transition', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create document_transitions from data contract', () => {
+describe('DataContractCreateTransition', () => {
+  describe('constructor()', () => {
+    it('should create transition from data contract', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
@@ -20,8 +20,23 @@ describe('DataContract Create Transition', () => {
       expect(dataContractTransition).to.be.an.instanceof(wasm.DataContractCreateTransition);
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
+  });
 
-    it('should allow to convert document_transitions to bytes and create from bytes', () => {
+  describe('toBytes()', () => {
+    it('should convert transition to bytes', () => {
+      const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
+
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+
+      const bytes = dataContractTransition.toBytes();
+
+      expect(bytes).to.be.an.instanceof(Uint8Array);
+      expect(bytes.length).to.be.greaterThan(0);
+    });
+  });
+
+  describe('fromBytes()', () => {
+    it('should create transition from bytes', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
@@ -35,8 +50,10 @@ describe('DataContract Create Transition', () => {
       expect(dataContractTransition).to.be.an.instanceof(wasm.DataContractCreateTransition);
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
     });
+  });
 
-    it('should allow to convert data contract transition to state document_transitions and create data contract transition from state transition', () => {
+  describe('toStateTransition()', () => {
+    it('should convert to state transition', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
@@ -49,16 +66,32 @@ describe('DataContract Create Transition', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get feature version', () => {
+  describe('fromStateTransition()', () => {
+    it('should create transition from state transition', () => {
+      const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
+
+      const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
+
+      const stateTransition = dataContractTransition.toStateTransition();
+
+      const newDataContractTransition = wasm.DataContractCreateTransition.fromStateTransition(stateTransition);
+
+      expect(dataContractTransition.toBytes()).to.deep.equal(newDataContractTransition.toBytes());
+    });
+  });
+
+  describe('featureVersion', () => {
+    it('should return feature version', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
 
       expect(dataContractTransition.featureVersion).to.equal(0);
     });
+  });
 
-    it('should allow to verify protocol version', () => {
+  describe('verifyProtocolVersion()', () => {
+    it('should return true for valid protocol version', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
@@ -66,7 +99,7 @@ describe('DataContract Create Transition', () => {
       expect(dataContractTransition.verifyProtocolVersion(1)).to.equal(true);
     });
 
-    it('should allow to verify incorrect protocol version', () => {
+    it('should throw for invalid protocol version', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
@@ -78,8 +111,10 @@ describe('DataContract Create Transition', () => {
         expect(false).to.equal(false);
       }
     });
+  });
 
-    it('should allow to get data contract', () => {
+  describe('getDataContract()', () => {
+    it('should return data contract', () => {
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);
 
       const dataContractTransition = new wasm.DataContractCreateTransition(dataContract, BigInt(1));
@@ -90,8 +125,8 @@ describe('DataContract Create Transition', () => {
     });
   });
 
-  describe('setters', () => {
-    it('should allow to set the data contract', () => {
+  describe('setDataContract()', () => {
+    it('should set the data contract', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContract = wasm.DataContract.fromJSON(value, false, PlatformVersion.PLATFORM_V1);

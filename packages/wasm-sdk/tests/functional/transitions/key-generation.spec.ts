@@ -15,14 +15,14 @@ import { createTestSignerAndKey } from '../fixtures/requiredTestData.ts';
  * - 3: CRITICAL level TRANSFER key (ECDSA_HASH160) - for credit transfers
  */
 
-describe('Key Generation Tests', function describeKeyGeneration() {
+describe('Key Generation', function describeKeyGeneration() {
   this.timeout(30000);
 
   before(async () => {
     await init();
   });
 
-  describe('generateTestIdentityKeys', () => {
+  describe('generateTestIdentityKeys()', () => {
     it('should generate deterministic keys for seed 1', () => {
       const keys = sdk.WasmSdk.generateTestIdentityKeys(BigInt(1));
 
@@ -75,7 +75,7 @@ describe('Key Generation Tests', function describeKeyGeneration() {
     });
   });
 
-  describe('createTestSignerAndKey', () => {
+  describe('createTestSignerAndKey()', () => {
     it('should create a signer and identity key', () => {
       const { signer, identityKey, keyInfo } = createTestSignerAndKey(sdk, 1, 2);
 

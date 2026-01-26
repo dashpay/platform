@@ -8,60 +8,64 @@ before(async () => {
 });
 
 describe('PrivateKey', () => {
-  describe('serialization / deserialization', () => {
-    it('should allow to create PrivateKey from wif', () => {
+  describe('fromWIF()', () => {
+    it('should create PrivateKey from WIF', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(pkey).to.be.an.instanceof(wasm.PrivateKey);
     });
+  });
 
-    it('should allow to create PrivateKey from bytes', () => {
+  describe('fromBytes()', () => {
+    it('should create PrivateKey from bytes', () => {
       const pkey = wasm.PrivateKey.fromBytes(fromHexString(bytes), 'Mainnet');
 
       expect(pkey).to.be.an.instanceof(wasm.PrivateKey);
     });
+  });
 
-    it('should allow to create PrivateKey from hex', () => {
+  describe('fromHex()', () => {
+    it('should create PrivateKey from hex', () => {
       const pkey = wasm.PrivateKey.fromBytes(fromHexString(bytes), 'Mainnet');
 
       const pkeyFromHex = wasm.PrivateKey.fromHex(bytes, 'Mainnet');
 
       expect(pkey.toBytes()).to.deep.equal(pkeyFromHex.toBytes());
     });
+  });
 
-    it('should allow to create PrivateKey from wif and read value in wif', () => {
+  describe('toWIF()', () => {
+    it('should return key as WIF', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(pkey.toWIF()).to.equal(wif);
     });
+  });
 
-    it('should allow to create PrivateKey from wif and write value in bytes', () => {
+  describe('toBytes()', () => {
+    it('should return key as bytes', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(pkey.toBytes()).to.deep.equal(fromHexString(bytes));
     });
-  });
 
-  describe('getters', () => {
-    it('should allow to get key wif', () => {
-      const pkey = wasm.PrivateKey.fromWIF(wif);
-
-      expect(pkey.toWIF()).to.equal(wif);
-    });
-
-    it('should allow to get key bytes', () => {
+    it('should return key bytes matching hex string', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(toHexString(pkey.toBytes())).to.equal(bytes);
     });
+  });
 
-    it('should allow to get key hex', () => {
+  describe('toHex()', () => {
+    it('should return key as hex', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(pkey.toHex().toLowerCase()).to.equal(bytes);
     });
+  });
 
-    it('should allow to get public key hash', () => {
+  describe('getPublicKeyHash()', () => {
+    it('should return public key hash', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
       expect(pkey.getPublicKeyHash()).to.deep.equal(publicKeyHash);

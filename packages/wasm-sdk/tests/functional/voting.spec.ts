@@ -1,7 +1,7 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
 import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.ts';
 
-describe('Contested resources & voting', function describeContestedResources() {
+describe('Voting', function describeVoting() {
   this.timeout(60000);
 
   let client: sdk.WasmSdk;
@@ -21,26 +21,34 @@ describe('Contested resources & voting', function describeContestedResources() {
     }
   });
 
-  it('should list contested resources and vote state', async () => {
-    const DPNS_CONTRACT = dpnsContractId;
-    const PARENT = dpnsDomain.parent;
-    const LABEL = dpnsDomain.label;
+  describe('getContestedResources()', () => {
+    it('should list contested resources', async () => {
+      const DPNS_CONTRACT = dpnsContractId;
 
-    await client.getContestedResources({
-      dataContractId: DPNS_CONTRACT,
-      documentTypeName: 'domain',
-      indexName: 'parentNameAndLabel',
-      orderAscending: true,
+      await client.getContestedResources({
+        dataContractId: DPNS_CONTRACT,
+        documentTypeName: 'domain',
+        indexName: 'parentNameAndLabel',
+        orderAscending: true,
+      });
     });
+  });
 
-    await client.getContestedResourceVoteState({
-      dataContractId: DPNS_CONTRACT,
-      documentTypeName: 'domain',
-      indexName: 'parentNameAndLabel',
-      indexValues: [PARENT, LABEL],
-      resultType: 'documents',
-      limit: 50,
-      includeLockedAndAbstaining: true,
+  describe('getContestedResourceVoteState()', () => {
+    it('should get contested resource vote state', async () => {
+      const DPNS_CONTRACT = dpnsContractId;
+      const PARENT = dpnsDomain.parent;
+      const LABEL = dpnsDomain.label;
+
+      await client.getContestedResourceVoteState({
+        dataContractId: DPNS_CONTRACT,
+        documentTypeName: 'domain',
+        indexName: 'parentNameAndLabel',
+        indexValues: [PARENT, LABEL],
+        resultType: 'documents',
+        limit: 50,
+        includeLockedAndAbstaining: true,
+      });
     });
   });
 });

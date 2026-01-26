@@ -10,7 +10,7 @@ before(async () => {
 });
 
 describe('PartialIdentity', () => {
-  describe('constructor', () => {
+  describe('constructor()', () => {
     it('should create PartialIdentity with minimal options', () => {
       const partialIdentity = new wasm.PartialIdentity({
         id: identifier,
@@ -47,7 +47,7 @@ describe('PartialIdentity', () => {
     });
   });
 
-  describe('toJSON', () => {
+  describe('toJSON()', () => {
     it('should serialize to JSON with minimal data', () => {
       const partialIdentity = new wasm.PartialIdentity({
         id: identifier,
@@ -95,7 +95,7 @@ describe('PartialIdentity', () => {
     });
   });
 
-  describe('toObject', () => {
+  describe('toObject()', () => {
     it('should serialize to object with minimal data', () => {
       const partialIdentity = new wasm.PartialIdentity({
         id: identifier,
@@ -146,7 +146,7 @@ describe('PartialIdentity', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('id', () => {
     it('should get id', () => {
       const partialIdentity = new wasm.PartialIdentity({
         id: identifier,
@@ -156,6 +156,20 @@ describe('PartialIdentity', () => {
       expect(partialIdentity.id.toBase58()).to.equal(identifier);
     });
 
+    it('should set id', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+      });
+
+      const newId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+      partialIdentity.id = newId;
+
+      expect(partialIdentity.id.toBase58()).to.equal(newId);
+    });
+  });
+
+  describe('loadedPublicKeys', () => {
     it('should get loadedPublicKeys', () => {
       const pubKey = new wasm.IdentityPublicKey({
         keyId,
@@ -174,83 +188,6 @@ describe('PartialIdentity', () => {
       const keys = partialIdentity.loadedPublicKeys;
       expect(Object.keys(keys)).to.deep.equal([String(keyId)]);
       expect(keys[String(keyId)].__type).to.equal('IdentityPublicKey');
-    });
-
-    it('should get balance', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-        balance: BigInt(500),
-      });
-
-      expect(partialIdentity.balance).to.equal(BigInt(500));
-    });
-
-    it('should get revision', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-        revision: BigInt(10),
-      });
-
-      expect(partialIdentity.revision).to.equal(BigInt(10));
-    });
-
-    it('should get notFoundPublicKeys', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-        notFoundPublicKeys: [5, 15, 25],
-      });
-
-      expect(Array.from(partialIdentity.notFoundPublicKeys)).to.deep.equal([5, 15, 25]);
-    });
-  });
-
-  describe('setters', () => {
-    it('should set id', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-      });
-
-      const newId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
-      partialIdentity.id = newId;
-
-      expect(partialIdentity.id.toBase58()).to.equal(newId);
-    });
-
-    it('should set balance', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-      });
-
-      partialIdentity.balance = BigInt(999);
-
-      expect(partialIdentity.balance).to.equal(BigInt(999));
-    });
-
-    it('should set revision', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-      });
-
-      partialIdentity.revision = BigInt(42);
-
-      expect(partialIdentity.revision).to.equal(BigInt(42));
-    });
-
-    it('should set notFoundPublicKeys', () => {
-      const partialIdentity = new wasm.PartialIdentity({
-        id: identifier,
-        loadedPublicKeys: {},
-      });
-
-      partialIdentity.notFoundPublicKeys = [100, 200];
-
-      expect(Array.from(partialIdentity.notFoundPublicKeys)).to.deep.equal([100, 200]);
     });
 
     it('should set loadedPublicKeys', () => {
@@ -276,7 +213,76 @@ describe('PartialIdentity', () => {
     });
   });
 
-  describe('fromObject', () => {
+  describe('balance', () => {
+    it('should get balance', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+        balance: BigInt(500),
+      });
+
+      expect(partialIdentity.balance).to.equal(BigInt(500));
+    });
+
+    it('should set balance', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+      });
+
+      partialIdentity.balance = BigInt(999);
+
+      expect(partialIdentity.balance).to.equal(BigInt(999));
+    });
+  });
+
+  describe('revision', () => {
+    it('should get revision', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+        revision: BigInt(10),
+      });
+
+      expect(partialIdentity.revision).to.equal(BigInt(10));
+    });
+
+    it('should set revision', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+      });
+
+      partialIdentity.revision = BigInt(42);
+
+      expect(partialIdentity.revision).to.equal(BigInt(42));
+    });
+  });
+
+  describe('notFoundPublicKeys', () => {
+    it('should get notFoundPublicKeys', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+        notFoundPublicKeys: [5, 15, 25],
+      });
+
+      expect(Array.from(partialIdentity.notFoundPublicKeys)).to.deep.equal([5, 15, 25]);
+    });
+
+    it('should set notFoundPublicKeys', () => {
+      const partialIdentity = new wasm.PartialIdentity({
+        id: identifier,
+        loadedPublicKeys: {},
+      });
+
+      partialIdentity.notFoundPublicKeys = [100, 200];
+
+      expect(Array.from(partialIdentity.notFoundPublicKeys)).to.deep.equal([100, 200]);
+    });
+  });
+
+  describe('fromObject()', () => {
     it('should deserialize from object with minimal data', () => {
       const partialIdentity = new wasm.PartialIdentity({
         id: identifier,
@@ -324,7 +330,7 @@ describe('PartialIdentity', () => {
     });
   });
 
-  describe('fromJSON', () => {
+  describe('fromJSON()', () => {
     it('should deserialize from JSON with minimal data', () => {
       const partialIdentity = new wasm.PartialIdentity({
         id: identifier,

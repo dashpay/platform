@@ -55,7 +55,7 @@ describe('DocumentsFacade', () => {
     documentSetPriceStub = this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
   });
 
-  describe('Query Methods', () => {
+  describe('query()', () => {
     it('should fetch documents matching criteria', async () => {
       const query = {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
@@ -69,7 +69,9 @@ describe('DocumentsFacade', () => {
 
       expect(getDocumentsStub).to.be.calledOnceWithExactly(query);
     });
+  });
 
+  describe('queryWithProof()', () => {
     it('should fetch documents with proof metadata', async () => {
       const query = {
         dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
@@ -80,7 +82,9 @@ describe('DocumentsFacade', () => {
 
       expect(getDocumentsWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
+  });
 
+  describe('get()', () => {
     it('should fetch a single document by ID', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
       const documentTypeName = 'note';
@@ -91,7 +95,9 @@ describe('DocumentsFacade', () => {
       expect(getDocumentStub)
         .to.be.calledOnceWithExactly(contractId, documentTypeName, documentId);
     });
+  });
 
+  describe('getWithProof()', () => {
     it('should fetch a single document with proof', async () => {
       const contractId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
       const documentTypeName = 'note';
@@ -104,7 +110,7 @@ describe('DocumentsFacade', () => {
     });
   });
 
-  describe('Transition Methods', () => {
+  describe('create()', () => {
     it('should create a new document', async () => {
       const options = {
         document,
@@ -116,7 +122,9 @@ describe('DocumentsFacade', () => {
 
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
     });
+  });
 
+  describe('replace()', () => {
     it('should replace an existing document', async () => {
       const options = {
         document,
@@ -129,7 +137,9 @@ describe('DocumentsFacade', () => {
 
       expect(documentReplaceStub).to.be.calledOnceWithExactly(options);
     });
+  });
 
+  describe('delete()', () => {
     it('should delete a document', async () => {
       const options = {
         document,
@@ -142,7 +152,7 @@ describe('DocumentsFacade', () => {
       expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
     });
 
-    it('should accept document identifiers instead of Document instance for delete', async () => {
+    it('should accept document identifiers instead of Document instance', async () => {
       const options = {
         document: {
           id: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
@@ -158,7 +168,9 @@ describe('DocumentsFacade', () => {
 
       expect(documentDeleteStub).to.be.calledOnceWithExactly(options);
     });
+  });
 
+  describe('transfer()', () => {
     it('should transfer document ownership to another identity', async () => {
       const recipientId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
       const options = {
@@ -172,7 +184,9 @@ describe('DocumentsFacade', () => {
 
       expect(documentTransferStub).to.be.calledOnceWithExactly(options);
     });
+  });
 
+  describe('purchase()', () => {
     it('should purchase a document from another identity', async () => {
       const buyerId = '6o4vL6YpPjamqnnPNpwNSspYJdhPpzYbXvAJ4PYH7Ack';
       const options = {
@@ -187,7 +201,9 @@ describe('DocumentsFacade', () => {
 
       expect(documentPurchaseStub).to.be.calledOnceWithExactly(options);
     });
+  });
 
+  describe('setPrice()', () => {
     it('should set a price on a document for sale', async () => {
       const options = {
         document,

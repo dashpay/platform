@@ -1,14 +1,14 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
-describe('Extended keys', () => {
+describe('Extended Keys', () => {
   const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
   before(async () => {
     await init();
   });
 
-  describe('deriveChildPublicKey - basic functionality', () => {
+  describe('deriveChildPublicKey()', () => {
     it('should derive non-hardened child xpubs that differ by index', () => {
       const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
         mnemonic: TEST_MNEMONIC,
@@ -26,24 +26,7 @@ describe('Extended keys', () => {
       expect(child1).to.be.a('string');
       expect(child1).to.not.equal(child0);
     });
-  });
 
-  describe('xprvToXpub - basic functionality', () => {
-    it('should convert xprv to the expected xpub', () => {
-      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
-        mnemonic: TEST_MNEMONIC,
-        passphrase: null,
-        path: "m/44'/5'/0'",
-        network: 'mainnet',
-      });
-
-      const derivedXpub = sdk.WasmSdk.xprvToXpub(master.xprv);
-      expect(derivedXpub).to.be.a('string');
-      expect(derivedXpub).to.equal(master.xpub);
-    });
-  });
-
-  describe('deriveChildPublicKey - error handling', () => {
     it('should throw when hardened=true', () => {
       const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
         mnemonic: TEST_MNEMONIC,
@@ -75,7 +58,20 @@ describe('Extended keys', () => {
     });
   });
 
-  describe('xprvToXpub - error handling', () => {
+  describe('xprvToXpub()', () => {
+    it('should convert xprv to the expected xpub', () => {
+      const master = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath({
+        mnemonic: TEST_MNEMONIC,
+        passphrase: null,
+        path: "m/44'/5'/0'",
+        network: 'mainnet',
+      });
+
+      const derivedXpub = sdk.WasmSdk.xprvToXpub(master.xprv);
+      expect(derivedXpub).to.be.a('string');
+      expect(derivedXpub).to.equal(master.xpub);
+    });
+
     it('should throw for invalid xprv input', () => {
       expect(() => sdk.WasmSdk.xprvToXpub('invalid_xprv'))
         .to.throw('Invalid extended private key');

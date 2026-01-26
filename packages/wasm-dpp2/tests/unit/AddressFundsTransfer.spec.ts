@@ -6,7 +6,7 @@ before(async () => {
 });
 
 describe('FeeStrategyStep', () => {
-  describe('construction', () => {
+  describe('deductFromInput()', () => {
     it('should create deductFromInput step', () => {
       const step = wasm.FeeStrategyStep.deductFromInput(0);
       expect(step).to.exist();
@@ -20,7 +20,9 @@ describe('FeeStrategyStep', () => {
       expect(step.isDeductFromInput).to.be.true();
       expect(step.index).to.equal(5);
     });
+  });
 
+  describe('reduceOutput()', () => {
     it('should create reduceOutput step', () => {
       const step = wasm.FeeStrategyStep.reduceOutput(0);
       expect(step).to.exist();
@@ -43,7 +45,7 @@ describe.skip('AddressFundsTransferTransition', () => {
   const testPrivateKeyHex = 'c9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd';
   const testPrivateKeyHex2 = 'a9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd';
 
-  describe('build', () => {
+  describe('build()', () => {
     it('should build a transfer transition with single input and output', () => {
       // Create output address
       const outputAddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);

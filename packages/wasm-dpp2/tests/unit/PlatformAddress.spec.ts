@@ -6,7 +6,7 @@ before(async () => {
 });
 
 describe('PlatformAddress', () => {
-  describe('fromBytes', () => {
+  describe('fromBytes()', () => {
     it('should create P2PKH address from bytes', () => {
       const p2pkhBytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -52,7 +52,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('fromBech32m', () => {
+  describe('fromBech32m()', () => {
     it('should create address from testnet bech32m string', () => {
       // First create an address and get its bech32m
       const bytes = new Uint8Array([
@@ -93,7 +93,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('fromHex', () => {
+  describe('fromHex()', () => {
     it('should create address from hex string', () => {
       const hexString = `b0${'01020304050607080910111213141516171819'.padEnd(40, '0').substring(0, 40)}`;
       const addr = wasm.PlatformAddress.fromHex(hexString);
@@ -111,7 +111,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('fromP2pkhHash', () => {
+  describe('fromP2pkhHash()', () => {
     it('should create P2PKH address from 20-byte hash', () => {
       const hash = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const addr = wasm.PlatformAddress.fromP2pkhHash(hash);
@@ -131,7 +131,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('fromP2shHash', () => {
+  describe('fromP2shHash()', () => {
     it('should create P2SH address from 20-byte hash', () => {
       const hash = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
       const addr = wasm.PlatformAddress.fromP2shHash(hash);
@@ -151,7 +151,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('constructor', () => {
+  describe('constructor()', () => {
     it('should accept PlatformAddress object', () => {
       const bytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -184,7 +184,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('toBytes', () => {
+  describe('toBytes()', () => {
     it('should return 21-byte array', () => {
       const inputBytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -196,7 +196,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('toHex', () => {
+  describe('toHex()', () => {
     it('should return hex string', () => {
       const bytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -208,7 +208,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('hash', () => {
+  describe('hash()', () => {
     it('should return 20-byte hash', () => {
       const bytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -222,7 +222,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('hashToHex', () => {
+  describe('hashToHex()', () => {
     it('should return hex string of hash', () => {
       const bytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -234,7 +234,7 @@ describe('PlatformAddress', () => {
     });
   });
 
-  describe('toBech32m', () => {
+  describe('toBech32m()', () => {
     it('should convert to testnet bech32m', () => {
       const bytes = new Uint8Array([
         0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,

@@ -16,7 +16,7 @@ describe('Group', () => {
     return map;
   }
 
-  describe('constructor', () => {
+  describe('constructor()', () => {
     it('should create Group with members and required power', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);
@@ -41,8 +41,8 @@ describe('Group', () => {
     });
   });
 
-  describe('getters and setters', () => {
-    it('should get and set members', () => {
+  describe('members', () => {
+    it('should return members', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);
 
@@ -54,18 +54,29 @@ describe('Group', () => {
       const foundPower = fetchedMembers.get(memberId.toBase58());
       expect(foundPower).to.equal(100);
     });
+  });
 
-    it('should get and set required power', () => {
+  describe('requiredPower', () => {
+    it('should return required power', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);
 
       const group = new wasm.Group(members, 50);
       expect(group.requiredPower).to.equal(50);
+    });
+
+    it('should set required power', () => {
+      const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
+      const members = createMembersMap([[memberId, 100]]);
+
+      const group = new wasm.Group(members, 50);
 
       group.requiredPower = 75;
       expect(group.requiredPower).to.equal(75);
     });
+  });
 
+  describe('setMemberRequiredPower()', () => {
     it('should set member required power', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);
@@ -81,8 +92,8 @@ describe('Group', () => {
     });
   });
 
-  describe('conversion methods', () => {
-    it('should round-trip via toJSON/fromJSON', () => {
+  describe('toJSON()', () => {
+    it('should convert to JSON', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);
 
@@ -90,24 +101,22 @@ describe('Group', () => {
 
       const json = group.toJSON();
       expect(json).to.be.an('object');
-
-      const restored = wasm.Group.fromJSON(json);
-      expect(restored.requiredPower).to.equal(group.requiredPower);
     });
+  });
 
-    it('should export toObject', () => {
+  describe('fromJSON()', () => {
+    it('should roundtrip via toJSON/fromJSON', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);
 
       const group = new wasm.Group(members, 50);
 
-      const obj = group.toObject();
-      // toObject exports as Map type in serde_wasm_bindgen which doesn't round-trip
-      // but it should at least be defined
-      expect(obj).to.not.be.undefined();
+      const json = group.toJSON();
+      const restored = wasm.Group.fromJSON(json);
+      expect(restored.requiredPower).to.equal(group.requiredPower);
     });
 
-    it('should round-trip Group with multiple members via toJSON/fromJSON', () => {
+    it('should roundtrip Group with multiple members via toJSON/fromJSON', () => {
       const memberId1 = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const memberId2 = wasm.Identifier.fromBytes(Buffer.from(member2IdHex, 'hex'));
       const members = createMembersMap([
@@ -124,7 +133,21 @@ describe('Group', () => {
     });
   });
 
-  describe('type properties', () => {
+  describe('toObject()', () => {
+    it('should export toObject', () => {
+      const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
+      const members = createMembersMap([[memberId, 100]]);
+
+      const group = new wasm.Group(members, 50);
+
+      const obj = group.toObject();
+      // toObject exports as Map type in serde_wasm_bindgen which doesn't round-trip
+      // but it should at least be defined
+      expect(obj).to.not.be.undefined();
+    });
+  });
+
+  describe('__type', () => {
     it('should return correct __type', () => {
       const memberId = wasm.Identifier.fromBytes(Buffer.from(memberIdHex, 'hex'));
       const members = createMembersMap([[memberId, 100]]);

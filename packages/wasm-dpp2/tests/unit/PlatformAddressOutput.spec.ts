@@ -6,7 +6,7 @@ before(async () => {
 });
 
 describe('PlatformAddressOutput', () => {
-  describe('construction', () => {
+  describe('constructor()', () => {
     it('should create from PlatformAddress object', () => {
       // 0xb0 is P2PKH address type
       const addressBytes = new Uint8Array([
@@ -80,7 +80,7 @@ describe('PlatformAddressOutput', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('address', () => {
     it('should return the address', () => {
       // 0x80 is P2SH address type
       const addressBytes = new Uint8Array([
@@ -93,7 +93,9 @@ describe('PlatformAddressOutput', () => {
       expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2SH');
     });
+  });
 
+  describe('amount', () => {
     it('should return the amount', () => {
       // 0xb0 is P2PKH address type
       const addressBytes = new Uint8Array([

@@ -16,25 +16,44 @@ before(async () => {
 });
 
 describe('Identity', () => {
-  describe('serialization / deserialization', () => {
-    it('should generate identity from identifier', async () => {
+  describe('constructor()', () => {
+    it('should create identity from identifier', async () => {
       const identity = new wasm.Identity(identifier);
 
       expect(identity).to.be.an.instanceof(wasm.Identity);
     });
+  });
 
-    it('should generate identity from identifier and return bytes', async () => {
+  describe('toBytes()', () => {
+    it('should return identity as bytes', async () => {
       const identity = new wasm.Identity(identifier);
 
       expect(Array.from(identity.toBytes())).to.deep.equal(identityBytesWithoutKeys);
+    });
+  });
 
+  describe('fromBytes()', () => {
+    it('should recreate identity from bytes', async () => {
+      const identity = new wasm.Identity(identifier);
       const newIdentity = wasm.Identity.fromBytes(identity.toBytes());
 
       expect(identity).to.be.an.instanceof(wasm.Identity);
       expect(newIdentity).to.be.an.instanceof(wasm.Identity);
+      expect(Array.from(newIdentity.toBytes())).to.deep.equal(identityBytesWithoutKeys);
     });
+  });
 
-    it('should recreate identity from JSON output', () => {
+  describe('toJSON()', () => {
+    it('should serialize identity to JSON', () => {
+      const identity = new wasm.Identity(identifier);
+      const identityJson = identity.toJSON();
+
+      expect(identityJson).to.be.an('object');
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should recreate identity from JSON', () => {
       const identity = new wasm.Identity(identifier);
       const identityJson = identity.toJSON();
 
@@ -42,8 +61,10 @@ describe('Identity', () => {
 
       expect(Array.from(restoredIdentity.toBytes())).to.deep.equal(Array.from(identity.toBytes()));
     });
+  });
 
-    it('should recreate identity from object output', () => {
+  describe('toObject()', () => {
+    it('should serialize identity to plain JS object', () => {
       const identity = new wasm.Identity(identifier);
       const identityObject = identity.toObject();
 
@@ -53,6 +74,13 @@ describe('Identity', () => {
       expect(Array.isArray(identityObject.publicKeys)).to.equal(true);
       expect(identityObject.balance).to.equal(BigInt(0));
       expect(identityObject.revision).to.equal(BigInt(0));
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should recreate identity from object', () => {
+      const identity = new wasm.Identity(identifier);
+      const identityObject = identity.toObject();
 
       const restoredIdentity = wasm.Identity.fromObject(identityObject);
 
@@ -62,26 +90,48 @@ describe('Identity', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should get id buffer', () => {
+  describe('id', () => {
+    it('should return id as Identifier', () => {
       const identity = new wasm.Identity(identifier);
 
       expect(identity.id.toBytes()).to.deep.equal(Uint8Array.from(identifierBytes));
     });
+  });
 
-    it('should get balance', () => {
+  describe('balance', () => {
+    it('should return balance', () => {
       const identity = new wasm.Identity(identifier);
 
       expect(identity.balance).to.deep.equal(BigInt(0));
     });
 
-    it('should get revision', () => {
+    it('should set balance', () => {
+      const identity = new wasm.Identity(identifier);
+
+      identity.balance = balance;
+
+      expect(identity.balance).to.equal(balance);
+    });
+  });
+
+  describe('revision', () => {
+    it('should return revision', () => {
       const identity = new wasm.Identity(identifier);
 
       expect(identity.revision).to.deep.equal(BigInt(0));
     });
 
-    it('should get public keys', () => {
+    it('should set revision', () => {
+      const identity = new wasm.Identity(identifier);
+
+      identity.revision = revision;
+
+      expect(identity.revision).to.equal(revision);
+    });
+  });
+
+  describe('publicKeys', () => {
+    it('should return public keys array', () => {
       const identity = new wasm.Identity(identifier);
 
       const pubKey = new wasm.IdentityPublicKey({
@@ -109,8 +159,8 @@ describe('Identity', () => {
     });
   });
 
-  describe('setters', () => {
-    it('should allow to set public key', () => {
+  describe('addPublicKey()', () => {
+    it('should add public key to identity', () => {
       const pubKey = new wasm.IdentityPublicKey({
         keyId,
         purpose,
@@ -125,24 +175,25 @@ describe('Identity', () => {
       identity.addPublicKey(pubKey);
 
       expect(identity).to.be.an.instanceof(wasm.Identity);
-
       expect(identity.getPublicKeyById(keyId).toBytes()).to.deep.equal(pubKey.toBytes());
     });
+  });
 
-    it('should allow to set balance', () => {
+  describe('getPublicKeyById()', () => {
+    it('should return public key by id', () => {
+      const pubKey = new wasm.IdentityPublicKey({
+        keyId,
+        purpose,
+        securityLevel,
+        keyType,
+        isReadOnly: false,
+        data: binaryData,
+      });
+
       const identity = new wasm.Identity(identifier);
+      identity.addPublicKey(pubKey);
 
-      identity.balance = balance;
-
-      expect(identity.balance).to.equal(balance);
-    });
-
-    it('should allow to set revision', () => {
-      const identity = new wasm.Identity(identifier);
-
-      identity.revision = revision;
-
-      expect(identity.revision).to.equal(revision);
+      expect(identity.getPublicKeyById(keyId).toBytes()).to.deep.equal(pubKey.toBytes());
     });
   });
 });

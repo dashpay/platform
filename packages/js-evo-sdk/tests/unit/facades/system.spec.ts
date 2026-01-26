@@ -34,24 +34,66 @@ describe('SystemFacade', () => {
     getPathElementsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getPathElementsWithProofInfo').resolves('ok');
   });
 
-  it('should forward all methods to instance methods', async () => {
-    await client.system.status();
-    await client.system.currentQuorumsInfo();
-    await client.system.totalCreditsInPlatform();
-    await client.system.totalCreditsInPlatformWithProof();
-    await client.system.prefundedSpecializedBalance('i');
-    await client.system.prefundedSpecializedBalanceWithProof('i');
-    await client.system.waitForStateTransitionResult('h');
-    await client.system.pathElements(['p'], ['k']);
-    await client.system.pathElementsWithProof(['p2'], ['k2']);
-    expect(getStatusStub).to.be.calledOnce();
-    expect(getCurrentQuorumsInfoStub).to.be.calledOnce();
-    expect(getTotalCreditsInPlatformStub).to.be.calledOnce();
-    expect(getTotalCreditsInPlatformWithProofInfoStub).to.be.calledOnce();
-    expect(getPrefundedSpecializedBalanceStub).to.be.calledOnce();
-    expect(getPrefundedSpecializedBalanceWithProofInfoStub).to.be.calledOnce();
-    expect(waitForStateTransitionResultStub).to.be.calledOnce();
-    expect(getPathElementsStub).to.be.calledOnce();
-    expect(getPathElementsWithProofInfoStub).to.be.calledOnce();
+  describe('status()', () => {
+    it('should forward to getStatus', async () => {
+      await client.system.status();
+      expect(getStatusStub).to.be.calledOnce();
+    });
+  });
+
+  describe('currentQuorumsInfo()', () => {
+    it('should forward to getCurrentQuorumsInfo', async () => {
+      await client.system.currentQuorumsInfo();
+      expect(getCurrentQuorumsInfoStub).to.be.calledOnce();
+    });
+  });
+
+  describe('totalCreditsInPlatform()', () => {
+    it('should forward to getTotalCreditsInPlatform', async () => {
+      await client.system.totalCreditsInPlatform();
+      expect(getTotalCreditsInPlatformStub).to.be.calledOnce();
+    });
+  });
+
+  describe('totalCreditsInPlatformWithProof()', () => {
+    it('should forward to getTotalCreditsInPlatformWithProofInfo', async () => {
+      await client.system.totalCreditsInPlatformWithProof();
+      expect(getTotalCreditsInPlatformWithProofInfoStub).to.be.calledOnce();
+    });
+  });
+
+  describe('prefundedSpecializedBalance()', () => {
+    it('should forward to getPrefundedSpecializedBalance', async () => {
+      await client.system.prefundedSpecializedBalance('i');
+      expect(getPrefundedSpecializedBalanceStub).to.be.calledOnce();
+    });
+  });
+
+  describe('prefundedSpecializedBalanceWithProof()', () => {
+    it('should forward to getPrefundedSpecializedBalanceWithProofInfo', async () => {
+      await client.system.prefundedSpecializedBalanceWithProof('i');
+      expect(getPrefundedSpecializedBalanceWithProofInfoStub).to.be.calledOnce();
+    });
+  });
+
+  describe('waitForStateTransitionResult()', () => {
+    it('should forward to waitForStateTransitionResult', async () => {
+      await client.system.waitForStateTransitionResult('h');
+      expect(waitForStateTransitionResultStub).to.be.calledOnce();
+    });
+  });
+
+  describe('pathElements()', () => {
+    it('should forward to getPathElements', async () => {
+      await client.system.pathElements(['p'], ['k']);
+      expect(getPathElementsStub).to.be.calledOnce();
+    });
+  });
+
+  describe('pathElementsWithProof()', () => {
+    it('should forward to getPathElementsWithProofInfo', async () => {
+      await client.system.pathElementsWithProof(['p2'], ['k2']);
+      expect(getPathElementsWithProofInfoStub).to.be.calledOnce();
+    });
   });
 });

@@ -1,7 +1,7 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
-describe('Status endpoint', function describeBlock() {
+describe('Status', function describeStatus() {
   this.timeout(30000);
 
   let client: sdk.WasmSdk;
@@ -18,8 +18,10 @@ describe('Status endpoint', function describeBlock() {
     if (client) { client.free(); }
   });
 
-  it('should get status', async () => {
-    const status = await client.getStatus();
-    expect(status).to.be.ok();
+  describe('getStatus()', () => {
+    it('should get status', async () => {
+      const status = await client.getStatus();
+      expect(status).to.be.ok();
+    });
   });
 });

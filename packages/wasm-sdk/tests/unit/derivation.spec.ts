@@ -1,13 +1,13 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
-describe('Key derivation', () => {
+describe('Key Derivation', () => {
   before(async () => {
     await init();
   });
 
-  describe('Path helpers (BIP44/DIP9/DIP13)', () => {
-    it('should derive BIP44 mainnet/testnet paths', () => {
+  describe('derivationPathBip44Mainnet()', () => {
+    it('should derive BIP44 mainnet paths', () => {
       const m = sdk.WasmSdk.derivationPathBip44Mainnet(0, 0, 0);
       expect(m.purpose).to.equal(44);
       expect(m.coinType).to.equal(5);
@@ -16,39 +16,55 @@ describe('Key derivation', () => {
       expect(m.index).to.equal(0);
       const expectedMain = `m/${m.purpose}'/${m.coinType}'/${m.account}'/${m.change}/${m.index}`;
       expect(expectedMain).to.equal("m/44'/5'/0'/0/0");
+    });
+  });
 
+  describe('derivationPathBip44Testnet()', () => {
+    it('should derive BIP44 testnet paths', () => {
       const t = sdk.WasmSdk.derivationPathBip44Testnet(0, 0, 0);
       expect(t.coinType).to.equal(1);
       const expectedTest = `m/${t.purpose}'/${t.coinType}'/${t.account}'/${t.change}/${t.index}`;
       expect(expectedTest).to.equal("m/44'/1'/0'/0/0");
     });
+  });
 
-    it('should derive DIP9 mainnet/testnet paths', () => {
+  describe('derivationPathDip9Mainnet()', () => {
+    it('should derive DIP9 mainnet paths', () => {
       const m = sdk.WasmSdk.derivationPathDip9Mainnet(5, 0, 0);
       expect(m.purpose).to.equal(9);
       expect(m.coinType).to.equal(5);
       expect(m.account).to.equal(5);
       const expectedMain = `m/${m.purpose}'/${m.coinType}'/${m.account}'/${m.change}/${m.index}`;
       expect(expectedMain).to.equal("m/9'/5'/5'/0/0");
+    });
+  });
 
+  describe('derivationPathDip9Testnet()', () => {
+    it('should derive DIP9 testnet paths', () => {
       const t = sdk.WasmSdk.derivationPathDip9Testnet(5, 0, 0);
       expect(t.coinType).to.equal(1);
       const expectedTest = `m/${t.purpose}'/${t.coinType}'/${t.account}'/${t.change}/${t.index}`;
       expect(expectedTest).to.equal("m/9'/1'/5'/0/0");
     });
+  });
 
-    it('should derive DIP13 mainnet/testnet paths', () => {
+  describe('derivationPathDip13Mainnet()', () => {
+    it('should derive DIP13 mainnet paths', () => {
       const m = sdk.WasmSdk.derivationPathDip13Mainnet(0);
       expect(m.path).to.equal("m/9'/5'/0'");
       expect(m.purpose).to.equal(9);
       expect(m.description).to.equal('DIP13 HD identity key path');
+    });
+  });
 
+  describe('derivationPathDip13Testnet()', () => {
+    it('should derive DIP13 testnet paths', () => {
       const t = sdk.WasmSdk.derivationPathDip13Testnet(0);
       expect(t.path).to.equal("m/9'/1'/0'");
     });
   });
 
-  describe('Derive by path', () => {
+  describe('deriveKeyFromSeedWithPath()', () => {
     const seed = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
     it('should derive BIP44 mainnet key', () => {
@@ -104,10 +120,10 @@ describe('Key derivation', () => {
     });
   });
 
-  describe('DIP14 extended vectors', () => {
+  describe('deriveKeyFromSeedWithExtendedPath()', () => {
     const mnemonic = 'birth kingdom trash renew flavor utility donkey gasp regular alert pave layer';
 
-    it('should derive Vector 1: mixed hardened/non-hardened', () => {
+    it('should derive DIP14 Vector 1: mixed hardened/non-hardened', () => {
       const path = 'm/0x775d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3b'
         + "/0xf537439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89a6'"
         + '/0x4c4592ca670c983fc43397dfd21a6f427fac9b4ac53cb4dcdc6522ec51e81e79/0';
@@ -118,7 +134,7 @@ describe('Key derivation', () => {
       expect(r.xpub).to.be.a('string');
     });
 
-    it('should derive Vector 2: multiple hardened with final non-hardened', () => {
+    it('should derive DIP14 Vector 2: multiple hardened with final non-hardened', () => {
       const path = "m/9'/5'/15'/0'"
         + "/0x555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a'"
         + "/0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5'/0";
@@ -130,13 +146,13 @@ describe('Key derivation', () => {
     });
   });
 
-  describe('DIP15 DashPay contact keys', () => {
+  describe('deriveDashpayContactKey()', () => {
     const mnemonic = 'birth kingdom trash renew flavor utility donkey gasp regular alert pave layer';
     // Hex without 0x prefix (we don't use 0x)
     const sender = '555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a';
     const receiver = 'a137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
 
-    it('should derive deterministic contact key for testnet', () => {
+    it('should derive deterministic DIP15 contact key for testnet', () => {
       const r1 = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: sender, receiverIdentityId: receiver, account: 0, addressIndex: 0, network: 'testnet',
       });
@@ -163,7 +179,7 @@ describe('Key derivation', () => {
       expect(r1.xpub.startsWith('tpub')).to.equal(true);
     });
 
-    it('should change when sender/receiver are swapped', () => {
+    it('should change DIP15 contact key when sender/receiver are swapped', () => {
       const a = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: sender, receiverIdentityId: receiver, account: 0, addressIndex: 0, network: 'testnet',
       });
@@ -173,7 +189,7 @@ describe('Key derivation', () => {
       expect(a.privateKeyHex).to.not.equal(b.privateKeyHex);
     });
 
-    it('should differ between networks (testnet vs mainnet)', () => {
+    it('should differ DIP15 contact key between networks (testnet vs mainnet)', () => {
       const t = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: sender, receiverIdentityId: receiver, account: 0, addressIndex: 0, network: 'testnet',
       });

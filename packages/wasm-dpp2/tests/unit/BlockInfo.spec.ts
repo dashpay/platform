@@ -6,7 +6,7 @@ before(async () => {
 });
 
 describe('BlockInfo', () => {
-  describe('constructor', () => {
+  describe('constructor()', () => {
     it('should create BlockInfo with all parameters', () => {
       const blockInfo = new wasm.BlockInfo(1000n, 100n, 50, 5);
 
@@ -26,7 +26,7 @@ describe('BlockInfo', () => {
     });
   });
 
-  describe('serialization / deserialization', () => {
+  describe('toJSON()', () => {
     it('should round-trip via toJSON/fromJSON', () => {
       const blockInfo = new wasm.BlockInfo(1234567890n, 999n, 500, 10);
 
@@ -43,7 +43,9 @@ describe('BlockInfo', () => {
       expect(restored.coreHeight).to.equal(blockInfo.coreHeight);
       expect(restored.epochIndex).to.equal(blockInfo.epochIndex);
     });
+  });
 
+  describe('toObject()', () => {
     it('should round-trip via toObject/fromObject', () => {
       const blockInfo = new wasm.BlockInfo(1234567890n, 999n, 500, 10);
 
@@ -82,22 +84,28 @@ describe('BlockInfo', () => {
     });
   });
 
-  describe('getters', () => {
+  describe('timeMs', () => {
     it('should return timeMs', () => {
       const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
       expect(blockInfo.timeMs).to.equal(5000n);
     });
+  });
 
+  describe('height', () => {
     it('should return height', () => {
       const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
       expect(blockInfo.height).to.equal(100n);
     });
+  });
 
+  describe('coreHeight', () => {
     it('should return coreHeight', () => {
       const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
       expect(blockInfo.coreHeight).to.equal(50);
     });
+  });
 
+  describe('epochIndex', () => {
     it('should return epochIndex', () => {
       const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
       expect(blockInfo.epochIndex).to.equal(5);

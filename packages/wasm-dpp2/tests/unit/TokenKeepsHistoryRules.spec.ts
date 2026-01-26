@@ -27,43 +27,106 @@ describe('TokenKeepsHistoryRules', () => {
     });
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create TokenKeepsHistoryRules from values', () => {
+  describe('constructor', () => {
+    it('should create instance from values', () => {
       const keepHistory = createKeepsHistoryRules();
 
       expect(keepHistory).to.be.an.instanceof(wasm.TokenKeepsHistoryRules);
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get values', () => {
+  describe('isKeepingTransferHistory', () => {
+    it('should return isKeepingTransferHistory', () => {
       const keepHistory = createKeepsHistoryRules();
 
       expect(keepHistory.isKeepingTransferHistory).to.equal(true);
-      expect(keepHistory.isKeepingFreezingHistory).to.equal(true);
-      expect(keepHistory.isKeepingMintingHistory).to.equal(true);
-      expect(keepHistory.isKeepingBurningHistory).to.equal(true);
-      expect(keepHistory.isKeepingDirectPricingHistory).to.equal(true);
-      expect(keepHistory.isKeepingDirectPurchaseHistory).to.equal(true);
     });
-  });
 
-  describe('setters', () => {
-    it('should allow to set values', () => {
+    it('should set isKeepingTransferHistory', () => {
       const keepHistory = createKeepsHistoryRules();
 
       keepHistory.isKeepingTransferHistory = false;
-      keepHistory.isKeepingFreezingHistory = false;
-      keepHistory.isKeepingMintingHistory = false;
-      keepHistory.isKeepingBurningHistory = false;
-      keepHistory.isKeepingDirectPricingHistory = false;
-      keepHistory.isKeepingDirectPurchaseHistory = false;
 
       expect(keepHistory.isKeepingTransferHistory).to.equal(false);
+    });
+  });
+
+  describe('isKeepingFreezingHistory', () => {
+    it('should return isKeepingFreezingHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      expect(keepHistory.isKeepingFreezingHistory).to.equal(true);
+    });
+
+    it('should set isKeepingFreezingHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      keepHistory.isKeepingFreezingHistory = false;
+
       expect(keepHistory.isKeepingFreezingHistory).to.equal(false);
+    });
+  });
+
+  describe('isKeepingMintingHistory', () => {
+    it('should return isKeepingMintingHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      expect(keepHistory.isKeepingMintingHistory).to.equal(true);
+    });
+
+    it('should set isKeepingMintingHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      keepHistory.isKeepingMintingHistory = false;
+
       expect(keepHistory.isKeepingMintingHistory).to.equal(false);
+    });
+  });
+
+  describe('isKeepingBurningHistory', () => {
+    it('should return isKeepingBurningHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      expect(keepHistory.isKeepingBurningHistory).to.equal(true);
+    });
+
+    it('should set isKeepingBurningHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      keepHistory.isKeepingBurningHistory = false;
+
       expect(keepHistory.isKeepingBurningHistory).to.equal(false);
+    });
+  });
+
+  describe('isKeepingDirectPricingHistory', () => {
+    it('should return isKeepingDirectPricingHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      expect(keepHistory.isKeepingDirectPricingHistory).to.equal(true);
+    });
+
+    it('should set isKeepingDirectPricingHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      keepHistory.isKeepingDirectPricingHistory = false;
+
       expect(keepHistory.isKeepingDirectPricingHistory).to.equal(false);
+    });
+  });
+
+  describe('isKeepingDirectPurchaseHistory', () => {
+    it('should return isKeepingDirectPurchaseHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      expect(keepHistory.isKeepingDirectPurchaseHistory).to.equal(true);
+    });
+
+    it('should set isKeepingDirectPurchaseHistory', () => {
+      const keepHistory = createKeepsHistoryRules();
+
+      keepHistory.isKeepingDirectPurchaseHistory = false;
+
       expect(keepHistory.isKeepingDirectPurchaseHistory).to.equal(false);
     });
   });

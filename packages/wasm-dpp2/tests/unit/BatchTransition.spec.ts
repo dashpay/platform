@@ -47,9 +47,9 @@ describe('BatchTransition', () => {
     });
   }
 
-  describe('serialization / deserialization', () => {
+  describe('fromBatchedTransitions()', () => {
     describe('documents', () => {
-      it('should allow to create batch transition from document transitions', () => {
+      it('should create batch transition from document transitions', () => {
         const documentInstance = createDocument();
         const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -69,60 +69,10 @@ describe('BatchTransition', () => {
         expect(batchedTransition).to.be.an.instanceof(wasm.BatchedTransition);
         expect(batch).to.be.an.instanceof(wasm.BatchTransition);
       });
-
-      it('should allow to convert batch transition to base64 and back', () => {
-        const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
-
-        const documentTransition = createTransition.toDocumentTransition();
-
-        const batchedTransition = new wasm.BatchedTransition(documentTransition);
-
-        const batch = wasm.BatchTransition.fromBatchedTransitions(
-          [batchedTransition],
-          documentInstance.ownerId,
-          1,
-        );
-
-        const base64 = batch.toBase64();
-        const bytes = batch.toBytes();
-
-        expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
-
-        const restoredBatch = wasm.BatchTransition.fromBase64(base64);
-
-        expect(Buffer.from(restoredBatch.toBytes())).to.deep.equal(Buffer.from(bytes));
-      });
-
-      it('should round-trip via object and JSON', () => {
-        const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
-
-        const documentTransition = createTransition.toDocumentTransition();
-        const batchedTransition = new wasm.BatchedTransition(documentTransition);
-
-        const batch = wasm.BatchTransition.fromBatchedTransitions(
-          [batchedTransition],
-          documentInstance.ownerId,
-          1,
-        );
-
-        const object = batch.toObject();
-        expect(object.signature).to.be.instanceOf(Uint8Array);
-
-        // Note: fromObject with complex nested structures containing Value fields
-        // requires special handling due to serde_wasm_bindgen byte serialization.
-        // Use fromJSON for reliable round-trip serialization.
-
-        const json = batch.toJSON();
-        expect(json.signature).to.be.a('string');
-
-        const fromJson = wasm.BatchTransition.fromJSON(json);
-        expect(Buffer.from(fromJson.toBytes())).to.deep.equal(Buffer.from(batch.toBytes()));
-      });
     });
+
     describe('tokens', () => {
-      it('should allow to create from v1 transition', () => {
+      it('should create batch transition from v1 transition', () => {
         const baseTransition = createTokenBaseTransition();
 
         const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(9999), 'bbbbbb');
@@ -146,8 +96,117 @@ describe('BatchTransition', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get transitions', () => {
+  describe('toBase64()', () => {
+    it('should convert batch transition to base64', () => {
+      const documentInstance = createDocument();
+      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+      const documentTransition = createTransition.toDocumentTransition();
+
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batch = wasm.BatchTransition.fromBatchedTransitions(
+        [batchedTransition],
+        documentInstance.ownerId,
+        1,
+      );
+
+      const base64 = batch.toBase64();
+      const bytes = batch.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+    });
+  });
+
+  describe('fromBase64()', () => {
+    it('should create batch transition from base64', () => {
+      const documentInstance = createDocument();
+      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+      const documentTransition = createTransition.toDocumentTransition();
+
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batch = wasm.BatchTransition.fromBatchedTransitions(
+        [batchedTransition],
+        documentInstance.ownerId,
+        1,
+      );
+
+      const base64 = batch.toBase64();
+      const bytes = batch.toBytes();
+
+      const restoredBatch = wasm.BatchTransition.fromBase64(base64);
+
+      expect(Buffer.from(restoredBatch.toBytes())).to.deep.equal(Buffer.from(bytes));
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should convert batch transition to object', () => {
+      const documentInstance = createDocument();
+      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+      const documentTransition = createTransition.toDocumentTransition();
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batch = wasm.BatchTransition.fromBatchedTransitions(
+        [batchedTransition],
+        documentInstance.ownerId,
+        1,
+      );
+
+      const object = batch.toObject();
+      expect(object.signature).to.be.instanceOf(Uint8Array);
+    });
+  });
+
+  describe('toJSON()', () => {
+    it('should convert batch transition to JSON', () => {
+      const documentInstance = createDocument();
+      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+      const documentTransition = createTransition.toDocumentTransition();
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batch = wasm.BatchTransition.fromBatchedTransitions(
+        [batchedTransition],
+        documentInstance.ownerId,
+        1,
+      );
+
+      const json = batch.toJSON();
+      expect(json.signature).to.be.a('string');
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should create batch transition from JSON', () => {
+      const documentInstance = createDocument();
+      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+      const documentTransition = createTransition.toDocumentTransition();
+      const batchedTransition = new wasm.BatchedTransition(documentTransition);
+
+      const batch = wasm.BatchTransition.fromBatchedTransitions(
+        [batchedTransition],
+        documentInstance.ownerId,
+        1,
+      );
+
+      // Note: fromObject with complex nested structures containing Value fields
+      // requires special handling due to serde_wasm_bindgen byte serialization.
+      // Use fromJSON for reliable round-trip serialization.
+
+      const json = batch.toJSON();
+
+      const fromJson = wasm.BatchTransition.fromJSON(json);
+      expect(Buffer.from(fromJson.toBytes())).to.deep.equal(Buffer.from(batch.toBytes()));
+    });
+  });
+
+  describe('transitions', () => {
+    it('should return transitions', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -163,8 +222,10 @@ describe('BatchTransition', () => {
 
       expect(batchTransition.transitions.length).to.equal(2);
     });
+  });
 
-    it('should allow to get signature', () => {
+  describe('signature', () => {
+    it('should return signature', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -180,8 +241,10 @@ describe('BatchTransition', () => {
 
       expect(batchTransition.signature).to.deep.equal(new Uint8Array(0));
     });
+  });
 
-    it('should allow to get signature public key id', () => {
+  describe('signaturePublicKeyId', () => {
+    it('should return signaturePublicKeyId', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -198,8 +261,10 @@ describe('BatchTransition', () => {
 
       expect(batchTransition.signaturePublicKeyId).to.equal(1);
     });
+  });
 
-    it('should allow to get all purchases amount', () => {
+  describe('allPurchasesAmount', () => {
+    it('should return allPurchasesAmount', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
       const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
@@ -215,8 +280,10 @@ describe('BatchTransition', () => {
 
       expect(batchTransition.allPurchasesAmount).to.deep.equal(BigInt(100));
     });
+  });
 
-    it('should allow to get owner id', () => {
+  describe('ownerId', () => {
+    it('should return ownerId', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -230,8 +297,10 @@ describe('BatchTransition', () => {
 
       expect(batchTransition.ownerId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
     });
+  });
 
-    it('should allow to get modified data ids', () => {
+  describe('modifiedDataIds', () => {
+    it('should return modifiedDataIds', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 
@@ -248,8 +317,10 @@ describe('BatchTransition', () => {
       );
       expect(ids).to.deep.equal([documentTransition.id.toBase58(), documentTransition.id.toBase58()]);
     });
+  });
 
-    it('should allow to get allConflictingIndexCollateralVotingFunds', () => {
+  describe('allConflictingIndexCollateralVotingFunds', () => {
+    it('should return allConflictingIndexCollateralVotingFunds', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
 

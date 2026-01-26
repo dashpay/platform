@@ -41,7 +41,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     if (client) { client.free(); }
   });
 
-  describe('tokenTransfer', () => {
+  describe('tokenTransfer()', () => {
     it('should transfer tokens between identities', async () => {
       // Identity 1 transfers to Identity 3 (which exists in genesis state)
       // Identity 1 has 100 tokens on TOKEN_0
@@ -65,7 +65,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
-  describe('tokenBurn', () => {
+  describe('tokenBurn()', () => {
     it('should burn tokens via group action', async () => {
       // Token 2 has group burning with Group 2 (Identity 1 and 3, required power = 1)
       // Identity 1 has power 1, so can burn alone as proposer
@@ -91,7 +91,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
-  describe('tokenMint', () => {
+  describe('tokenMint()', () => {
     it('should mint tokens via group action', async () => {
       // Token 0 has group minting with Group 0 (Identity 1 and 2, required power = 1)
       // Identity 1 has power 1, so can mint alone as proposer
@@ -118,7 +118,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
-  describe('tokenFreeze', () => {
+  describe('tokenFreeze()', () => {
     it('should freeze an identity token balance', async () => {
       // Contract owner (Identity 1) can freeze tokens
       // Token operations require CRITICAL security level (key index 1)
@@ -137,7 +137,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
-  describe('tokenUnfreeze', () => {
+  describe('tokenUnfreeze()', () => {
     it('should unfreeze an identity token balance', async () => {
       // Wait for previous freeze to be processed
       await new Promise((resolve) => { setTimeout(resolve, 2000); });
@@ -160,7 +160,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
-  describe('tokenEmergencyAction', () => {
+  describe('tokenEmergencyAction()', () => {
     it('should pause a token', async () => {
       // Contract owner (Identity 1) can pause/resume tokens
       // Token operations require CRITICAL security level (key index 1)
@@ -199,7 +199,7 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
-  describe('tokenSetPrice', () => {
+  describe('tokenSetPrice()', () => {
     it('should set a direct purchase price for tokens', async () => {
       // Contract owner (Identity 1) can set token prices
       // Token operations require CRITICAL security level (key index 1)

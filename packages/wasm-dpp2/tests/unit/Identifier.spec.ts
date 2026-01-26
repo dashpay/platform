@@ -15,75 +15,89 @@ describe('Identifier', () => {
     ]);
   });
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create Identifier from base58', () => {
+  describe('constructor()', () => {
+    it('should create Identifier from bytes in constructor', () => {
+      const identifier = new wasm.Identifier(identifierBytes);
+
+      expect(identifier.toBytes()).to.deep.equal(identifierBytes);
+    });
+
+    it('should create Identifier from base58 in constructor', () => {
+      const identifier = new wasm.Identifier('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
+
+      expect(identifier.toBytes()).to.deep.equal(identifierBytes);
+    });
+
+    it('should create Identifier from Identifier', () => {
+      const identifier = wasm.Identifier.fromBytes(identifierBytes);
+      const identifier2 = new wasm.Identifier(identifier);
+
+      expect(identifier2.toBytes()).to.deep.equal(identifierBytes);
+    });
+  });
+
+  describe('fromBase58()', () => {
+    it('should create Identifier from base58', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
+  });
 
-    it('should allow to create Identifier from base64', () => {
+  describe('fromBase64()', () => {
+    it('should create Identifier from base64', () => {
       const identifier = wasm.Identifier.fromBase64('CSgo7cCB07oaVPBDJZuUE2jyxxiIGwap00eIOyG/4xM=');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
+  });
 
-    it('should allow to create Identifier from hex', () => {
+  describe('fromHex()', () => {
+    it('should create Identifier from hex', () => {
       const identifier = wasm.Identifier.fromHex(
         '092828edc081d3ba1a54f043259b941368f2c718881b06a9d347883b21bfe313',
       );
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
+  });
 
-    it('should allow to create Identifier from bytes', () => {
+  describe('fromBytes()', () => {
+    it('should create Identifier from bytes', () => {
       const identifier = wasm.Identifier.fromBytes(identifierBytes);
-
-      expect(identifier.toBytes()).to.deep.equal(identifierBytes);
-    });
-
-    it('should allow to create Identifier from Identifier', () => {
-      const identifier = wasm.Identifier.fromBytes(identifierBytes);
-      const identifier2 = new wasm.Identifier(identifier);
-
-      expect(identifier2.toBytes()).to.deep.equal(identifierBytes);
-    });
-
-    it('should allow to create Identifier from bytes in constructor', () => {
-      const identifier = new wasm.Identifier(identifierBytes);
-
-      expect(identifier.toBytes()).to.deep.equal(identifierBytes);
-    });
-
-    it('should allow to create Identifier from base58 in constructor', () => {
-      const identifier = new wasm.Identifier('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get identifier base58', () => {
+  describe('toBase58()', () => {
+    it('should return identifier base58', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBase58()).to.equal('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
     });
+  });
 
-    it('should allow to get identifier base64', () => {
+  describe('toBase64()', () => {
+    it('should return identifier base64', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBase64()).to.equal('CSgo7cCB07oaVPBDJZuUE2jyxxiIGwap00eIOyG/4xM=');
     });
+  });
 
-    it('should allow to get identifier hex', () => {
+  describe('toHex()', () => {
+    it('should return identifier hex', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toHex()).to.equal(
         '092828edc081d3ba1a54f043259b941368f2c718881b06a9d347883b21bfe313',
       );
     });
+  });
 
-    it('should allow to get identifier bytes', () => {
+  describe('toBytes()', () => {
+    it('should return identifier bytes', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
       expect(identifier.toBytes()).to.deep.equal(identifierBytes);

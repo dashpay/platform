@@ -29,14 +29,16 @@ describe('IdentityPublicKeyInCreation', () => {
     });
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values', () => {
+  describe('constructor()', () => {
+    it('should create from values', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation).to.be.an.instanceof(wasm.IdentityPublicKeyInCreation);
     });
+  });
 
-    it('should allow to create from values and convert to identity public key', () => {
+  describe('toIdentityPublicKey()', () => {
+    it('should convert to IdentityPublicKey', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       const publicKey = publicKeyInCreation.toIdentityPublicKey();
@@ -46,100 +48,110 @@ describe('IdentityPublicKeyInCreation', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get key id', () => {
+  describe('keyId', () => {
+    it('should get keyId', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       expect(publicKeyInCreation.keyId).to.equal(0);
     });
 
-    it('should allow to get purpose', () => {
-      const publicKeyInCreation = createPublicKeyInCreation();
-
-      expect(publicKeyInCreation.purpose).to.equal('AUTHENTICATION');
-    });
-
-    it('should allow to get security level', () => {
-      const publicKeyInCreation = createPublicKeyInCreation();
-
-      expect(publicKeyInCreation.securityLevel).to.equal('MASTER');
-    });
-
-    it('should allow to get key type', () => {
-      const publicKeyInCreation = createPublicKeyInCreation();
-
-      expect(publicKeyInCreation.keyType).to.equal('ECDSA_SECP256K1');
-    });
-
-    it('should allow to get read only', () => {
-      const publicKeyInCreation = createPublicKeyInCreation();
-
-      expect(publicKeyInCreation.isReadOnly).to.equal(false);
-    });
-
-    it('should allow to get data', () => {
-      const publicKeyInCreation = createPublicKeyInCreation();
-
-      expect(Buffer.from(publicKeyInCreation.data)).to.deep.equal(Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'));
-    });
-
-    it('should allow to get signature', () => {
-      const publicKeyInCreation = createPublicKeyInCreation();
-
-      expect([...publicKeyInCreation.signature]).to.deep.equal([]);
-    });
-  });
-
-  describe('setters', () => {
-    it('should allow to set key id', () => {
+    it('should set keyId', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.keyId = 123;
 
       expect(publicKeyInCreation.keyId).to.equal(123);
     });
+  });
 
-    it('should allow to set purpose', () => {
+  describe('purpose', () => {
+    it('should get purpose', () => {
+      const publicKeyInCreation = createPublicKeyInCreation();
+
+      expect(publicKeyInCreation.purpose).to.equal('AUTHENTICATION');
+    });
+
+    it('should set purpose', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.purpose = 'OWNER';
 
       expect(publicKeyInCreation.purpose).to.equal('OWNER');
     });
+  });
 
-    it('should allow to set security level', () => {
+  describe('securityLevel', () => {
+    it('should get securityLevel', () => {
+      const publicKeyInCreation = createPublicKeyInCreation();
+
+      expect(publicKeyInCreation.securityLevel).to.equal('MASTER');
+    });
+
+    it('should set securityLevel', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.securityLevel = 'critical';
 
       expect(publicKeyInCreation.securityLevel).to.equal('CRITICAL');
     });
+  });
 
-    it('should allow to set key type', () => {
+  describe('keyType', () => {
+    it('should get keyType', () => {
+      const publicKeyInCreation = createPublicKeyInCreation();
+
+      expect(publicKeyInCreation.keyType).to.equal('ECDSA_SECP256K1');
+    });
+
+    it('should set keyType', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.keyType = 'ECDSA_HASH160';
 
       expect(publicKeyInCreation.keyType).to.equal('ECDSA_HASH160');
     });
+  });
 
-    it('should allow to set read only', () => {
+  describe('isReadOnly', () => {
+    it('should get isReadOnly', () => {
+      const publicKeyInCreation = createPublicKeyInCreation();
+
+      expect(publicKeyInCreation.isReadOnly).to.equal(false);
+    });
+
+    it('should set isReadOnly', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.isReadOnly = true;
 
       expect(publicKeyInCreation.isReadOnly).to.equal(true);
     });
+  });
 
-    it('should allow to set data', () => {
+  describe('data', () => {
+    it('should get data', () => {
+      const publicKeyInCreation = createPublicKeyInCreation();
+
+      expect(Buffer.from(publicKeyInCreation.data)).to.deep.equal(Buffer.from('0333d5cf3674001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'));
+    });
+
+    it('should set data', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.data = Buffer.from('333333333334001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex');
 
       expect(Buffer.from(publicKeyInCreation.data)).to.deep.equal(Buffer.from('333333333334001d2f64c55617b7b11a2e8fc62aab09708b49355e30c7205bdb2e', 'hex'));
     });
+  });
 
-    it('should allow to set signature', () => {
+  describe('signature', () => {
+    it('should get signature', () => {
+      const publicKeyInCreation = createPublicKeyInCreation();
+
+      expect([...publicKeyInCreation.signature]).to.deep.equal([]);
+    });
+
+    it('should set signature', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       publicKeyInCreation.signature = [1, 2, 3, 4, 5, 6];
@@ -148,8 +160,8 @@ describe('IdentityPublicKeyInCreation', () => {
     });
   });
 
-  describe('conversion methods', () => {
-    it('should round-trip via toJSON/fromJSON', () => {
+  describe('toJSON()', () => {
+    it('should convert to JSON and back via fromJSON()', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       const json = publicKeyInCreation.toJSON();
@@ -167,8 +179,10 @@ describe('IdentityPublicKeyInCreation', () => {
       expect(restored.keyType).to.equal(publicKeyInCreation.keyType);
       expect(restored.isReadOnly).to.equal(publicKeyInCreation.isReadOnly);
     });
+  });
 
-    it('should export toObject', () => {
+  describe('toObject()', () => {
+    it('should export to object', () => {
       const publicKeyInCreation = createPublicKeyInCreation();
 
       const obj = publicKeyInCreation.toObject();

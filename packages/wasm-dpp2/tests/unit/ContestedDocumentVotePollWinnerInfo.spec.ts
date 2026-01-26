@@ -8,7 +8,7 @@ before(async () => {
 describe('ContestedDocumentVotePollWinnerInfo', () => {
   const identityIdHex = '1111111111111111111111111111111111111111111111111111111111111111';
 
-  describe('constructor', () => {
+  describe('constructor()', () => {
     it('should create NoWinner info', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
@@ -55,7 +55,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
     });
   });
 
-  describe('conversion methods', () => {
+  describe('toJSON()', () => {
     it('should round-trip NoWinner via toJSON/fromJSON', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
@@ -93,7 +93,9 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       expect(restored.kind).to.equal(info.kind);
       expect(restored.isLocked).to.be.true();
     });
+  });
 
+  describe('toObject()', () => {
     it('should round-trip NoWinner via toObject/fromObject', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 

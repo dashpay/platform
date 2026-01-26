@@ -34,7 +34,7 @@ describe('Contract State Transitions', function describeContractStateTransitions
     if (client) { client.free(); }
   });
 
-  describe('contractPublish', () => {
+  describe('contractPublish()', () => {
     it('should create a new data contract', async () => {
       // Contract operations require at least HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
@@ -85,7 +85,7 @@ describe('Contract State Transitions', function describeContractStateTransitions
     });
   });
 
-  describe('contractUpdate', () => {
+  describe('contractUpdate()', () => {
     it('should update an existing data contract', async () => {
       // Requires contract from previous test
       expect(createdContractId).to.exist();

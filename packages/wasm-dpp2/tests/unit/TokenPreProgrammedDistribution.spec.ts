@@ -22,8 +22,8 @@ describe('TokenPreProgrammedDistribution', () => {
     return outerMap;
   }
 
-  describe('serialization / deserialization', () => {
-    it('should allow to create from values', () => {
+  describe('constructor', () => {
+    it('should create instance from values', () => {
       const distributions = createDistributionsMap(
         '1750140416485',
         'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
@@ -36,8 +36,8 @@ describe('TokenPreProgrammedDistribution', () => {
     });
   });
 
-  describe('getters', () => {
-    it('should allow to get distributions', () => {
+  describe('distributions', () => {
+    it('should return distributions', () => {
       const distributions = createDistributionsMap(
         '1750140416485',
         'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
@@ -55,10 +55,8 @@ describe('TokenPreProgrammedDistribution', () => {
       expect(innerMap instanceof Map).to.equal(true);
       expect(innerMap.size).to.equal(1);
     });
-  });
 
-  describe('setters', () => {
-    it('should allow to set distributions', () => {
+    it('should set distributions', () => {
       const distributions = createDistributionsMap(
         '1750140416485',
         'PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB',
