@@ -1,4 +1,7 @@
-require: tests/bootstrap.cjs
+node-option:
+  - experimental-strip-types
+  - disable-warning=ExperimentalWarning
+extensions:
+  - ts
 recursive: true
 timeout: 8000
-
