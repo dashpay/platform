@@ -2,7 +2,6 @@ import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { instantLockBytes, transactionBytes } from './mocks/Locks/index.js';
 
-
 before(async () => {
   await initWasm();
 });
@@ -100,7 +99,7 @@ describe('InstantLock', () => {
         0,
       );
 
-      const output = instantLockProof.output;
+      const { output } = instantLockProof;
       expect(output).to.be.instanceOf(Uint8Array);
       expect(output.length).to.be.greaterThan(0);
     });

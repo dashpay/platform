@@ -4,7 +4,6 @@ import {
   document, documentTypeName, revision, dataContractId, ownerId, id,
 } from './mocks/Document/index.js';
 
-
 before(async () => {
   await initWasm();
 });

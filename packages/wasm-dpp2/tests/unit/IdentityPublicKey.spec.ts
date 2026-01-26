@@ -15,7 +15,6 @@ import {
 } from './mocks/PublicKey/index.js';
 import { toHexString } from './utils/hex.js';
 
-
 before(async () => {
   await initWasm();
 });

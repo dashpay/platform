@@ -1,7 +1,6 @@
-export const toHexString = (byteArray: ArrayLike<number>): string =>
-  Array.prototype.map
-    .call(byteArray, (byte: number) => `0${(byte & 0xff).toString(16)}`.slice(-2))
-    .join('');
+export const toHexString = (byteArray: ArrayLike<number>): string => Array.prototype.map
+  .call(byteArray, (byte: number) => `0${(byte & 0xff).toString(16)}`.slice(-2))
+  .join('');
 
 export const fromHexString = (str: string): Uint8Array => {
   const bytes: number[] = [];

@@ -1,7 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
-import { tokenLocalization } from './mocks/TokenConfiguration/index.js';
-
+import tokenLocalization from './mocks/TokenConfiguration/index.ts';
 
 before(async () => {
   await initWasm();

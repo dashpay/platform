@@ -16,7 +16,6 @@ import { initWasm, wasm } from '../../dist/dpp.compressed.js';
  */
 
 describe('JS value to JSON conversion (testJsValueToJson)', () => {
-
   before(async () => {
     await initWasm();
   });

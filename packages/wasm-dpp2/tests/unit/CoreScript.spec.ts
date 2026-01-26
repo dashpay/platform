@@ -1,33 +1,39 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
-
 before(async () => {
   await initWasm();
 });
 
 describe('CoreScript', () => {
+  // Common test data
+  const pubKeyHash = [
+    195, 219, 253, 64, 231, 248, 164, 132,
+    92, 47, 142, 134, 138, 22, 124, 152, 64, 73, 118, 73,
+  ];
+
   describe('serialization / deserialization', () => {
     it('should allow to create from bytes', () => {
-      const script = wasm.CoreScript.fromBytes(Buffer.from('76a914c3dbfd40e7f8a4845c2f8e868a167c984049764988ac', 'hex'));
+      const scriptHex = '76a914c3dbfd40e7f8a4845c2f8e868a167c984049764988ac';
+      const script = wasm.CoreScript.fromBytes(Buffer.from(scriptHex, 'hex'));
 
       expect(script._wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to create P2PKH', () => {
-      const script = wasm.CoreScript.fromP2PKH([195, 219, 253, 64, 231, 248, 164, 132, 92, 47, 142, 134, 138, 22, 124, 152, 64, 73, 118, 73]);
+      const script = wasm.CoreScript.fromP2PKH(pubKeyHash);
 
       expect(script._wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to create P2SH', () => {
-      const script = wasm.CoreScript.fromP2SH([195, 219, 253, 64, 231, 248, 164, 132, 92, 47, 142, 134, 138, 22, 124, 152, 64, 73, 118, 73]);
+      const script = wasm.CoreScript.fromP2SH(pubKeyHash);
 
       expect(script._wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to convert to asm P2PKH', () => {
-      const script = wasm.CoreScript.fromP2PKH([195, 219, 253, 64, 231, 248, 164, 132, 92, 47, 142, 134, 138, 22, 124, 152, 64, 73, 118, 73]);
+      const script = wasm.CoreScript.fromP2PKH(pubKeyHash);
 
       expect(script.toASMString()).to.equal('OP_DUP OP_HASH160 OP_PUSHBYTES_20 c3dbfd40e7f8a4845c2f8e868a167c9840497649 OP_EQUALVERIFY OP_CHECKSIG');
     });

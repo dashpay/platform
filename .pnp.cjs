@@ -3157,6 +3157,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["string_decoder", "npm:1.3.0"],\
+          ["ts-loader", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:9.5.0"],\
           ["ts-node", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.2"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["url", "npm:0.11.3"],\
@@ -19681,6 +19682,28 @@ const RAW_RUNTIME_STATE =
           ["ts-loader", "npm:9.5.0"]\
         ],\
         "linkType": "SOFT"\
+      }],\
+      ["virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:9.5.0", {\
+        "packageLocation": "./.yarn/__virtual__/ts-loader-virtual-a3720f3357/0/cache/ts-loader-npm-9.5.0-9514617263-8ffc6411ec.zip/node_modules/ts-loader/",\
+        "packageDependencies": [\
+          ["@types/typescript", null],\
+          ["@types/webpack", null],\
+          ["chalk", "npm:4.1.2"],\
+          ["enhanced-resolve", "npm:5.15.0"],\
+          ["micromatch", "npm:4.0.8"],\
+          ["semver", "npm:7.5.3"],\
+          ["source-map", "npm:0.7.4"],\
+          ["ts-loader", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:9.5.0"],\
+          ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
+          ["webpack", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:5.94.0"]\
+        ],\
+        "packagePeers": [\
+          "@types/typescript",\
+          "@types/webpack",\
+          "typescript",\
+          "webpack"\
+        ],\
+        "linkType": "HARD"\
       }],\
       ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:9.5.0", {\
         "packageLocation": "./.yarn/__virtual__/ts-loader-virtual-43597e08e9/0/cache/ts-loader-npm-9.5.0-9514617263-8ffc6411ec.zip/node_modules/ts-loader/",\

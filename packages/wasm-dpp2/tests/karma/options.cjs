@@ -12,6 +12,21 @@ module.exports = {
   webpack: {
     mode: 'development',
     devtool: 'eval',
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true,
+              configFile: require.resolve('../tsconfig.json'),
+            },
+          },
+          exclude: /node_modules/,
+        },
+      ],
+    },
     plugins: [
       new webpack.ProvidePlugin({
         Buffer: [require.resolve('buffer/'), 'Buffer'],
@@ -19,7 +34,7 @@ module.exports = {
       }),
     ],
     resolve: {
-      extensions: ['.mjs', '.js'],
+      extensions: ['.ts', '.mjs', '.js'],
       fallback: {
         fs: false,
         path: require.resolve('path-browserify'),

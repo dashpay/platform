@@ -1,6 +1,8 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
-import { json, object, id, ownerId } from './mocks/DataContract/index.js';
+import {
+  json, object, id, ownerId,
+} from './mocks/DataContract/index.js';
 import { fromHexString } from './utils/hex.js';
 
 let PlatformVersion: typeof wasm.PlatformVersion;
@@ -129,9 +131,10 @@ describe('DataContract', () => {
         PlatformVersion.PLATFORM_V1,
       );
 
-      expect(Buffer.from(dataContractFromBase64.toBytes(PlatformVersion.PLATFORM_V1))).to.deep.equal(
-        Buffer.from(bytes),
+      const actualBytes = Buffer.from(
+        dataContractFromBase64.toBytes(PlatformVersion.PLATFORM_V1),
       );
+      expect(actualBytes).to.deep.equal(Buffer.from(bytes));
     });
 
     it('should allow to get json', () => {
@@ -145,7 +148,7 @@ describe('DataContract', () => {
     it('should allow to get schemas', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      const schemas = dataContract.schemas;
+      const { schemas } = dataContract;
 
       expect(schemas).to.deep.equal(object.documentSchemas);
     });
@@ -171,7 +174,7 @@ describe('DataContract', () => {
     it('should allow to get config', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      const config = dataContract.config;
+      const { config } = dataContract;
 
       expect(config).to.deep.equal(object.config);
     });
@@ -226,7 +229,7 @@ describe('DataContract', () => {
 
       dataContract.setSchemas(newSchema, null, true, PlatformVersion.PLATFORM_V1);
 
-      const schemas = dataContract.schemas;
+      const { schemas } = dataContract;
 
       // schemas returns object format (BigInt), so compare with object fixture
       const expectedSchema = {

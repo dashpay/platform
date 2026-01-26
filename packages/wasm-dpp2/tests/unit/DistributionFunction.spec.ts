@@ -1,13 +1,12 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
-
 before(async () => {
   await initWasm();
 });
 
-describe('DistributionFunction', function () {
-  describe('serialization / deserialization', function () {
+describe('DistributionFunction', () => {
+  describe('serialization / deserialization', () => {
     it('should allow to create FixedAmountDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
@@ -128,8 +127,8 @@ describe('DistributionFunction', function () {
     });
   });
 
-  describe('getters', function () {
-    describe('function name', function () {
+  describe('getters', () => {
+    describe('function name', () => {
       it('FixedAmountDistribution', () => {
         const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
           BigInt(111),
@@ -249,7 +248,7 @@ describe('DistributionFunction', function () {
         expect(distributionFunction.functionName).to.deep.equal('InvertedLogarithmic');
       });
     });
-    describe('function value', function () {
+    describe('function value', () => {
       it('FixedAmountDistribution', () => {
         const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
           BigInt(111),

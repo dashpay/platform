@@ -1,7 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
-
 before(async () => {
   await initWasm();
 });
@@ -35,7 +34,6 @@ describe('TokenConfiguration', () => {
       isSelfChangingAdminActionTakersAllowed: options.isSelfChangingAdminActionTakersAllowed ?? true,
     });
   }
-
   function createKeepsHistoryRules(options: KeepsHistoryRulesOptions = {}) {
     return new wasm.TokenKeepsHistoryRules({
       isKeepingTransferHistory: options.isKeepingTransferHistory ?? true,
@@ -46,7 +44,6 @@ describe('TokenConfiguration', () => {
       isKeepingEmergencyActionHistory: options.isKeepingEmergencyActionHistory ?? true,
     });
   }
-
   function createPreProgrammedDistribution(timestamp: number, identifierBase58: string, amount: bigint) {
     const identifier = new wasm.Identifier(identifierBase58);
     const innerMap = new Map();

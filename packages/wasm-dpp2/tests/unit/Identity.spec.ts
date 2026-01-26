@@ -7,8 +7,9 @@ import {
   balance,
   revision,
 } from './mocks/Identity/index.js';
-import { keyId, purpose, securityLevel, keyType, binaryData } from './mocks/PublicKey/index.js';
-
+import {
+  keyId, purpose, securityLevel, keyType, binaryData,
+} from './mocks/PublicKey/index.js';
 
 before(async () => {
   await initWasm();

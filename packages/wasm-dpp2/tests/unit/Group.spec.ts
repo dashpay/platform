@@ -1,7 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
-
 before(async () => {
   await initWasm();
 });
@@ -9,7 +8,6 @@ before(async () => {
 describe('Group', () => {
   const memberIdHex = '1111111111111111111111111111111111111111111111111111111111111111';
   const member2IdHex = '2222222222222222222222222222222222222222222222222222222222222222';
-
   function createMembersMap(membersArray: Array<[InstanceType<typeof wasm.Identifier>, number]>) {
     const map = new Map<InstanceType<typeof wasm.Identifier>, number>();
     for (const [identifier, power] of membersArray) {

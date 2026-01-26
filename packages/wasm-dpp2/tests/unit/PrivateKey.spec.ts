@@ -3,7 +3,6 @@ import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { wif, bytes, publicKeyHash } from './mocks/PrivateKey/index.js';
 import { fromHexString, toHexString } from './utils/hex.js';
 
-
 before(async () => {
   await initWasm();
 });

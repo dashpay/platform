@@ -74,7 +74,7 @@ describe('DataContract Create Transition', () => {
       try {
         dataContractTransition.verifyProtocolVersion(20);
         expect(true).to.equal(false);
-      } catch (error) {
+      } catch {
         expect(false).to.equal(false);
       }
     });

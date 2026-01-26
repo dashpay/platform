@@ -4,7 +4,6 @@ import {
   document, documentTypeName, revision, dataContractId, ownerId, id,
 } from './mocks/Document/index.js';
 
-
 before(async () => {
   await initWasm();
 });
@@ -58,7 +57,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = createTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
@@ -72,7 +75,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = createTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         const st = batchTransition.toStateTransition();
 
@@ -120,7 +127,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
@@ -134,7 +145,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         const st = batchTransition.toStateTransition();
 
@@ -182,7 +197,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
@@ -196,7 +215,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         const st = batchTransition.toStateTransition();
 
@@ -244,7 +267,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = transferTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
@@ -258,7 +285,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = transferTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         const st = batchTransition.toStateTransition();
 
@@ -306,7 +337,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
@@ -320,7 +355,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         const st = batchTransition.toStateTransition();
 
@@ -368,7 +407,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
@@ -382,7 +425,11 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions(
+          [new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)],
+          documentInstance.ownerId,
+          1,
+        );
 
         const st = batchTransition.toStateTransition();
 

@@ -2,7 +2,6 @@ import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { dataContractId, ownerId } from './mocks/Document/index.js';
 
-
 before(async () => {
   await initWasm();
 });
@@ -15,7 +14,7 @@ interface BaseTransitionOptions {
   usingGroupInfo?: unknown;
 }
 
-describe('TokenBaseTransition', function () {
+describe('TokenBaseTransition', () => {
   function createBaseTransition(options: BaseTransitionOptions = {}) {
     return new wasm.TokenBaseTransition({
       identityContractNonce: options.identityContractNonce ?? BigInt(1),
@@ -26,7 +25,7 @@ describe('TokenBaseTransition', function () {
     });
   }
 
-  describe('serialization / deserialization', function () {
+  describe('serialization / deserialization', () => {
     it('should allow to create from values', () => {
       const baseTransition = createBaseTransition();
 
@@ -34,7 +33,7 @@ describe('TokenBaseTransition', function () {
     });
   });
 
-  describe('getters', function () {
+  describe('getters', () => {
     it('should allow to get identityContractNonce', () => {
       const baseTransition = createBaseTransition();
 
@@ -69,7 +68,7 @@ describe('TokenBaseTransition', function () {
     });
   });
 
-  describe('setters', function () {
+  describe('setters', () => {
     it('should allow to set identityContractNonce', () => {
       const baseTransition = createBaseTransition();
 

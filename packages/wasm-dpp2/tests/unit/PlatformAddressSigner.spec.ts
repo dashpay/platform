@@ -1,7 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
-
 before(async () => {
   await initWasm();
 });

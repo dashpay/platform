@@ -2,7 +2,6 @@ import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { identifier } from './mocks/Identity/index.js';
 
-
 before(async () => {
   await initWasm();
 });

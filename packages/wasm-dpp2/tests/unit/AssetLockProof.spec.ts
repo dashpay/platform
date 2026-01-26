@@ -2,8 +2,6 @@ import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { instantLockBytes, transactionBytes } from './mocks/Locks/index.js';
 
-
-
 before(async () => {
   await initWasm();
 });
@@ -35,7 +33,7 @@ describe('AssetLockProof', () => {
       try {
         // eslint-disable-next-line
         new (wasm.AssetLockProof as any)('chain');
-      } catch (e) {
+      } catch {
         expect(true).to.be.ok();
         return;
       }

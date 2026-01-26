@@ -2,7 +2,6 @@ import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { dataContractId, ownerId } from './mocks/Document/index.js';
 
-
 before(async () => {
   await initWasm();
 });
@@ -14,7 +13,7 @@ describe('TokenTransitions', () => {
     baseTransition = new wasm.TokenBaseTransition({
       identityContractNonce: BigInt(1),
       tokenContractPosition: 1,
-      dataContractId: dataContractId,
+      dataContractId,
       tokenId: ownerId,
     });
   });
@@ -57,7 +56,7 @@ describe('TokenTransitions', () => {
         recipientId: ownerId,
         amount: BigInt(11),
         publicNote: 'bbbb',
-        sharedEncryptedNote: sharedEncryptedNote,
+        sharedEncryptedNote,
       });
 
       expect(sharedEncryptedNote.constructor.name).to.equal('SharedEncryptedNote');
@@ -75,7 +74,7 @@ describe('TokenTransitions', () => {
         recipientId: ownerId,
         amount: BigInt(11),
         publicNote: 'bbbb',
-        privateEncryptedNote: privateEncryptedNote,
+        privateEncryptedNote,
       });
 
       expect(privateEncryptedNote.constructor.name).to.equal('PrivateEncryptedNote');
@@ -225,8 +224,8 @@ describe('TokenTransitions', () => {
         recipientId: ownerId,
         amount: BigInt(11),
         publicNote: 'bbbb',
-        sharedEncryptedNote: sharedEncryptedNote,
-        privateEncryptedNote: privateEncryptedNote,
+        sharedEncryptedNote,
+        privateEncryptedNote,
       });
 
       expect(transferTransition.base.constructor.name).to.equal('TokenBaseTransition');
@@ -369,8 +368,8 @@ describe('TokenTransitions', () => {
         recipientId: ownerId,
         amount: BigInt(11),
         publicNote: 'bbbb',
-        sharedEncryptedNote: sharedEncryptedNote,
-        privateEncryptedNote: privateEncryptedNote,
+        sharedEncryptedNote,
+        privateEncryptedNote,
       });
 
       const sharedEncryptedNote2 = new wasm.SharedEncryptedNote(0, 0, [0, 0, 0]);
