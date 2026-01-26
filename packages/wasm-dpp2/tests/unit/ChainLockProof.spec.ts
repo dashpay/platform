@@ -111,7 +111,7 @@ describe('InstantLock', () => {
       expect(chainlock.coreChainLockedHeight).to.equal(33);
     });
 
-    it('should allow to get outPoint', () => {
+    it('should allow to set outPoint', () => {
       const outpoint = new wasm.OutPoint(
         'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
         1,
