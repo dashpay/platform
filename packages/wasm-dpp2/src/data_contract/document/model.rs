@@ -41,8 +41,8 @@ export interface DocumentOptions {
   dataContractId: IdentifierLike;
   /** Owner identity ID */
   ownerId: IdentifierLike;
-  /** Document revision (default: 1) */
-  revision?: number;
+  /** Document revision (default: 1n) */
+  revision?: bigint;
   /** Document ID (auto-generated if not provided) */
   id?: IdentifierLike;
   /** Entropy bytes (32 bytes, auto-generated if not provided) */
@@ -51,17 +51,18 @@ export interface DocumentOptions {
 
 /**
  * Document serialized as a plain object.
+ * Note: u64 fields are serialized as BigInt when using toObject().
  */
 export interface DocumentObject {
   $id: Identifier;
   $ownerId: Identifier;
-  $revision?: number;
-  $createdAt?: number;
-  $updatedAt?: number;
-  $transferredAt?: number;
-  $createdAtBlockHeight?: number;
-  $updatedAtBlockHeight?: number;
-  $transferredAtBlockHeight?: number;
+  $revision?: bigint;
+  $createdAt?: bigint;
+  $updatedAt?: bigint;
+  $transferredAt?: bigint;
+  $createdAtBlockHeight?: bigint;
+  $updatedAtBlockHeight?: bigint;
+  $transferredAtBlockHeight?: bigint;
   $createdAtCoreBlockHeight?: number;
   $updatedAtCoreBlockHeight?: number;
   $transferredAtCoreBlockHeight?: number;
@@ -72,17 +73,18 @@ export interface DocumentObject {
 
 /**
  * Document serialized as JSON (with string identifiers).
+ * Note: u64 fields are stringified since JSON doesn't support BigInt.
  */
 export interface DocumentJSON {
   $id: string;
   $ownerId: string;
-  $revision?: number;
-  $createdAt?: number;
-  $updatedAt?: number;
-  $transferredAt?: number;
-  $createdAtBlockHeight?: number;
-  $updatedAtBlockHeight?: number;
-  $transferredAtBlockHeight?: number;
+  $revision?: string;
+  $createdAt?: string;
+  $updatedAt?: string;
+  $transferredAt?: string;
+  $createdAtBlockHeight?: string;
+  $updatedAtBlockHeight?: string;
+  $transferredAtBlockHeight?: string;
   $createdAtCoreBlockHeight?: number;
   $updatedAtCoreBlockHeight?: number;
   $transferredAtCoreBlockHeight?: number;
