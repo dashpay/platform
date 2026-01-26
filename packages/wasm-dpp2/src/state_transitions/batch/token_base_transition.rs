@@ -131,9 +131,7 @@ impl TokenBaseTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = data_contract_id.into();
-        self.0
-            .set_data_contract_id(IdentifierWasm::try_from(&id_value)?.into());
+        self.0.set_data_contract_id(data_contract_id.try_into()?);
         Ok(())
     }
 
@@ -142,9 +140,7 @@ impl TokenBaseTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = token_id.into();
-        self.0
-            .set_token_id(IdentifierWasm::try_from(&id_value)?.into());
+        self.0.set_token_id(token_id.try_into()?);
 
         Ok(())
     }

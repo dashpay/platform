@@ -14,7 +14,7 @@ use crate::state_transitions::batch::token_transitions::token_mint::TokenMintTra
 use crate::state_transitions::batch::token_transitions::token_transfer::TokenTransferTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_unfreeze::TokenUnFreezeTransitionWasm;
 use crate::utils::{IntoWasm, get_class_type};
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
 };
@@ -246,8 +246,7 @@ impl TokenTransitionWasm {
         &self,
         owner: IdentifierLikeJs,
     ) -> WasmDppResult<IdentifierWasm> {
-        let owner_value: JsValue = owner.into();
-        let owner = IdentifierWasm::try_from(&owner_value)?.into();
+        let owner: Identifier = owner.try_into()?;
         Ok(self.0.historical_document_id(owner).into())
     }
 
@@ -276,10 +275,9 @@ impl TokenTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = token_id.into();
-        let id = IdentifierWasm::try_from(&id_value)?.into();
+        let token_id: Identifier = token_id.try_into()?;
 
-        self.0.set_token_id(id);
+        self.0.set_token_id(token_id);
 
         Ok(())
     }
@@ -289,10 +287,9 @@ impl TokenTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = contract_id.into();
-        let id = IdentifierWasm::try_from(&id_value)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
-        self.0.set_data_contract_id(id);
+        self.0.set_data_contract_id(contract_id);
 
         Ok(())
     }

@@ -109,8 +109,7 @@ impl BatchedTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = contract_id.into();
-        let contract_id: Identifier = IdentifierWasm::try_from(&id_value)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         self.0 = match self.0.clone() {
             BatchedTransition::Document(mut document_transition) => {

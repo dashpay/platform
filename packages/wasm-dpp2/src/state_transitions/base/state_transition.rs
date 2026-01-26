@@ -439,8 +439,7 @@ impl StateTransitionWasm {
         #[wasm_bindgen(js_name = "ownerId")] owner_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         use dpp::state_transition::StateTransition::*;
-        let owner_id_value: JsValue = owner_id.into();
-        let owner_id: Identifier = IdentifierWasm::try_from(&owner_id_value)?.into();
+        let owner_id: Identifier = owner_id.try_into()?;
 
         match self.0.clone() {
             DataContractCreate(mut contract_create) => {

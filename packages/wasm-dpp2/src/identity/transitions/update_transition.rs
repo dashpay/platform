@@ -24,7 +24,6 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -212,9 +211,7 @@ impl IdentityUpdateTransitionWasm {
         &mut self,
         #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = identity_id.into();
-        let identity_id = IdentifierWasm::try_from(&id_value)?.into();
-        self.0.set_identity_id(identity_id);
+        self.0.set_identity_id(identity_id.try_into()?);
         Ok(())
     }
 

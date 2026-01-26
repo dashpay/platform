@@ -1,6 +1,6 @@
 use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWasm};
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::utils::{try_from_options_optional, try_from_options_optional_with};
 use dpp::balances::credits::TokenAmount;
@@ -120,18 +120,10 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "paymentTokenContractId")]
     pub fn set_payment_token_contract_id(
         &mut self,
-        payment_token_contract_id: IdentifierLikeJs,
+        payment_token_contract_id: IdentifierLikeOrUndefinedJs,
     ) -> WasmDppResult<()> {
-        let id_value: JsValue = payment_token_contract_id.into();
-        let payment_token_contract_id: Option<Identifier> =
-            if id_value.is_null() || id_value.is_undefined() {
-                None
-            } else {
-                Some(IdentifierWasm::try_from(&id_value)?.into())
-            };
-
         self.0
-            .set_payment_token_contract_id(payment_token_contract_id);
+            .set_payment_token_contract_id(payment_token_contract_id.try_into()?);
 
         Ok(())
     }
