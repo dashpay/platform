@@ -3130,19 +3130,22 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/wasm-dpp2/",\
         "packageDependencies": [\
           ["@dashevo/wasm-dpp2", "workspace:packages/wasm-dpp2"],\
+          ["@types/chai", "npm:4.3.20"],\
+          ["@types/mocha", "npm:10.0.10"],\
+          ["@types/node", "npm:20.19.30"],\
           ["assert", "npm:2.0.0"],\
           ["bs58", "npm:4.0.1"],\
           ["buffer", "npm:6.0.3"],\
           ["chai", "npm:4.3.10"],\
-          ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
-          ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
+          ["chai-as-promised", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:7.1.1"],\
+          ["dirty-chai", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:2.0.1"],\
           ["eslint", "npm:8.53.0"],\
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:15.0.0"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.29.0"],\
           ["eslint-plugin-jsdoc", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:46.9.0"],\
           ["events", "npm:3.3.0"],\
           ["karma", "npm:6.4.3"],\
-          ["karma-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:0.1.0"],\
+          ["karma-chai", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:0.1.0"],\
           ["karma-chrome-launcher", "npm:3.1.0"],\
           ["karma-firefox-launcher", "npm:2.1.2"],\
           ["karma-mocha", "npm:2.0.1"],\
@@ -3152,6 +3155,8 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["string_decoder", "npm:1.3.0"],\
+          ["ts-node", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:10.9.2"],\
+          ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["url", "npm:0.11.3"],\
           ["util", "npm:0.12.4"],\
           ["webpack", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:5.94.0"],\
@@ -4660,6 +4665,13 @@ const RAW_RUNTIME_STATE =
           ["@types/chai", "npm:4.2.22"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:4.3.20", {\
+        "packageLocation": "./.yarn/cache/@types-chai-npm-4.3.20-468371f41f-94fd87036f.zip/node_modules/@types/chai/",\
+        "packageDependencies": [\
+          ["@types/chai", "npm:4.3.20"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["@types/chai-as-promised", [\
@@ -4822,6 +4834,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@types/mocha", [\
+      ["npm:10.0.10", {\
+        "packageLocation": "./.yarn/cache/@types-mocha-npm-10.0.10-1e025e7c6e-4e3b61ed51.zip/node_modules/@types/mocha/",\
+        "packageDependencies": [\
+          ["@types/mocha", "npm:10.0.10"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:8.2.3", {\
         "packageLocation": "./.yarn/cache/@types-mocha-npm-8.2.3-7aff51fdb4-c768b67d8f.zip/node_modules/@types/mocha/",\
         "packageDependencies": [\
@@ -4870,6 +4889,14 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@types-node-npm-18.16.1-b36b37400b-d77a82fa40.zip/node_modules/@types/node/",\
         "packageDependencies": [\
           ["@types/node", "npm:18.16.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:20.19.30", {\
+        "packageLocation": "./.yarn/cache/@types-node-npm-20.19.30-e3d3d7af6e-4a25e5cbcd.zip/node_modules/@types/node/",\
+        "packageDependencies": [\
+          ["@types/node", "npm:20.19.30"],\
+          ["undici-types", "npm:6.21.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -7685,6 +7712,20 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
+      ["virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:7.1.1", {\
+        "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-a646c0f16e/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-5d9ecab37b.zip/node_modules/chai-as-promised/",\
+        "packageDependencies": [\
+          ["@types/chai", "npm:4.3.20"],\
+          ["chai", "npm:4.3.10"],\
+          ["chai-as-promised", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:7.1.1"],\
+          ["check-error", "npm:1.0.3"]\
+        ],\
+        "packagePeers": [\
+          "@types/chai",\
+          "chai"\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1", {\
         "packageLocation": "./.yarn/__virtual__/chai-as-promised-virtual-bf848fb7b9/0/cache/chai-as-promised-npm-7.1.1-cdc17e4612-5d9ecab37b.zip/node_modules/chai-as-promised/",\
         "packageDependencies": [\
@@ -9447,6 +9488,19 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "npm:2.0.1"]\
         ],\
         "linkType": "SOFT"\
+      }],\
+      ["virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:2.0.1", {\
+        "packageLocation": "./.yarn/__virtual__/dirty-chai-virtual-f0ebba3d64/0/cache/dirty-chai-npm-2.0.1-acaf82c8df-b4f3d1ea01.zip/node_modules/dirty-chai/",\
+        "packageDependencies": [\
+          ["@types/chai", "npm:4.3.20"],\
+          ["chai", "npm:4.3.10"],\
+          ["dirty-chai", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:2.0.1"]\
+        ],\
+        "packagePeers": [\
+          "@types/chai",\
+          "chai"\
+        ],\
+        "linkType": "HARD"\
       }],\
       ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:2.0.1", {\
         "packageLocation": "./.yarn/__virtual__/dirty-chai-virtual-776ab6e5e1/0/cache/dirty-chai-npm-2.0.1-acaf82c8df-b4f3d1ea01.zip/node_modules/dirty-chai/",\
@@ -13434,6 +13488,23 @@ const RAW_RUNTIME_STATE =
           ["karma-chai", "npm:0.1.0"]\
         ],\
         "linkType": "SOFT"\
+      }],\
+      ["virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:0.1.0", {\
+        "packageLocation": "./.yarn/__virtual__/karma-chai-virtual-2f083708fb/0/cache/karma-chai-npm-0.1.0-d1d807f507-7fae0b4ace.zip/node_modules/karma-chai/",\
+        "packageDependencies": [\
+          ["@types/chai", "npm:4.3.20"],\
+          ["@types/karma", null],\
+          ["chai", "npm:4.3.10"],\
+          ["karma", "npm:6.4.3"],\
+          ["karma-chai", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:0.1.0"]\
+        ],\
+        "packagePeers": [\
+          "@types/chai",\
+          "@types/karma",\
+          "chai",\
+          "karma"\
+        ],\
+        "linkType": "HARD"\
       }],\
       ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.1.0", {\
         "packageLocation": "./.yarn/__virtual__/karma-chai-virtual-e2e0d5ff8a/0/cache/karma-chai-npm-0.1.0-d1d807f507-7fae0b4ace.zip/node_modules/karma-chai/",\
@@ -19623,6 +19694,42 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "SOFT"\
       }],\
+      ["virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:10.9.2", {\
+        "packageLocation": "./.yarn/__virtual__/ts-node-virtual-9fd177221f/0/cache/ts-node-npm-10.9.2-3f3890b9ac-a91a15b3c9.zip/node_modules/ts-node/",\
+        "packageDependencies": [\
+          ["@cspotcode/source-map-support", "npm:0.8.1"],\
+          ["@swc/core", null],\
+          ["@swc/wasm", null],\
+          ["@tsconfig/node10", "npm:1.0.8"],\
+          ["@tsconfig/node12", "npm:1.0.9"],\
+          ["@tsconfig/node14", "npm:1.0.1"],\
+          ["@tsconfig/node16", "npm:1.0.2"],\
+          ["@types/node", "npm:20.19.30"],\
+          ["@types/swc__core", null],\
+          ["@types/swc__wasm", null],\
+          ["@types/typescript", null],\
+          ["acorn", "npm:8.11.2"],\
+          ["acorn-walk", "npm:8.2.0"],\
+          ["arg", "npm:4.1.3"],\
+          ["create-require", "npm:1.1.1"],\
+          ["diff", "npm:4.0.4"],\
+          ["make-error", "npm:1.3.6"],\
+          ["ts-node", "virtual:897449be52adaf897095babe74bfcc926f5d083ac9aac6fbc5e260f1f71b7e3ada3f268ac9457d3009b9c6fca51fe685ec21fbed21ec5087df84ab489b719456#npm:10.9.2"],\
+          ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
+          ["v8-compile-cache-lib", "npm:3.0.1"],\
+          ["yn", "npm:3.1.1"]\
+        ],\
+        "packagePeers": [\
+          "@swc/core",\
+          "@swc/wasm",\
+          "@types/node",\
+          "@types/swc__core",\
+          "@types/swc__wasm",\
+          "@types/typescript",\
+          "typescript"\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:10.9.2", {\
         "packageLocation": "./.yarn/__virtual__/ts-node-virtual-488d8351d8/0/cache/ts-node-npm-10.9.2-3f3890b9ac-a91a15b3c9.zip/node_modules/ts-node/",\
         "packageDependencies": [\
@@ -20016,6 +20123,13 @@ const RAW_RUNTIME_STATE =
           ["typescript", "patch:typescript@npm%3A3.9.10#optional!builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5", {\
+        "packageLocation": "./.yarn/cache/typescript-patch-6fda4d02cf-696e1b017b.zip/node_modules/typescript/",\
+        "packageDependencies": [\
+          ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["ua-parser-js", [\
@@ -20081,6 +20195,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/undefsafe-npm-2.0.5-8c3bbf9354-f42ab3b577.zip/node_modules/undefsafe/",\
         "packageDependencies": [\
           ["undefsafe", "npm:2.0.5"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["undici-types", [\
+      ["npm:6.21.0", {\
+        "packageLocation": "./.yarn/cache/undici-types-npm-6.21.0-eb2b0ed56a-ec8f41aa43.zip/node_modules/undici-types/",\
+        "packageDependencies": [\
+          ["undici-types", "npm:6.21.0"]\
         ],\
         "linkType": "HARD"\
       }]\
