@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::utils::try_to_u64;
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
@@ -8,6 +9,7 @@ use dpp::state_transition::batch_transition::token_base_transition::token_base_t
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::TokenMintTransition;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,8 +86,9 @@ impl TokenMintTransitionWasm {
     }
 
     #[wasm_bindgen(setter = amount)]
-    pub fn set_amount(&mut self, amount: u64) {
-        self.0.set_amount(amount)
+    pub fn set_amount(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(&amount, "amount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = base)]

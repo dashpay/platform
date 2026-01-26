@@ -266,8 +266,10 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
-        self.0.set_identity_contract_nonce(nonce)
+    pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        self.0.set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "tokenId")]

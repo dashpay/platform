@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::{IntoWasm, try_from_options};
+use crate::utils::{IntoWasm, try_from_options, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -133,8 +133,9 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
-        self.0.set_identity_contract_nonce(nonce)
+    pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+        self.0.set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "dataContractId")]

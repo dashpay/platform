@@ -4,7 +4,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u64,
+    try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u32,
+    try_to_u64,
 };
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -161,13 +162,15 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "amount")]
-    pub fn set_amount(&mut self, amount: u64) {
-        self.0.set_amount(amount)
+    pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(amount, "amount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "nonce")]
-    pub fn set_nonce(&mut self, nonce: u64) {
-        self.0.set_nonce(nonce)
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_nonce(try_to_u64(nonce, "nonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "signature")]
@@ -178,14 +181,16 @@ impl IdentityCreditTransferWasm {
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
     pub fn set_signature_public_key_id(
         &mut self,
-        #[wasm_bindgen(js_name = "publicKeyId")] public_key_id: u32,
-    ) {
-        self.0.set_signature_public_key_id(public_key_id)
+        #[wasm_bindgen(js_name = "publicKeyId")] public_key_id: &js_sys::Number,
+    ) -> WasmDppResult<()> {
+        self.0.set_signature_public_key_id(try_to_u32(public_key_id, "signaturePublicKeyId")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: u16) {
-        self.0.set_user_fee_increase(amount)
+    pub fn set_user_fee_increase(&mut self, amount: &js_sys::Number) -> WasmDppResult<()> {
+        self.0.set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "signature")]

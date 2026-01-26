@@ -81,7 +81,7 @@ impl PartialIdentityWasm {
         let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
 
         let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
-            value_to_loaded_public_keys(&v)
+            value_to_loaded_public_keys(v)
         })?;
 
         let balance: Option<Credits> =
@@ -219,7 +219,7 @@ impl PartialIdentityWasm {
 
         // loadedPublicKeys - values are plain objects
         let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
-            value_to_loaded_public_keys_from_object(&v)
+            value_to_loaded_public_keys_from_object(v)
         })?;
 
         // balance - can be BigInt, number, or undefined
@@ -258,7 +258,7 @@ impl PartialIdentityWasm {
 
         // loadedPublicKeys - values are JSON objects
         let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
-            value_to_loaded_public_keys_from_json(&v)
+            value_to_loaded_public_keys_from_json(v)
         })?;
 
         // balance - can be BigInt, number, or string (JSON doesn't support BigInt natively)

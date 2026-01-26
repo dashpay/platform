@@ -11,6 +11,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_purcha
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::DocumentPurchaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "DocumentPurchaseTransition")]
@@ -71,15 +72,20 @@ impl DocumentPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "price")]
-    pub fn set_price(&mut self, price: Credits) {
+    pub fn set_price(&mut self, price: JsValue) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        let price = try_to_u64(&price, "price")?;
         match self.0 {
             DocumentPurchaseTransition::V0(ref mut v0) => v0.price = price,
         }
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: Revision) {
-        self.0.set_revision(revision);
+    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        self.0.set_revision(try_to_u64(&revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]

@@ -3,6 +3,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
+use crate::utils::try_to_u32;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
@@ -95,8 +96,9 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(setter = "outputIndex")]
-    pub fn set_output_index(&mut self, #[wasm_bindgen(js_name = "outputIndex")] output_index: u32) {
-        self.0.output_index = output_index;
+    pub fn set_output_index(&mut self, #[wasm_bindgen(js_name = "outputIndex")] output_index: &js_sys::Number) -> WasmDppResult<()> {
+        self.0.output_index = try_to_u32(output_index, "outputIndex")?;
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "instantLock")]

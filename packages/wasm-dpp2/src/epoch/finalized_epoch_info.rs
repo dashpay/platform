@@ -138,7 +138,7 @@ fn block_proposers_from_map(js_map: &Map) -> WasmDppResult<BTreeMap<Identifier, 
             })?
             .into();
 
-        let credits = try_to_u64(value, "blockProposerCredits")?;
+        let credits = try_to_u64(&value, "blockProposerCredits")?;
 
         map.insert(identifier, credits);
     }
@@ -211,7 +211,7 @@ impl FinalizedEpochInfoWasm {
                     "'blockProposers' must be a Map",
                 ));
             }
-            block_proposers_from_map(&Map::unchecked_from_js(v))
+            block_proposers_from_map(&Map::unchecked_from_js(v.clone()))
         })?;
 
         let fee_multiplier_permille =

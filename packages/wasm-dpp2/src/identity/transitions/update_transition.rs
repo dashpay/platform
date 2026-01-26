@@ -24,6 +24,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -110,7 +111,7 @@ impl IdentityUpdateTransitionWasm {
         let disable_public_keys: Vec<KeyID> = disable_public_keys_array
             .iter()
             .enumerate()
-            .map(|(i, v)| try_to_u32(v, &format!("disablePublicKeys[{}]", i)))
+            .map(|(i, v)| try_to_u32(&v, &format!("disablePublicKeys[{}]", i)))
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
         let user_fee_increase: UserFeeIncrease =
@@ -197,13 +198,15 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: Revision) {
-        self.0.set_revision(revision);
+    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(&revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "nonce")]
-    pub fn set_nonce(&mut self, nonce: IdentityNonce) {
-        self.0.set_nonce(nonce);
+    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+        self.0.set_nonce(try_to_u64(&nonce, "nonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]

@@ -7,7 +7,7 @@ use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyW
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u32,
 };
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -160,7 +160,7 @@ impl IdentityPublicKeyInCreationWasm {
 
         // Extract data (required, Uint8Array)
         let data: Vec<u8> = try_from_options_with(&object, "data", |v| {
-            serde_wasm_bindgen::from_value(v)
+            serde_wasm_bindgen::from_value(v.clone())
                 .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))
         })?;
 
@@ -294,8 +294,9 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: u32) {
-        self.0.set_id(key_id)
+    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: JsValue) -> WasmDppResult<()> {
+        self.0.set_id(try_to_u32(&key_id, "keyId")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = purpose)]

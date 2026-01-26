@@ -122,8 +122,9 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = tokenContractPosition)]
-    pub fn set_token_contract_position(&mut self, pos: u16) {
-        self.0.set_token_contract_position(pos)
+    pub fn set_token_contract_position(&mut self, pos: JsValue) -> WasmDppResult<()> {
+        self.0.set_token_contract_position(try_to_u16(&pos, "tokenContractPosition")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = dataContractId)]

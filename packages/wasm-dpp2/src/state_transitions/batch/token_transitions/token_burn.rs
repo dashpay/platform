@@ -1,10 +1,12 @@
+use crate::error::WasmDppResult;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
-use crate::error::WasmDppResult;
+use crate::utils::try_to_u64;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
 use dpp::state_transition::batch_transition::TokenBurnTransition;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,8 +58,9 @@ impl TokenBurnTransitionWasm {
     }
 
     #[wasm_bindgen(setter = burnAmount)]
-    pub fn set_burn_amount(&mut self, amount: u64) {
-        self.0.set_burn_amount(amount)
+    pub fn set_burn_amount(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0.set_burn_amount(try_to_u64(&amount, "burnAmount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = base)]

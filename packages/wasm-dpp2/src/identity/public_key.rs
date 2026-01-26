@@ -9,7 +9,8 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_to_fixed_bytes,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_to_fixed_bytes, try_to_u32,
+    try_to_u64,
 };
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -132,7 +133,7 @@ pub fn public_key_hash_from_js(value: PublicKeyHashLikeJs) -> WasmDppResult<Vec<
         Ok(bytes)
     } else {
         // Validate type is Uint8Array and length is 20 bytes
-        let bytes = try_to_fixed_bytes::<20>(js_value, "publicKeyHash")?;
+        let bytes = try_to_fixed_bytes::<20>(&js_value, "publicKeyHash")?;
         Ok(bytes.to_vec())
     }
 }
@@ -280,8 +281,9 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = keyId)]
-    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: u32) {
-        self.0.set_id(key_id)
+    pub fn set_key_id(&mut self, #[wasm_bindgen(js_name = "keyId")] key_id: JsValue) -> WasmDppResult<()> {
+        self.0.set_id(try_to_u32(&key_id, "keyId")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = purpose)]
@@ -329,8 +331,9 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = disabledAt)]
-    pub fn set_disabled_at(&mut self, #[wasm_bindgen(js_name = "disabledAt")] disabled_at: u64) {
-        self.0.set_disabled_at(disabled_at)
+    pub fn set_disabled_at(&mut self, #[wasm_bindgen(js_name = "disabledAt")] disabled_at: JsValue) -> WasmDppResult<()> {
+        self.0.set_disabled_at(try_to_u64(&disabled_at, "disabledAt")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyHash")]
@@ -407,7 +410,8 @@ impl IdentityPublicKeyWasm {
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(value: IdentityPublicKeyObjectJs) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_value = serialization::platform_value_from_object(value.into())?;
+        let value: JsValue = value.into();
+        let platform_value = serialization::platform_value_from_object(&value)?;
         let platform_version = PlatformVersion::latest();
         let key = IdentityPublicKey::from_object(platform_value, platform_version)
             .map_err(WasmDppError::from)?;

@@ -89,8 +89,10 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: Revision) {
-        self.0.set_revision(revision);
+    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        self.0.set_revision(try_to_u64(&revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]

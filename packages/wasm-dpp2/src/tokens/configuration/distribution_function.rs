@@ -113,7 +113,7 @@ impl DistributionFunctionWasm {
                 ))
             })?;
 
-            let amount = try_to_u64(amount_js, &format!("step[{}]", key_str))?;
+            let amount = try_to_u64(&amount_js, &format!("step[{}]", key_str))?;
 
             steps_with_amount.insert(step, amount);
         }

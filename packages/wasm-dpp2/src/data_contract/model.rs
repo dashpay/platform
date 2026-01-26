@@ -8,7 +8,7 @@ use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
     IntoWasm, JsValueExt, try_from_options, try_from_options_optional,
-    try_from_options_optional_with, try_from_options_with,
+    try_from_options_optional_with, try_from_options_with, try_to_u32,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -322,7 +322,8 @@ impl DataContractWasm {
             PlatformVersionWasm::try_from(platform_version)?
         };
 
-        let platform_value: Value = serialization::platform_value_from_object(value.into())?;
+        let value: JsValue = value.into();
+        let platform_value: Value = serialization::platform_value_from_object(&value)?;
 
         let contract =
             DataContract::from_value(platform_value, full_validation, &platform_version.into())
@@ -498,8 +499,9 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "version")]
-    pub fn set_version(&mut self, version: u32) {
-        self.0.set_version(version)
+    pub fn set_version(&mut self, version: JsValue) -> WasmDppResult<()> {
+        self.0.set_version(try_to_u32(&version, "version")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "setConfig")]
@@ -543,7 +545,7 @@ impl DataContractWasm {
 
         // Use platform_value_from_object to match getSchemas' to_object serialization
         // This preserves integer types properly (avoids JSON round-trip which converts to strings)
-        let schema_value = serialization::platform_value_from_object(schemas)?;
+        let schema_value = serialization::platform_value_from_object(&schemas)?;
         let schema = schema_value
             .into_btree_string_map()
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;

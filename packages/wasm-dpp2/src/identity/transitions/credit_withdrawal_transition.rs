@@ -228,27 +228,31 @@ impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(setter = "userFeeIncrease")]
     pub fn set_user_fee_increase(
         &mut self,
-        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
-    ) {
-        self.0.set_user_fee_increase(user_fee_increase);
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: &js_sys::Number,
+    ) -> WasmDppResult<()> {
+        self.0.set_user_fee_increase(try_to_u16(user_fee_increase, "userFeeIncrease")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "nonce")]
-    pub fn set_nonce(&mut self, nonce: IdentityNonce) {
-        self.0.set_nonce(nonce)
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_nonce(try_to_u64(nonce, "nonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "amount")]
-    pub fn set_amount(&mut self, amount: u64) {
-        self.0.set_amount(amount)
+    pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(amount, "amount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "coreFeePerByte")]
     pub fn set_core_fee_per_byte(
         &mut self,
-        #[wasm_bindgen(js_name = "coreFeePerByte")] core_fee_per_byte: u32,
-    ) {
-        self.0.set_core_fee_per_byte(core_fee_per_byte)
+        #[wasm_bindgen(js_name = "coreFeePerByte")] core_fee_per_byte: &js_sys::Number,
+    ) -> WasmDppResult<()> {
+        self.0.set_core_fee_per_byte(try_to_u32(core_fee_per_byte, "coreFeePerByte")?);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "signature")]

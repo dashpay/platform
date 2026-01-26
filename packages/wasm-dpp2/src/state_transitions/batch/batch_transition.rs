@@ -4,13 +4,13 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::state_transitions::StateTransitionWasm;
 use crate::state_transitions::batch::batched_transition::BatchedTransitionWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, try_to_u32, try_to_u64};
 use dpp::fee::Credits;
 use dpp::identity::KeyID;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::prelude::{IdentityNonce, UserFeeIncrease};
+use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -20,6 +20,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionOwned,
     StateTransitionSingleSigned,
 };
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -174,14 +175,16 @@ impl BatchTransitionWasm {
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
     pub fn set_signature_public_key_id(
         &mut self,
-        #[wasm_bindgen(js_name = "keyId")] key_id: KeyID,
-    ) {
-        self.0.set_signature_public_key_id(key_id)
+        #[wasm_bindgen(js_name = "keyId")] key_id: JsValue,
+    ) -> WasmDppResult<()> {
+        self.0.set_signature_public_key_id(try_to_u32(&key_id, "signaturePublicKeyId")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) {
-        self.0.set_identity_contract_nonce(nonce)
+    pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+        self.0.set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]

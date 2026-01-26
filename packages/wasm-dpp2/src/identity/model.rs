@@ -12,7 +12,9 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use crate::utils::try_to_u64;
 
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_TYPES_TS: &str = r#"
@@ -80,13 +82,15 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(setter = "balance")]
-    pub fn set_balance(&mut self, balance: u64) {
-        self.0.set_balance(balance);
+    pub fn set_balance(&mut self, balance: JsValue) -> WasmDppResult<()> {
+        self.0.set_balance(try_to_u64(&balance, "balance")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: u64) {
-        self.0.set_revision(revision);
+    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(&revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "addPublicKey")]

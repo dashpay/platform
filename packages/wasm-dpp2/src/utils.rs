@@ -215,7 +215,7 @@ pub fn try_from_options_with<T, F>(
     converter: F,
 ) -> WasmDppResult<T>
 where
-    F: FnOnce(JsValue) -> WasmDppResult<T>,
+    F: FnOnce(&JsValue) -> WasmDppResult<T>,
 {
     let value =
         js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
@@ -233,7 +233,7 @@ where
         )));
     }
 
-    converter(value)
+    converter(&value)
 }
 
 /// Extract an optional property from a JS object and convert it using TryFrom.
@@ -294,7 +294,7 @@ pub fn try_from_options_optional_with<T, F>(
     converter: F,
 ) -> WasmDppResult<Option<T>>
 where
-    F: FnOnce(JsValue) -> WasmDppResult<T>,
+    F: FnOnce(&JsValue) -> WasmDppResult<T>,
 {
     let value =
         js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
@@ -308,7 +308,7 @@ where
     if value.is_undefined() || value.is_null() {
         Ok(None)
     } else {
-        converter(value).map(Some)
+        converter(&value).map(Some)
     }
 }
 
@@ -321,9 +321,11 @@ where
 ///
 /// This flexibility is needed because JSON doesn't support BigInt natively.
 /// Large numbers may be serialized as strings to preserve precision.
-pub fn try_to_u64(value: JsValue, field_name: &str) -> WasmDppResult<u64> {
+///
+/// Takes `&JsValue` to allow Deref coercion from `js_sys::BigInt` and `js_sys::Number`.
+pub fn try_to_u64(value: &JsValue, field_name: &str) -> WasmDppResult<u64> {
     if value.is_bigint() {
-        let bigint = js_sys::BigInt::new(&value).map_err(|_| {
+        let bigint = js_sys::BigInt::new(value).map_err(|_| {
             WasmDppError::invalid_argument(format!("'{}' is not a valid BigInt", field_name))
         })?;
         bigint.try_into().map_err(|_| {
@@ -389,14 +391,14 @@ pub fn try_to_object(value: JsValue, field_name: &str) -> WasmDppResult<Object> 
 ///
 /// Validates that the value is an array using `Array::is_array()`.
 /// Returns an error if the value is not an array.
-pub fn try_to_array(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::Array> {
-    if !js_sys::Array::is_array(&value) {
+pub fn try_to_array(value: &JsValue, field_name: &str) -> WasmDppResult<js_sys::Array> {
+    if !js_sys::Array::is_array(value) {
         return Err(WasmDppError::invalid_argument(format!(
             "'{}' must be an array",
             field_name
         )));
     }
-    Ok(js_sys::Array::from(&value))
+    Ok(js_sys::Array::from(value))
 }
 
 /// Convert a JS array to a Vec of Rust types via WASM wrappers.
@@ -424,7 +426,8 @@ where
     W: TryFrom<JsValue, Error = WasmDppError>,
     T: From<W>,
 {
-    let js_array = try_to_array(array.into(), field_name)?;
+    let array_value: JsValue = array.into();
+    let js_array = try_to_array(&array_value, field_name)?;
     js_array
         .iter()
         .map(|v| {
@@ -449,7 +452,9 @@ pub fn try_to_map(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::Map
 ///
 /// Uses `JsValue::as_string()` to extract the string value.
 /// Returns an error if the value is not a string.
-pub fn try_to_string(value: JsValue, field_name: &str) -> WasmDppResult<String> {
+///
+/// Takes `&JsValue` to allow Deref coercion from js_sys types.
+pub fn try_to_string(value: &JsValue, field_name: &str) -> WasmDppResult<String> {
     value
         .as_string()
         .ok_or_else(|| WasmDppError::invalid_argument(format!("'{}' must be a string", field_name)))
@@ -459,8 +464,10 @@ pub fn try_to_string(value: JsValue, field_name: &str) -> WasmDppResult<String> 
 ///
 /// Validates that the value is a Uint8Array using `dyn_into()`.
 /// Returns an error if the value is not a Uint8Array.
-pub fn try_to_bytes(value: JsValue, field_name: &str) -> WasmDppResult<Vec<u8>> {
-    let array: js_sys::Uint8Array = value.dyn_into().map_err(|_| {
+///
+/// Takes `&JsValue` to allow Deref coercion from js_sys types.
+pub fn try_to_bytes(value: &JsValue, field_name: &str) -> WasmDppResult<Vec<u8>> {
+    let array: js_sys::Uint8Array = value.clone().dyn_into().map_err(|_| {
         WasmDppError::invalid_argument(format!("'{}' must be a Uint8Array", field_name))
     })?;
     Ok(array.to_vec())
@@ -471,8 +478,10 @@ pub fn try_to_bytes(value: JsValue, field_name: &str) -> WasmDppResult<Vec<u8>> 
 /// Validates that:
 /// - The value is a Uint8Array
 /// - The length is exactly N bytes
+///
+/// Takes `&JsValue` to allow Deref coercion from js_sys types.
 pub fn try_to_fixed_bytes<const N: usize>(
-    value: JsValue,
+    value: &JsValue,
     field_name: &str,
 ) -> WasmDppResult<[u8; N]> {
     let bytes = try_to_bytes(value, field_name)?;
@@ -496,7 +505,9 @@ pub fn try_to_fixed_bytes<const N: usize>(
 /// - An integer (no fractional part)
 /// - Non-negative
 /// - Within u32 range (0..=4294967295)
-pub fn try_to_u32(value: JsValue, field_name: &str) -> WasmDppResult<u32> {
+///
+/// Takes `&JsValue` to allow Deref coercion from `js_sys::Number`.
+pub fn try_to_u32(value: &JsValue, field_name: &str) -> WasmDppResult<u32> {
     let num = value.as_f64().ok_or_else(|| {
         WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
     })?;
@@ -535,6 +546,54 @@ pub fn try_to_u32(value: JsValue, field_name: &str) -> WasmDppResult<u32> {
     Ok(num as u32)
 }
 
+/// Convert a JS value to u8 with validation.
+///
+/// Validates that the value is:
+/// - A finite number (not NaN or Infinity)
+/// - An integer (no fractional part)
+/// - Non-negative
+/// - Within u8 range (0..=255)
+///
+/// Takes `&JsValue` to allow Deref coercion from `js_sys::Number`.
+pub fn try_to_u8(value: &JsValue, field_name: &str) -> WasmDppResult<u8> {
+    let num = value.as_f64().ok_or_else(|| {
+        WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
+    })?;
+
+    if num.is_nan() || num.is_infinite() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be a finite number, got {}",
+            field_name,
+            if num.is_nan() { "NaN" } else { "Infinity" }
+        )));
+    }
+
+    if num.fract() != 0.0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be an integer, got {}",
+            field_name, num
+        )));
+    }
+
+    if num < 0.0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be non-negative, got {}",
+            field_name, num
+        )));
+    }
+
+    if num > u8::MAX as f64 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be at most {}, got {}",
+            field_name,
+            u8::MAX,
+            num
+        )));
+    }
+
+    Ok(num as u8)
+}
+
 /// Convert a JS value to u16 with validation.
 ///
 /// Validates that the value is:
@@ -542,7 +601,9 @@ pub fn try_to_u32(value: JsValue, field_name: &str) -> WasmDppResult<u32> {
 /// - An integer (no fractional part)
 /// - Non-negative
 /// - Within u16 range (0..=65535)
-pub fn try_to_u16(value: JsValue, field_name: &str) -> WasmDppResult<u16> {
+///
+/// Takes `&JsValue` to allow Deref coercion from `js_sys::Number`.
+pub fn try_to_u16(value: &JsValue, field_name: &str) -> WasmDppResult<u16> {
     let num = value.as_f64().ok_or_else(|| {
         WasmDppError::invalid_argument(format!("'{}' must be a number", field_name))
     })?;

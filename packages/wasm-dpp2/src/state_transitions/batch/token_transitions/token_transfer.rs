@@ -142,8 +142,9 @@ impl TokenTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "amount")]
-    pub fn set_amount(&mut self, amount: u64) {
-        self.0.set_amount(amount)
+    pub fn set_amount(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(&amount, "amount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "base")]

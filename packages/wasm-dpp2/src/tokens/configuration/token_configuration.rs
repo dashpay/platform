@@ -7,7 +7,7 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
-use crate::utils::{IntoWasm, try_from_options_with};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -312,8 +312,9 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(setter = "baseSupply")]
-    pub fn set_base_supply(&mut self, base_supply: TokenAmount) {
-        self.0.set_base_supply(base_supply)
+    pub fn set_base_supply(&mut self, base_supply: JsValue) -> WasmDppResult<()> {
+        self.0.set_base_supply(try_to_u64(&base_supply, "baseSupply")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "keepsHistory")]
@@ -336,8 +337,14 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(setter = "maxSupply")]
-    pub fn set_max_supply(&mut self, max_supply: Option<TokenAmount>) {
-        self.0.set_max_supply(max_supply)
+    pub fn set_max_supply(&mut self, max_supply: JsValue) -> WasmDppResult<()> {
+        let max_supply = if max_supply.is_undefined() || max_supply.is_null() {
+            None
+        } else {
+            Some(try_to_u64(&max_supply, "maxSupply")?)
+        };
+        self.0.set_max_supply(max_supply);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "maxSupplyChangeRules")]

@@ -354,8 +354,10 @@ fn convert_value_for_json(value: &platform_value::Value) -> platform_value::Valu
 ///
 /// serde-wasm-bindgen's deserialize_any handles Uint8Array via visit_byte_buf, which creates
 /// Value::Bytes. BigInt is handled via visit_i64/visit_u64.
-pub fn platform_value_from_object(value: JsValue) -> WasmDppResult<platform_value::Value> {
-    serde_wasm_bindgen::from_value(value)
+///
+/// Takes `&JsValue` to allow Deref coercion from js_sys types.
+pub fn platform_value_from_object(value: &JsValue) -> WasmDppResult<platform_value::Value> {
+    serde_wasm_bindgen::from_value(value.clone())
         .map_err(|e| WasmDppError::serialization(format!("platform_value_from_object: {}", e)))
 }
 

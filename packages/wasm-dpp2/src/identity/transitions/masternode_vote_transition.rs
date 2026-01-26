@@ -7,7 +7,7 @@ use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
     IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
-    try_to_bytes, try_to_object, try_to_u32, try_to_u64,
+    try_to_bytes, try_to_object, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -23,6 +23,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -184,22 +185,25 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = nonce)]
-    pub fn set_nonce(&mut self, nonce: IdentityNonce) {
+    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+        let nonce = try_to_u64(&nonce, "nonce")?;
         self.0 = match self.0.clone() {
             MasternodeVoteTransition::V0(mut vote) => {
                 vote.nonce = nonce;
 
                 MasternodeVoteTransition::V0(vote)
             }
-        }
+        };
+        Ok(())
     }
 
     #[wasm_bindgen(setter=signaturePublicKeyId)]
     pub fn set_signature_public_key_id(
         &mut self,
-        #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: KeyID,
-    ) {
-        self.0.set_signature_public_key_id(signature_public_key_id)
+        #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: JsValue,
+    ) -> WasmDppResult<()> {
+        self.0.set_signature_public_key_id(try_to_u32(&signature_public_key_id, "signaturePublicKeyId")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter=signature)]
@@ -253,8 +257,9 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: u16) {
-        self.0.set_user_fee_increase(amount)
+    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0.set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "modifiedDataIds")]

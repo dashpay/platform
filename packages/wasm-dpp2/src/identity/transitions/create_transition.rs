@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_array};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u16};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -220,8 +220,9 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: u16) {
-        self.0.set_user_fee_increase(amount)
+    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0.set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "signature")]

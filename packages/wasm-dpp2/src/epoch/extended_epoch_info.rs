@@ -158,32 +158,36 @@ impl ExtendedEpochInfoWasm {
     }
 
     #[wasm_bindgen(setter = "index")]
-    pub fn set_index(&mut self, index: u16) {
-        self.v0_mut().index = index;
+    pub fn set_index(&mut self, index: &js_sys::Number) -> WasmDppResult<()> {
+        self.v0_mut().index = try_to_u16(index, "index")?;
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "firstBlockTime")]
     pub fn set_first_block_time(
         &mut self,
-        #[wasm_bindgen(js_name = "firstBlockTime")] first_block_time: u64,
-    ) {
-        self.v0_mut().first_block_time = first_block_time;
+        #[wasm_bindgen(js_name = "firstBlockTime")] first_block_time: &js_sys::BigInt,
+    ) -> WasmDppResult<()> {
+        self.v0_mut().first_block_time = try_to_u64(first_block_time, "firstBlockTime")?;
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "firstBlockHeight")]
     pub fn set_first_block_height(
         &mut self,
-        #[wasm_bindgen(js_name = "firstBlockHeight")] first_block_height: u64,
-    ) {
-        self.v0_mut().first_block_height = first_block_height;
+        #[wasm_bindgen(js_name = "firstBlockHeight")] first_block_height: &js_sys::BigInt,
+    ) -> WasmDppResult<()> {
+        self.v0_mut().first_block_height = try_to_u64(first_block_height, "firstBlockHeight")?;
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "firstCoreBlockHeight")]
     pub fn set_first_core_block_height(
         &mut self,
-        #[wasm_bindgen(js_name = "firstCoreBlockHeight")] first_core_block_height: u32,
-    ) {
-        self.v0_mut().first_core_block_height = first_core_block_height;
+        #[wasm_bindgen(js_name = "firstCoreBlockHeight")] first_core_block_height: &js_sys::Number,
+    ) -> WasmDppResult<()> {
+        self.v0_mut().first_core_block_height = try_to_u32(first_core_block_height, "firstCoreBlockHeight")?;
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "feeMultiplierPermille")]

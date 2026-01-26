@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::localization::TokenConfigurationLocalizationWasm;
-use crate::utils::JsValueExt;
+use crate::utils::{try_to_u8, JsValueExt};
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
@@ -81,8 +81,9 @@ impl TokenConfigurationConventionWasm {
     }
 
     #[wasm_bindgen(setter = "decimals")]
-    pub fn set_decimals(&mut self, decimals: u8) {
-        self.0.set_decimals(decimals)
+    pub fn set_decimals(&mut self, decimals: &js_sys::Number) -> WasmDppResult<()> {
+        self.0.set_decimals(try_to_u8(decimals, "decimals")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "localizations")]

@@ -15,6 +15,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::{
     DocumentTransitionActionType, DocumentTransitionActionTypeGetter,
 };
+use crate::utils::try_to_u64;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
@@ -161,16 +163,18 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: Revision) {
-        self.0.set_revision(revision)
+    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(&revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "identityContractNonce")]
     pub fn set_identity_contract_nonce(
         &mut self,
-        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
-    ) {
-        self.0.set_identity_contract_nonce(identity_contract_nonce)
+        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: JsValue,
+    ) -> WasmDppResult<()> {
+        self.0.set_identity_contract_nonce(try_to_u64(&identity_contract_nonce, "identityContractNonce")?);
+        Ok(())
     }
 }
 
