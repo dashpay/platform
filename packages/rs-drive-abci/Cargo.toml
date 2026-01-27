@@ -42,7 +42,7 @@ dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "server",
   "platform",
 ] }
-tracing-subscriber = { version = "0.3.16", default-features = false, features = [
+tracing-subscriber = { version = "0.3.22", default-features = false, features = [
   "env-filter",
   "ansi",
   "json",
