@@ -40,7 +40,7 @@ struct IdentityPublicKeyOptions {
     key_id: u32,
     #[serde(default)]
     is_read_only: bool,
-    data: String,
+    data: Vec<u8>,
     #[serde(default)]
     disabled_at: Option<TimestampMillis>,
 }
@@ -57,7 +57,7 @@ export interface IdentityPublicKeyOptions {
     securityLevel: SecurityLevelLike;
     keyType: KeyTypeLike;
     isReadOnly?: boolean;
-    data: string; // hex encoded
+    data: Uint8Array;
     disabledAt?: number;
     contractBounds?: ContractBounds;
 }
@@ -183,8 +183,7 @@ impl IdentityPublicKeyWasm {
                 contract_bounds,
                 key_type: KeyType::from(key_type),
                 read_only: opts.is_read_only,
-                data: BinaryData::from_string(&opts.data, Hex)
-                    .map_err(|e| WasmDppError::serialization(e.to_string()))?,
+                data: BinaryData::new(opts.data),
                 disabled_at: opts.disabled_at,
             },
         )))
