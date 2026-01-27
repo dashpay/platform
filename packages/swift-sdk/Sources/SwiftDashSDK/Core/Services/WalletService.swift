@@ -53,24 +53,18 @@ enum LoggingPreferences {
     @MainActor
     static func configure() -> LoggingPreset {
         let preset = loadPreset()
-        let spvLevel: SPVLogLevel
         let enableSwiftVerbose: Bool
 
         switch preset {
         case .high:
-            spvLevel = .trace
             enableSwiftVerbose = true
         case .medium:
-            spvLevel = .info
             enableSwiftVerbose = false
         case .low:
-            spvLevel = .off
             enableSwiftVerbose = false
         }
 
         setenv("SPV_SWIFT_LOG", enableSwiftVerbose ? "1" : "0", 1)
-        setenv("SPV_LOG", spvLevel.rawValue, 1)
-        SPVClient.initializeLogging(spvLevel)
 
         return preset
     }

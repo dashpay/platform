@@ -13,19 +13,6 @@ public enum SPVLogLevel: String, Sendable {
     case paranoid
 }
 
-extension SPVClient {
-    /// Initialize SPV/Rust-side logging. Call once early in app startup.
-    /// If not called, `initialize(...)` will default to reading `SPV_LOG` env var.
-    @MainActor
-    public static func initializeLogging(_ level: SPVLogLevel) {
-        level.rawValue.withCString { cstr in
-            // TODO: provide valid log directory?
-            _ = dash_spv_ffi_init_logging(cstr, false, nil, 10)
-        }
-        LogInitState.manualInitialized = true
-    }
-}
-
 // MARK: - C Callback Functions
 // Use top-level C-compatible functions to avoid actor-isolation init issues
 
@@ -285,14 +272,8 @@ public class SPVClient: ObservableObject {
             throw SPVError.alreadyInitialized
         }
         
-        // Initialize SPV logging (one-time) unless already initialized manually.
-        if !LogInitState.manualInitialized {
-            let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
-            _ = level.withCString { cstr in
-                // TODO: Provide valid log directory?
-                dash_spv_ffi_init_logging(cstr, false, nil, 10)
-            }
-        }
+        SDK.initializeSPVLogging(level: SDK.LogLevel.info, enableConsole: true, maxFiles: 5)
+        
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
@@ -1315,11 +1296,4 @@ public enum SPVError: LocalizedError {
             return reason
         }
     }
-}
-
-// MARK: - Private global state
-
-@MainActor
-private enum LogInitState {
-    static var manualInitialized: Bool = false
 }
