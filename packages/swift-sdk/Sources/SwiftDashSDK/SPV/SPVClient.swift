@@ -116,11 +116,6 @@ private func onTransactionCallbackC(
 
 public struct SPVSyncProgress {
     public let stage: SPVSyncStage
-    public let headerProgress: Double
-    /// Represents filter header progress until a dedicated masternode stage is exposed.
-    public let masternodeProgress: Double
-    /// Represents compact filter download progress ("Filters" stage).
-    public let transactionProgress: Double
     public let currentHeight: UInt32
     public let targetHeight: UInt32
     /// Absolute blockchain height reached for filter headers.
@@ -129,21 +124,8 @@ public struct SPVSyncProgress {
     public let filterHeight: UInt32
     /// UNIX timestamp (seconds) when the current sync run started. 0 if unavailable.
     public let syncStartedAt: TimeInterval
-    // Checkpoint height we started from (0 if none)
-    public let startHeight: UInt32
     public let rate: Double // blocks per second
     public let estimatedTimeRemaining: TimeInterval?
-    
-    public var overallProgress: Double {
-        // Weight the different stages
-        let headerWeight = 0.4
-        let masternodeWeight = 0.3
-        let transactionWeight = 0.3
-        
-        return (headerProgress * headerWeight) +
-               (masternodeProgress * masternodeWeight) +
-               (transactionProgress * transactionWeight)
-    }
 }
 
 public enum SPVSyncStage: String, Sendable {
@@ -231,8 +213,6 @@ public class SPVClient: ObservableObject {
     private var masternodeSyncEnabled: Bool = true
     
     // Sync tracking
-    // Height we start syncing from (checkpoint); used to render absolute heights
-    fileprivate var startFromHeight: UInt32 = 0
     private var syncStartTime: Date?
     private var lastBlockHeight: UInt32 = 0
     internal var syncCancelled = false
@@ -251,10 +231,6 @@ public class SPVClient: ObservableObject {
     public init(network: Network = DashSDKNetwork(rawValue: 1)) {
         self.network = network
     }
-
-    // Expose a read-only view of the sync base (checkpoint) height for UI/consumers.
-    // This is the absolute blockchain height we consider as the base when syncing from a checkpoint.
-    public var baseSyncHeight: UInt32 { startFromHeight }
     
     deinit {
         // Stop event polling (synchronously cancel the task)
@@ -277,6 +253,8 @@ public class SPVClient: ObservableObject {
             print("[SPV][Log] Initialized SPV logging level=\(level)")
         }
 
+        let startHeight = startHeight ?? 0
+        
         // Create configuration based on network raw value
         let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
             switch network.rawValue {
@@ -365,20 +343,7 @@ public class SPVClient: ObservableObject {
         }
         _ = dash_spv_ffi_config_set_masternode_sync_enabled(configPtr, masternodeSyncEnabled)
 
-        // Optionally set a starting height checkpoint
-        if let h = startHeight {
-            // Align to the last checkpoint at or below the requested height
-            let netFromConfig = dash_spv_ffi_config_get_network(configPtr)
-            var cpOutHeight: UInt32 = 0
-            var cpOutHash = [UInt8](repeating: 0, count: 32)
-            let rc: Int32 = cpOutHash.withUnsafeMutableBufferPointer { buf in
-                dash_spv_ffi_checkpoint_before_height(netFromConfig, h, &cpOutHeight, buf.baseAddress)
-            }
-            let finalHeight: UInt32 = (rc == 0 && cpOutHeight > 0) ? cpOutHeight : h
-            _ = dash_spv_ffi_config_set_start_from_height(configPtr, finalHeight)
-            // Remember checkpoint for UI normalization
-            self.startFromHeight = finalHeight
-        }
+        _ = dash_spv_ffi_config_set_start_from_height(configPtr, startHeight)
         
         // Create client
         client = dash_spv_ffi_client_new(configPtr)
@@ -419,7 +384,6 @@ public class SPVClient: ObservableObject {
     /// Update the starting checkpoint height (sync-from base) at runtime.
     /// Applies to the next sync start and persists in the client's config.
     public func setStartFromHeight(_ height: UInt32) throws {
-        self.startFromHeight = height
         if let config = self.config {
             let rc = dash_spv_ffi_config_set_start_from_height(config, height)
             if rc != 0 { throw SPVError.configurationFailed }
@@ -554,15 +518,11 @@ public class SPVClient: ObservableObject {
         // Reset UI progress to known baseline (0%) before events arrive
         self.syncProgress = SPVSyncProgress(
             stage: .headers,
-            headerProgress: 0.0,
-            masternodeProgress: 0.0,
-            transactionProgress: 0.0,
-            currentHeight: self.startFromHeight,
+            currentHeight: 0,
             targetHeight: 0,
-            filterHeaderHeight: self.startFromHeight,
-            filterHeight: self.startFromHeight,
+            filterHeaderHeight: 0,
+            filterHeight: 0,
             syncStartedAt: 0,
-            startHeight: self.startFromHeight,
             rate: 0.0,
             estimatedTimeRemaining: nil
         )
@@ -784,74 +744,6 @@ public class SPVClient: ObservableObject {
         }
 
         delegate?.spvClient(self, didReceiveBlock: block)
-        
-        // Update sync progress if we're syncing
-        if isSyncing, let progress = syncProgress {
-            // Update height tracking for rate calculation
-            var updatedRate: Double = progress.rate
-            if lastBlockHeight > 0 {
-                // Use signed math and clamp to avoid underflow on reorgs or height resets
-                let blocksDiffSigned = Int64(height) - Int64(lastBlockHeight)
-                let blocksDiff = blocksDiffSigned > 0 ? blocksDiffSigned : 0
-
-                let timeDiff = Date().timeIntervalSince(syncStartTime ?? Date())
-                updatedRate = timeDiff > 0 ? Double(blocksDiff) / timeDiff : 0
-            }
-
-            let baseHeight = startFromHeight
-
-            let snapshotFilterHeightRaw = self.getSyncSnapshot()?.lastSyncedFilterHeight ?? baseHeight
-            let statsFilterHeightRaw = self.getStats()?.filterHeight ?? Int(baseHeight)
-            let statsFilterHeight = statsFilterHeightRaw < Int(baseHeight) ? Int(baseHeight) : statsFilterHeightRaw
-            let snapshotFilterHeight = max(Int(baseHeight), Int(snapshotFilterHeightRaw))
-
-            let bestObservedFilterHeight = max(Int(progress.filterHeight), max(snapshotFilterHeight, statsFilterHeight))
-            let clampedFilterHeight = min(bestObservedFilterHeight, Int(UInt32.max))
-            let newFilterHeight = UInt32(clampedFilterHeight)
-
-            let candidateTarget = max(progress.targetHeight, max(progress.filterHeaderHeight, newFilterHeight))
-            let denominator = max(1.0, Double(candidateTarget) - Double(baseHeight))
-            let filterNumerator = max(0.0, Double(newFilterHeight) - Double(baseHeight))
-            let computedTransactionProgress = min(1.0, filterNumerator / denominator)
-
-            let filterHeadersDone = progress.filterHeaderHeight >= progress.targetHeight || progress.masternodeProgress >= 0.999
-            let stageAllowsFilters = progress.stage == .transactions || progress.stage == .complete
-            let filtersStageReady = stageAllowsFilters || filterHeadersDone
-            let nextFilterHeight = filtersStageReady ? newFilterHeight : progress.filterHeight
-            let nextTransactionProgress = filtersStageReady
-                ? max(progress.transactionProgress, computedTransactionProgress)
-                : progress.transactionProgress
-
-            let nextStage: SPVSyncStage
-            if progress.stage == .complete {
-                nextStage = .complete
-            } else if filtersStageReady && nextTransactionProgress > progress.transactionProgress {
-                nextStage = .transactions
-            } else {
-                nextStage = progress.stage
-            }
-
-            let updatedProgress = SPVSyncProgress(
-                stage: nextStage,
-                headerProgress: progress.headerProgress,
-                masternodeProgress: progress.masternodeProgress,
-                transactionProgress: nextTransactionProgress,
-                currentHeight: height,
-                targetHeight: candidateTarget,
-                filterHeaderHeight: progress.filterHeaderHeight,
-                filterHeight: nextFilterHeight,
-                syncStartedAt: progress.syncStartedAt,
-                startHeight: baseHeight,
-                rate: updatedRate,
-                estimatedTimeRemaining: progress.estimatedTimeRemaining
-            )
-
-            syncProgress = updatedProgress
-            delegate?.spvClient(self, didUpdateSyncProgress: updatedProgress)
-
-            // Always record the latest observed height (even across reorgs)
-            lastBlockHeight = height
-        }
     }
     
     fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
@@ -1071,117 +963,18 @@ private class CallbackContext {
             print("[SPV][Progress] stage=\(stage.rawValue) header=\(cur)/\(tot) filterHeaders=\(filterHeaders) filters=\(filters) pct=\(pct) rate=\(rate) eta=\(eta)")
         }
 
-        let safeBase: UInt32 = (client.startFromHeight > ffiProgress.total_height) ? 0 : client.startFromHeight
-
-        let reportedHeader = overview.header_height
-        let reportedTarget = max(ffiProgress.total_height, reportedHeader)
-        let usesAbsolute = reportedHeader >= safeBase && reportedTarget >= safeBase
-
-        let absoluteHeader: UInt32 = usesAbsolute ? max(reportedHeader, safeBase) : safeBase &+ reportedHeader
-        let absoluteTarget: UInt32 = usesAbsolute ? max(reportedTarget, safeBase) : safeBase &+ reportedTarget
-
-        let reportedFilterHeader = overview.filter_header_height
-        var absoluteFilterHeader: UInt32 = usesAbsolute ? max(reportedFilterHeader, safeBase) : safeBase &+ reportedFilterHeader
-
-        let reportedFilter = overview.last_synced_filter_height
-        var absoluteFilter: UInt32 = usesAbsolute ? max(reportedFilter, safeBase) : safeBase &+ reportedFilter
-
-        let range = max(1.0, Double(absoluteTarget) - Double(safeBase))
-        var headerProgress = min(1.0, max(0.0, (Double(absoluteHeader) - Double(safeBase)) / range))
-        let rawFilterHeaderProgress = min(1.0, max(0.0, (Double(absoluteFilterHeader) - Double(safeBase)) / range))
-        let rawFilterProgress = min(1.0, max(0.0, (Double(absoluteFilter) - Double(safeBase)) / range))
-
-        let filtersHeightAbsolute = absoluteFilter
-        let nearTarget: (UInt32, UInt32) -> Bool = { current, target in
-            guard target > 0 else { return false }
-            if current >= target { return true }
-            let remaining = target &- current
-            return remaining <= 1
-        }
-
-        let headerDone = nearTarget(absoluteHeader, absoluteTarget)
-        let filterHeadersDone = nearTarget(absoluteFilterHeader, absoluteTarget)
-        let filtersStarted = (filtersHeightAbsolute > safeBase) || (overview.filters_downloaded > 0)
-        let filtersDone = filtersStarted && nearTarget(filtersHeightAbsolute, absoluteTarget)
-
-        if stage != .complete {
-            if headerDone && filterHeadersDone && filtersDone {
-                stage = .complete
-            } else if headerDone && filterHeadersDone {
-                stage = .transactions
-            } else if headerDone {
-                stage = .masternodes
-            } else {
-                stage = .headers
-            }
-        }
-
-        if let prev = previous {
-            headerProgress = max(prev.headerProgress, headerProgress)
-        }
-        if stage != .headers {
-            headerProgress = 1.0
-        }
-
-        var filterHeaderProgress = rawFilterHeaderProgress
-        var filterProgress = rawFilterProgress
-
-        switch stage {
-        case .headers:
-            absoluteFilterHeader = safeBase
-            absoluteFilter = safeBase
-            filterHeaderProgress = 0.0
-            filterProgress = 0.0
-        case .masternodes:
-            if filterHeadersDone {
-                filterHeaderProgress = 1.0
-                absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
-            }
-            absoluteFilter = safeBase
-            filterProgress = 0.0
-        case .transactions:
-            if filterHeadersDone {
-                filterHeaderProgress = 1.0
-                absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
-            }
-            if !filtersStarted {
-                absoluteFilter = safeBase
-                filterProgress = 0.0
-            }
-        case .complete:
-            if filterHeadersDone {
-                filterHeaderProgress = 1.0
-                absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
-            }
-            if filtersDone {
-                filterProgress = 1.0
-                absoluteFilter = max(absoluteFilter, absoluteTarget)
-            }
-        case .idle:
-            absoluteFilterHeader = safeBase
-            absoluteFilter = safeBase
-            filterHeaderProgress = 0.0
-            filterProgress = 0.0
-        }
-
-        let previousStage = previous?.stage ?? .idle
-        let previousMasternode = (previousStage == .masternodes || previousStage == .transactions || previousStage == .complete) ? previous?.masternodeProgress ?? 0.0 : 0.0
-        let previousTransaction = (previousStage == .transactions || previousStage == .complete) ? previous?.transactionProgress ?? 0.0 : 0.0
-
-        let masternodeProgress = max(previousMasternode, filterHeaderProgress)
-        let transactionProgress = max(previousTransaction, filterProgress)
+        let tipHeight = ffiProgress.total_height;
+        let currentBlockHeaderHeight = overview.header_height
+        let currentFilterHeaderHeight = overview.filter_header_height
+        let currentFilterHeight = overview.last_synced_filter_height
 
         let progress = SPVSyncProgress(
             stage: stage,
-            headerProgress: headerProgress,
-            masternodeProgress: masternodeProgress,
-            transactionProgress: transactionProgress,
-            currentHeight: absoluteHeader,
-            targetHeight: absoluteTarget,
-            filterHeaderHeight: min(absoluteFilterHeader, absoluteTarget),
-            filterHeight: min(absoluteFilter, absoluteTarget),
+            currentHeight: currentBlockHeaderHeight,
+            targetHeight: tipHeight,
+            filterHeaderHeight: currentFilterHeaderHeight,
+            filterHeight: currentFilterHeight,
             syncStartedAt: TimeInterval(syncStartTimestamp > 0 ? syncStartTimestamp : client.currentSyncStartTimestamp),
-            startHeight: safeBase,
             rate: ffiProgress.headers_per_second,
             estimatedTimeRemaining: estimatedTime
         )
@@ -1221,15 +1014,11 @@ private class CallbackContext {
                 if success {
                     client.syncProgress = SPVSyncProgress(
                         stage: .complete,
-                        headerProgress: 1.0,
-                        masternodeProgress: 1.0,
-                        transactionProgress: 1.0,
                         currentHeight: client.syncProgress?.targetHeight ?? 0,
                         targetHeight: client.syncProgress?.targetHeight ?? 0,
-                        filterHeaderHeight: client.syncProgress?.filterHeaderHeight ?? (client.syncProgress?.targetHeight ?? 0),
-                        filterHeight: client.syncProgress?.filterHeight ?? (client.syncProgress?.targetHeight ?? 0),
+                        filterHeaderHeight: client.syncProgress?.filterHeaderHeight ?? 0,
+                        filterHeight: client.syncProgress?.filterHeight ?? 0,
                         syncStartedAt: client.syncProgress?.syncStartedAt ?? 0,
-                        startHeight: client.startFromHeight,
                         rate: 0,
                         estimatedTimeRemaining: nil
                     )

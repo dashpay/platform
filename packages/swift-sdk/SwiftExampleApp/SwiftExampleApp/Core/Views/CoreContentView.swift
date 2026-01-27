@@ -14,14 +14,6 @@ struct CoreContentView: View {
         return wallets
     }
     // Progress values come from WalletService (kept in sync with SPV callbacks)
-    
-    // Computed properties to ensure progress values are always valid
-    private var safeHeaderProgress: Double { min(max(walletService.headerProgress, 0.0), 1.0) }
-    private var safeFilterHeaderProgress: Double { min(max(walletService.filterHeaderProgress, 0.0), 1.0) }
-    private var safeTransactionProgress: Double {
-        // Use only the event-driven value to avoid misleading jumps
-        min(max(walletService.transactionProgress, 0.0), 1.0)
-    }
 
     // Display helpers
     private var headerHeightsDisplay: String? {
@@ -85,27 +77,27 @@ var body: some View {
                     // Compact progress rows
                     CompactSyncRow(
                         title: "Headers",
-                        progress: safeHeaderProgress,
+                        progress: Double(walletService.headerCurrentHeight) / Double(walletService.headerTargetHeight),
                         value: headerHeightsDisplay
                     )
 
                     CompactSyncRow(
                         title: "Filter Headers",
-                        progress: safeFilterHeaderProgress,
+                        progress: Double(walletService.latestFilterHeaderHeight) / Double(walletService.headerTargetHeight),
                         value: filterHeaderHeightsDisplay
                     )
 
                     if walletService.shouldSyncMasternodes {
                         CompactSyncRow(
                             title: "Masternodes",
-                            progress: walletService.masternodeProgress,
+                            progress: 0,
                             value: formattedHeight(walletService.latestMasternodeListHeight)
                         )
                     }
 
                     CompactSyncRow(
                         title: "Filters",
-                        progress: safeTransactionProgress,
+                        progress: Double(walletService.latestFilterHeight) / Double(walletService.headerTargetHeight),
                         value: filterHeightsDisplay
                     )
 
