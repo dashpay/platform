@@ -130,25 +130,36 @@ public struct SPVSyncProgress {
 
 public enum SPVSyncStage: String, Sendable {
     case idle = "Idle"
-    case headers = "Downloading Headers"
-    case masternodes = "Syncing Masternode List"
-    case transactions = "Processing Transactions"
+    case connecting = "Connecting"
+    case queryingHeight = "Querying Height"
+    case downloading = "Downloading"
+    case validating = "Validating"
+    case storing = "Storing"
+    case downloadingFilterHeaders = "Downloading Filter Headers"
+    case downloadingFilters = "Downloading Filters"
+    case downloadingBlocks = "Downloading Blocks"
     case complete = "Complete"
+    case failed = "Failed"
+    case unknown = "Unknown"
 }
+
 extension SPVSyncStage {
     init(ffiStage: FFISyncStage) {
         switch ffiStage.rawValue {
-        case 5: // Complete
-            self = .complete
-        case 6: // Failed
-            self = .headers
-        default:
-            self = .headers
+            case 0: self = .connecting
+            case 1: self = .queryingHeight
+            case 2: self = .downloading
+            case 3: self = .validating
+            case 4: self = .storing
+            case 5: self = .downloadingFilterHeaders
+            case 6: self = .downloadingFilters
+            case 7: self = .downloadingBlocks
+            case 8: self = .complete
+            case 9: self = .failed
+            default: self = .unknown
         }
     }
 }
-
-
 
 // MARK: - SPV Event Types
 
@@ -517,7 +528,7 @@ public class SPVClient: ObservableObject {
 
         // Reset UI progress to known baseline (0%) before events arrive
         self.syncProgress = SPVSyncProgress(
-            stage: .headers,
+            stage: .idle,
             currentHeight: 0,
             targetHeight: 0,
             filterHeaderHeight: 0,

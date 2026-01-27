@@ -116,6 +116,7 @@ public class WalletService: ObservableObject {
     @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var isSyncing = false
+    @Published public var stage: SPVSyncStage = .idle
     // Absolute heights for header sync display (current/target)
     @Published public var headerCurrentHeight: Int = 0
     @Published public var headerTargetHeight: Int = 0
@@ -766,12 +767,15 @@ public class WalletService: ObservableObject {
 
 extension WalletService: SPVClientDelegate {
     public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
+        let stage = progress.stage
         let headerCurrent = Int(progress.currentHeight)
         let headerTarget = Int(progress.targetHeight)
         let filterHeaderHeight = Int(progress.filterHeaderHeight)
         let filterHeight = Int(progress.filterHeight)
         
         Task { @MainActor in
+            WalletService.shared.stage = stage
+            
             WalletService.shared.headerCurrentHeight = headerCurrent
             WalletService.shared.headerTargetHeight = headerTarget
             
@@ -859,21 +863,6 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
         SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
-    }
-    
-    nonisolated private static func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
-        switch stage {
-        case .idle:
-            return .idle
-        case .headers:
-            return .headers
-        case .masternodes:
-            return .filterHeaders
-        case .transactions:
-            return .filters
-        case .complete:
-            return .complete
-        }
     }
 }
 
@@ -1020,15 +1009,6 @@ extension WalletService {
         let summary = items.map { "\($0.0):\($0.1)" }.joined(separator: ", ")
         print("[SPV][Baseline] Per-wallet sync-from heights: [\(summary)]")
     }
-}
-
-public enum SyncStage: Sendable {
-    case idle
-    case connecting
-    case headers
-    case filterHeaders
-    case filters
-    case complete
 }
 
 // Extension for Data to hex string

@@ -98,15 +98,23 @@ struct GlobalSyncIndicator: View {
     
     // Helpers
     private var phaseTitle: String {
-        let h = Double(walletService.headerCurrentHeight) / Double(walletService.headerTargetHeight)
-        let fh = Double(walletService.latestFilterHeaderHeight) / Double(walletService.headerTargetHeight)
-        let f = Double(walletService.latestFilterHeight) / Double(walletService.headerTargetHeight)
-        
-        if f > 0.0 && f < 1.0 { return "Filters (\(Int(f * 100))%)" }
-        if fh > 0.0 && fh < 1.0 { return "Filter Headers (\(Int(fh * 100))%)" }
-        if h < 1.0 { return "Headers (\(Int(h * 100))%)" }
-        
-        return "Complete"
+        switch walletService.stage {
+        case .idle:
+            return "Idle"
+        case .downloading:
+            let h = Double(walletService.headerCurrentHeight) / Double(walletService.headerTargetHeight)
+            return "Block Headers (\(Int(h * 100))%)"
+        case .downloadingFilterHeaders:
+            let fh = Double(walletService.latestFilterHeaderHeight) / Double(walletService.headerTargetHeight)
+            return "Filter Headers (\(Int(fh * 100))%)"
+        case .downloadingFilters:
+            let f = Double(walletService.latestFilterHeight) / Double(walletService.headerTargetHeight)
+            return "Filters (\(Int(f * 100))%)"
+        case .complete:
+            return "Complete"
+        default:
+            return "Unexpected stage (\(walletService.stage))"
+        }
     }
 
     private var fillProgress: Double {
@@ -114,7 +122,7 @@ struct GlobalSyncIndicator: View {
         let fh = Double(walletService.latestFilterHeaderHeight) / Double(walletService.headerTargetHeight)
         let f = Double(walletService.latestFilterHeight) / Double(walletService.headerTargetHeight)
         
-        return h + fh + f / 3.0
+        return (h + fh + f) / 3.0
     }
 
     var body: some View {
