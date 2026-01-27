@@ -135,7 +135,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       expect(identity).to.exist();
 
       // Find a key that can be disabled (MEDIUM or lower security level, not master)
-      const publicKeys = identity.publicKeys;
+      const { publicKeys } = identity;
       const keyToDisable = publicKeys.find(
         (key) => key.securityLevel === 'MEDIUM' && key.purpose === 'AUTHENTICATION',
       );
