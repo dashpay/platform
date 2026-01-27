@@ -1,4 +1,4 @@
-export const toHexString = (byteArray) => Array.prototype.map.call(byteArray, (byte) => (`0${(byte & 0xFF).toString(16)}`).slice(-2)).join('');
+export const toHexString = (byteArray) => Array.prototype.map.call(byteArray, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
 export const fromHexString = (str) => {
   const bytes = [];
