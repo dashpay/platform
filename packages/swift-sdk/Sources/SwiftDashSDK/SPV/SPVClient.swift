@@ -229,8 +229,6 @@ public class SPVClient: ObservableObject {
     // Network
     private let network: Network
     private var masternodeSyncEnabled: Bool = true
-    // If true, SPV will only connect to peers explicitly configured via FFI
-    public var restrictToConfiguredPeers: Bool = false
     
     // Sync tracking
     // Height we start syncing from (checkpoint); used to render absolute heights
@@ -300,6 +298,8 @@ public class SPVClient: ObservableObject {
 
         // If requested, prefer local core peers (defaults to 127.0.0.1 with network default port)
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        // Only restrict to configured peers when using local core, if not, allow DNS discovery
+        let restrictToConfiguredPeers = useLocalCore
         if useLocalCore {
             let peers = SPVClient.readLocalCorePeers()
             if swiftLoggingEnabled {
@@ -315,8 +315,6 @@ public class SPVClient: ObservableObject {
                     }
                 }
             }
-            // Enforce restrict mode when using local core by default
-            restrictToConfiguredPeers = true
         }
 
         // Apply restrict-to-configured-peers if requested
