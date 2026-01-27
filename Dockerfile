@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.7-labs
+# syntax = docker/dockerfile:1.21
 
 # Docker image for rs-drive-abci
 #
