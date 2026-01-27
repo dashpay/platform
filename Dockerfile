@@ -46,7 +46,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.21
+ARG ALPINE_VERSION=3.23
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
