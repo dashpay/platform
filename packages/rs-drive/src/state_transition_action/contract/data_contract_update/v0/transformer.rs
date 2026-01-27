@@ -31,7 +31,10 @@ impl DataContractUpdateTransitionActionV0 {
         })
     }
 
-    pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_borrowed_transition(
+    /// Tries to transform the borrowed DataContractUpdateTransitionV0 into a DataContractUpdateTransitionActionV0.
+    /// If validation is true, the data contract transformation verifies that the data contract is valid.
+    /// If validation is false, the data contract base structure is created regardless of if it is valid.
+    pub fn try_from_borrowed_transition(
         value: &DataContractUpdateTransitionV0,
         block_info: &BlockInfo,
         full_validation: bool,

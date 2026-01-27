@@ -1,3 +1,5 @@
+mod registration_cost;
+mod update_contract_cost;
 mod v0;
 
 pub use v0::*;
@@ -6,7 +8,7 @@ use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::state_transition::data_contract_update_transition::{
-    DataContractUpdateTransition, DataContractUpdateTransitionV0,
+    DataContractUpdateTransition, DataContractUpdateTransitionV0, DataContractUpdateTransitionV1,
 };
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
@@ -34,6 +36,16 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
                 .default_current_version,
         ) {
             0 => DataContractUpdateTransitionV0::new_from_data_contract(
+                data_contract,
+                identity,
+                key_id,
+                identity_contract_nonce,
+                user_fee_increase,
+                signer,
+                platform_version,
+                feature_version,
+            ),
+            1 => DataContractUpdateTransitionV1::new_from_data_contract(
                 data_contract,
                 identity,
                 key_id,

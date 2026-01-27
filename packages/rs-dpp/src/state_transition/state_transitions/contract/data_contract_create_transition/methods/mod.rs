@@ -1,3 +1,4 @@
+pub(in crate::state_transition::state_transitions::contract) mod registration_cost;
 pub mod v0;
 
 pub use v0::*;

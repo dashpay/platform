@@ -231,6 +231,8 @@ impl ErrorWithCode for BasicError {
             Self::InputsNotLessThanOutputsError(_) => 10815,
             Self::OutputAddressAlsoInputError(_) => 10816,
             Self::InvalidRemainderOutputCountError(_) => 10817,
+            Self::DataContractUpdateTransitionOverlappingFieldsError(_) => 10818,
+            Self::DataContractUpdateTransitionConflictingKeywordError(_) => 10819,
         }
     }
 }

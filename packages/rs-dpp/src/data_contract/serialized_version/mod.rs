@@ -23,8 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-pub(in crate::data_contract) mod v0;
-pub(in crate::data_contract) mod v1;
+pub mod v0;
+pub mod v1;
 
 pub mod property_names {
     pub const ID: &str = "id";
@@ -104,77 +104,73 @@ pub enum DataContractInSerializationFormat {
     V1(DataContractInSerializationFormatV1),
 }
 
+/// Matches all variants of `DataContractInSerializationFormat`, binding the inner
+/// value to `$v` and evaluating `$body` for each.
+macro_rules! match_all {
+    ($self:expr, |$v:ident| $body:expr) => {
+        match $self {
+            DataContractInSerializationFormat::V0($v) => $body,
+            DataContractInSerializationFormat::V1($v) => $body,
+        }
+    };
+}
+
+/// Matches variants at or above the given version with field access,
+/// returning `$default` for earlier variants.
+macro_rules! match_since_version_or_default {
+    ($self:expr, 1, $default:expr, |$v:ident| $body:expr) => {
+        match $self {
+            DataContractInSerializationFormat::V0(_) => $default,
+            DataContractInSerializationFormat::V1($v) => $body,
+        }
+    };
+}
+
 impl DataContractInSerializationFormat {
     /// Returns the unique identifier for the data contract.
     pub fn id(&self) -> Identifier {
-        match self {
-            DataContractInSerializationFormat::V0(v0) => v0.id,
-            DataContractInSerializationFormat::V1(v1) => v1.id,
-        }
+        match_all!(self, |v| v.id)
     }
 
     /// Returns the owner identifier for the data contract.
     pub fn owner_id(&self) -> Identifier {
-        match self {
-            DataContractInSerializationFormat::V0(v0) => v0.owner_id,
-            DataContractInSerializationFormat::V1(v1) => v1.owner_id,
-        }
+        match_all!(self, |v| v.owner_id)
     }
 
-    pub fn document_schemas(&self) -> &BTreeMap<DocumentName, Value> {
+    pub fn document_schemas(&self) -> Option<&BTreeMap<DocumentName, Value>> {
         match self {
-            DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
-            DataContractInSerializationFormat::V1(v1) => &v1.document_schemas,
+            DataContractInSerializationFormat::V0(v0) => Some(&v0.document_schemas),
+            DataContractInSerializationFormat::V1(v1) => Some(&v1.document_schemas),
         }
     }
 
     pub fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
-        match self {
-            DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
-            DataContractInSerializationFormat::V1(v1) => v1.schema_defs.as_ref(),
-        }
+        match_all!(self, |v| v.schema_defs.as_ref())
     }
 
     pub fn version(&self) -> u32 {
-        match self {
-            DataContractInSerializationFormat::V0(v0) => v0.version,
-            DataContractInSerializationFormat::V1(v1) => v1.version,
-        }
+        match_all!(self, |v| v.version)
     }
 
     /// Returns the config for the data contract.
     pub fn config(&self) -> &DataContractConfig {
-        match self {
-            DataContractInSerializationFormat::V0(v0) => &v0.config,
-            DataContractInSerializationFormat::V1(v1) => &v1.config,
-        }
+        match_all!(self, |v| &v.config)
     }
 
     pub fn groups(&self) -> &BTreeMap<GroupContractPosition, Group> {
-        match self {
-            DataContractInSerializationFormat::V0(_) => &EMPTY_GROUPS,
-            DataContractInSerializationFormat::V1(v1) => &v1.groups,
-        }
+        match_since_version_or_default!(self, 1, &EMPTY_GROUPS, |v| &v.groups)
     }
+
     pub fn tokens(&self) -> &BTreeMap<TokenContractPosition, TokenConfiguration> {
-        match self {
-            DataContractInSerializationFormat::V0(_) => &EMPTY_TOKENS,
-            DataContractInSerializationFormat::V1(v1) => &v1.tokens,
-        }
+        match_since_version_or_default!(self, 1, &EMPTY_TOKENS, |v| &v.tokens)
     }
 
     pub fn keywords(&self) -> &Vec<String> {
-        match self {
-            DataContractInSerializationFormat::V0(_) => &EMPTY_KEYWORDS,
-            DataContractInSerializationFormat::V1(v1) => &v1.keywords,
-        }
+        match_since_version_or_default!(self, 1, &EMPTY_KEYWORDS, |v| &v.keywords)
     }
 
     pub fn description(&self) -> &Option<String> {
-        match self {
-            DataContractInSerializationFormat::V0(_) => &None,
-            DataContractInSerializationFormat::V1(v1) => &v1.description,
-        }
+        match_since_version_or_default!(self, 1, &None, |v| &v.description)
     }
 
     /// Compares `self` to another `DataContractInSerializationFormat` instance

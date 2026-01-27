@@ -11,13 +11,20 @@ impl DataContract {
     #[inline(always)]
     pub(super) fn validate_groups_v0(
         groups: &BTreeMap<GroupContractPosition, Group>,
+        allow_offset_start: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Check for gaps in the group contract positions
-        for (expected_position, position) in groups.keys().enumerate() {
-            let expected_position = expected_position as GroupContractPosition;
+        let start_position = if allow_offset_start {
+            groups.keys().next().copied().unwrap_or(0)
+        } else {
+            0
+        };
 
-            if *position != expected_position as GroupContractPosition {
+        for (index, position) in groups.keys().enumerate() {
+            let expected_position = start_position + index as GroupContractPosition;
+
+            if *position != expected_position {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     NonContiguousContractGroupPositionsError::new(expected_position, *position)
                         .into(),

@@ -100,32 +100,36 @@ impl DataContractInSerializationFormat {
         let fee_version = &platform_version.fee_version.data_contract_registration;
         let mut cost = fee_version.base_contract_registration_fee;
 
-        for document_type_schema in self.document_schemas().values() {
-            cost = cost.saturating_add(fee_version.document_type_registration_fee);
+        if let Some(document_schemas) = self.document_schemas() {
+            for document_type_schema in document_schemas.values() {
+                cost = cost.saturating_add(fee_version.document_type_registration_fee);
 
-            // If this is not okay the registration will fail on basic validation
-            if let Ok(schema_map) = document_type_schema.to_map() {
-                // Initialize indices
-                if let Ok(Some(index_values)) = Value::inner_optional_array_slice_value(
-                    schema_map,
-                    crate::data_contract::document_type::property_names::INDICES,
-                ) {
-                    for index_value in index_values {
-                        if let Ok(index_value_map) = index_value.to_map() {
-                            if let Ok(index) = Index::try_from(index_value_map.as_slice()) {
-                                let base_index_fee = if index.contested_index.is_some() {
-                                    fee_version.document_type_base_contested_index_registration_fee
-                                } else if index.unique {
-                                    fee_version.document_type_base_unique_index_registration_fee
-                                } else {
-                                    fee_version.document_type_base_non_unique_index_registration_fee
-                                };
-                                cost = cost.saturating_add(base_index_fee);
+                // If this is not okay the registration will fail on basic validation
+                if let Ok(schema_map) = document_type_schema.to_map() {
+                    // Initialize indices
+                    if let Ok(Some(index_values)) = Value::inner_optional_array_slice_value(
+                        schema_map,
+                        crate::data_contract::document_type::property_names::INDICES,
+                    ) {
+                        for index_value in index_values {
+                            if let Ok(index_value_map) = index_value.to_map() {
+                                if let Ok(index) = Index::try_from(index_value_map.as_slice()) {
+                                    let base_index_fee = if index.contested_index.is_some() {
+                                        fee_version
+                                            .document_type_base_contested_index_registration_fee
+                                    } else if index.unique {
+                                        fee_version.document_type_base_unique_index_registration_fee
+                                    } else {
+                                        fee_version
+                                            .document_type_base_non_unique_index_registration_fee
+                                    };
+                                    cost = cost.saturating_add(base_index_fee);
+                                }
                             }
                         }
                     }
-                }
-            };
+                };
+            }
         }
 
         for token_config in self.tokens().values() {

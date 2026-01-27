@@ -1,14 +1,11 @@
-use std::collections::HashSet;
-
 use crate::block::block_info::BlockInfo;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::state::token::PreProgrammedDistributionTimestampInPastError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 use crate::consensus::basic::data_contract::{
-    DuplicateKeywordsError, IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
-    InvalidDescriptionLengthError, InvalidKeywordCharacterError, InvalidKeywordLengthError,
-    TooManyKeywordsError,
+    IncompatibleDataContractSchemaError, InvalidDataContractVersionError,
+    InvalidDescriptionLengthError,
 };
 use crate::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use crate::consensus::state::data_contract::data_contract_update_permission_error::DataContractUpdatePermissionError;
@@ -268,44 +265,14 @@ impl DataContract {
         }
 
         if self.keywords() != new_data_contract.keywords() {
-            // Validate there are no more than 50 keywords
-            if new_data_contract.keywords().len() > 50 {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    TooManyKeywordsError::new(self.id(), new_data_contract.keywords().len() as u8)
-                        .into(),
-                ));
-            }
-
-            // Validate the keywords are all unique and between 3 and 50 characters
-            let mut seen_keywords = HashSet::new();
-            for keyword in new_data_contract.keywords() {
-                // First check keyword length
-                if keyword.len() < 3 || keyword.len() > 50 {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidKeywordLengthError::new(self.id(), keyword.to_string()).into(),
-                    ));
-                }
-
-                if !keyword
-                    .chars()
-                    .all(|c| !c.is_control() && !c.is_whitespace())
-                {
-                    // This would mean we have an invalid character
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        InvalidKeywordCharacterError::new(
-                            new_data_contract.id(),
-                            keyword.to_string(),
-                        )
-                        .into(),
-                    ));
-                }
-
-                // Then check uniqueness
-                if !seen_keywords.insert(keyword) {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        DuplicateKeywordsError::new(self.id(), keyword.to_string()).into(),
-                    ));
-                }
+            let validation_result = DataContract::validate_keywords(
+                self.id(),
+                new_data_contract.keywords(),
+                true,
+                platform_version,
+            )?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
             }
         }
 

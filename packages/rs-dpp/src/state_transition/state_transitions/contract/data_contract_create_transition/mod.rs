@@ -7,6 +7,7 @@ pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
+mod v1;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -30,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 pub use v0::*;
+pub use v1::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -57,6 +59,8 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 pub enum DataContractCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(DataContractCreateTransitionV0),
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "1"))]
+    V1(DataContractCreateTransitionV1),
 }
 
 impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransition {
@@ -77,9 +81,14 @@ impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransit
                     value.try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_create_transition.into())
             }
+            1 => {
+                let data_contract_create_transition: DataContractCreateTransitionV1 =
+                    value.try_into_platform_versioned(platform_version)?;
+                Ok(data_contract_create_transition.into())
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractCreateTransition::try_from(CreatedDataContract)".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -117,9 +126,14 @@ impl TryFromPlatformVersioned<DataContract> for DataContractCreateTransition {
                     value.try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_create_transition.into())
             }
+            1 => {
+                let data_contract_create_transition: DataContractCreateTransitionV1 =
+                    value.try_into_platform_versioned(platform_version)?;
+                Ok(data_contract_create_transition.into())
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractCreateTransition::try_from(DataContract)".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -144,6 +158,7 @@ impl DataContractCreateTransition {
     pub fn state_transition_version(&self) -> u16 {
         match self {
             DataContractCreateTransition::V0(_) => 0,
+            DataContractCreateTransition::V1(_) => 1,
         }
     }
 }

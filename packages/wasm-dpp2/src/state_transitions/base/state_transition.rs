@@ -569,6 +569,11 @@ impl StateTransitionWasm {
 
                     DataContractUpdateTransition::V0(v0).into()
                 }
+                DataContractUpdateTransition::V1(mut v1) => {
+                    v1.identity_contract_nonce = nonce;
+
+                    DataContractUpdateTransition::V1(v1).into()
+                }
             },
             Batch(mut batch) => {
                 batch.set_identity_contract_nonce(nonce);
@@ -629,6 +634,10 @@ impl StateTransitionWasm {
                     DataContractCreateTransition::V0(mut v0) => {
                         v0.identity_nonce = nonce;
                         v0.into()
+                    }
+                    DataContractCreateTransition::V1(mut v1) => {
+                        v1.identity_nonce = nonce;
+                        v1.into()
                     }
                 };
 

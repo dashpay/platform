@@ -19,6 +19,7 @@ mod serialize;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
+mod v1;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
@@ -32,6 +33,7 @@ use crate::data_contract::DataContract;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::prelude::IdentityNonce;
 pub use v0::*;
+pub use v1::*;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 
@@ -59,6 +61,8 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(DataContractUpdateTransitionV0),
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "1"))]
+    V1(DataContractUpdateTransitionV1),
 }
 
 impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransition {
@@ -79,10 +83,15 @@ impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpd
                     value.try_into_platform_versioned(platform_version)?;
                 Ok(data_contract_update_transition.into())
             }
+            1 => {
+                let data_contract_update_transition: DataContractUpdateTransitionV1 =
+                    value.try_into_platform_versioned(platform_version)?;
+                Ok(data_contract_update_transition.into())
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractUpdateTransition::try_from_platform_versioned(DataContract)"
                     .to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -167,10 +176,12 @@ mod test {
         let data = get_test_data();
 
         assert_eq!(
-            data.state_transition.data_contract().clone(),
-            data.data_contract
-                .try_into_platform_versioned(PlatformVersion::first())
-                .unwrap()
+            data.state_transition.data_contract().cloned(),
+            Some(
+                data.data_contract
+                    .try_into_platform_versioned(PlatformVersion::first())
+                    .unwrap()
+            )
         );
     }
 

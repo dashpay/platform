@@ -48,8 +48,14 @@ impl DataContractUpdateStateTransitionIdentityContractNonceV0 for DataContractUp
             ));
         }
 
-        let identity_id = self.data_contract().owner_id();
-        let contract_id = self.data_contract().id();
+        // Get identity_id and contract_id based on transition version
+        let (identity_id, contract_id) = match self {
+            DataContractUpdateTransition::V0(v0) => {
+                (v0.data_contract.owner_id(), v0.data_contract.id())
+            }
+            DataContractUpdateTransition::V1(v1) => (v1.owner_id, v1.id),
+        };
+
         let (existing_nonce, fee) = platform.drive.fetch_identity_contract_nonce_with_fees(
             identity_id.to_buffer(),
             contract_id.to_buffer(),

@@ -72,7 +72,12 @@ impl Drive {
                 }
             }
             StateTransition::DataContractUpdate(st) => {
-                if st.data_contract().config().keeps_history() {
+                // V0 has the full data contract, V1 has partial updates
+                let keeps_history = st
+                    .data_contract()
+                    .map(|dc| dc.config().keeps_history())
+                    .unwrap_or(false); // V1 defaults to non-historical
+                if keeps_history {
                     contract_ids_to_historical_path_query(&st.modified_data_ids())
                 } else {
                     contract_ids_to_non_historical_path_query(&st.modified_data_ids())

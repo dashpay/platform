@@ -7,34 +7,10 @@ use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl DataContractCreateTransitionAction {
-    /// tries to transform the DataContractCreateTransition into a DataContractCreateTransitionAction
-    /// if validation is true the data contract transformation verifies that the data contract is valid
-    /// if validation is false, the data contract base structure is created regardless of if it is valid
-    pub fn try_from_transition(
-        value: DataContractCreateTransition,
-        block_info: &BlockInfo,
-        full_validation: bool,
-        validation_operations: &mut Vec<ProtocolValidationOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match value {
-            DataContractCreateTransition::V0(v0) => {
-                Ok(DataContractCreateTransitionActionV0::try_from_transition(
-                    v0,
-                    block_info,
-                    full_validation,
-                    validation_operations,
-                    platform_version,
-                )?
-                .into())
-            }
-        }
-    }
-
     /// tries to transform the borrowed DataContractCreateTransition into a DataContractCreateTransitionAction
     /// if validation is true the data contract transformation verifies that the data contract is valid
     /// if validation is false, the data contract base structure is created regardless of if it is valid
-    pub fn try_from_borrowed_transition(
+    pub fn try_from_transition(
         value: &DataContractCreateTransition,
         block_info: &BlockInfo,
         full_validation: bool,
@@ -43,8 +19,18 @@ impl DataContractCreateTransitionAction {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractCreateTransition::V0(v0) => Ok(
-                DataContractCreateTransitionActionV0::try_from_borrowed_transition(
+                DataContractCreateTransitionActionV0::try_from_v0_transition(
                     v0,
+                    block_info,
+                    full_validation,
+                    validation_operations,
+                    platform_version,
+                )?
+                .into(),
+            ),
+            DataContractCreateTransition::V1(v1) => Ok(
+                DataContractCreateTransitionActionV0::try_from_v1_transition(
+                    v1,
                     block_info,
                     full_validation,
                     validation_operations,

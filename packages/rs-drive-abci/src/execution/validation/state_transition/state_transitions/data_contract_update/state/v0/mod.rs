@@ -28,11 +28,11 @@ use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::error::execution::ExecutionError;
 use crate::execution::validation::state_transition::ValidationMode;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 
@@ -172,7 +172,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let mut validated_identities = BTreeSet::new();
 
-        for (position, group) in self.data_contract().groups() {
+        // Get groups from the transition - V0 has embedded contract, V1 has new_groups field
+        let groups_to_validate = match self {
+            DataContractUpdateTransition::V0(v0) => v0.data_contract.groups(),
+            DataContractUpdateTransition::V1(v1) => &v1.new_groups,
+        };
+
+        let contract_id = new_data_contract.id();
+
+        for (position, group) in groups_to_validate {
             for member_identity_id in group.members().keys() {
                 if !validated_identities.contains(member_identity_id) {
                     let identity_exists = validate_non_masternode_identity_exists(
@@ -193,7 +201,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                             bump_action,
                             vec![StateError::IdentityMemberOfGroupNotFoundError(
                                 IdentityMemberOfGroupNotFoundError::new(
-                                    self.data_contract().id(),
+                                    contract_id,
                                     *position,
                                     *member_identity_id,
                                 ),
@@ -467,8 +475,18 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_operations = vec![];
 
-        let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
-            self,
+        // Extract the V0 transition - this validator only handles V0 transitions
+        let v0 = match self {
+            DataContractUpdateTransition::V0(v0) => v0,
+            DataContractUpdateTransition::V1(_) => {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "transform_into_action_v0 called with V1 transition",
+                )));
+            }
+        };
+
+        let result = DataContractUpdateTransitionActionV0::try_from_borrowed_transition(
+            v0,
             block_info,
             validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
@@ -491,8 +509,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 ))
             }
             Err(protocol_error) => Err(protocol_error.into()),
-            Ok(create_action) => {
-                let action: StateTransitionAction = create_action.into();
+            Ok(action_v0) => {
+                let update_action: DataContractUpdateTransitionAction = action_v0.into();
+                let action: StateTransitionAction = update_action.into();
                 Ok(action.into())
             }
         }

@@ -1,6 +1,5 @@
 use crate::consensus::state::identity::IdentityInsufficientBalanceError;
 use crate::fee::Credits;
-use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::{
     StateTransitionEstimatedFeeValidation, StateTransitionIdentityEstimatedFeeValidation,
@@ -20,7 +19,7 @@ impl StateTransitionEstimatedFeeValidation for DataContractUpdateTransition {
             .state_transition_min_fees
             .contract_update;
 
-        let registration_cost = self.data_contract().registration_cost(platform_version)?;
+        let registration_cost = self.registration_cost(platform_version)?;
 
         Ok(base_fee.saturating_add(registration_cost))
     }

@@ -5,7 +5,7 @@ use platform_value::Value;
 use crate::ProtocolError;
 
 use crate::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionV0,
+    DataContractCreateTransition, DataContractCreateTransitionV0, DataContractCreateTransitionV1,
 };
 use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
@@ -21,6 +21,11 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
+            DataContractCreateTransition::V1(transition) => {
+                let mut value = transition.to_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
+                Ok(value)
+            }
         }
     }
 
@@ -29,6 +34,11 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
             DataContractCreateTransition::V0(transition) => {
                 let mut value = transition.to_canonical_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
+                Ok(value)
+            }
+            DataContractCreateTransition::V1(transition) => {
+                let mut value = transition.to_canonical_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
                 Ok(value)
             }
         }
@@ -41,6 +51,11 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
+            DataContractCreateTransition::V1(transition) => {
+                let mut value = transition.to_canonical_cleaned_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
+                Ok(value)
+            }
         }
     }
 
@@ -49,6 +64,11 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
             DataContractCreateTransition::V0(transition) => {
                 let mut value = transition.to_cleaned_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
+                Ok(value)
+            }
+            DataContractCreateTransition::V1(transition) => {
+                let mut value = transition.to_cleaned_object(skip_signature)?;
+                value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(1))?;
                 Ok(value)
             }
         }
@@ -72,6 +92,9 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
         match version {
             0 => Ok(
                 DataContractCreateTransitionV0::from_object(raw_object, platform_version)?.into(),
+            ),
+            1 => Ok(
+                DataContractCreateTransitionV1::from_object(raw_object, platform_version)?.into(),
             ),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractCreateTransition version {n}"
@@ -100,6 +123,11 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
                 platform_version,
             )?
             .into()),
+            1 => Ok(DataContractCreateTransitionV1::from_value_map(
+                raw_value_map,
+                platform_version,
+            )?
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractCreateTransition version {n}"
             ))),
@@ -113,6 +141,7 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
 
         match version {
             0 => DataContractCreateTransitionV0::clean_value(value),
+            1 => DataContractCreateTransitionV1::clean_value(value),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown DataContractCreateTransition version {n}"
             ))),

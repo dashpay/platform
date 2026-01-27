@@ -213,6 +213,9 @@ impl BumpIdentityDataContractNonceAction {
             DataContractUpdateTransition::V0(v0) => {
                 BumpIdentityDataContractNonceActionV0::from_data_contract_update(v0).into()
             }
+            DataContractUpdateTransition::V1(v1) => {
+                BumpIdentityDataContractNonceActionV0::from_data_contract_update_v1(v1).into()
+            }
         }
     }
 
@@ -223,6 +226,10 @@ impl BumpIdentityDataContractNonceAction {
         match value {
             DataContractUpdateTransition::V0(v0) => {
                 BumpIdentityDataContractNonceActionV0::from_borrowed_data_contract_update(v0).into()
+            }
+            DataContractUpdateTransition::V1(v1) => {
+                BumpIdentityDataContractNonceActionV0::from_borrowed_data_contract_update_v1(v1)
+                    .into()
             }
         }
     }
@@ -235,6 +242,10 @@ impl BumpIdentityDataContractNonceAction {
             DataContractUpdateTransitionAction::V0(v0) => {
                 BumpIdentityDataContractNonceActionV0::from_data_contract_update_action(v0).into()
             }
+            DataContractUpdateTransitionAction::V1(v1) => {
+                BumpIdentityDataContractNonceActionV0::from_data_contract_update_action_v1(v1)
+                    .into()
+            }
         }
     }
 
@@ -246,6 +257,12 @@ impl BumpIdentityDataContractNonceAction {
             DataContractUpdateTransitionAction::V0(v0) => {
                 BumpIdentityDataContractNonceActionV0::from_borrowed_data_contract_update_action(v0)
                     .into()
+            }
+            DataContractUpdateTransitionAction::V1(v1) => {
+                BumpIdentityDataContractNonceActionV0::from_borrowed_data_contract_update_action_v1(
+                    v1,
+                )
+                .into()
             }
         }
     }
