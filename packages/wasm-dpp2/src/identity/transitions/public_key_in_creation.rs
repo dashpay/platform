@@ -341,7 +341,7 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(setter = signature)]
-    pub fn set_signature(&mut self, #[wasm_bindgen(js_name = "binaryData")] binary_data: Vec<u8>) {
+    pub fn set_signature(&mut self, #[wasm_bindgen(js_name = "signatureBytes")] binary_data: Vec<u8>) {
         let signature = BinaryData::from(binary_data);
         self.0.set_signature(signature)
     }
