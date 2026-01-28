@@ -1494,6 +1494,7 @@ __metadata:
     console-table-printer: "npm:^2.11.0"
     dash: "workspace:*"
     dotenv-safe: "npm:^8.2.0"
+    eslint: "npm:^9.18.0"
     lodash: "npm:^4.17.23"
     mathjs: "npm:^10.4.3"
     mocha: "npm:^11.1.0"

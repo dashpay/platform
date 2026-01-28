@@ -49,7 +49,7 @@ class Runner {
    * @param {string} filePath
    */
   loadBenchmarks(filePath) {
-    // eslint-disable-next-line global-require,import-x/no-dynamic-require
+    // eslint-disable-next-line import-x/no-dynamic-require
     const benchmarks = require(filePath);
 
     for (const benchmarkConfig of benchmarks) {

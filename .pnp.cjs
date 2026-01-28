@@ -2504,6 +2504,7 @@ const RAW_RUNTIME_STATE =
           ["console-table-printer", "npm:2.11.0"],\
           ["dash", "workspace:packages/js-dash-sdk"],\
           ["dotenv-safe", "npm:8.2.0"],\
+          ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["lodash", "npm:4.17.23"],\
           ["mathjs", "npm:10.4.3"],\
           ["mocha", "npm:11.1.0"]\
