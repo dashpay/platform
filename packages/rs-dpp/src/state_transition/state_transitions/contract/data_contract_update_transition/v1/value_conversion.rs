@@ -79,55 +79,55 @@ impl StateTransitionValueConvert<'_> for DataContractUpdateTransitionV1 {
             updated_schema_defs: raw_object
                 .remove(UPDATED_SCHEMA_DEFS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_schema_defs: raw_object
                 .remove(NEW_SCHEMA_DEFS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             updated_document_schemas: raw_object
                 .remove(UPDATED_DOCUMENT_SCHEMAS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_document_schemas: raw_object
                 .remove(NEW_DOCUMENT_SCHEMAS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_groups: raw_object
                 .remove(NEW_GROUPS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_tokens: raw_object
                 .remove(NEW_TOKENS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             remove_keywords: raw_object
                 .remove(REMOVE_KEYWORDS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             add_keywords: raw_object
                 .remove(ADD_KEYWORDS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             update_description: raw_object
                 .remove(UPDATE_DESCRIPTION)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?,
             identity_contract_nonce: raw_object.remove_integer(IDENTITY_CONTRACT_NONCE).map_err(
                 |_| {
@@ -171,47 +171,47 @@ impl StateTransitionValueConvert<'_> for DataContractUpdateTransitionV1 {
                 .map_err(ProtocolError::ValueError)?,
             updated_schema_defs: raw_value_map
                 .remove(UPDATED_SCHEMA_DEFS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_schema_defs: raw_value_map
                 .remove(NEW_SCHEMA_DEFS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             updated_document_schemas: raw_value_map
                 .remove(UPDATED_DOCUMENT_SCHEMAS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_document_schemas: raw_value_map
                 .remove(NEW_DOCUMENT_SCHEMAS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_groups: raw_value_map
                 .remove(NEW_GROUPS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             new_tokens: raw_value_map
                 .remove(NEW_TOKENS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             remove_keywords: raw_value_map
                 .remove(REMOVE_KEYWORDS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             add_keywords: raw_value_map
                 .remove(ADD_KEYWORDS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             update_description: raw_value_map
                 .remove(UPDATE_DESCRIPTION)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?,
             identity_contract_nonce: raw_value_map
                 .remove_integer(IDENTITY_CONTRACT_NONCE)

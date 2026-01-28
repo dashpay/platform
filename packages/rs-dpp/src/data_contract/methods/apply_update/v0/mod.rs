@@ -147,7 +147,7 @@ impl DataContract {
         }
 
         // Validate that new tokens reference groups that exist in the combined groups
-        for (_, token_configuration) in update_values.new_tokens {
+        for token_configuration in update_values.new_tokens.values() {
             let validation_result = token_configuration
                 .validate_token_config_groups_exist(&groups, platform_version)?;
             if !validation_result.is_valid() {
@@ -229,7 +229,7 @@ impl DataContract {
         let serialization_format =
             DataContractInSerializationFormat::V1(DataContractInSerializationFormatV1 {
                 id: self.id(),
-                config: self.config().clone(),
+                config: *self.config(),
                 version: update_values.revision,
                 owner_id: self.owner_id(),
                 schema_defs,
