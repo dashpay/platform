@@ -26,7 +26,7 @@ mod version;
 
 pub use fields::*;
 use platform_version::version::PlatformVersion;
-use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use platform_version::TryIntoPlatformVersioned;
 
 use crate::data_contract::DataContract;
 
@@ -65,13 +65,27 @@ pub enum DataContractUpdateTransition {
     V1(DataContractUpdateTransitionV1),
 }
 
-impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpdateTransition {
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
-        value: (DataContract, IdentityNonce),
+impl DataContractUpdateTransition {
+    /// Creates a V0 update transition from a full data contract.
+    /// This embeds the entire contract in the transition (legacy behavior).
+    pub fn from_data_contract_v0(
+        data_contract: DataContract,
+        identity_nonce: IdentityNonce,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
+        let v0: DataContractUpdateTransitionV0 =
+            (data_contract, identity_nonce).try_into_platform_versioned(platform_version)?;
+        Ok(v0.into())
+    }
+
+    /// Creates a V1 update transition by computing the delta between old and new contracts.
+    /// This is the preferred method for V1 transitions as it properly captures the changes.
+    pub fn from_contract_update(
+        old_contract: &DataContract,
+        new_contract: &DataContract,
+        identity_nonce: IdentityNonce,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         match platform_version
             .dpp
             .state_transition_serialization_versions
@@ -79,18 +93,18 @@ impl TryFromPlatformVersioned<(DataContract, IdentityNonce)> for DataContractUpd
             .default_current_version
         {
             0 => {
-                let data_contract_update_transition: DataContractUpdateTransitionV0 =
-                    value.try_into_platform_versioned(platform_version)?;
-                Ok(data_contract_update_transition.into())
+                Self::from_data_contract_v0(new_contract.clone(), identity_nonce, platform_version)
             }
             1 => {
-                let data_contract_update_transition: DataContractUpdateTransitionV1 =
-                    value.try_into_platform_versioned(platform_version)?;
-                Ok(data_contract_update_transition.into())
+                let v1 = DataContractUpdateTransitionV1::from_contract_update(
+                    old_contract,
+                    new_contract,
+                    identity_nonce,
+                )?;
+                Ok(v1.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractUpdateTransition::try_from_platform_versioned(DataContract)"
-                    .to_string(),
+                method: "DataContractUpdateTransition::from_contract_update".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             }),
@@ -117,7 +131,6 @@ impl OptionallyAssetLockProved for DataContractUpdateTransition {}
 #[cfg(test)]
 mod test {
     use crate::data_contract::DataContract;
-    use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
     use crate::tests::fixtures::get_data_contract_fixture;
 
     use crate::version::LATEST_PLATFORM_VERSION;
@@ -125,7 +138,7 @@ mod test {
     use platform_version::version::PlatformVersion;
 
     use super::*;
-    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use crate::state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType};
 
     struct TestData {
@@ -134,13 +147,22 @@ mod test {
     }
 
     fn get_test_data() -> TestData {
-        let platform_version = PlatformVersion::first();
-        let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
+        let platform_version = PlatformVersion::latest();
+        let mut data_contract =
+            get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                .data_contract_owned();
 
-        let state_transition: DataContractUpdateTransition = (data_contract.clone(), 1)
-            .try_into_platform_versioned(platform_version)
-            .expect("expected to get transition");
+        // Create a modified version for the update transition
+        let old_contract = data_contract.clone();
+        data_contract.set_version(2);
+
+        let state_transition = DataContractUpdateTransition::from_contract_update(
+            &old_contract,
+            &data_contract,
+            1,
+            platform_version,
+        )
+        .expect("expected to get transition");
 
         TestData {
             data_contract,
@@ -167,21 +189,6 @@ mod test {
         assert_eq!(
             StateTransitionType::DataContractUpdate,
             data.state_transition.state_transition_type()
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "state-transition-json-conversion")]
-    fn should_return_data_contract() {
-        let data = get_test_data();
-
-        assert_eq!(
-            data.state_transition.data_contract().cloned(),
-            Some(
-                data.data_contract
-                    .try_into_platform_versioned(PlatformVersion::first())
-                    .unwrap()
-            )
         );
     }
 

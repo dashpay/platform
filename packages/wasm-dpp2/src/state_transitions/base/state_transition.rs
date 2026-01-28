@@ -464,20 +464,22 @@ impl StateTransitionWasm {
                 self.0 = DataContractCreate(contract_create);
             }
             DataContractUpdate(mut contract_update) => {
-                let new_contract = match contract_update.data_contract().clone() {
-                    DataContractInSerializationFormat::V0(mut v0) => {
-                        v0.owner_id = owner_id;
+                if let Some(data_contract) = contract_update.data_contract() {
+                    let new_contract = match data_contract.clone() {
+                        DataContractInSerializationFormat::V0(mut v0) => {
+                            v0.owner_id = owner_id;
 
-                        DataContractInSerializationFormat::V0(v0)
-                    }
-                    DataContractInSerializationFormat::V1(mut v1) => {
-                        v1.owner_id = owner_id;
+                            DataContractInSerializationFormat::V0(v0)
+                        }
+                        DataContractInSerializationFormat::V1(mut v1) => {
+                            v1.owner_id = owner_id;
 
-                        DataContractInSerializationFormat::V1(v1)
-                    }
-                };
+                            DataContractInSerializationFormat::V1(v1)
+                        }
+                    };
 
-                contract_update.set_data_contract(new_contract);
+                    contract_update.set_data_contract(new_contract);
+                }
 
                 self.0 = DataContractUpdate(contract_update);
             }

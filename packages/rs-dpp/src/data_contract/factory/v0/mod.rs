@@ -200,8 +200,9 @@ impl DataContractFactoryV0 {
         data_contract: DataContract,
         identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        DataContractUpdateTransition::try_from_platform_versioned(
-            (data_contract, identity_contract_nonce),
+        DataContractUpdateTransition::from_data_contract_v0(
+            data_contract,
+            identity_contract_nonce,
             PlatformVersion::get(self.protocol_version)?,
         )
     }

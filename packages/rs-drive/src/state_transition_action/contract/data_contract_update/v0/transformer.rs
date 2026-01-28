@@ -8,29 +8,6 @@ use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionActionV0 {
-    pub(in crate::state_transition_action::contract::data_contract_update) fn try_from_transition(
-        value: DataContractUpdateTransitionV0,
-        block_info: &BlockInfo,
-        full_validation: bool,
-        validation_operations: &mut Vec<ProtocolValidationOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        let mut data_contract = DataContract::try_from_platform_versioned(
-            value.data_contract,
-            full_validation,
-            validation_operations,
-            platform_version,
-        )?;
-        data_contract.set_updated_at(Some(block_info.time_ms));
-        data_contract.set_updated_at_epoch(Some(block_info.epoch.index));
-        data_contract.set_updated_at_block_height(Some(block_info.height));
-        Ok(DataContractUpdateTransitionActionV0 {
-            data_contract,
-            identity_contract_nonce: value.identity_contract_nonce,
-            user_fee_increase: value.user_fee_increase,
-        })
-    }
-
     /// Tries to transform the borrowed DataContractUpdateTransitionV0 into a DataContractUpdateTransitionActionV0.
     /// If validation is true, the data contract transformation verifies that the data contract is valid.
     /// If validation is false, the data contract base structure is created regardless of if it is valid.

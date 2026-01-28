@@ -1804,7 +1804,7 @@ impl Strategy {
                                         *identity_contract_nonce += 1;
 
                                         // Prepare the DataContractUpdateTransition with the updated contract_ref
-                                        match DataContractUpdateTransition::try_from_platform_versioned((DataContract::V0(contract_ref.clone()), *identity_contract_nonce), platform_version) {
+                                        match DataContractUpdateTransition::from_data_contract_v0(DataContract::V0(contract_ref.clone()), *identity_contract_nonce, platform_version) {
                                             Ok(data_contract_update_transition) => {
                                                 let identity_public_key = identity
                                                     .get_first_public_key_matching(

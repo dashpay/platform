@@ -43,8 +43,9 @@ impl DataContractUpdateTransitionWasm {
         };
 
         let rs_data_contract_update_transition =
-            DataContractUpdateTransition::try_from_platform_versioned(
-                (DataContract::from(data_contract.clone()), identity_nonce),
+            DataContractUpdateTransition::from_data_contract_v0(
+                DataContract::from(data_contract.clone()),
+                identity_nonce,
                 &platform_version.into(),
             )?;
 
@@ -147,7 +148,9 @@ impl DataContractUpdateTransitionWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let data_contract_serialization_format = self.0.data_contract();
+        let data_contract_serialization_format = self.0.data_contract().ok_or_else(|| {
+            WasmDppError::invalid_argument("V1 update transitions do not contain a data contract")
+        })?;
 
         let mut validation_operations: Vec<ProtocolValidationOperation> = Vec::new();
 

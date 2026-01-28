@@ -457,7 +457,7 @@ mod tests {
             0,
             &signer,
             platform_version,
-            None,
+            Some(0),
         )
         .expect("expect to create documents batch transition");
 
@@ -581,7 +581,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -713,7 +713,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -843,7 +843,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -976,7 +976,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -1104,7 +1104,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -1228,7 +1228,7 @@ mod tests {
                 0,
                 &signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .expect("expected update transition");
 
@@ -1328,7 +1328,7 @@ mod tests {
                 0,
                 &signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .expect("expected update transition");
 
@@ -1434,7 +1434,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -1521,7 +1521,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -1616,7 +1616,7 @@ mod tests {
                     0,
                     &signer,
                     platform_version,
-                    None,
+                    Some(0),
                 )
                 .expect("expect to create data contract update transition");
 
@@ -1715,7 +1715,7 @@ mod tests {
                 0,
                 &signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
@@ -1815,7 +1815,7 @@ mod tests {
                 0,
                 &signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
@@ -1905,7 +1905,7 @@ mod tests {
                 0,
                 &signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
@@ -2001,7 +2001,7 @@ mod tests {
                 0,
                 &signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .unwrap();
             let tx = platform.drive.grove.start_transaction();
@@ -2184,7 +2184,7 @@ mod tests {
                 0,
                 signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .expect("build update");
 
@@ -2560,7 +2560,7 @@ mod tests {
                 0,
                 signer,
                 platform_version,
-                None,
+                Some(0),
             )
             .expect("build update");
 
