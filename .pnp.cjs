@@ -6395,7 +6395,7 @@ const RAW_RUNTIME_STATE =
           ["p-limit", "npm:2.3.0"],\
           ["semver", "npm:7.5.3"],\
           ["strip-ansi", "npm:6.0.1"],\
-          ["tar", "npm:7.5.6"],\
+          ["tar", "npm:7.5.7"],\
           ["tinylogic", "npm:2.0.0"],\
           ["treeify", "npm:1.1.0"],\
           ["tslib", "npm:2.6.2"],\
@@ -8066,7 +8066,7 @@ const RAW_RUNTIME_STATE =
           ["minipass-pipeline", "npm:1.2.4"],\
           ["p-map", "npm:4.0.0"],\
           ["ssri", "npm:10.0.5"],\
-          ["tar", "npm:7.5.6"],\
+          ["tar", "npm:7.5.7"],\
           ["unique-filename", "npm:3.0.0"]\
         ],\
         "linkType": "HARD"\
@@ -9621,7 +9621,7 @@ const RAW_RUNTIME_STATE =
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["systeminformation", "npm:5.27.14"],\
           ["table", "npm:6.8.1"],\
-          ["tar", "npm:7.5.6"],\
+          ["tar", "npm:7.5.7"],\
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
         "linkType": "SOFT"\
@@ -16558,7 +16558,7 @@ const RAW_RUNTIME_STATE =
           ["nopt", "npm:7.2.0"],\
           ["proc-log", "npm:3.0.0"],\
           ["semver", "npm:7.5.3"],\
-          ["tar", "npm:7.5.6"],\
+          ["tar", "npm:7.5.7"],\
           ["which", "npm:4.0.0"]\
         ],\
         "linkType": "HARD"\
@@ -17466,7 +17466,7 @@ const RAW_RUNTIME_STATE =
           ["read-package-json-fast", "npm:2.0.3"],\
           ["rimraf", "npm:3.0.2"],\
           ["ssri", "npm:8.0.1"],\
-          ["tar", "npm:7.5.6"]\
+          ["tar", "npm:7.5.7"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -17491,7 +17491,7 @@ const RAW_RUNTIME_STATE =
           ["read-package-json-fast", "npm:3.0.2"],\
           ["sigstore", "npm:1.9.0"],\
           ["ssri", "npm:10.0.5"],\
-          ["tar", "npm:7.5.6"]\
+          ["tar", "npm:7.5.7"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20532,14 +20532,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["tar", [\
-      ["npm:7.5.6", {\
-        "packageLocation": "./.yarn/cache/tar-npm-7.5.6-955ec951c2-cf4a84d79b.zip/node_modules/tar/",\
+      ["npm:7.5.7", {\
+        "packageLocation": "./.yarn/cache/tar-npm-7.5.7-053aec5a88-0d6938dd32.zip/node_modules/tar/",\
         "packageDependencies": [\
           ["@isaacs/fs-minipass", "npm:4.0.1"],\
           ["chownr", "npm:3.0.0"],\
           ["minipass", "npm:7.1.2"],\
           ["minizlib", "npm:3.1.0"],\
-          ["tar", "npm:7.5.6"],\
+          ["tar", "npm:7.5.7"],\
           ["yallist", "npm:5.0.0"]\
         ],\
         "linkType": "HARD"\
