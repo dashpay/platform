@@ -67,6 +67,7 @@ export const baseConfig = [
       '@stylistic/quotes': 'off',
       '@stylistic/lines-between-class-members': 'off',
       '@stylistic/object-curly-newline': 'off',
+      '@stylistic/no-mixed-operators': 'off',
       // Disable other rules that weren't enforced before
       'prefer-arrow-callback': 'off',
       'prefer-object-has-own': 'off',

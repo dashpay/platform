@@ -5,6 +5,7 @@ export default [
   ...baseConfig,
   mochaTestConfig,
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    // Generated protobuf code - ignore clients and src generated directories
+    ignores: ['dist/**', 'node_modules/**', 'clients/**', 'src/**'],
   },
 ];
