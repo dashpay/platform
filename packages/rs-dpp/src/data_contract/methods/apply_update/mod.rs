@@ -31,7 +31,7 @@ impl DataContract {
     ///
     /// # Version Behavior
     /// - Version 0: Applies updates using the standard merge logic for document schemas,
-    ///              groups, tokens, keywords, and description.
+    ///   groups, tokens, keywords, and description.
     pub fn apply_update(
         &self,
         update_values: DataContractUpdateValues<'_>,

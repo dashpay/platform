@@ -24,7 +24,7 @@ impl DataContractUpdateTransition {
     /// # Version Behavior
     /// - Version 0: Always returns `0` (used before protocol version 9).
     /// - Version 1: Uses a detailed cost model for items being registered.
-    ///              Note: For updates, there is no base contract fee (only new items are charged).
+    ///   Note: For updates, there is no base contract fee (only new items are charged).
     pub fn registration_cost(
         &self,
         platform_version: &PlatformVersion,

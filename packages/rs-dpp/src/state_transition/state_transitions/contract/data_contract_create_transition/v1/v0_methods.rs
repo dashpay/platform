@@ -40,7 +40,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV1 {
         let transition = DataContractCreateTransition::V1(DataContractCreateTransitionV1 {
             contract_system_version,
             owner_id: identity.id,
-            config: data_contract.config().clone(),
+            config: *data_contract.config(),
             schema_defs: data_contract.schema_defs().cloned(),
             document_schemas: data_contract
                 .document_schemas()

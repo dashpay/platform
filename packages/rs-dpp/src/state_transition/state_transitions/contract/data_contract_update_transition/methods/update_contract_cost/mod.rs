@@ -26,7 +26,7 @@ impl DataContractUpdateTransition {
     /// # Version Behavior
     /// - Version 0: Always returns `0` (used before protocol version 9).
     /// - Version 1: For V0 transitions, uses registration cost logic for all items in the contract.
-    ///              For V1 transitions, calculates cost based on updated_document_schemas.
+    ///   For V1 transitions, calculates cost based on updated_document_schemas.
     pub fn update_contract_cost(
         &self,
         platform_version: &PlatformVersion,

@@ -127,7 +127,7 @@ impl TryFromPlatformVersioned<DataContract> for DataContractCreateTransitionV1 {
         Ok(DataContractCreateTransitionV1 {
             contract_system_version,
             owner_id: data_contract.owner_id(),
-            config: data_contract.config().clone(),
+            config: *data_contract.config(),
             schema_defs: data_contract.schema_defs().cloned(),
             document_schemas: data_contract
                 .document_schemas()
@@ -161,7 +161,7 @@ impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransit
         Ok(DataContractCreateTransitionV1 {
             contract_system_version,
             owner_id: data_contract.owner_id(),
-            config: data_contract.config().clone(),
+            config: *data_contract.config(),
             schema_defs: data_contract.schema_defs().cloned(),
             document_schemas: data_contract
                 .document_schemas()

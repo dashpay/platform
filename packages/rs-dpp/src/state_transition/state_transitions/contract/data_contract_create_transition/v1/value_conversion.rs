@@ -71,7 +71,7 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransitionV1 {
             schema_defs: raw_object
                 .remove(SCHEMA_DEFS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?,
             document_schemas: platform_value::from_value(
                 raw_object.remove(DOCUMENT_SCHEMAS).map_err(|_| {
@@ -83,25 +83,25 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransitionV1 {
             groups: raw_object
                 .remove(GROUPS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             tokens: raw_object
                 .remove(TOKENS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             keywords: raw_object
                 .remove(KEYWORDS)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             description: raw_object
                 .remove(DESCRIPTION)
                 .ok()
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?,
             identity_nonce: raw_object
                 .get_optional_integer(IDENTITY_NONCE)
@@ -138,7 +138,7 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransitionV1 {
             )?)?,
             schema_defs: raw_value_map
                 .remove(SCHEMA_DEFS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?,
             document_schemas: platform_value::from_value(
                 raw_value_map
@@ -149,22 +149,22 @@ impl StateTransitionValueConvert<'_> for DataContractCreateTransitionV1 {
             )?,
             groups: raw_value_map
                 .remove(GROUPS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             tokens: raw_value_map
                 .remove(TOKENS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             keywords: raw_value_map
                 .remove(KEYWORDS)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?
                 .unwrap_or_default(),
             description: raw_value_map
                 .remove(DESCRIPTION)
-                .map(|v| platform_value::from_value(v))
+                .map(platform_value::from_value)
                 .transpose()?,
             identity_nonce: raw_value_map
                 .remove_optional_integer(IDENTITY_NONCE)
