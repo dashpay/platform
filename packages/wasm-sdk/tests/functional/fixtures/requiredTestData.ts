@@ -1,4 +1,17 @@
 /**
+ * Convert a hex string to Uint8Array.
+ * @param {string} hex - Hex string to convert
+ * @returns {Uint8Array} The bytes
+ */
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+/**
  * Requirements for wasm-sdk functional tests.
  * These IDs/contracts should exist on the target network
  * (seeded via SDK_TEST_DATA=true yarn start).
@@ -78,7 +91,7 @@ export function createTestSignerAndKey(sdkModule, seed, keyIndex = 2) {
     securityLevel: securityLevelStr, // string like 'MASTER', 'CRITICAL', 'HIGH'
     keyType: keyTypeStr, // string like 'ECDSA_SECP256K1', 'ECDSA_HASH160'
     isReadOnly: readOnly,
-    data: publicKeyData, // hex string
+    data: hexToBytes(publicKeyData), // Uint8Array
   });
 
   return { signer, identityKey, keyInfo };
