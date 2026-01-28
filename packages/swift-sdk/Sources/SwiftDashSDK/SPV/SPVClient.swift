@@ -205,8 +205,9 @@ public class SPVClient: ObservableObject {
     public weak var delegate: SPVClientDelegate?
     
     // FFI handles
-    private var client: UnsafeMutablePointer<FFIDashSpvClient>?
-    private var config: UnsafeMutablePointer<FFIClientConfig>?
+    private var client: UnsafeMutablePointer<FFIDashSpvClient>
+    private var config: UnsafeMutablePointer<FFIClientConfig>
+    private var hasBeenFreed = false
 
     // Public accessor for client handle (needed for filter match queries)
     public var clientHandle: UnsafeMutablePointer<FFIDashSpvClient>? {
@@ -239,32 +240,13 @@ public class SPVClient: ObservableObject {
     
     // Removed: Temporary poller for filter header progress (now event-driven via FFI)
     
-    public init(network: Network = DashSDKNetwork(rawValue: 1)) {
+    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, masternodesEnabled: Bool, startHeight: UInt32) throws {
         self.network = network
-    }
-    
-    deinit {
-        // Stop event polling (synchronously cancel the task)
-        eventPollingTask?.cancel()
-        // Minimal teardown; prefer explicit stop() by callers.
-    }
-    
-    // MARK: - Client Lifecycle
-    
-    @MainActor
-    public func initialize(dataDir: String? = nil, masternodesEnabled: Bool? = nil, startHeight: UInt32? = nil) throws {
-        guard client == nil else {
-            throw SPVError.alreadyInitialized
-        }
-        
-        SDK.initializeSPVLogging(level: SDK.LogLevel.info, enableConsole: true, maxFiles: 5)
         
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
         }
-
-        let startHeight = startHeight ?? 0
         
         // Create configuration based on network raw value
         let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
@@ -349,24 +331,40 @@ public class SPVClient: ObservableObject {
         }
 
         // Optionally override masternode sync behavior
-        if let m = masternodesEnabled {
-            self.masternodeSyncEnabled = m
-        }
+        self.masternodeSyncEnabled = masternodesEnabled
+
         _ = dash_spv_ffi_config_set_masternode_sync_enabled(configPtr, masternodeSyncEnabled)
 
         _ = dash_spv_ffi_config_set_start_from_height(configPtr, startHeight)
         
         // Create client
-        client = dash_spv_ffi_client_new(configPtr)
-        guard client != nil else {
+        let client = dash_spv_ffi_client_new(configPtr)
+        guard let client = client else {
+            if let errorMsg = dash_spv_ffi_get_last_error() {
+              let error = String(cString: errorMsg)
+              self.lastError = error
+              print("[SPV][Init] Failed to create client: \(error)")
+            }
             throw SPVError.initializationFailed
         }
+        
+        self.client = client
         
         // Store config for cleanup
         config = configPtr
         
         // Set up event callbacks with stable context
         setupEventCallbacks()
+    }
+    
+    deinit {
+        if !hasBeenFreed {
+            print("[SPV][deinit] WARNING: SPVClient was not freed before deinit, call SPVClient::destroy")
+        }
+      
+        // Stop event polling (synchronously cancel the task)
+        eventPollingTask?.cancel()
+        // Minimal teardown; prefer explicit stop() by callers.
     }
 
     private static func readLocalCorePeers() -> [String] {
@@ -382,34 +380,24 @@ public class SPVClient: ObservableObject {
     /// Enable/disable masternode sync. If the client is running, apply the update immediately.
     public func setMasternodeSyncEnabled(_ enabled: Bool) throws {
         self.masternodeSyncEnabled = enabled
-        if let config = self.config {
-            let rc = dash_spv_ffi_config_set_masternode_sync_enabled(config, enabled)
-            if rc != 0 { throw SPVError.configurationFailed }
-        }
-        if let client = self.client, let config = self.config {
-            let rc2 = dash_spv_ffi_client_update_config(client, config)
-            if rc2 != 0 { throw SPVError.configurationFailed }
-        }
+        var rc = dash_spv_ffi_config_set_masternode_sync_enabled(config, enabled)
+        if rc != 0 { throw SPVError.configurationFailed }
+        
+        rc = dash_spv_ffi_client_update_config(client, config)
+        if rc != 0 { throw SPVError.configurationFailed }
     }
 
     /// Update the starting checkpoint height (sync-from base) at runtime.
     /// Applies to the next sync start and persists in the client's config.
     public func setStartFromHeight(_ height: UInt32) throws {
-        if let config = self.config {
-            let rc = dash_spv_ffi_config_set_start_from_height(config, height)
-            if rc != 0 { throw SPVError.configurationFailed }
-        }
-        if let client = self.client, let config = self.config {
-            let rc2 = dash_spv_ffi_client_update_config(client, config)
-            if rc2 != 0 { throw SPVError.configurationFailed }
-        }
+        var rc = dash_spv_ffi_config_set_start_from_height(config, height)
+        if rc != 0 { throw SPVError.configurationFailed }
+      
+        rc = dash_spv_ffi_client_update_config(client, config)
+        if rc != 0 { throw SPVError.configurationFailed }
     }
     
     public func start() throws {
-        guard self.client != nil else {
-            throw SPVError.notInitialized
-        }
-        
         let result = dash_spv_ffi_client_start(client)
         if result != 0 {
             if let errorMsg = dash_spv_ffi_get_last_error() {
@@ -422,15 +410,9 @@ public class SPVClient: ObservableObject {
         
         self.isConnected = true
     }
-    
-    public func stop() {
-        stopSync(preserveProgress: false)
-    }
 
     /// Clear all persisted SPV storage (headers, filters, metadata, sync state).
     public func clearStorage() throws {
-        guard let client = client else { throw SPVError.notInitialized }
-
         let rc = dash_spv_ffi_client_clear_storage(client)
         if rc != 0 {
             if let errorMsg = dash_spv_ffi_get_last_error() {
@@ -449,8 +431,6 @@ public class SPVClient: ObservableObject {
 
     /// Clear only the persisted sync-state snapshot while keeping headers/filters.
     public func clearSyncState() throws {
-        guard let client = client else { throw SPVError.notInitialized }
-        
         // TODO: clear sync state doesnt exist anymore. Is it needed? Maybe wipe the directory?
 //        let rc = dash_spv_ffi_client_clear_sync_state(client)
 //        if rc != 0 {
@@ -474,7 +454,6 @@ public class SPVClient: ObservableObject {
     /// - Returns: Total number of transactions, or 0 if wallet is empty or not initialized
     /// NOTE: FFI function dash_spv_ffi_client_get_transaction_count not available in current build
     public func getTransactionCount() -> UInt64 {
-        guard client != nil else { return 0 }
         // NOTE: dash_spv_ffi_client_get_transaction_count is not available in current FFI
         // When available, use: return UInt64(dash_spv_ffi_client_get_transaction_count(client))
         return 0
@@ -487,33 +466,23 @@ public class SPVClient: ObservableObject {
     /// - Returns: Number of blocks with wallet transactions, or 0 if wallet is empty or not initialized
     /// NOTE: FFI function dash_spv_ffi_client_get_blocks_with_transactions_count not available in current build
     public func getBlocksWithTransactionsCount() -> UInt64 {
-        guard client != nil else { return 0 }
         // NOTE: dash_spv_ffi_client_get_blocks_with_transactions_count is not available in current FFI
         // When available, use: return UInt64(dash_spv_ffi_client_get_blocks_with_transactions_count(client))
         return 0
     }
 
-    private func destroyClient() {
-        if let client = client {
-            dash_spv_ffi_client_destroy(client)
-            self.client = nil
-        }
-        
-        if let config = config {
-            dash_spv_ffi_config_destroy(config)
-            self.config = nil
-        }
+    public func destroy() {
+        dash_spv_ffi_client_destroy(client)
+        dash_spv_ffi_config_destroy(config)
         
         callbackContext = nil
+        
+        self.hasBeenFreed = true
     }
     
     // MARK: - Synchronization
     
     public func startSync() async throws {
-        guard self.client != nil else {
-            throw SPVError.notInitialized
-        }
-        
         guard !isSyncing else {
             throw SPVError.alreadySyncing
         }
@@ -548,19 +517,15 @@ public class SPVClient: ObservableObject {
         }
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
 
-        guard let clientPtr = self.client else {
-            throw SPVError.notInitialized
-        }
-
         // Start sync in the background to avoid blocking the main thread
         // Copy pointer addresses to avoid capturing non-Sendable pointers inside the GCD closure
-        let clientAddr = UInt(bitPattern: clientPtr)
+        let clientAddr = UInt(bitPattern: self.client)
         let ctxAddr = UInt(bitPattern: contextPtr)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let clientPtr = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
+            guard let client = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
                   let contextPtr = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
             let result = dash_spv_ffi_client_sync_to_tip_with_progress(
-                clientPtr,
+                client,
                 spvProgressCallback,
                 spvCompletionCallback,
                 contextPtr
@@ -584,10 +549,8 @@ public class SPVClient: ObservableObject {
         // Filter progress now updates via FFI event callback; no polling needed
     }
     
-    public func cancelSync() {
-        guard let client = client, isSyncing else { return }
-
-        syncCancelled = true
+    public func stopSync() {
+        stopEventPolling()
 
         let cancelResult = dash_spv_ffi_client_cancel_sync(client)
         if cancelResult != 0, let err = dash_spv_ffi_get_last_error() {
@@ -599,36 +562,10 @@ public class SPVClient: ObservableObject {
         }
         isSyncing = false
     }
-
-    public func stopSync(preserveProgress: Bool = true) {
-        guard let client = client else { return }
-
-        // Stop event polling
-        stopEventPolling()
-
-        let stopResult = dash_spv_ffi_client_stop(client)
-        if stopResult != 0, let err = dash_spv_ffi_get_last_error() {
-            let message = String(cString: err)
-            if swiftLoggingEnabled {
-                print("[SPV][Stop] stop failed: \(message)")
-            }
-            lastError = message
-        } else {
-            isConnected = false
-        }
-
-        isSyncing = false
-
-        if !preserveProgress {
-            syncProgress = nil
-        }
-    }
     
     // MARK: - Event Callbacks
     
     private func setupEventCallbacks() {
-        guard let client = client else { return }
-        
         let context = CallbackContext(client: self)
         self.callbackContext = context
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
@@ -776,7 +713,7 @@ public class SPVClient: ObservableObject {
 
         eventPollingTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self = self, let client = self.client else { break }
+                guard let self = self else { break }
                 dash_spv_ffi_client_drain_events(client)
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
@@ -791,22 +728,18 @@ public class SPVClient: ObservableObject {
     // MARK: - Wallet Manager Access
     
     public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
-        guard let client = client else { return nil }
-        
         return dash_spv_ffi_client_get_wallet_manager(client)
     }
 
     /// Produce a Swift wallet manager that shares the SPV client's underlying wallet state.
     /// Callers are responsible for retaining the returned instance for as long as needed.
     public func makeSharedWalletManager() throws -> WalletManager {
-        guard let client = client else { throw SPVError.notInitialized }
         return try WalletManager(fromSPVClient: client)
     }
     
     // MARK: - Statistics
     
     public func getStats() -> SPVStats? {
-        guard let client = client else { return nil }
         
         let statsPtr = dash_spv_ffi_client_get_stats(client)
         guard let statsPtr = statsPtr else { return nil }
@@ -830,7 +763,6 @@ public class SPVClient: ObservableObject {
     // MARK: - Tip Info
     /// Returns the current chain tip height known to the client (absolute), or nil if unavailable.
     public func getTipHeight() -> UInt32? {
-        guard let client = client else { return nil }
         var out: UInt32 = 0
         let rc = dash_spv_ffi_client_get_tip_height(client, &out)
         if rc == 0 { return out }
@@ -839,7 +771,6 @@ public class SPVClient: ObservableObject {
 
     /// Returns the current chain tip hash (32 bytes) known to the client, or nil if unavailable.
     public func getTipHash() -> Data? {
-        guard let client = client else { return nil }
         var buf = [UInt8](repeating: 0, count: 32)
         let rc = buf.withUnsafeMutableBufferPointer { bp -> Int32 in
             guard let base = bp.baseAddress else { return -1 }
@@ -851,7 +782,6 @@ public class SPVClient: ObservableObject {
 
     // MARK: - Sync Snapshot
     public func getSyncSnapshot() -> SPVSyncSnapshot? {
-        guard let client = client else { return nil }
         guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else { return nil }
         defer { dash_spv_ffi_sync_progress_destroy(ptr) }
         let p = ptr.pointee
