@@ -63,7 +63,7 @@ impl DataContractCreateTransitionActionV0 {
         let serialization_format =
             DataContractInSerializationFormat::V1(DataContractInSerializationFormatV1 {
                 id,
-                config: config.clone(),
+                config: *config,
                 version: 1, // New contract starts at version 1
                 owner_id: *owner_id,
                 schema_defs: schema_defs.clone(),

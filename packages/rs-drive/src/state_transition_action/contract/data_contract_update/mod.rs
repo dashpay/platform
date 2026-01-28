@@ -13,6 +13,7 @@ use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// data contract update transition action
 #[derive(Debug, Clone, From)]
+#[allow(clippy::large_enum_variant)]
 pub enum DataContractUpdateTransitionAction {
     /// v0
     V0(DataContractUpdateTransitionActionV0),
