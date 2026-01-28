@@ -156,23 +156,24 @@ impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: IdentityPublicKeyOptionsJs) -> WasmDppResult<Self> {
+        let options: JsValue = options.into();
+
         // Extract purpose (required, complex type)
-        let purpose: PurposeWasm = try_from_options(options.as_ref(), "purpose")?;
+        let purpose: PurposeWasm = try_from_options(&options, "purpose")?;
 
         // Extract securityLevel (required, complex type)
-        let security_level: SecurityLevelWasm =
-            try_from_options(options.as_ref(), "securityLevel")?;
+        let security_level: SecurityLevelWasm = try_from_options(&options, "securityLevel")?;
 
         // Extract keyType (required, complex type)
-        let key_type: KeyTypeWasm = try_from_options(options.as_ref(), "keyType")?;
+        let key_type: KeyTypeWasm = try_from_options(&options, "keyType")?;
 
         // Extract contractBounds (optional)
         let contract_bounds: Option<ContractBounds> =
-            try_from_options_optional::<ContractBoundsWasm>(options.as_ref(), "contractBounds")?
+            try_from_options_optional::<ContractBoundsWasm>(&options, "contractBounds")?
                 .map(Into::into);
 
         // Extract simple fields via serde
-        let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options.into())
+        let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityPublicKeyWasm(IdentityPublicKey::from(
