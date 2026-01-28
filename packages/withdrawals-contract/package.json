@@ -35,7 +35,7 @@
     "@dashevo/wasm-dpp": "workspace:*",
     "chai": "^4.3.10",
     "dirty-chai": "^2.0.1",
-    "eslint": "*",
+    "eslint": "^9.18.0",
     "mocha": "^11.1.0",
     "sinon": "^17.0.1",
     "sinon-chai": "^3.7.0"

@@ -52,7 +52,7 @@
     "core-js": "^3.33.1",
     "crypto-browserify": "^3.12.1",
     "dirty-chai": "^2.0.1",
-    "eslint": "*",
+    "eslint": "^9.18.0",
     "events": "^3.3.0",
     "karma": "^6.4.3",
     "karma-chai": "^0.1.0",

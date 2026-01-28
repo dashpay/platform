@@ -77,6 +77,6 @@
     "ws": "^8.17.1"
   },
   "devDependencies": {
-    "eslint": "*"
+    "eslint": "^9.18.0"
   }
 }
