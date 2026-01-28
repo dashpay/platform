@@ -6,8 +6,8 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
-    try_to_bytes, try_to_object, try_to_u16, try_to_u32, try_to_u64,
+    IntoWasm, try_from_options, try_from_options_with, try_to_object, try_to_u16, try_to_u32,
+    try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -23,6 +23,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -74,6 +75,17 @@ extern "C" {
     pub type MasternodeVoteTransitionJSONJs;
 }
 
+/// Serde struct for primitive fields in MasternodeVoteTransitionOptions
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MasternodeVoteTransitionOptionsInput {
+    nonce: IdentityNonce,
+    #[serde(default)]
+    signature_public_key_id: KeyID,
+    #[serde(default)]
+    signature: Vec<u8>,
+}
+
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
 #[derive(Clone)]
 pub struct MasternodeVoteTransitionWasm(MasternodeVoteTransition);
@@ -96,37 +108,29 @@ impl MasternodeVoteTransitionWasm {
     pub fn constructor(
         options: MasternodeVoteTransitionOptionsJs,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
+        let options_value: JsValue = options.into();
+        let options_obj = try_to_object(options_value.clone(), "options")?;
 
+        // Deserialize primitive fields via serde
+        let input: MasternodeVoteTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options_value)
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        // Extract complex types manually
         let pro_tx_hash: IdentifierWasm = try_from_options(&options_obj, "proTxHash")?;
-
         let voter_identity_id: IdentifierWasm = try_from_options(&options_obj, "voterIdentityId")?;
-
         let vote: VoteWasm = try_from_options_with(&options_obj, "vote", |v| {
             v.to_wasm::<VoteWasm>("Vote").map(|r| r.clone())
         })?;
-
-        let nonce = try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
-
-        let signature_public_key_id: KeyID =
-            try_from_options_optional_with(&options_obj, "signaturePublicKeyId", |v| {
-                try_to_u32(v, "signaturePublicKeyId")
-            })?
-            .unwrap_or(0);
-
-        let signature: Vec<u8> = try_from_options_optional_with(&options_obj, "signature", |v| {
-            try_to_bytes(v, "signature")
-        })?
-        .unwrap_or_default();
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
                 pro_tx_hash: pro_tx_hash.into(),
                 voter_identity_id: voter_identity_id.into(),
                 vote: vote.into(),
-                nonce,
-                signature_public_key_id,
-                signature: BinaryData::from(signature),
+                nonce: input.nonce,
+                signature_public_key_id: input.signature_public_key_id,
+                signature: BinaryData::from(input.signature),
             },
         )))
     }

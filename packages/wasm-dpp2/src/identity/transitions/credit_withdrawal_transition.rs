@@ -8,8 +8,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16,
-    try_to_u32, try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_to_object, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -26,6 +25,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -86,6 +86,18 @@ extern "C" {
     pub type IdentityCreditWithdrawalTransitionJSONJs;
 }
 
+/// Serde struct for primitive fields in IdentityCreditWithdrawalTransitionOptions
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityCreditWithdrawalTransitionOptionsInput {
+    amount: u64,
+    core_fee_per_byte: u32,
+    #[serde(default)]
+    nonce: IdentityNonce,
+    #[serde(default)]
+    user_fee_increase: UserFeeIncrease,
+}
+
 #[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
 pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransition);
 
@@ -95,16 +107,17 @@ impl IdentityCreditWithdrawalTransitionWasm {
     pub fn constructor(
         options: IdentityCreditWithdrawalTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
+        let options_value: JsValue = options.into();
+        let options_obj = try_to_object(options_value.clone(), "options")?;
 
+        // Deserialize primitive fields via serde
+        let input: IdentityCreditWithdrawalTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options_value)
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        // Extract complex types manually
         let identity_id: Identifier =
             IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
-
-        let amount = try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
-
-        let core_fee_per_byte = try_from_options_with(&options_obj, "coreFeePerByte", |v| {
-            try_to_u32(v, "coreFeePerByte")
-        })?;
 
         let pooling: PoolingWasm = PoolingWasm::try_from_options(&options_obj, "pooling")?;
 
@@ -114,25 +127,15 @@ impl IdentityCreditWithdrawalTransitionWasm {
                     .map(|cs| cs.clone().into())
             })?;
 
-        let nonce: IdentityNonce =
-            try_from_options_optional_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?
-                .unwrap_or(0);
-
-        let user_fee_increase: UserFeeIncrease =
-            try_from_options_optional_with(&options_obj, "userFeeIncrease", |v| {
-                try_to_u16(v, "userFeeIncrease")
-            })?
-            .unwrap_or(0);
-
         Ok(IdentityCreditWithdrawalTransitionWasm(
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
-                amount,
+                amount: input.amount,
                 identity_id,
                 output_script,
-                core_fee_per_byte,
+                core_fee_per_byte: input.core_fee_per_byte,
                 pooling: pooling.into(),
-                nonce,
-                user_fee_increase,
+                nonce: input.nonce,
+                user_fee_increase: input.user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }),

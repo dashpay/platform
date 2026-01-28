@@ -6,10 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{
-    try_from_options_optional_with, try_from_options_with, try_to_array, try_to_object, try_to_u16,
-    try_to_u32, try_to_u64,
-};
+use crate::utils::{try_from_options_with, try_to_array, try_to_object, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -24,6 +21,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -79,6 +77,16 @@ extern "C" {
     pub type IdentityUpdateTransitionJSONJs;
 }
 
+/// Serde struct for primitive fields in IdentityUpdateTransitionOptions
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityUpdateTransitionOptionsInput {
+    revision: Revision,
+    nonce: IdentityNonce,
+    #[serde(default)]
+    user_fee_increase: UserFeeIncrease,
+}
+
 #[wasm_bindgen(js_name = "IdentityUpdateTransition")]
 #[derive(Clone)]
 pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
@@ -89,14 +97,16 @@ impl IdentityUpdateTransitionWasm {
     pub fn constructor(
         options: IdentityUpdateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
+        let options_value: JsValue = options.into();
+        let options_obj = try_to_object(options_value.clone(), "options")?;
 
+        // Deserialize primitive fields via serde
+        let input: IdentityUpdateTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options_value)
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        // Extract complex types manually
         let identity_id = IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
-
-        let revision =
-            try_from_options_with(&options_obj, "revision", |v| try_to_u64(v, "revision"))?;
-
-        let nonce = try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
 
         let add_public_keys_array = try_from_options_with(&options_obj, "addPublicKeys", |v| {
             try_to_array(v, "addPublicKeys")
@@ -114,23 +124,17 @@ impl IdentityUpdateTransitionWasm {
             .map(|(i, v)| try_to_u32(&v, &format!("disablePublicKeys[{}]", i)))
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
-        let user_fee_increase: UserFeeIncrease =
-            try_from_options_optional_with(&options_obj, "userFeeIncrease", |v| {
-                try_to_u16(v, "userFeeIncrease")
-            })?
-            .unwrap_or(0);
-
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
                 identity_id,
-                revision,
-                nonce,
+                revision: input.revision,
+                nonce: input.nonce,
                 add_public_keys: add_public_keys
                     .iter()
                     .map(|key| key.clone().into())
                     .collect(),
                 disable_public_keys,
-                user_fee_increase,
+                user_fee_increase: input.user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             },

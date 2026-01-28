@@ -3,10 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{
-    try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u32,
-    try_to_u64,
-};
+use crate::utils::{try_to_object, try_to_u16, try_to_u32, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -19,6 +16,7 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -70,6 +68,16 @@ extern "C" {
     pub type IdentityCreditTransferJSONJs;
 }
 
+/// Serde struct for primitive fields in IdentityCreditTransferOptions
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityCreditTransferOptionsInput {
+    amount: u64,
+    nonce: u64,
+    #[serde(default)]
+    user_fee_increase: UserFeeIncrease,
+}
+
 #[wasm_bindgen(js_name = "IdentityCreditTransfer")]
 #[derive(Clone)]
 pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
@@ -80,30 +88,26 @@ impl IdentityCreditTransferWasm {
     pub fn constructor(
         options: IdentityCreditTransferOptionsJs,
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
+        let options_value: wasm_bindgen::JsValue = options.into();
+        let options_obj = try_to_object(options_value.clone(), "options")?;
 
-        let amount = try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
+        // Deserialize primitive fields via serde
+        let input: IdentityCreditTransferOptionsInput =
+            serde_wasm_bindgen::from_value(options_value)
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
+        // Extract complex types manually
         let sender: Identifier = IdentifierWasm::try_from_options(&options_obj, "senderId")?.into();
-
         let recipient: Identifier =
             IdentifierWasm::try_from_options(&options_obj, "recipientId")?.into();
-
-        let nonce = try_from_options_with(&options_obj, "nonce", |v| try_to_u64(v, "nonce"))?;
-
-        let user_fee_increase: UserFeeIncrease =
-            try_from_options_optional_with(&options_obj, "userFeeIncrease", |v| {
-                try_to_u16(v, "userFeeIncrease")
-            })?
-            .unwrap_or(0);
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
                 identity_id: sender,
                 recipient_id: recipient,
-                amount,
-                nonce,
-                user_fee_increase,
+                amount: input.amount,
+                nonce: input.nonce,
+                user_fee_increase: input.user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }),
