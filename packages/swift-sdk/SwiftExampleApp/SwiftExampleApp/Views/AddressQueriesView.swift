@@ -1938,21 +1938,13 @@ struct TransferAddressFundsView: View {
     }
     
     private var isFormValid: Bool {
-        guard inputAddressHex.count == 42,
-              inputPrivateKeyHex.count == 64,
-              outputAddressHex.count == 42,
-              let inputAmt = UInt64(inputAmount), inputAmt > 0,
-              let outputAmt = UInt64(outputAmount), outputAmt > 0
-        else { return false }
-        
-        // Basic hex validation
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              outputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-        else { return false }
-        
-        return true
+        TransferInputValidator.validate(
+            inputAddressHex: inputAddressHex,
+            inputPrivateKeyHex: inputPrivateKeyHex,
+            outputAddressHex: outputAddressHex,
+            inputAmount: inputAmount,
+            outputAmount: outputAmount
+        ).isValid
     }
     
     private func executeTransfer() {
@@ -2294,26 +2286,14 @@ struct WithdrawAddressFundsView: View {
     }
     
     private var isFormValid: Bool {
-        guard inputAddressHex.count == 42,
-              inputPrivateKeyHex.count == 64,
-              !coreAddress.isEmpty,
-              let inputAmt = UInt64(inputAmount), inputAmt > 0
-        else { return false }
-        
-        // Basic hex validation
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-        else { return false }
-        
-        // Validate change address if used
-        if useChangeAddress {
-            guard changeAddressHex.count == 42,
-                  changeAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-            else { return false }
-        }
-        
-        return true
+        WithdrawInputValidator.validate(
+            inputAddressHex: inputAddressHex,
+            inputPrivateKeyHex: inputPrivateKeyHex,
+            coreAddress: coreAddress,
+            inputAmount: inputAmount,
+            useChangeAddress: useChangeAddress,
+            changeAddressHex: changeAddressHex
+        ).isValid
     }
     
     private func executeWithdrawal() {
@@ -2653,29 +2633,17 @@ struct TopUpAddressFromAssetLockView: View {
     }
     
     private var isFormValid: Bool {
-        guard outputAddressHex.count == 42,
-              assetLockPrivateKeyHex.count == 64
-        else { return false }
-        
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        guard outputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              assetLockPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-        else { return false }
-        
-        if proofType == Addresses.AssetLockProofType.instant {
-            guard !instantLockHex.isEmpty,
-                  !transactionHex.isEmpty,
-                  UInt32(outputIndex) != nil
-            else { return false }
-        } else {
-            guard !coreChainLockedHeight.isEmpty,
-                  outPointHex.count == 72,
-                  UInt32(coreChainLockedHeight) != nil,
-                  outPointHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-            else { return false }
-        }
-        
-        return true
+        let proof = proofType == .instant ? AssetLockProofTypeForValidation.instant : AssetLockProofTypeForValidation.chain
+        return TopUpAddressFromAssetLockValidator.validate(
+            outputAddressHex: outputAddressHex,
+            assetLockPrivateKeyHex: assetLockPrivateKeyHex,
+            proofType: proof,
+            instantLockHex: instantLockHex,
+            transactionHex: transactionHex,
+            outputIndex: outputIndex,
+            coreChainLockedHeight: coreChainLockedHeight,
+            outPointHex: outPointHex
+        ).isValid
     }
     
     private func executeTopUp() {
@@ -2979,18 +2947,12 @@ struct TopUpIdentityFromAddressesView: View {
     }
     
     private var isFormValid: Bool {
-        guard !identityId.isEmpty,
-              inputAddressHex.count == 42,
-              inputPrivateKeyHex.count == 64,
-              let amount = UInt64(inputAmount), amount > 0
-        else { return false }
-        
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-        else { return false }
-        
-        return true
+        IdentityTopUpFromAddressesValidator.validate(
+            identityId: identityId,
+            inputAddressHex: inputAddressHex,
+            inputPrivateKeyHex: inputPrivateKeyHex,
+            amount: inputAmount
+        ).isValid
     }
     
     private func executeTopUp() {
@@ -3259,18 +3221,12 @@ struct TransferIdentityToAddressesView: View {
     }
     
     private var isFormValid: Bool {
-        guard !identityId.isEmpty,
-              outputAddressHex.count == 42,
-              identityPrivateKeyHex.count == 64,
-              let amount = UInt64(outputAmount), amount > 0
-        else { return false }
-        
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        guard outputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              identityPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-        else { return false }
-        
-        return true
+        IdentityTransferToAddressesValidator.validate(
+            identityId: identityId,
+            outputAddressHex: outputAddressHex,
+            identityPrivateKeyHex: identityPrivateKeyHex,
+            amount: outputAmount
+        ).isValid
     }
     
     private func executeTransfer() {
@@ -3580,29 +3536,16 @@ struct CreateIdentityFromAddressesView: View {
     }
     
     private var isFormValid: Bool {
-        guard !identityId.isEmpty,
-              inputAddressHex.count == 42,
-              inputPrivateKeyHex.count == 64,
-              identityPrivateKeyHex.count == 64,
-              let amount = UInt64(inputAmount), amount > 0,
-              UInt32(inputNonce) != nil
-        else { return false }
-        
-        if useChangeAddress {
-            guard changeAddressHex.count == 42 else { return false }
-        }
-        
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
-        guard inputAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              inputPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }),
-              identityPrivateKeyHex.unicodeScalars.allSatisfy({ hexChars.contains($0) })
-        else { return false }
-        
-        if useChangeAddress {
-            guard changeAddressHex.unicodeScalars.allSatisfy({ hexChars.contains($0) }) else { return false }
-        }
-        
-        return true
+        IdentityCreateFromAddressesValidator.validate(
+            identityId: identityId,
+            inputAddressHex: inputAddressHex,
+            inputPrivateKeyHex: inputPrivateKeyHex,
+            identityPrivateKeyHex: identityPrivateKeyHex,
+            amount: inputAmount,
+            nonce: inputNonce,
+            useChangeAddress: useChangeAddress,
+            changeAddressHex: changeAddressHex
+        ).isValid
     }
     
     private func executeCreate() {
