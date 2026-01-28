@@ -298,7 +298,7 @@ var body: some View {
             return
         }
 
-        walletService.clearSpvStorage(fullReset: true)
+        walletService.clearSpvStorage()
     }
 }
 

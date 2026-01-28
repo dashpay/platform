@@ -530,7 +530,7 @@ public class WalletService: ObservableObject {
     }
 
     /// Clear SPV persistence either fully (headers, filters, state) or just the sync snapshot.
-    public func clearSpvStorage(fullReset: Bool = true) {
+    public func clearSpvStorage() {
         guard !isClearingStorage else {
             print("[SPV][Clear] Clear already in progress, ignoring duplicate request")
             return
@@ -552,17 +552,13 @@ public class WalletService: ObservableObject {
             do {
                 // Add timeout protection
                 try await withTimeout(seconds: 30) {
-                    if fullReset {
-                        try await client.clearStorage()
-                    } else {
-                        try await client.clearSyncState()
-                    }
+                    try await client.clearStorage()
                 }
 
                 print("[SPV][Clear] Storage cleared successfully")
 
                 await MainActor.run {
-                    service.resetAfterClearingStorage(fullReset: fullReset)
+                    service.resetAfterClearingStorage()
                 }
             } catch is TimeoutError {
                 print("❌ [SPV][Clear] Timeout waiting for storage clear - client may be busy")
@@ -582,7 +578,7 @@ public class WalletService: ObservableObject {
         }
     }
 
-    private func resetAfterClearingStorage(fullReset: Bool) {
+    private func resetAfterClearingStorage() {
         let baseline = Int(computeNetworkBaselineSyncFromHeight())
         applyInitialSyncState(baseline: baseline, tip: nil, checkpoint: nil, snapshot: nil)
 
@@ -591,8 +587,7 @@ public class WalletService: ObservableObject {
         blocksHit = 0
         lastSyncError = nil
 
-        let modeDescription = fullReset ? "full storage" : "sync-state"
-        print("[SPV][Clear] Completed \(modeDescription) reset for \(currentNetwork.rawValue)")
+        print("[SPV][Clear] Completed full storage reset for \(currentNetwork.rawValue)")
     }
     
     // MARK: - Network Management
