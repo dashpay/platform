@@ -479,9 +479,16 @@
       "enum": [
         0,
         1,
-        2
+        2,
+        3
       ],
-      "description": "Restrictions of document creation. 0 - No restrictions, 1 - Owner only, 2 - No creation (System Only)"
+      "description": "Restrictions of document creation. 0 - No restrictions, 1 - Owner only, 2 - No creation (System Only), 3 - Any group member"
+    },
+    "creationRestrictionGroup": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Group position required when creationRestrictionMode is 3 (Any group member)"
     },
     "requiresIdentityEncryptionBoundedKey": {
       "type": "integer",
@@ -600,6 +607,32 @@
       "const": false
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "creationRestrictionMode": {
+            "const": 3
+          }
+        },
+        "required": [
+          "creationRestrictionMode"
+        ]
+      },
+      "then": {
+        "required": [
+          "creationRestrictionGroup"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "creationRestrictionGroup"
+          ]
+        }
+      }
+    }
+  ],
   "required": [
     "$schema",
     "type",

@@ -11,6 +11,7 @@ pub enum CreationRestrictionMode {
     NoRestrictions,
     OwnerOnly,
     NoCreationAllowed,
+    AnyGroupMember,
 }
 
 impl Display for CreationRestrictionMode {
@@ -19,6 +20,7 @@ impl Display for CreationRestrictionMode {
             CreationRestrictionMode::NoRestrictions => write!(f, "No Restrictions"),
             CreationRestrictionMode::OwnerOnly => write!(f, "Owner Only"),
             CreationRestrictionMode::NoCreationAllowed => write!(f, "No Creation Allowed"),
+            CreationRestrictionMode::AnyGroupMember => write!(f, "Any Group Member"),
         }
     }
 }
@@ -31,10 +33,11 @@ impl TryFrom<u8> for CreationRestrictionMode {
             0 => Ok(Self::NoRestrictions),
             1 => Ok(Self::OwnerOnly),
             2 => Ok(Self::NoCreationAllowed),
+            3 => Ok(Self::AnyGroupMember),
             value => Err(ProtocolError::ConsensusError(
                 ConsensusError::BasicError(
                     BasicError::UnknownDocumentCreationRestrictionModeError(
-                        UnknownDocumentCreationRestrictionModeError::new(vec![0, 1, 2], value),
+                        UnknownDocumentCreationRestrictionModeError::new(vec![0, 1, 2, 3], value),
                     ),
                 )
                 .into(),

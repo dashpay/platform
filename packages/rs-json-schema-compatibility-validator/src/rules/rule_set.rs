@@ -1610,6 +1610,46 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
             },
         ),
         (
+            "creationRestrictionGroup",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                // TODO: ask Sam if we want to allow changing this field
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "creationRestrictionGroup": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/creationRestrictionGroup".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "creationRestrictionGroup": 1 }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/creationRestrictionGroup".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "creationRestrictionGroup": 1 }),
+                        json!({ "creationRestrictionGroup": 2 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/creationRestrictionGroup".to_string(),
+                            value: json!(2),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        (
             "requiresIdentityEncryptionBoundedKey",
             CompatibilityRules {
                 allow_addition: false,
