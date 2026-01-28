@@ -18,7 +18,6 @@ use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::{
     FeatureVersion, ProtocolVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned,
 };
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -68,12 +67,7 @@ impl DataContractCreateTransitionWasm {
     ) -> WasmDppResult<DataContractCreateTransitionWasm> {
         let rs_data_contract: DataContract = data_contract.clone().into();
 
-        let platform_version: JsValue = platform_version.into();
-        let platform_version = if platform_version.is_undefined() {
-            PlatformVersionWasm::default()
-        } else {
-            PlatformVersionWasm::try_from(platform_version)?
-        };
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let rs_data_contract_create_transition_v0: DataContractCreateTransitionV0 =
             DataContractCreateTransitionV0 {
@@ -155,12 +149,7 @@ impl DataContractCreateTransitionWasm {
         #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
         #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
-        let platform_version: JsValue = platform_version.into();
-        let platform_version = if platform_version.is_undefined() {
-            PlatformVersionWasm::default()
-        } else {
-            PlatformVersionWasm::try_from(platform_version)?
-        };
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let data_contract_serialization_format =
             DataContractInSerializationFormat::try_from_platform_versioned(
@@ -184,12 +173,7 @@ impl DataContractCreateTransitionWasm {
         #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
         #[wasm_bindgen(js_name = "fullValidation")] full_validation: Option<bool>,
     ) -> WasmDppResult<DataContractWasm> {
-        let platform_version: JsValue = platform_version.into();
-        let platform_version = if platform_version.is_undefined() {
-            PlatformVersionWasm::default()
-        } else {
-            PlatformVersionWasm::try_from(platform_version)?
-        };
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let rs_data_contract_serialization_format = self.0.data_contract();
 

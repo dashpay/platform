@@ -61,6 +61,11 @@ impl TryFrom<&JsValue> for PlatformVersionWasm {
     type Error = WasmDppError;
 
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        // Return default for undefined/null
+        if value.is_undefined() || value.is_null() {
+            return Ok(Self::default());
+        }
+
         if value.is_string() {
             match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
