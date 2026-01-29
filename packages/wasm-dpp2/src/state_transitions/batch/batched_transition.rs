@@ -4,7 +4,7 @@ use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::token_transition::TokenTransitionWasm;
-use crate::utils::{IntoWasm, get_class_type};
+use crate::utils::get_class_type;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
@@ -63,18 +63,10 @@ impl BatchedTransitionWasm {
 
         match get_class_type(&js_transition)?.as_str() {
             "TokenTransition" => Ok(BatchedTransitionWasm::from(BatchedTransition::from(
-                TokenTransition::from(
-                    js_transition
-                        .to_wasm::<TokenTransitionWasm>("TokenTransition")?
-                        .clone(),
-                ),
+                TokenTransition::from(TokenTransitionWasm::try_from(&js_transition)?),
             ))),
             "DocumentTransition" => Ok(BatchedTransitionWasm(BatchedTransition::Document(
-                DocumentTransition::from(
-                    js_transition
-                        .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
-                        .clone(),
-                ),
+                DocumentTransition::from(DocumentTransitionWasm::try_from(&js_transition)?),
             ))),
             _ => Err(WasmDppError::invalid_argument("Invalid transition type")),
         }

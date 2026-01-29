@@ -7,7 +7,7 @@ use crate::tokens::configuration::action_taker::ActionTakerWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
+    try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
 };
 use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
@@ -82,16 +82,10 @@ impl ChangeControlRulesWasm {
     pub fn constructor(options: ChangeControlRulesOptionsJs) -> WasmDppResult<Self> {
         // Extract AuthorizedActionTakers objects which need special handling
         let authorized_to_make_change: AuthorizedActionTakersWasm =
-            try_from_options_with(&options, "authorizedToMakeChange", |v| {
-                v.to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")
-                    .map(|r| r.clone())
-            })?;
+            try_from_options(&options, "authorizedToMakeChange")?;
 
         let admin_action_takers: AuthorizedActionTakersWasm =
-            try_from_options_with(&options, "adminActionTakers", |v| {
-                v.to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")
-                    .map(|r| r.clone())
-            })?;
+            try_from_options(&options, "adminActionTakers")?;
 
         // Extract boolean options with serde (they have defaults)
         let opts: ChangeControlRulesOptions = serde_wasm_bindgen::from_value(options.into())

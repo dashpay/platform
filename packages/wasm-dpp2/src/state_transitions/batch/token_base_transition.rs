@@ -1,10 +1,10 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
-    try_to_u64,
+    try_from_options, try_from_options_optional, try_from_options_with, try_to_u16, try_to_u64,
 };
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
@@ -67,11 +67,8 @@ impl TokenBaseTransitionWasm {
 
         let token_id: IdentifierWasm = try_from_options(&options, "tokenId")?;
 
-        let group_info: Option<GroupStateTransitionInfo> =
-            try_from_options_optional_with(&options, "usingGroupInfo", |v| {
-                v.to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")
-                    .map(|gi| gi.clone().into())
-            })?;
+        let group_info: Option<GroupStateTransitionInfoWasm> =
+            try_from_options_optional(&options, "usingGroupInfo")?;
 
         Ok(TokenBaseTransitionWasm(TokenBaseTransition::V0(
             TokenBaseTransitionV0 {
@@ -79,7 +76,7 @@ impl TokenBaseTransitionWasm {
                 token_contract_position,
                 data_contract_id: data_contract_id.into(),
                 token_id: token_id.into(),
-                using_group_info: group_info,
+                using_group_info: group_info.map(Into::into),
             },
         )))
     }
@@ -154,12 +151,7 @@ impl TokenBaseTransitionWasm {
         let group_info: Option<GroupStateTransitionInfo> = if using_group_info.is_undefined() {
             None
         } else {
-            Some(
-                using_group_info
-                    .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
-                    .clone()
-                    .into(),
-            )
+            Some(GroupStateTransitionInfoWasm::try_from(using_group_info)?.into())
         };
 
         self.0.set_using_group_info(group_info);
@@ -168,4 +160,5 @@ impl TokenBaseTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenBaseTransitionWasm, "TokenBaseTransition");
 impl_wasm_type_info!(TokenBaseTransitionWasm, TokenBaseTransition);

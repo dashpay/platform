@@ -8,7 +8,7 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_u64};
+use crate::utils::{try_from_options, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -92,89 +92,33 @@ impl TokenConfigurationWasm {
     pub fn constructor(
         options: TokenConfigurationOptionsJs,
     ) -> WasmDppResult<TokenConfigurationWasm> {
-        // Extract conventions (required)
-        let conventions = try_from_options_with(&options, "conventions", |v| {
-            v.to_wasm::<TokenConfigurationConventionWasm>("TokenConfigurationConvention")
-                .map(|r| r.clone())
-        })?;
+        // Extract complex types first (borrows &options)
+        let conventions: TokenConfigurationConventionWasm =
+            try_from_options(&options, "conventions")?;
+        let conventions_change_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "conventionsChangeRules")?;
+        let keeps_history: TokenKeepsHistoryRulesWasm =
+            try_from_options(&options, "keepsHistory")?;
+        let max_supply_change_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "maxSupplyChangeRules")?;
+        let distribution_rules: TokenDistributionRulesWasm =
+            try_from_options(&options, "distributionRules")?;
+        let marketplace_rules: TokenMarketplaceRulesWasm =
+            try_from_options(&options, "marketplaceRules")?;
+        let manual_minting_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "manualMintingRules")?;
+        let manual_burning_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "manualBurningRules")?;
+        let freeze_rules: ChangeControlRulesWasm = try_from_options(&options, "freezeRules")?;
+        let unfreeze_rules: ChangeControlRulesWasm = try_from_options(&options, "unfreezeRules")?;
+        let destroy_frozen_funds_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "destroyFrozenFundsRules")?;
+        let emergency_action_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "emergencyActionRules")?;
+        let main_control_group_can_be_modified: AuthorizedActionTakersWasm =
+            try_from_options(&options, "mainControlGroupCanBeModified")?;
 
-        // Extract conventionsChangeRules (required)
-        let conventions_change_rules =
-            try_from_options_with(&options, "conventionsChangeRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
-
-        // Extract keepsHistory (required)
-        let keeps_history = try_from_options_with(&options, "keepsHistory", |v| {
-            v.to_wasm::<TokenKeepsHistoryRulesWasm>("TokenKeepsHistoryRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract maxSupplyChangeRules (required)
-        let max_supply_change_rules =
-            try_from_options_with(&options, "maxSupplyChangeRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
-
-        // Extract distributionRules (required)
-        let distribution_rules = try_from_options_with(&options, "distributionRules", |v| {
-            v.to_wasm::<TokenDistributionRulesWasm>("TokenDistributionRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract marketplaceRules (required)
-        let marketplace_rules = try_from_options_with(&options, "marketplaceRules", |v| {
-            v.to_wasm::<TokenMarketplaceRulesWasm>("TokenMarketplaceRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract manualMintingRules (required)
-        let manual_minting_rules = try_from_options_with(&options, "manualMintingRules", |v| {
-            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract manualBurningRules (required)
-        let manual_burning_rules = try_from_options_with(&options, "manualBurningRules", |v| {
-            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract freezeRules (required)
-        let freeze_rules = try_from_options_with(&options, "freezeRules", |v| {
-            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract unfreezeRules (required)
-        let unfreeze_rules = try_from_options_with(&options, "unfreezeRules", |v| {
-            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract destroyFrozenFundsRules (required)
-        let destroy_frozen_funds_rules =
-            try_from_options_with(&options, "destroyFrozenFundsRules", |v| {
-                v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                    .map(|r| r.clone())
-            })?;
-
-        // Extract emergencyActionRules (required)
-        let emergency_action_rules = try_from_options_with(&options, "emergencyActionRules", |v| {
-            v.to_wasm::<ChangeControlRulesWasm>("ChangeControlRules")
-                .map(|r| r.clone())
-        })?;
-
-        // Extract mainControlGroupCanBeModified (required)
-        let main_control_group_can_be_modified =
-            try_from_options_with(&options, "mainControlGroupCanBeModified", |v| {
-                v.to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")
-                    .map(|r| r.clone())
-            })?;
-
-        // Extract simple fields via serde
+        // Deserialize primitive fields via serde last (consumes options)
         let opts: TokenConfigurationOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 

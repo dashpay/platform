@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
@@ -74,4 +75,5 @@ impl TokenConfigUpdateTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenConfigUpdateTransitionWasm, "TokenConfigUpdateTransition");
 impl_wasm_type_info!(TokenConfigUpdateTransitionWasm, TokenConfigUpdateTransition);

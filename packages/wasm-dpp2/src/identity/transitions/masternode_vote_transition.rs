@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options, try_from_options_with, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -109,9 +109,7 @@ impl MasternodeVoteTransitionWasm {
         let pro_tx_hash: IdentifierWasm = try_from_options(&options, "proTxHash")?;
         let voter_identity_id: IdentifierWasm = try_from_options(&options, "voterIdentityId")?;
 
-        let vote: VoteWasm = try_from_options_with(&options, "vote", |v| {
-            v.to_wasm::<VoteWasm>("Vote").map(|r| r.clone())
-        })?;
+        let vote: VoteWasm = try_from_options(&options, "vote")?;
 
         // Deserialize primitive fields via serde last (consumes options)
         let input: MasternodeVoteTransitionOptionsInput =

@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::prelude::{RecipientKeyIndex, SenderKeyIndex};
 use dpp::tokens::SharedEncryptedNote;
@@ -61,4 +62,5 @@ impl SharedEncryptedNoteWasm {
     }
 }
 
+impl_try_from_js_value!(SharedEncryptedNoteWasm, "SharedEncryptedNote");
 impl_wasm_type_info!(SharedEncryptedNoteWasm, SharedEncryptedNote);

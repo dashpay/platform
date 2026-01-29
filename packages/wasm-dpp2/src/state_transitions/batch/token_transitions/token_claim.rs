@@ -1,5 +1,6 @@
 use crate::enums::token::distribution_type::TokenDistributionTypeWasm;
 use crate::error::WasmDppResult;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -92,4 +93,5 @@ impl TokenClaimTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenClaimTransitionWasm, "TokenClaimTransition");
 impl_wasm_type_info!(TokenClaimTransitionWasm, TokenClaimTransition);

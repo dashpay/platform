@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
@@ -107,5 +108,6 @@ impl VoteWasm {
     }
 }
 
+impl_try_from_js_value!(VoteWasm, "Vote");
 impl_wasm_conversions!(VoteWasm, Vote, VoteObjectJs, VoteJSONJs);
 impl_wasm_type_info!(VoteWasm, Vote);

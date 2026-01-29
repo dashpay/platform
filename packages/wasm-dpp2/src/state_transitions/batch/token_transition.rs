@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_from_for_extern_type;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_transitions::config_update::TokenConfigUpdateTransitionWasm;
 use crate::state_transitions::batch::token_transitions::direct_purchase::TokenDirectPurchaseTransitionWasm;
@@ -13,7 +14,7 @@ use crate::state_transitions::batch::token_transitions::token_freeze::TokenFreez
 use crate::state_transitions::batch::token_transitions::token_mint::TokenMintTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_transfer::TokenTransferTransitionWasm;
 use crate::state_transitions::batch::token_transitions::token_unfreeze::TokenUnFreezeTransitionWasm;
-use crate::utils::{IntoWasm, get_class_type};
+use crate::utils::get_class_type;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
     TokenTransition, TokenTransitionV0Methods,
@@ -81,76 +82,46 @@ impl TokenTransitionWasm {
 
         let transition = match get_class_type(&transition)?.as_str() {
             "TokenMintTransition" => TokenTransition::from(TokenMintTransition::from(
-                transition
-                    .to_wasm::<TokenMintTransitionWasm>("TokenMintTransition")?
-                    .clone(),
+                TokenMintTransitionWasm::try_from(&transition)?,
             )),
             "TokenUnFreezeTransition" => TokenTransition::from(TokenUnfreezeTransition::from(
-                transition
-                    .to_wasm::<TokenUnFreezeTransitionWasm>("TokenUnFreezeTransition")?
-                    .clone(),
+                TokenUnFreezeTransitionWasm::try_from(&transition)?,
             )),
             "TokenTransferTransition" => TokenTransition::from(TokenTransferTransition::from(
-                transition
-                    .to_wasm::<TokenTransferTransitionWasm>("TokenTransferTransition")?
-                    .clone(),
+                TokenTransferTransitionWasm::try_from(&transition)?,
             )),
             "TokenFreezeTransition" => TokenTransition::from(TokenFreezeTransition::from(
-                transition
-                    .to_wasm::<TokenFreezeTransitionWasm>("TokenFreezeTransition")?
-                    .clone(),
+                TokenFreezeTransitionWasm::try_from(&transition)?,
             )),
             "TokenDestroyFrozenFundsTransition" => {
                 TokenTransition::from(TokenDestroyFrozenFundsTransition::from(
-                    transition
-                        .to_wasm::<TokenDestroyFrozenFundsTransitionWasm>(
-                            "TokenDestroyFrozenFundsTransition",
-                        )?
-                        .clone(),
+                    TokenDestroyFrozenFundsTransitionWasm::try_from(&transition)?,
                 ))
             }
             "TokenClaimTransition" => TokenTransition::from(TokenClaimTransition::from(
-                transition
-                    .to_wasm::<TokenClaimTransitionWasm>("TokenClaimTransition")?
-                    .clone(),
+                TokenClaimTransitionWasm::try_from(&transition)?,
             )),
             "TokenBurnTransition" => TokenTransition::from(TokenBurnTransition::from(
-                transition
-                    .to_wasm::<TokenBurnTransitionWasm>("TokenBurnTransition")?
-                    .clone(),
+                TokenBurnTransitionWasm::try_from(&transition)?,
             )),
             "TokenSetPriceForDirectPurchaseTransition" => {
                 TokenTransition::from(TokenSetPriceForDirectPurchaseTransition::from(
-                    transition
-                        .to_wasm::<TokenSetPriceForDirectPurchaseTransitionWasm>(
-                            "TokenSetPriceForDirectPurchaseTransition",
-                        )?
-                        .clone(),
+                    TokenSetPriceForDirectPurchaseTransitionWasm::try_from(&transition)?,
                 ))
             }
             "TokenDirectPurchaseTransition" => {
                 TokenTransition::from(TokenDirectPurchaseTransition::from(
-                    transition
-                        .to_wasm::<TokenDirectPurchaseTransitionWasm>(
-                            "TokenDirectPurchaseTransition",
-                        )?
-                        .clone(),
+                    TokenDirectPurchaseTransitionWasm::try_from(&transition)?,
                 ))
             }
             "TokenConfigUpdateTransition" => {
                 TokenTransition::from(TokenConfigUpdateTransition::from(
-                    transition
-                        .to_wasm::<TokenConfigUpdateTransitionWasm>("TokenConfigUpdateTransition")?
-                        .clone(),
+                    TokenConfigUpdateTransitionWasm::try_from(&transition)?,
                 ))
             }
             "TokenEmergencyActionTransition" => {
                 TokenTransition::from(TokenEmergencyActionTransition::from(
-                    transition
-                        .to_wasm::<TokenEmergencyActionTransitionWasm>(
-                            "TokenEmergencyActionTransition",
-                        )?
-                        .clone(),
+                    TokenEmergencyActionTransitionWasm::try_from(&transition)?,
                 ))
             }
             _ => {
@@ -298,4 +269,5 @@ impl TokenTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenTransitionWasm, "TokenTransition");
 impl_wasm_type_info!(TokenTransitionWasm, TokenTransition);

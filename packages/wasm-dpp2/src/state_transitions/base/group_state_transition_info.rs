@@ -1,5 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::Identifier;
@@ -79,4 +80,5 @@ impl GroupStateTransitionInfoWasm {
     }
 }
 
+impl_try_from_js_value!(GroupStateTransitionInfoWasm, "GroupStateTransitionInfo");
 impl_wasm_type_info!(GroupStateTransitionInfoWasm, GroupStateTransitionInfo);

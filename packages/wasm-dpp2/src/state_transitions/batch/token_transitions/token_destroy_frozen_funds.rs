@@ -1,7 +1,8 @@
-use crate::impl_wasm_type_info;
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_destroy_frozen_funds_transition::v0::v0_methods::TokenDestroyFrozenFundsTransitionV0Methods;
@@ -80,6 +81,10 @@ impl TokenDestroyFrozenFundsTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(
+    TokenDestroyFrozenFundsTransitionWasm,
+    "TokenDestroyFrozenFundsTransition"
+);
 impl_wasm_type_info!(
     TokenDestroyFrozenFundsTransitionWasm,
     TokenDestroyFrozenFundsTransition

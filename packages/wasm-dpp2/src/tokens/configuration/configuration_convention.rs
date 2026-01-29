@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::localization::TokenConfigurationLocalizationWasm;
 use crate::utils::{JsValueExt, try_from_options, try_to_object, try_to_string, try_to_u8};
@@ -118,6 +119,7 @@ fn value_to_localizations(
     Ok(localizations)
 }
 
+impl_try_from_js_value!(TokenConfigurationConventionWasm, "TokenConfigurationConvention");
 impl_wasm_type_info!(
     TokenConfigurationConventionWasm,
     TokenConfigurationConvention

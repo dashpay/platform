@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::prelude::{DerivationEncryptionKeyIndex, RootEncryptionKeyIndex};
 use dpp::tokens::PrivateEncryptedNote;
@@ -67,4 +68,5 @@ impl PrivateEncryptedNoteWasm {
     }
 }
 
+impl_try_from_js_value!(PrivateEncryptedNoteWasm, "PrivateEncryptedNote");
 impl_wasm_type_info!(PrivateEncryptedNoteWasm, PrivateEncryptedNote);

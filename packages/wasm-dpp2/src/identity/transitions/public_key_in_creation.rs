@@ -4,12 +4,10 @@ use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
 use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u32,
-};
-use dpp::identity::contract_bounds::ContractBounds;
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u32};
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
@@ -104,25 +102,6 @@ impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
     }
 }
 
-impl TryFrom<&JsValue> for IdentityPublicKeyInCreationWasm {
-    type Error = WasmDppError;
-
-    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        let value =
-            value.to_wasm::<IdentityPublicKeyInCreationWasm>("IdentityPublicKeyInCreation")?;
-
-        Ok(value.clone())
-    }
-}
-
-impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
-    type Error = WasmDppError;
-
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        Self::try_from(&value)
-    }
-}
-
 impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKey {
     fn from(value: IdentityPublicKeyInCreationWasm) -> Self {
         let contract_bounds = value.0.contract_bounds().cloned();
@@ -162,11 +141,8 @@ impl IdentityPublicKeyInCreationWasm {
         })?;
 
         // Extract contractBounds (optional)
-        let contract_bounds: Option<ContractBounds> =
-            try_from_options_optional_with(&options, "contractBounds", |v| {
-                v.to_wasm::<ContractBoundsWasm>("ContractBounds")
-                    .map(|cb| cb.clone().into())
-            })?;
+        let contract_bounds: Option<ContractBoundsWasm> =
+            try_from_options_optional(&options, "contractBounds")?;
 
         // Extract simple fields via serde
         let opts: IdentityPublicKeyInCreationOptions = serde_wasm_bindgen::from_value(options.into())
@@ -178,7 +154,7 @@ impl IdentityPublicKeyInCreationWasm {
                 key_type: KeyType::from(key_type),
                 purpose: Purpose::from(purpose),
                 security_level: SecurityLevel::from(security_level),
-                contract_bounds,
+                contract_bounds: contract_bounds.map(Into::into),
                 read_only: opts.is_read_only,
                 data: BinaryData::from(data),
                 signature: BinaryData::from(opts.signature.unwrap_or_default()),
@@ -358,18 +334,18 @@ impl IdentityPublicKeyInCreationWasm {
     ) -> WasmDppResult<Vec<IdentityPublicKeyInCreationWasm>> {
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> = add_public_keys
             .iter()
-            .map(IdentityPublicKeyInCreationWasm::try_from)
+            .map(|v| Self::try_from(&v))
             .collect::<Result<Vec<IdentityPublicKeyInCreationWasm>, WasmDppError>>()?;
 
         Ok(add_public_keys)
     }
 }
 
+impl_try_from_js_value!(IdentityPublicKeyInCreationWasm, "IdentityPublicKeyInCreation");
 impl_wasm_conversions!(
     IdentityPublicKeyInCreationWasm,
     IdentityPublicKeyInCreation,
     IdentityPublicKeyInCreationObjectJs,
     IdentityPublicKeyInCreationJSONJs
 );
-
 impl_wasm_type_info!(IdentityPublicKeyInCreationWasm, IdentityPublicKeyInCreation);

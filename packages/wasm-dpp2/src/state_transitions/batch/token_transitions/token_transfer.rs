@@ -1,12 +1,13 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
-    try_to_string, try_to_u64,
+    try_from_options, try_from_options_optional, try_from_options_optional_with,
+    try_from_options_with, try_to_string, try_to_u64,
 };
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
@@ -56,10 +57,7 @@ impl TokenTransferTransitionWasm {
     pub fn constructor(
         options: TokenTransferTransitionOptionsJs,
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
-        let base: TokenBaseTransitionWasm = try_from_options_with(&options, "base", |v| {
-            v.to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")
-                .map(|r| r.clone())
-        })?;
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
 
         let recipient_id: IdentifierWasm = try_from_options(&options, "recipientId")?;
 
@@ -70,17 +68,11 @@ impl TokenTransferTransitionWasm {
                 try_to_string(v, "publicNote")
             })?;
 
-        let shared_encrypted_note: Option<SharedEncryptedNote> =
-            try_from_options_optional_with(&options, "sharedEncryptedNote", |v| {
-                v.to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")
-                    .map(|n| n.clone().into())
-            })?;
+        let shared_encrypted_note: Option<SharedEncryptedNoteWasm> =
+            try_from_options_optional(&options, "sharedEncryptedNote")?;
 
-        let private_encrypted_note: Option<PrivateEncryptedNote> =
-            try_from_options_optional_with(&options, "privateEncryptedNote", |v| {
-                v.to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")
-                    .map(|n| n.clone().into())
-            })?;
+        let private_encrypted_note: Option<PrivateEncryptedNoteWasm> =
+            try_from_options_optional(&options, "privateEncryptedNote")?;
 
         Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
             TokenTransferTransitionV0 {
@@ -88,8 +80,8 @@ impl TokenTransferTransitionWasm {
                 recipient_id: recipient_id.into(),
                 amount,
                 public_note,
-                shared_encrypted_note,
-                private_encrypted_note,
+                shared_encrypted_note: shared_encrypted_note.map(Into::into),
+                private_encrypted_note: private_encrypted_note.map(Into::into),
             },
         )))
     }
@@ -164,12 +156,7 @@ impl TokenTransferTransitionWasm {
             if shared_encrypted_note.is_undefined() {
                 None
             } else {
-                Some(
-                    shared_encrypted_note
-                        .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
-                        .clone()
-                        .into(),
-                )
+                Some(SharedEncryptedNoteWasm::try_from(shared_encrypted_note)?.into())
             };
 
         self.0.set_shared_encrypted_note(shared_encrypted_note);
@@ -185,12 +172,7 @@ impl TokenTransferTransitionWasm {
             if private_encrypted_note.is_undefined() {
                 None
             } else {
-                Some(
-                    private_encrypted_note
-                        .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
-                        .clone()
-                        .into(),
-                )
+                Some(PrivateEncryptedNoteWasm::try_from(private_encrypted_note)?.into())
             };
 
         self.0.set_private_encrypted_note(private_encrypted_note);
@@ -198,4 +180,5 @@ impl TokenTransferTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenTransferTransitionWasm, "TokenTransferTransition");
 impl_wasm_type_info!(TokenTransferTransitionWasm, TokenTransferTransition);

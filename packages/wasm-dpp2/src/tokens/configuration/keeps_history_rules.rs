@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::{
@@ -151,4 +152,5 @@ impl TokenKeepsHistoryRulesWasm {
     }
 }
 
+impl_try_from_js_value!(TokenKeepsHistoryRulesWasm, "TokenKeepsHistoryRules");
 impl_wasm_type_info!(TokenKeepsHistoryRulesWasm, TokenKeepsHistoryRules);

@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
@@ -245,4 +246,5 @@ impl TokenDistributionRulesWasm {
     }
 }
 
+impl_try_from_js_value!(TokenDistributionRulesWasm, "TokenDistributionRules");
 impl_wasm_type_info!(TokenDistributionRulesWasm, TokenDistributionRules);

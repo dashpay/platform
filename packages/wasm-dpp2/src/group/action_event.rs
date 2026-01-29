@@ -18,7 +18,7 @@ export interface GroupActionEventObject {
  * GroupActionEvent serialized as JSON.
  */
 export interface GroupActionEventJSON {
-    variant: GroupActionEventVariant;
+    variant: number;
     tokenEvent?: TokenEventJSON;
 }
 "#;

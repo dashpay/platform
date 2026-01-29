@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::trade_mode::TokenTradeModeWasm;
@@ -65,4 +66,5 @@ impl TokenMarketplaceRulesWasm {
     }
 }
 
+impl_try_from_js_value!(TokenMarketplaceRulesWasm, "TokenMarketplaceRules");
 impl_wasm_type_info!(TokenMarketplaceRulesWasm, TokenMarketplaceRules);

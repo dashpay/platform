@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u16};
+use crate::utils::{try_from_options, try_from_options_with, try_to_array, try_to_u16};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -102,11 +102,7 @@ impl IdentityCreateTransitionWasm {
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 
         // Extract assetLockProof (required)
-        let asset_lock: AssetLockProofWasm =
-            try_from_options_with(&options, "assetLockProof", |v| {
-                v.to_wasm::<AssetLockProofWasm>("AssetLockProof")
-                    .map(|r| r.clone())
-            })?;
+        let asset_lock: AssetLockProofWasm = try_from_options(&options, "assetLockProof")?;
 
         // Extract simple fields via serde
         let opts: IdentityCreateTransitionOptions = serde_wasm_bindgen::from_value(options.into())

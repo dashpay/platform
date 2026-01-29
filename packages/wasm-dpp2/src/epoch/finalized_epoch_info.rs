@@ -2,15 +2,32 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{JsMapExt, try_from_options_with, try_to_map, try_to_u32, try_to_u64};
-use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
-use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use crate::utils::{try_from_options_with, try_to_map, try_to_u64, JsMapExt};
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
+use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::prelude::Identifier;
 use js_sys::{BigInt, Map};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizedEpochInfoOptions {
+    first_block_time: u64,
+    first_block_height: u64,
+    total_blocks_in_epoch: u64,
+    first_core_block_height: u32,
+    next_epoch_start_core_block_height: u32,
+    total_processing_fees: u64,
+    total_distributed_storage_fees: u64,
+    total_created_storage_fees: u64,
+    core_block_rewards: u64,
+    fee_multiplier_permille: u64,
+    protocol_version: u32,
+}
 
 #[wasm_bindgen(typescript_custom_section)]
 const FINALIZED_EPOCH_INFO_OPTIONS_TS: &str = r#"
@@ -159,80 +176,29 @@ impl FinalizedEpochInfoWasm {
     pub fn constructor(
         options: FinalizedEpochInfoOptionsJs,
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
-        let first_block_time = try_from_options_with(&options, "firstBlockTime", |v| {
-            try_to_u64(v, "firstBlockTime")
-        })?;
-
-        let first_block_height = try_from_options_with(&options, "firstBlockHeight", |v| {
-            try_to_u64(v, "firstBlockHeight")
-        })?;
-
-        let total_blocks_in_epoch =
-            try_from_options_with(&options, "totalBlocksInEpoch", |v| {
-                try_to_u64(v, "totalBlocksInEpoch")
-            })?;
-
-        let first_core_block_height =
-            try_from_options_with(&options, "firstCoreBlockHeight", |v| {
-                try_to_u32(v, "firstCoreBlockHeight")
-            })?;
-
-        let next_epoch_start_core_block_height =
-            try_from_options_with(&options, "nextEpochStartCoreBlockHeight", |v| {
-                try_to_u32(v, "nextEpochStartCoreBlockHeight")
-            })?;
-
-        let total_processing_fees =
-            try_from_options_with(&options, "totalProcessingFees", |v| {
-                try_to_u64(v, "totalProcessingFees")
-            })?;
-
-        let total_distributed_storage_fees =
-            try_from_options_with(&options, "totalDistributedStorageFees", |v| {
-                try_to_u64(v, "totalDistributedStorageFees")
-            })?;
-
-        let total_created_storage_fees =
-            try_from_options_with(&options, "totalCreatedStorageFees", |v| {
-                try_to_u64(v, "totalCreatedStorageFees")
-            })?;
-
-        let core_block_rewards = try_from_options_with(&options, "coreBlockRewards", |v| {
-            try_to_u64(v, "coreBlockRewards")
-        })?;
-
+        // Extract complex types first (borrows &options)
         let block_proposers = try_from_options_with(&options, "blockProposers", |v| {
-            if !v.is_instance_of::<Map>() {
-                return Err(WasmDppError::invalid_argument(
-                    "'blockProposers' must be a Map",
-                ));
-            }
-            block_proposers_from_map(&Map::unchecked_from_js(v.clone()))
+            block_proposers_from_map(&try_to_map(v.clone(), "blockProposers")?)
         })?;
 
-        let fee_multiplier_permille =
-            try_from_options_with(&options, "feeMultiplierPermille", |v| {
-                try_to_u64(v, "feeMultiplierPermille")
-            })?;
-
-        let protocol_version = try_from_options_with(&options, "protocolVersion", |v| {
-            try_to_u32(v, "protocolVersion")
-        })?;
+        // Deserialize primitive fields via serde last (consumes options)
+        let opts: FinalizedEpochInfoOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(FinalizedEpochInfoWasm(FinalizedEpochInfo::V0(
             FinalizedEpochInfoV0 {
-                first_block_time,
-                first_block_height,
-                total_blocks_in_epoch,
-                first_core_block_height,
-                next_epoch_start_core_block_height,
-                total_processing_fees,
-                total_distributed_storage_fees,
-                total_created_storage_fees,
-                core_block_rewards,
+                first_block_time: opts.first_block_time,
+                first_block_height: opts.first_block_height,
+                total_blocks_in_epoch: opts.total_blocks_in_epoch,
+                first_core_block_height: opts.first_core_block_height,
+                next_epoch_start_core_block_height: opts.next_epoch_start_core_block_height,
+                total_processing_fees: opts.total_processing_fees,
+                total_distributed_storage_fees: opts.total_distributed_storage_fees,
+                total_created_storage_fees: opts.total_created_storage_fees,
+                core_block_rewards: opts.core_block_rewards,
                 block_proposers,
-                fee_multiplier_permille,
-                protocol_version,
+                fee_multiplier_permille: opts.fee_multiplier_permille,
+                protocol_version: opts.protocol_version,
             },
         )))
     }

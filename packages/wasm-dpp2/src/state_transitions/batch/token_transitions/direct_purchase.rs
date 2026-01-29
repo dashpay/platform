@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::balances::credits::TokenAmount;
@@ -78,6 +79,7 @@ impl TokenDirectPurchaseTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenDirectPurchaseTransitionWasm, "TokenDirectPurchaseTransition");
 impl_wasm_type_info!(
     TokenDirectPurchaseTransitionWasm,
     TokenDirectPurchaseTransition

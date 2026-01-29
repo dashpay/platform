@@ -1,4 +1,5 @@
 use crate::enums::token::emergency_action::TokenEmergencyActionWasm;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -71,6 +72,10 @@ impl TokenEmergencyActionTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(
+    TokenEmergencyActionTransitionWasm,
+    "TokenEmergencyActionTransition"
+);
 impl_wasm_type_info!(
     TokenEmergencyActionTransitionWasm,
     TokenEmergencyActionTransition

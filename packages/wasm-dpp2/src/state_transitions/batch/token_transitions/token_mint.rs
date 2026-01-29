@@ -1,7 +1,8 @@
 use crate::error::WasmDppResult;
-use crate::utils::try_to_u64;
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
+use crate::utils::try_to_u64;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::configuration::TokenConfigurationWasm;
 use dpp::prelude::Identifier;
@@ -102,4 +103,5 @@ impl TokenMintTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(TokenMintTransitionWasm, "TokenMintTransition");
 impl_wasm_type_info!(TokenMintTransitionWasm, TokenMintTransition);

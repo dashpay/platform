@@ -7,6 +7,7 @@ use crate::state_transitions::batch::document_transitions::update_price::Documen
 use crate::enums::batch::batch_enum::BatchTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
@@ -181,4 +182,5 @@ impl DocumentTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(DocumentTransitionWasm, "DocumentTransition");
 impl_wasm_type_info!(DocumentTransitionWasm, DocumentTransition);

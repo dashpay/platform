@@ -8,10 +8,9 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_to_u16, try_to_u32, try_to_u64,
+    try_from_options, try_from_options_optional, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
-use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -111,11 +110,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
         let pooling: PoolingWasm = PoolingWasm::try_from_options(&options, "pooling")?;
 
-        let output_script: Option<CoreScript> =
-            try_from_options_optional_with(&options, "outputScript", |v| {
-                v.to_wasm::<CoreScriptWasm>("CoreScript")
-                    .map(|cs| cs.clone().into())
-            })?;
+        let output_script: Option<CoreScriptWasm> =
+            try_from_options_optional(&options, "outputScript")?;
 
         // Deserialize primitive fields via serde last (consumes options)
         let input: IdentityCreditWithdrawalTransitionOptionsInput =
@@ -126,7 +122,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
                 amount: input.amount,
                 identity_id: identity_id.into(),
-                output_script,
+                output_script: output_script.map(Into::into),
                 core_fee_per_byte: input.core_fee_per_byte,
                 pooling: pooling.into(),
                 nonce: input.nonce,
@@ -200,8 +196,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         if script.is_undefined() {
             self.0.set_output_script(None);
         } else {
-            let script: CoreScriptWasm = script.to_wasm::<CoreScriptWasm>("CoreScript")?.clone();
-            self.0.set_output_script(Some(script.clone().into()));
+            let script = CoreScriptWasm::try_from(script)?;
+            self.0.set_output_script(Some(script.into()));
         }
 
         Ok(())

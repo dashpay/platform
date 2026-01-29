@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
@@ -92,6 +93,10 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     }
 }
 
+impl_try_from_js_value!(
+    TokenSetPriceForDirectPurchaseTransitionWasm,
+    "TokenSetPriceForDirectPurchaseTransition"
+);
 impl_wasm_type_info!(
     TokenSetPriceForDirectPurchaseTransitionWasm,
     TokenSetPriceForDirectPurchaseTransition

@@ -17,7 +17,7 @@ export interface TokenEventObject {
  * TokenEvent serialized as JSON.
  */
 export interface TokenEventJSON {
-    variant: TokenEventVariant;
+    variant: number;
     [key: string]: unknown;
 }
 "#;
