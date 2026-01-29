@@ -92,7 +92,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
@@ -189,7 +189,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?

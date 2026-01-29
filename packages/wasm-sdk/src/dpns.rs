@@ -337,7 +337,7 @@ impl WasmSdk {
         let identity_public_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract optional preorder callback
         let preorder_callback = extract_callback_from_options(&options, "preorderCallback")?;

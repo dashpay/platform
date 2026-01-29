@@ -156,7 +156,7 @@ impl WasmSdk {
         options: AddressFundsTransferOptionsJs,
     ) -> Result<Map, WasmSdkError> {
         // Extract complex types first (borrows &options)
-        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
@@ -284,7 +284,7 @@ impl WasmSdk {
     ) -> Result<IdentityTopUpFromAddressesResultWasm, WasmSdkError> {
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
-        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
@@ -428,7 +428,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let output_script: CoreScript =
             CoreScriptWasm::try_from_options(&options, "outputScript")?.into();
-        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
@@ -482,7 +482,7 @@ impl WasmSdk {
     ) -> Result<IdentityTransferToAddressesResultWasm, WasmSdkError> {
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
@@ -728,7 +728,7 @@ impl WasmSdk {
             AssetLockProofWasm::try_from_options(&options, "assetLockProof")?.into();
         let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
             PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
-        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
@@ -892,9 +892,9 @@ impl WasmSdk {
         let identity: Identity =
             wasm_dpp2::IdentityWasm::try_from_options(&options, "identity")?.into();
         let identity_signer =
-            IdentitySignerWasm::try_from_options_with_field(&options, "identitySigner")?;
+            IdentitySignerWasm::try_from_options(&options, "identitySigner")?;
         let address_signer =
-            PlatformAddressSignerWasm::try_from_options_with_field(&options, "addressSigner")?;
+            PlatformAddressSignerWasm::try_from_options(&options, "addressSigner")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 

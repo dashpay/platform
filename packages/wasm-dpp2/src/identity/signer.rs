@@ -5,8 +5,9 @@
 
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::hashes::Hash;
@@ -181,27 +182,6 @@ impl IdentitySignerWasm {
     }
 }
 
+impl_try_from_js_value!(IdentitySignerWasm, "IdentitySigner");
+impl_try_from_options!(IdentitySignerWasm);
 impl_wasm_type_info!(IdentitySignerWasm, IdentitySigner);
-
-impl TryFrom<&JsValue> for IdentitySignerWasm {
-    type Error = WasmDppError;
-
-    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        value
-            .to_wasm::<IdentitySignerWasm>("IdentitySigner")
-            .map(|boxed| (*boxed).clone())
-            .map_err(|_| WasmDppError::invalid_argument("Expected an IdentitySigner object"))
-    }
-}
-
-impl IdentitySignerWasm {
-    /// Extract signer from JS options using default field name "signer".
-    pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> {
-        crate::utils::try_from_options(options, "signer")
-    }
-
-    /// Extract signer from JS options using a custom field name.
-    pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        crate::utils::try_from_options(options, field_name)
-    }
-}

@@ -115,7 +115,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -218,7 +218,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -360,7 +360,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -480,7 +480,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -599,7 +599,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -711,7 +711,7 @@ impl WasmSdk {
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;

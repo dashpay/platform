@@ -1,8 +1,9 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::IntoWasm;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::signer;
@@ -142,27 +143,6 @@ impl PlatformAddressSignerWasm {
     }
 }
 
-impl TryFrom<&JsValue> for PlatformAddressSignerWasm {
-    type Error = WasmDppError;
-
-    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        value
-            .to_wasm::<PlatformAddressSignerWasm>("PlatformAddressSigner")
-            .map(|boxed| (*boxed).clone())
-            .map_err(|_| WasmDppError::invalid_argument("Expected a PlatformAddressSigner object"))
-    }
-}
-
-impl PlatformAddressSignerWasm {
-    /// Extract signer from JS options using default field name "signer".
-    pub fn try_from_options(options: &JsValue) -> WasmDppResult<Self> {
-        crate::utils::try_from_options(options, "signer")
-    }
-
-    /// Extract signer from JS options using a custom field name.
-    pub fn try_from_options_with_field(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        crate::utils::try_from_options(options, field_name)
-    }
-}
-
+impl_try_from_js_value!(PlatformAddressSignerWasm, "PlatformAddressSigner");
+impl_try_from_options!(PlatformAddressSignerWasm);
 impl_wasm_type_info!(PlatformAddressSignerWasm, PlatformAddressSigner);

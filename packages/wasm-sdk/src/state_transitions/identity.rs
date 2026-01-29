@@ -106,7 +106,7 @@ impl WasmSdk {
             PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
@@ -320,7 +320,7 @@ impl WasmSdk {
         let amount: u64 = try_from_options_with(&options, "amount", |v| try_to_u64(v, "amount"))?;
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract optional signing key from options
         let signing_key: Option<IdentityPublicKey> =
@@ -453,7 +453,7 @@ impl WasmSdk {
 
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let signing_key: Option<IdentityPublicKey> =
             IdentityPublicKeyWasm::try_from_optional_options(&options, "signingKey")?
                 .map(|k| k.into());
@@ -585,7 +585,7 @@ impl WasmSdk {
     ) -> Result<(), WasmSdkError> {
         // Extract complex types first (borrows &options)
         let mut identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) =
             try_from_options_optional_with(&options, "addPublicKeys", |v| {
                 try_to_array(v, "addPublicKeys")
@@ -794,7 +794,7 @@ impl WasmSdk {
             ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
         let voting_public_key: IdentityPublicKey =
             IdentityPublicKeyWasm::try_from_options(&options, "votingKey")?.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 

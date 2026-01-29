@@ -225,7 +225,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -458,7 +458,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -691,7 +691,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
@@ -909,7 +909,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -1119,7 +1119,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -1315,7 +1315,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -1517,7 +1517,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -1720,7 +1720,7 @@ impl WasmSdk {
         let identity_key_wasm =
             IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
@@ -1955,7 +1955,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let group_info =
@@ -2178,7 +2178,7 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
-        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 

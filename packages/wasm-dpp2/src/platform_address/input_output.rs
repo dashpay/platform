@@ -1,5 +1,6 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppResult;
+use crate::utils::try_to_u64;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -21,13 +22,6 @@ pub struct PlatformAddressInputWasm {
     amount: Credits,
 }
 
-/// Helper to convert BigInt to u64
-fn bigint_to_u64(value: BigInt) -> Result<u64, WasmDppError> {
-    value
-        .try_into()
-        .map_err(|_| WasmDppError::invalid_argument("value must be a valid u64"))
-}
-
 #[wasm_bindgen(js_class = PlatformAddressInput)]
 impl PlatformAddressInputWasm {
     /// Creates a new PlatformAddressInput.
@@ -42,7 +36,7 @@ impl PlatformAddressInputWasm {
         amount: BigInt,
     ) -> WasmDppResult<PlatformAddressInputWasm> {
         let platform_address: PlatformAddressWasm = address.try_into()?;
-        let amount_u64 = bigint_to_u64(amount)?;
+        let amount_u64 = try_to_u64(&amount.into(), "amount")?;
 
         Ok(PlatformAddressInputWasm {
             address: platform_address,
@@ -104,7 +98,9 @@ impl PlatformAddressOutputWasm {
         amount: Option<BigInt>,
     ) -> WasmDppResult<PlatformAddressOutputWasm> {
         let platform_address: PlatformAddressWasm = address.try_into()?;
-        let amount_u64 = amount.map(bigint_to_u64).transpose()?;
+        let amount_u64 = amount
+            .map(|v| try_to_u64(&v.into(), "amount"))
+            .transpose()?;
 
         Ok(PlatformAddressOutputWasm {
             address: platform_address,
