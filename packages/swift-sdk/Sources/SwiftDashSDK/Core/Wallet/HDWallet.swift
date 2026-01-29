@@ -30,11 +30,6 @@ public final class HDWallet: HDWalletModels {
     // Sync progress (0.0 to 1.0)
     public var syncProgress: Double
 
-    // Network sync-from height (absolute block heights)
-    // This indicates the starting block to sync from.
-    // 0 means start from genesis.
-    public var syncBaseHeight: Int = 0
-
     // Migration flag: true if wallet needs to be re-imported due to format change
     // This happens when old multi-network wallet bytes can't be deserialized
     public var needsRecreation: Bool = false
@@ -48,9 +43,6 @@ public final class HDWallet: HDWalletModels {
         self.currentAccountIndex = 0
         self.syncProgress = 0.0
         self.isImported = isImported
-        
-        // Default value (will be overridden by WalletService on creation)
-        self.syncBaseHeight = 0
     }
     
     public var dashNetwork: AppNetwork {

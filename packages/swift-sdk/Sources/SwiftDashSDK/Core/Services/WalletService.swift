@@ -191,17 +191,20 @@ public class WalletService: ObservableObject {
       SDKLogger.log("Initializing SPV Client for \(self.currentNetwork.rawValue)...", minimumLevel: .medium)
       
       let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
-      // Determine baseline from stored per-wallet per-network sync-from heights
-      let baseline: UInt32 = self.computeNetworkBaselineSyncFromHeight()
+      // Currently always starting at 0 for simplicity. While this is
+      // currently configurable, the SPVClient should decide using the wallet
+      // creation time to determine the start height, removing usage complexity
+      // and possible missusage errors
+      let startHeight: UInt32 = 0
       let net = currentNetwork
       
-      SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(baseline) on \(net.rawValue) during initialize()", minimumLevel: .high)
+      SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(startHeight) on \(net.rawValue) during initialize()", minimumLevel: .high)
       
       do {
           spvClient = try SPVClient(
               network: self.currentNetwork.sdkNetwork,
               dataDir: dataDir,
-              startHeight: baseline,
+              startHeight: startHeight,
               delegate: self
           )
       } catch {
@@ -691,42 +694,6 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
         SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
-    }
-}
-
-// MARK: - Baseline Computation & Debug Logging
-extension WalletService {
-    /// Compute the baseline start-from height across all wallets enabled on the given network.
-    /// Defaults: mainnet=730_000, testnet=0, devnet=0 when no wallets are present.
-    @MainActor
-    func computeNetworkBaselineSyncFromHeight() -> UInt32 {
-        let defaults: [AppNetwork: Int] = [.mainnet: 730_000, .testnet: 0, .devnet: 0]
-        guard let ctx = modelContainer?.mainContext else {
-            return UInt32(defaults[currentNetwork] ?? 0)
-        }
-
-        let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
-        // Filter to wallets that include this network
-        let perWalletHeights: [Int] = wallets.map { w in
-            w.syncBaseHeight
-        }
-
-        if let minValue = perWalletHeights.min() {
-            return UInt32(minValue)
-        }
-        return UInt32(defaults[currentNetwork] ?? 0)
-    }
-
-    /// Print a concise list of per-wallet sync-from heights for debugging purposes.
-    @MainActor
-    func logPerWalletSyncFromHeights() {
-        guard let ctx = modelContainer?.mainContext else { return }
-        let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
-        let items: [(String, Int)] = wallets.compactMap { w in
-            return (w.id.uuidString.prefix(8).description, max(0, w.syncBaseHeight))
-        }
-        let summary = items.map { "\($0.0):\($0.1)" }.joined(separator: ", ")
-        print("[SPV][Baseline] Per-wallet sync-from heights: [\(summary)]")
     }
 }
 
