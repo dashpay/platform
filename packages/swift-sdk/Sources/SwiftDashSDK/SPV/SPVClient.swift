@@ -245,8 +245,8 @@ public class SPVClient {
     public let delegate: SPVClientDelegate
 
     // FFI handles
-    private var client: UnsafeMutablePointer<FFIDashSpvClient>
-    private var config: UnsafeMutablePointer<FFIClientConfig>
+    private let client: UnsafeMutablePointer<FFIDashSpvClient>
+    private let config: UnsafeMutablePointer<FFIClientConfig>
     private var hasBeenFreed = false
 
     // Public accessor for client handle (needed for filter match queries)
@@ -701,14 +701,13 @@ public class SPVClient {
 
     // MARK: - Wallet Manager Access
 
-    public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
-        return dash_spv_ffi_client_get_wallet_manager(client)
-    }
-
     /// Produce a Swift wallet manager that shares the SPV client's underlying wallet state.
     /// Callers are responsible for retaining the returned instance for as long as needed.
-    public func makeSharedWalletManager() throws -> WalletManager {
-        return try WalletManager(fromSPVClient: client)
+    public func getWalletManager() throws -> WalletManager {
+        // This ffi call is expected to never fail
+        let ffiWalletManager = dash_spv_ffi_client_get_wallet_manager(self.client)!
+        
+        return try WalletManager(handle: ffiWalletManager)
     }
 
     // MARK: - Statistics

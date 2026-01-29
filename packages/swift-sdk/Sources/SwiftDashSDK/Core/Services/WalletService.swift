@@ -240,7 +240,7 @@ public class WalletService: ObservableObject {
       
       // Create the SDK wallet manager by reusing the SPV client's shared manager
       do {
-          let sdkWalletManager = try client.makeSharedWalletManager()
+          let sdkWalletManager = try client.getWalletManager()
           let wrapper = try CoreWalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
           self.walletManager = wrapper
           self.walletManager?.transactionService = TransactionService(
