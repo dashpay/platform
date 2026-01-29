@@ -960,9 +960,9 @@ impl WasmSdk {
         // Extract settings from options
         let settings = extract_settings_from_options(&options_value)?;
 
-        // Use the SDK's put_with_address_funding method
+        // Use the SDK's put_from_addresses_with_nonce method
         let (created_identity, address_infos) = identity
-            .put_with_address_funding(
+            .put_from_addresses_with_nonce(
                 self.inner_sdk(),
                 inputs,
                 change_output,

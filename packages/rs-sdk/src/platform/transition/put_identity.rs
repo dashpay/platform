@@ -1,6 +1,7 @@
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
-    address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
+    address_inputs::{collect_address_infos_from_proof, fetch_inputs_with_nonce, nonce_inc},
+    broadcast::BroadcastStateTransition,
 };
 use crate::{Error, Sdk};
 
@@ -46,13 +47,30 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     where
         Self: Sized;
 
+    /// Creates an identity funded by Platform addresses (nonces looked up automatically).
+    ///
+    /// Use [Identity::new_with_input_addresses_and_keys](dpp::identity::Identity::new_with_input_addresses_and_keys)
+    /// to create an identity. Then use this method to put it to the platform.
+    ///
+    /// This method automatically fetches the current nonces for each input address
+    /// and increments them before submitting the transaction.
+    async fn put_from_addresses<AS: Signer<PlatformAddress> + Send + Sync>(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &IS,
+        input_address_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identity, AddressInfos), Error>;
+
     /// Creates an identity funded by Platform addresses using explicit nonces.
     ///
     /// Use [Identity::new_with_input_addresses_and_keys](dpp::identity::Identity::new_with_input_addresses_and_keys)
     /// to create an identity. Then use this method to put it to the platform.
     ///
-    /// This is a preferred method, as you need to use the same nonces when creating the identity.
-    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
+    /// Inputs are not pre-validated client-side (Drive enforces authoritative checks).
+    async fn put_from_addresses_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -105,7 +123,28 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 
-    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
+    async fn put_from_addresses<AS: Signer<PlatformAddress> + Send + Sync>(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_signer: &IS,
+        input_address_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identity, AddressInfos), Error> {
+        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
+        self.put_from_addresses_with_nonce(
+            sdk,
+            inputs_with_nonce,
+            output,
+            identity_signer,
+            input_address_signer,
+            settings,
+        )
+        .await
+    }
+
+    async fn put_from_addresses_with_nonce<AS: Signer<PlatformAddress> + Send + Sync>(
         &self,
         sdk: &Sdk,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
