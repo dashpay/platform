@@ -197,11 +197,13 @@ impl DataContractFactoryV0 {
     #[cfg(feature = "state-transitions")]
     pub fn create_unsigned_data_contract_update_transition(
         &self,
-        data_contract: DataContract,
+        old_data_contract: &DataContract,
+        new_data_contract: &DataContract,
         identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        DataContractUpdateTransition::from_data_contract_v0(
-            data_contract,
+        DataContractUpdateTransition::from_contract_update(
+            old_data_contract,
+            new_data_contract,
             identity_contract_nonce,
             PlatformVersion::get(self.protocol_version)?,
         )

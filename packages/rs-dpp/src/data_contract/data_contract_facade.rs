@@ -94,10 +94,11 @@ impl DataContractFacade {
     /// Create Data Contract Update State Transition
     pub fn create_data_contract_update_transition(
         &self,
-        data_contract: DataContract,
+        old_data_contract: &DataContract,
+        new_data_contract: &DataContract,
         identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         self.factory
-            .create_data_contract_update_transition(data_contract, identity_contract_nonce)
+            .create_data_contract_update_transition(old_data_contract, new_data_contract, identity_contract_nonce)
     }
 }
