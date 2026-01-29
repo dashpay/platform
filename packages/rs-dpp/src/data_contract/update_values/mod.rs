@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::group::Group;
 use crate::data_contract::{GroupContractPosition, TokenContractPosition};
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV1;
 use platform_value::Value;
 
 /// Represents the values to apply to a data contract during an update.
@@ -32,8 +31,14 @@ pub struct DataContractUpdateValues<'a> {
     pub update_description: &'a Option<Option<String>>,
 }
 
-impl<'a> From<&'a DataContractUpdateTransitionV1> for DataContractUpdateValues<'a> {
-    fn from(value: &'a DataContractUpdateTransitionV1) -> Self {
+#[cfg(feature = "state-transitions")]
+impl<'a>
+    From<&'a crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV1>
+    for DataContractUpdateValues<'a>
+{
+    fn from(
+        value: &'a crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV1,
+    ) -> Self {
         DataContractUpdateValues {
             revision: value.revision,
             updated_schema_defs: &value.updated_schema_defs,
