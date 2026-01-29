@@ -31,7 +31,7 @@ export interface TokenPaymentInfoOptions {
     tokenContractPosition: number;
     minimumTokenCost?: bigint;
     maximumTokenCost?: bigint;
-    gasFeesPaidBy?: GasFeesPaidBy | string;
+    gasFeesPaidBy?: GasFeesPaidByLike;
 }
 "#;
 

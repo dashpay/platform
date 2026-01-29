@@ -47,7 +47,7 @@ export interface CanChangeAdminActionTakersOptions {
     mainGroup?: number;
     groups: Record<number, Group>;
     actionTaker: ActionTaker;
-    goal: ActionGoal | string;
+    goal: ActionGoalLike;
 }
 "#;
 

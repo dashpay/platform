@@ -36,9 +36,9 @@ struct IdentityPublicKeyInCreationOptions {
 const TS_TYPES: &str = r#"
 export interface IdentityPublicKeyInCreationOptions {
     keyId: number;
-    purpose: Purpose | string | number;
-    securityLevel: SecurityLevel | string | number;
-    keyType: KeyType | string | number;
+    purpose: PurposeLike;
+    securityLevel: SecurityLevelLike;
+    keyType: KeyTypeLike;
     isReadOnly?: boolean;
     data: Uint8Array;
     signature?: Uint8Array;

@@ -3,6 +3,17 @@ use dpp::group::action_taker::ActionGoal;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+export type ActionGoalLike = ActionGoal | string | number;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ActionGoalLike")]
+    pub type ActionGoalLikeJs;
+}
+
 #[wasm_bindgen(js_name = "ActionGoal")]
 #[allow(non_camel_case_types)]
 #[derive(Default, Clone)]

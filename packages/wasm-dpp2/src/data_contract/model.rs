@@ -59,7 +59,7 @@ export interface DataContractOptions {
     definitions?: object;
     tokens?: Record<number, TokenConfiguration>;
     fullValidation?: boolean;
-    platformVersion?: PlatformVersion | string | number;
+    platformVersion?: PlatformVersionLike;
 }
 
 /**

@@ -123,7 +123,6 @@ impl IdentityCreateTransitionWasm {
     pub fn default(
         #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
-        let platform_version: JsValue = platform_version.into();
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         IdentityCreateTransition::default_versioned(&platform_version.into())

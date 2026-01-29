@@ -3,6 +3,17 @@ use dpp::data_contract::associated_token::token_distribution_key::TokenDistribut
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+export type TokenDistributionTypeLike = TokenDistributionType | string | number;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenDistributionTypeLike")]
+    pub type TokenDistributionTypeLikeJs;
+}
+
 #[wasm_bindgen(js_name = "TokenDistributionType")]
 #[allow(non_camel_case_types)]
 #[derive(Default)]

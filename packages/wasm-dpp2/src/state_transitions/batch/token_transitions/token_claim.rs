@@ -31,7 +31,11 @@ impl TokenClaimTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
         base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(js_name = "distributionType")] distribution_type: &JsValue,
+        #[wasm_bindgen(
+            js_name = "distributionType",
+            unchecked_param_type = "TokenDistributionTypeLike | undefined"
+        )]
+        distribution_type: &JsValue,
         #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> WasmDppResult<TokenClaimTransitionWasm> {
         let distribution_type = if distribution_type.is_undefined() {
@@ -77,9 +81,7 @@ impl TokenClaimTransitionWasm {
     #[wasm_bindgen(setter = "distributionType")]
     pub fn set_distribution_type(
         &mut self,
-        #[wasm_bindgen(
-            unchecked_param_type = "TokenDistributionType | string | number | undefined"
-        )]
+        #[wasm_bindgen(unchecked_param_type = "TokenDistributionTypeLike | undefined")]
         distribution_type: &JsValue,
     ) -> WasmDppResult<()> {
         let distribution_type = if distribution_type.is_undefined() {
