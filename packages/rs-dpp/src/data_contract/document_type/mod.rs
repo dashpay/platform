@@ -18,6 +18,7 @@ pub mod schema;
 mod token_costs;
 pub mod v0;
 pub mod v1;
+pub mod v2;
 #[cfg(feature = "validation")]
 pub(crate) mod validator;
 
@@ -26,6 +27,7 @@ use crate::data_contract::document_type::methods::{
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
+use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::document::Document;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
@@ -47,6 +49,7 @@ pub(crate) mod property_names {
     pub const TRADE_MODE: &str = "tradeMode";
 
     pub const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
+    pub const CREATION_RESTRICTION_GROUP: &str = "creationRestrictionGroup";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
     pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
         "requiresIdentityEncryptionBoundedKey";
@@ -80,12 +83,14 @@ pub(crate) mod property_names {
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
     V1(&'a DocumentTypeV1),
+    V2(&'a DocumentTypeV2),
 }
 
 #[derive(Debug)]
 pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
     V1(&'a mut DocumentTypeV1),
+    V2(&'a mut DocumentTypeV2),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -93,6 +98,7 @@ pub enum DocumentTypeMutRef<'a> {
 pub enum DocumentType {
     V0(DocumentTypeV0),
     V1(DocumentTypeV1),
+    V2(DocumentTypeV2),
 }
 
 impl DocumentType {
@@ -100,6 +106,7 @@ impl DocumentType {
         match self {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeRef::V1(v1),
+            DocumentType::V2(v2) => DocumentTypeRef::V2(v2),
         }
     }
 
@@ -107,6 +114,7 @@ impl DocumentType {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeMutRef::V1(v1),
+            DocumentType::V2(v2) => DocumentTypeMutRef::V2(v2),
         }
     }
 
@@ -122,6 +130,9 @@ impl DocumentType {
             DocumentType::V1(v1) => {
                 v1.prefunded_voting_balance_for_document(document, platform_version)
             }
+            DocumentType::V2(v2) => {
+                v2.prefunded_voting_balance_for_document(document, platform_version)
+            }
         }
     }
 }
@@ -131,6 +142,7 @@ impl DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
             DocumentTypeRef::V1(v1) => DocumentType::V1((*v1).to_owned()),
+            DocumentTypeRef::V2(v2) => DocumentType::V2((*v2).to_owned()),
         }
     }
 }

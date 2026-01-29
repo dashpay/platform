@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
@@ -12,7 +13,7 @@ use crate::data_contract::document_type::restricted_creation::CreationRestrictio
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-use crate::data_contract::TokenContractPosition;
+use crate::data_contract::{GroupContractPosition, TokenContractPosition};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -21,12 +22,14 @@ use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 pub use v1::*;
+pub use v2::*;
 
 impl DocumentTypeV0MutGetters for DocumentType {
     fn schema_mut(&mut self) -> &mut Value {
         match self {
             DocumentType::V0(v0) => v0.schema_mut(),
             DocumentType::V1(v1) => v1.schema_mut(),
+            DocumentType::V2(v2) => v2.schema_mut(),
         }
     }
 }
@@ -36,6 +39,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.name(),
             DocumentType::V1(v1) => v1.name(),
+            DocumentType::V2(v2) => v2.name(),
         }
     }
 
@@ -43,6 +47,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.schema(),
             DocumentType::V1(v1) => v1.schema(),
+            DocumentType::V2(v2) => v2.schema(),
         }
     }
 
@@ -50,6 +55,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.schema_owned(),
             DocumentType::V1(v1) => v1.schema_owned(),
+            DocumentType::V2(v2) => v2.schema_owned(),
         }
     }
 
@@ -57,6 +63,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.indexes(),
             DocumentType::V1(v1) => v1.indexes(),
+            DocumentType::V2(v2) => v2.indexes(),
         }
     }
 
@@ -64,6 +71,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.find_contested_index(),
             DocumentType::V1(v1) => v1.find_contested_index(),
+            DocumentType::V2(v2) => v2.find_contested_index(),
         }
     }
 
@@ -71,6 +79,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.index_structure(),
             DocumentType::V1(v1) => v1.index_structure(),
+            DocumentType::V2(v2) => v2.index_structure(),
         }
     }
 
@@ -78,6 +87,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.flattened_properties(),
             DocumentType::V1(v1) => v1.flattened_properties(),
+            DocumentType::V2(v2) => v2.flattened_properties(),
         }
     }
 
@@ -85,6 +95,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.properties(),
             DocumentType::V1(v1) => v1.properties(),
+            DocumentType::V2(v2) => v2.properties(),
         }
     }
 
@@ -92,6 +103,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.identifier_paths(),
             DocumentType::V1(v1) => v1.identifier_paths(),
+            DocumentType::V2(v2) => v2.identifier_paths(),
         }
     }
 
@@ -99,6 +111,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.binary_paths(),
             DocumentType::V1(v1) => v1.binary_paths(),
+            DocumentType::V2(v2) => v2.binary_paths(),
         }
     }
 
@@ -106,6 +119,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.required_fields(),
             DocumentType::V1(v1) => v1.required_fields(),
+            DocumentType::V2(v2) => v2.required_fields(),
         }
     }
 
@@ -113,6 +127,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.transient_fields(),
             DocumentType::V1(v1) => v1.transient_fields(),
+            DocumentType::V2(v2) => v2.transient_fields(),
         }
     }
 
@@ -120,6 +135,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.documents_keep_history(),
             DocumentType::V1(v1) => v1.documents_keep_history(),
+            DocumentType::V2(v2) => v2.documents_keep_history(),
         }
     }
 
@@ -127,6 +143,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.documents_mutable(),
             DocumentType::V1(v1) => v1.documents_mutable(),
+            DocumentType::V2(v2) => v2.documents_mutable(),
         }
     }
 
@@ -134,6 +151,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.documents_can_be_deleted(),
             DocumentType::V1(v1) => v1.documents_can_be_deleted(),
+            DocumentType::V2(v2) => v2.documents_can_be_deleted(),
         }
     }
 
@@ -141,6 +159,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.documents_transferable(),
             DocumentType::V1(v1) => v1.documents_transferable(),
+            DocumentType::V2(v2) => v2.documents_transferable(),
         }
     }
 
@@ -148,6 +167,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.trade_mode(),
             DocumentType::V1(v1) => v1.trade_mode(),
+            DocumentType::V2(v2) => v2.trade_mode(),
         }
     }
 
@@ -155,6 +175,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.creation_restriction_mode(),
             DocumentType::V1(v1) => v1.creation_restriction_mode(),
+            DocumentType::V2(v2) => v2.creation_restriction_mode(),
         }
     }
 
@@ -162,6 +183,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.data_contract_id(),
             DocumentType::V1(v1) => v1.data_contract_id(),
+            DocumentType::V2(v2) => v2.data_contract_id(),
         }
     }
 
@@ -169,6 +191,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.requires_identity_encryption_bounded_key(),
             DocumentType::V1(v1) => v1.requires_identity_encryption_bounded_key(),
+            DocumentType::V2(v2) => v2.requires_identity_encryption_bounded_key(),
         }
     }
 
@@ -176,6 +199,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.requires_identity_decryption_bounded_key(),
             DocumentType::V1(v1) => v1.requires_identity_decryption_bounded_key(),
+            DocumentType::V2(v2) => v2.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -183,6 +207,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.security_level_requirement(),
             DocumentType::V1(v1) => v1.security_level_requirement(),
+            DocumentType::V2(v2) => v2.security_level_requirement(),
         }
     }
 
@@ -191,6 +216,7 @@ impl DocumentTypeV0Getters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.json_schema_validator_ref(),
             DocumentType::V1(v1) => v1.json_schema_validator_ref(),
+            DocumentType::V2(v2) => v2.json_schema_validator_ref(),
         }
     }
 }
@@ -200,6 +226,7 @@ impl DocumentTypeV0Setters for DocumentType {
         match self {
             DocumentType::V0(v0) => v0.set_data_contract_id(data_contract_id),
             DocumentType::V1(v1) => v1.set_data_contract_id(data_contract_id),
+            DocumentType::V2(v2) => v2.set_data_contract_id(data_contract_id),
         }
     }
 }
@@ -209,6 +236,7 @@ impl DocumentTypeV1Setters for DocumentType {
         match self {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_creation_token_cost(cost),
+            DocumentType::V2(v2) => v2.set_document_creation_token_cost(cost),
         }
     }
 
@@ -216,6 +244,7 @@ impl DocumentTypeV1Setters for DocumentType {
         match self {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_replacement_token_cost(cost),
+            DocumentType::V2(v2) => v2.set_document_replacement_token_cost(cost),
         }
     }
 
@@ -223,6 +252,7 @@ impl DocumentTypeV1Setters for DocumentType {
         match self {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_deletion_token_cost(cost),
+            DocumentType::V2(v2) => v2.set_document_deletion_token_cost(cost),
         }
     }
 
@@ -230,6 +260,7 @@ impl DocumentTypeV1Setters for DocumentType {
         match self {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_transfer_token_cost(cost),
+            DocumentType::V2(v2) => v2.set_document_transfer_token_cost(cost),
         }
     }
 
@@ -237,6 +268,7 @@ impl DocumentTypeV1Setters for DocumentType {
         match self {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_price_update_token_cost(cost),
+            DocumentType::V2(v2) => v2.set_document_price_update_token_cost(cost),
         }
     }
 
@@ -244,6 +276,7 @@ impl DocumentTypeV1Setters for DocumentType {
         match self {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(v1) => v1.set_document_purchase_token_cost(cost),
+            DocumentType::V2(v2) => v2.set_document_purchase_token_cost(cost),
         }
     }
 }
@@ -253,6 +286,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.name(),
             DocumentTypeRef::V1(v1) => v1.name(),
+            DocumentTypeRef::V2(v2) => v2.name(),
         }
     }
 
@@ -260,6 +294,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.schema(),
             DocumentTypeRef::V1(v1) => v1.schema(),
+            DocumentTypeRef::V2(v2) => v2.schema(),
         }
     }
 
@@ -267,6 +302,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.clone().schema_owned(),
             DocumentTypeRef::V1(v1) => v1.clone().schema_owned(),
+            DocumentTypeRef::V2(v2) => v2.clone().schema_owned(),
         }
     }
 
@@ -274,6 +310,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.indexes(),
             DocumentTypeRef::V1(v1) => v1.indexes(),
+            DocumentTypeRef::V2(v2) => v2.indexes(),
         }
     }
 
@@ -281,6 +318,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.find_contested_index(),
             DocumentTypeRef::V1(v1) => v1.find_contested_index(),
+            DocumentTypeRef::V2(v2) => v2.find_contested_index(),
         }
     }
 
@@ -288,6 +326,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.index_structure(),
             DocumentTypeRef::V1(v1) => v1.index_structure(),
+            DocumentTypeRef::V2(v2) => v2.index_structure(),
         }
     }
 
@@ -295,6 +334,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.flattened_properties(),
             DocumentTypeRef::V1(v1) => v1.flattened_properties(),
+            DocumentTypeRef::V2(v2) => v2.flattened_properties(),
         }
     }
 
@@ -302,6 +342,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.properties(),
             DocumentTypeRef::V1(v1) => v1.properties(),
+            DocumentTypeRef::V2(v2) => v2.properties(),
         }
     }
 
@@ -309,6 +350,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.identifier_paths(),
             DocumentTypeRef::V1(v1) => v1.identifier_paths(),
+            DocumentTypeRef::V2(v2) => v2.identifier_paths(),
         }
     }
 
@@ -316,6 +358,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.binary_paths(),
             DocumentTypeRef::V1(v1) => v1.binary_paths(),
+            DocumentTypeRef::V2(v2) => v2.binary_paths(),
         }
     }
 
@@ -323,6 +366,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.required_fields(),
             DocumentTypeRef::V1(v1) => v1.required_fields(),
+            DocumentTypeRef::V2(v2) => v2.required_fields(),
         }
     }
 
@@ -330,6 +374,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.transient_fields(),
             DocumentTypeRef::V1(v1) => v1.transient_fields(),
+            DocumentTypeRef::V2(v2) => v2.transient_fields(),
         }
     }
 
@@ -337,6 +382,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_keep_history(),
             DocumentTypeRef::V1(v1) => v1.documents_keep_history(),
+            DocumentTypeRef::V2(v2) => v2.documents_keep_history(),
         }
     }
 
@@ -344,6 +390,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_mutable(),
             DocumentTypeRef::V1(v1) => v1.documents_mutable(),
+            DocumentTypeRef::V2(v2) => v2.documents_mutable(),
         }
     }
 
@@ -351,6 +398,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_can_be_deleted(),
             DocumentTypeRef::V1(v1) => v1.documents_can_be_deleted(),
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted(),
         }
     }
 
@@ -358,6 +406,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.documents_transferable(),
             DocumentTypeRef::V1(v1) => v1.documents_transferable(),
+            DocumentTypeRef::V2(v2) => v2.documents_transferable(),
         }
     }
 
@@ -365,6 +414,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.trade_mode(),
             DocumentTypeRef::V1(v1) => v1.trade_mode(),
+            DocumentTypeRef::V2(v2) => v2.trade_mode(),
         }
     }
 
@@ -372,6 +422,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.creation_restriction_mode(),
             DocumentTypeRef::V1(v1) => v1.creation_restriction_mode(),
+            DocumentTypeRef::V2(v2) => v2.creation_restriction_mode(),
         }
     }
 
@@ -379,6 +430,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
             DocumentTypeRef::V1(v1) => v1.data_contract_id(),
+            DocumentTypeRef::V2(v2) => v2.data_contract_id(),
         }
     }
 
@@ -386,6 +438,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
             DocumentTypeRef::V1(v1) => v1.requires_identity_encryption_bounded_key(),
+            DocumentTypeRef::V2(v2) => v2.requires_identity_encryption_bounded_key(),
         }
     }
 
@@ -393,6 +446,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
             DocumentTypeRef::V1(v1) => v1.requires_identity_decryption_bounded_key(),
+            DocumentTypeRef::V2(v2) => v2.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -400,6 +454,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.security_level_requirement(),
             DocumentTypeRef::V1(v1) => v1.security_level_requirement(),
+            DocumentTypeRef::V2(v2) => v2.security_level_requirement(),
         }
     }
 
@@ -408,6 +463,7 @@ impl DocumentTypeV0Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => v0.json_schema_validator_ref(),
             DocumentTypeRef::V1(v1) => v1.json_schema_validator_ref(),
+            DocumentTypeRef::V2(v2) => v2.json_schema_validator_ref(),
         }
     }
 }
@@ -416,6 +472,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.name(),
             DocumentTypeMutRef::V1(v1) => v1.name(),
+            DocumentTypeMutRef::V2(v2) => v2.name(),
         }
     }
 
@@ -423,6 +480,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.schema(),
             DocumentTypeMutRef::V1(v1) => v1.schema(),
+            DocumentTypeMutRef::V2(v2) => v2.schema(),
         }
     }
 
@@ -430,6 +488,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.clone().schema_owned(),
             DocumentTypeMutRef::V1(v1) => v1.clone().schema_owned(),
+            DocumentTypeMutRef::V2(v2) => v2.clone().schema_owned(),
         }
     }
 
@@ -437,6 +496,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.indexes(),
             DocumentTypeMutRef::V1(v1) => v1.indexes(),
+            DocumentTypeMutRef::V2(v2) => v2.indexes(),
         }
     }
 
@@ -444,6 +504,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.find_contested_index(),
             DocumentTypeMutRef::V1(v1) => v1.find_contested_index(),
+            DocumentTypeMutRef::V2(v2) => v2.find_contested_index(),
         }
     }
 
@@ -451,6 +512,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.index_structure(),
             DocumentTypeMutRef::V1(v1) => v1.index_structure(),
+            DocumentTypeMutRef::V2(v2) => v2.index_structure(),
         }
     }
 
@@ -458,6 +520,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.flattened_properties(),
             DocumentTypeMutRef::V1(v1) => v1.flattened_properties(),
+            DocumentTypeMutRef::V2(v2) => v2.flattened_properties(),
         }
     }
 
@@ -465,6 +528,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.properties(),
             DocumentTypeMutRef::V1(v1) => v1.properties(),
+            DocumentTypeMutRef::V2(v2) => v2.properties(),
         }
     }
 
@@ -472,6 +536,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.identifier_paths(),
             DocumentTypeMutRef::V1(v1) => v1.identifier_paths(),
+            DocumentTypeMutRef::V2(v2) => v2.identifier_paths(),
         }
     }
 
@@ -479,6 +544,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.binary_paths(),
             DocumentTypeMutRef::V1(v1) => v1.binary_paths(),
+            DocumentTypeMutRef::V2(v2) => v2.binary_paths(),
         }
     }
 
@@ -486,6 +552,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.required_fields(),
             DocumentTypeMutRef::V1(v1) => v1.required_fields(),
+            DocumentTypeMutRef::V2(v2) => v2.required_fields(),
         }
     }
 
@@ -493,6 +560,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.transient_fields(),
             DocumentTypeMutRef::V1(v1) => v1.transient_fields(),
+            DocumentTypeMutRef::V2(v2) => v2.transient_fields(),
         }
     }
 
@@ -500,6 +568,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.documents_keep_history(),
             DocumentTypeMutRef::V1(v1) => v1.documents_keep_history(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_keep_history(),
         }
     }
 
@@ -507,6 +576,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.documents_mutable(),
             DocumentTypeMutRef::V1(v1) => v1.documents_mutable(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_mutable(),
         }
     }
 
@@ -514,6 +584,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.documents_can_be_deleted(),
             DocumentTypeMutRef::V1(v1) => v1.documents_can_be_deleted(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted(),
         }
     }
 
@@ -521,6 +592,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.documents_transferable(),
             DocumentTypeMutRef::V1(v1) => v1.documents_transferable(),
+            DocumentTypeMutRef::V2(v2) => v2.documents_transferable(),
         }
     }
 
@@ -528,6 +600,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.trade_mode(),
             DocumentTypeMutRef::V1(v1) => v1.trade_mode(),
+            DocumentTypeMutRef::V2(v2) => v2.trade_mode(),
         }
     }
 
@@ -535,6 +608,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.creation_restriction_mode(),
             DocumentTypeMutRef::V1(v1) => v1.creation_restriction_mode(),
+            DocumentTypeMutRef::V2(v2) => v2.creation_restriction_mode(),
         }
     }
 
@@ -542,6 +616,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.data_contract_id(),
             DocumentTypeMutRef::V1(v1) => v1.data_contract_id(),
+            DocumentTypeMutRef::V2(v2) => v2.data_contract_id(),
         }
     }
 
@@ -549,6 +624,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
             DocumentTypeMutRef::V1(v1) => v1.requires_identity_encryption_bounded_key(),
+            DocumentTypeMutRef::V2(v2) => v2.requires_identity_encryption_bounded_key(),
         }
     }
 
@@ -556,6 +632,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
             DocumentTypeMutRef::V1(v1) => v1.requires_identity_decryption_bounded_key(),
+            DocumentTypeMutRef::V2(v2) => v2.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -563,6 +640,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.security_level_requirement(),
             DocumentTypeMutRef::V1(v1) => v1.security_level_requirement(),
+            DocumentTypeMutRef::V2(v2) => v2.security_level_requirement(),
         }
     }
 
@@ -571,6 +649,7 @@ impl DocumentTypeV0Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.json_schema_validator_ref(),
             DocumentTypeMutRef::V1(v1) => v1.json_schema_validator_ref(),
+            DocumentTypeMutRef::V2(v2) => v2.json_schema_validator_ref(),
         }
     }
 }
@@ -580,6 +659,7 @@ impl DocumentTypeV0Setters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.set_data_contract_id(data_contract_id),
             DocumentTypeMutRef::V1(v1) => v1.set_data_contract_id(data_contract_id),
+            DocumentTypeMutRef::V2(v2) => v2.set_data_contract_id(data_contract_id),
         }
     }
 }
@@ -589,6 +669,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_creation_token_cost(),
+            DocumentType::V2(v2) => v2.document_creation_token_cost(),
         }
     }
 
@@ -596,6 +677,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_replacement_token_cost(),
+            DocumentType::V2(v2) => v2.document_replacement_token_cost(),
         }
     }
 
@@ -603,6 +685,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_deletion_token_cost(),
+            DocumentType::V2(v2) => v2.document_deletion_token_cost(),
         }
     }
 
@@ -610,6 +693,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_transfer_token_cost(),
+            DocumentType::V2(v2) => v2.document_transfer_token_cost(),
         }
     }
 
@@ -617,6 +701,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_update_price_token_cost(),
+            DocumentType::V2(v2) => v2.document_update_price_token_cost(),
         }
     }
 
@@ -624,6 +709,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => None,
             DocumentType::V1(v1) => v1.document_purchase_token_cost(),
+            DocumentType::V2(v2) => v2.document_purchase_token_cost(),
         }
     }
 
@@ -631,6 +717,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => vec![],
             DocumentType::V1(v1) => v1.all_document_token_costs(),
+            DocumentType::V2(v2) => v2.all_document_token_costs(),
         }
     }
 
@@ -640,6 +727,7 @@ impl DocumentTypeV1Getters for DocumentType {
         match self {
             DocumentType::V0(_) => BTreeMap::new(),
             DocumentType::V1(v1) => v1.all_external_token_costs_contract_tokens(),
+            DocumentType::V2(v2) => v2.all_external_token_costs_contract_tokens(),
         }
     }
 }
@@ -649,6 +737,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_creation_token_cost(),
+            DocumentTypeRef::V2(v2) => v2.document_creation_token_cost(),
         }
     }
 
@@ -656,6 +745,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_replacement_token_cost(),
+            DocumentTypeRef::V2(v2) => v2.document_replacement_token_cost(),
         }
     }
 
@@ -663,6 +753,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_deletion_token_cost(),
+            DocumentTypeRef::V2(v2) => v2.document_deletion_token_cost(),
         }
     }
 
@@ -670,6 +761,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_transfer_token_cost(),
+            DocumentTypeRef::V2(v2) => v2.document_transfer_token_cost(),
         }
     }
 
@@ -677,6 +769,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_update_price_token_cost(),
+            DocumentTypeRef::V2(v2) => v2.document_update_price_token_cost(),
         }
     }
 
@@ -684,6 +777,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => None,
             DocumentTypeRef::V1(v1) => v1.document_purchase_token_cost(),
+            DocumentTypeRef::V2(v2) => v2.document_purchase_token_cost(),
         }
     }
 
@@ -691,6 +785,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => vec![],
             DocumentTypeRef::V1(v1) => v1.all_document_token_costs(),
+            DocumentTypeRef::V2(v2) => v2.all_document_token_costs(),
         }
     }
 
@@ -700,6 +795,7 @@ impl DocumentTypeV1Getters for DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(_) => BTreeMap::new(),
             DocumentTypeRef::V1(v1) => v1.all_external_token_costs_contract_tokens(),
+            DocumentTypeRef::V2(v2) => v2.all_external_token_costs_contract_tokens(),
         }
     }
 }
@@ -709,6 +805,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_creation_token_cost(),
+            DocumentTypeMutRef::V2(v2) => v2.document_creation_token_cost(),
         }
     }
 
@@ -716,6 +813,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_replacement_token_cost(),
+            DocumentTypeMutRef::V2(v2) => v2.document_replacement_token_cost(),
         }
     }
 
@@ -723,6 +821,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_deletion_token_cost(),
+            DocumentTypeMutRef::V2(v2) => v2.document_deletion_token_cost(),
         }
     }
 
@@ -730,6 +829,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_transfer_token_cost(),
+            DocumentTypeMutRef::V2(v2) => v2.document_transfer_token_cost(),
         }
     }
 
@@ -737,6 +837,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_update_price_token_cost(),
+            DocumentTypeMutRef::V2(v2) => v2.document_update_price_token_cost(),
         }
     }
 
@@ -744,6 +845,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(v1) => v1.document_purchase_token_cost(),
+            DocumentTypeMutRef::V2(v2) => v2.document_purchase_token_cost(),
         }
     }
 
@@ -751,6 +853,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => vec![],
             DocumentTypeMutRef::V1(v1) => v1.all_document_token_costs(),
+            DocumentTypeMutRef::V2(v2) => v2.all_document_token_costs(),
         }
     }
 
@@ -760,6 +863,57 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
         match self {
             DocumentTypeMutRef::V0(_) => BTreeMap::new(),
             DocumentTypeMutRef::V1(v1) => v1.all_external_token_costs_contract_tokens(),
+            DocumentTypeMutRef::V2(v2) => v2.all_external_token_costs_contract_tokens(),
+        }
+    }
+}
+
+impl DocumentTypeV2Getters for DocumentType {
+    fn creation_restriction_group(&self) -> Option<GroupContractPosition> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.creation_restriction_group(),
+        }
+    }
+}
+
+impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
+    fn creation_restriction_group(&self) -> Option<GroupContractPosition> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.creation_restriction_group(),
+        }
+    }
+}
+
+impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
+    fn creation_restriction_group(&self) -> Option<GroupContractPosition> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.creation_restriction_group(),
+        }
+    }
+}
+
+impl DocumentTypeV2Setters for DocumentType {
+    fn set_creation_restriction_group(&mut self, group: Option<GroupContractPosition>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(_) => { /* no-op */ }
+            DocumentType::V2(v2) => v2.set_creation_restriction_group(group),
+        }
+    }
+}
+
+impl DocumentTypeV2Setters for DocumentTypeMutRef<'_> {
+    fn set_creation_restriction_group(&mut self, group: Option<GroupContractPosition>) {
+        match self {
+            DocumentTypeMutRef::V0(_) => { /* no-op */ }
+            DocumentTypeMutRef::V1(_) => { /* no-op */ }
+            DocumentTypeMutRef::V2(v2) => v2.set_creation_restriction_group(group),
         }
     }
 }

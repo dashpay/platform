@@ -1,19 +1,24 @@
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
-    InvalidTokenBaseSupplyError, NewTokensDestinationIdentityOptionRequiredError,
-    NonContiguousContractTokenPositionsError,
+    GroupPositionDoesNotExistError, InvalidTokenBaseSupplyError,
+    NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractTokenPositionsError,
 };
 use dpp::dashcore::Network;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::TokenContractPosition;
+use dpp::platform_value::Value;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+
+const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
+const CREATION_RESTRICTION_GROUP: &str = "creationRestrictionGroup";
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionBasicStructureValidationV0
 {
@@ -36,6 +41,62 @@ impl DataContractUpdateStateTransitionBasicStructureValidationV0 for DataContrac
 
             if !validation_result.is_valid() {
                 return Ok(validation_result);
+            }
+        }
+
+        for schema in self.data_contract().document_schemas().values() {
+            let schema_map = match schema.to_map() {
+                Ok(map) => map,
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "document schema must be an object: {err}"
+                        ))
+                        .into(),
+                    ));
+                }
+            };
+
+            let creation_restriction_mode: u8 = match Value::inner_optional_integer_value::<u8>(
+                schema_map,
+                CREATION_RESTRICTION_MODE,
+            ) {
+                Ok(value) => value.unwrap_or(0),
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractError::from(err).into(),
+                    ));
+                }
+            };
+
+            if creation_restriction_mode == 3 {
+                let group_position = match Value::inner_optional_integer_value::<u16>(
+                    schema_map,
+                    CREATION_RESTRICTION_GROUP,
+                ) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            DataContractError::from(err).into(),
+                        ));
+                    }
+                };
+
+                let Some(group_position) = group_position else {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractError::InvalidContractStructure(
+                            "creationRestrictionGroup is required when creationRestrictionMode is 3"
+                                .to_string(),
+                        )
+                        .into(),
+                    ));
+                };
+
+                if !self.data_contract().groups().contains_key(&group_position) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        GroupPositionDoesNotExistError::new(group_position).into(),
+                    ));
+                }
             }
         }
 

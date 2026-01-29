@@ -1,17 +1,23 @@
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::data_contract::GroupPositionDoesNotExistError;
 use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
+use dpp::consensus::state::group::IdentityNotMemberOfGroupError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::identifier::Identifier;
 use dpp::validation::{SimpleConsensusValidationResult};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use crate::error::Error;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStructureValidationV0 {
@@ -101,6 +107,42 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
                     )
                     .into(),
                 ));
+            }
+            CreationRestrictionMode::AnyGroupMember => {
+                let Some(group_position) = document_type.creation_restriction_group() else {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DocumentCreationNotAllowedError::new(
+                            self.base().data_contract_id(),
+                            document_type_name.clone(),
+                            document_type.creation_restriction_mode(),
+                        )
+                        .into(),
+                    ));
+                };
+
+                let group = match data_contract.expected_group(group_position) {
+                    Ok(group) => group,
+                    Err(_) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            GroupPositionDoesNotExistError::new(group_position).into(),
+                        ));
+                    }
+                };
+
+                match group.member_power(owner_id) {
+                    Ok(_) => {}
+                    Err(ProtocolError::GroupMemberNotFound(_)) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            IdentityNotMemberOfGroupError::new(
+                                owner_id,
+                                data_contract.id(),
+                                group_position,
+                            )
+                            .into(),
+                        ));
+                    }
+                    Err(e) => return Err(e.into()),
+                }
             }
         }
         // Validate user defined properties

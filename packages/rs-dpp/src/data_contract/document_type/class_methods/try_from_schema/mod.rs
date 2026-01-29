@@ -1,6 +1,7 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
+use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     property_names, DocumentProperty, DocumentPropertyType, DocumentType,
 };
@@ -17,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod v0;
 mod v1;
+mod v2;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
@@ -73,9 +75,23 @@ impl DocumentType {
                 platform_version,
             )
             .map(|document_type| document_type.into()),
+            2 => DocumentTypeV2::try_from_schema(
+                data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
+                name,
+                schema,
+                schema_defs,
+                token_configurations,
+                data_contact_config,
+                full_validation,
+                validation_operations,
+                platform_version,
+            )
+            .map(|document_type| document_type.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "try_from_schema".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             }),
         }

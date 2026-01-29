@@ -16,7 +16,10 @@ mod creation_tests {
     use dpp::fee::fee_result::refunds::FeeRefunds;
     use dpp::fee::fee_result::FeeResult;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::accessors::v1::DataContractV1Setters;
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
+    use dpp::data_contract::group::v0::GroupV0;
+    use dpp::data_contract::group::Group;
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::util::hash::hash_double;
@@ -49,6 +52,7 @@ mod creation_tests {
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use crate::config::PlatformConfig;
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_document_creation() {
@@ -2537,6 +2541,347 @@ mod creation_tests {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document Creation on 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e:card is not allowed because of the document type's creation restriction mode Owner Only");
+    }
+
+    #[test]
+    fn test_document_creation_on_restricted_document_type_that_allows_group_member_to_create() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (group_member, group_member_signer, group_member_key) =
+            setup_identity(&mut platform, 450, dash_to_credits!(0.1));
+
+        let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-group.json";
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut contract = json_document_to_contract(card_game_path, true, platform_version)
+            .expect("expected to get data contract");
+
+        contract.set_owner_id(contract_owner.id());
+
+        let mut group_members = BTreeMap::new();
+        group_members.insert(contract_owner.id(), 1);
+        group_members.insert(group_member.id(), 1);
+
+        contract.add_group(
+            0,
+            Group::V0(GroupV0 {
+                members: group_members,
+                required_power: 2,
+            }),
+        );
+
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a card document type");
+
+        assert_eq!(
+            card_document_type.creation_restriction_mode(),
+            CreationRestrictionMode::AnyGroupMember
+        );
+
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                group_member.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                card_document_type,
+                entropy.0,
+                &group_member_key,
+                2,
+                0,
+                None,
+                &group_member_signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+    }
+
+    #[test]
+    fn test_document_creation_on_restricted_document_type_fails_for_non_group_member() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (group_member, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.1));
+        let (non_member, non_member_signer, non_member_key) =
+            setup_identity(&mut platform, 451, dash_to_credits!(0.1));
+
+        let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-group.json";
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut contract = json_document_to_contract(card_game_path, true, platform_version)
+            .expect("expected to get data contract");
+
+        contract.set_owner_id(contract_owner.id());
+
+        let mut group_members = BTreeMap::new();
+        group_members.insert(contract_owner.id(), 1);
+        group_members.insert(group_member.id(), 1);
+
+        contract.add_group(
+            0,
+            Group::V0(GroupV0 {
+                members: group_members,
+                required_power: 2,
+            }),
+        );
+
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a card document type");
+
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                non_member.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 8.into());
+        document.set("defense", 2.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                card_document_type,
+                entropy.0,
+                &non_member_key,
+                2,
+                0,
+                None,
+                &non_member_signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::IdentityNotMemberOfGroupError(_)),
+                ..
+            }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+    }
+
+    #[test]
+    fn test_document_creation_on_restricted_document_type_fails_for_missing_group_position() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let (contract_owner, _, _) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+        let (identity, signer, key) = setup_identity(&mut platform, 450, dash_to_credits!(0.1));
+
+        let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-direct-purchase-creation-restricted-to-group.json";
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut contract = json_document_to_contract(card_game_path, true, platform_version)
+            .expect("expected to get data contract");
+
+        contract.set_owner_id(contract_owner.id());
+
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a card document type");
+
+        let mut rng = StdRng::seed_from_u64(433);
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::GroupPositionDoesNotExistError(_)),
+                ..
+            }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
     }
 
     #[test]

@@ -45,3 +45,34 @@ impl TryFrom<u8> for CreationRestrictionMode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn should_parse_any_group_member_mode() {
+        let mode = CreationRestrictionMode::try_from(3).expect("mode 3 should be valid");
+        assert_eq!(mode, CreationRestrictionMode::AnyGroupMember);
+    }
+
+    #[test]
+    fn should_include_new_mode_in_unknown_error_allowed_values() {
+        let result = CreationRestrictionMode::try_from(9);
+
+        assert_matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed)) => {
+                assert_matches!(
+                    boxed.as_ref(),
+                    ConsensusError::BasicError(
+                        BasicError::UnknownDocumentCreationRestrictionModeError(err)
+                    ) if err.allowed_values() == vec![0, 1, 2, 3]
+                )
+            }
+        );
+    }
+}

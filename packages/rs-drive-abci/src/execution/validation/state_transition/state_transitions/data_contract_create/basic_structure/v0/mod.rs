@@ -3,7 +3,7 @@ use dpp::consensus::basic::data_contract::{
     DuplicateKeywordsError, InvalidDataContractVersionError, InvalidDescriptionLengthError,
     InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractTokenPositionsError,
-    TooManyKeywordsError,
+    TooManyKeywordsError, GroupPositionDoesNotExistError,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -12,13 +12,18 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use dpp::platform_value::Value;
 use std::collections::HashSet;
+
+const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
+const CREATION_RESTRICTION_GROUP: &str = "creationRestrictionGroup";
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreateStateTransitionBasicStructureValidationV0
 {
@@ -44,13 +49,68 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 .into(),
             ));
         }
-
         let groups = self.data_contract().groups();
         if !groups.is_empty() {
             let validation_result = DataContract::validate_groups(groups, platform_version)?;
 
             if !validation_result.is_valid() {
                 return Ok(validation_result);
+            }
+        }
+
+        for schema in self.data_contract().document_schemas().values() {
+            let schema_map = match schema.to_map() {
+                Ok(map) => map,
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "document schema must be an object: {err}"
+                        ))
+                        .into(),
+                    ));
+                }
+            };
+
+            let creation_restriction_mode: u8 = match Value::inner_optional_integer_value::<u8>(
+                schema_map,
+                CREATION_RESTRICTION_MODE,
+            ) {
+                Ok(value) => value.unwrap_or(0),
+                    Err(err) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            DataContractError::from(err).into(),
+                        ));
+                    }
+                };
+
+            if creation_restriction_mode == 3 {
+                let group_position = match Value::inner_optional_integer_value::<u16>(
+                    schema_map,
+                    CREATION_RESTRICTION_GROUP,
+                ) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            DataContractError::from(err).into(),
+                        ));
+                    }
+                };
+
+                let Some(group_position) = group_position else {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractError::InvalidContractStructure(
+                            "creationRestrictionGroup is required when creationRestrictionMode is 3"
+                                .to_string(),
+                        )
+                        .into(),
+                    ));
+                };
+
+                if !self.data_contract().groups().contains_key(&group_position) {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        GroupPositionDoesNotExistError::new(group_position).into(),
+                    ));
+                }
             }
         }
 
@@ -220,11 +280,14 @@ mod tests {
         use super::*;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
+        use dpp::consensus::basic::data_contract::GroupPositionDoesNotExistError;
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
         use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
         use dpp::prelude::IdentityNonce;
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
         use dpp::tests::fixtures::get_data_contract_fixture;
+        use dpp::platform_value::platform_value;
         use platform_version::version::PlatformVersion;
         use platform_version::TryIntoPlatformVersioned;
 
@@ -259,6 +322,65 @@ mod tests {
             assert_matches!(
                 result.errors.as_slice(),
                 [ConsensusError::BasicError(BasicError::InvalidDataContractVersionError(e))] if e.expected_version() == INITIAL_DATA_CONTRACT_VERSION && e.version() == 6
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_creation_restriction_group_missing() {
+            let platform_version = PlatformVersion::latest();
+            let identity_nonce = IdentityNonce::default();
+
+            let data_contract =
+                get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
+                    .data_contract_owned();
+
+            let mut data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "position": 0
+                    }
+                },
+                "creationRestrictionMode": 3,
+                "creationRestrictionGroup": 1,
+                "additionalProperties": false
+            });
+
+            match &mut data_contract_for_serialization {
+                DataContractInSerializationFormat::V0(_) => {
+                    panic!("expected data contract serialization format v1");
+                }
+                DataContractInSerializationFormat::V1(v1) => {
+                    v1.document_schemas
+                        .insert("niceDocument".to_string(), schema);
+                }
+            }
+
+            let transition: DataContractCreateTransition = DataContractCreateTransitionV0 {
+                data_contract: data_contract_for_serialization,
+                identity_nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let result = transition
+                .validate_basic_structure_v0(Network::Testnet, &platform_version)
+                .expect("failed to validate advanced structure");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::GroupPositionDoesNotExistError(
+                        GroupPositionDoesNotExistError { .. }
+                    )
+                )]
             );
         }
     }
