@@ -7,7 +7,6 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_wasm_type_info;
 use crate::mock_bls::MockBLS;
-use crate::utils::try_from_options;
 use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
 use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -41,34 +40,9 @@ use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVote
 use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionSigningOptions,
 };
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct VerifyPublicKeyOptions {
-    #[serde(default)]
-    allow_signing_with_any_security_level: bool,
-    #[serde(default)]
-    allow_signing_with_any_purpose: bool,
-}
-
-#[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &str = r#"
-export interface VerifyPublicKeyOptions {
-    publicKey: IdentityPublicKey;
-    allowSigningWithAnySecurityLevel?: boolean;
-    allowSigningWithAnyPurpose?: boolean;
-}
-"#;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "VerifyPublicKeyOptions")]
-    pub type VerifyPublicKeyOptionsJs;
-}
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "StateTransition")]
@@ -151,16 +125,17 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "verifyPublicKey")]
-    pub fn verify_public_key(&self, options: VerifyPublicKeyOptionsJs) -> WasmDppResult<()> {
-        // Extract complex types first (borrows &options)
-        let public_key: IdentityPublicKeyWasm = try_from_options(&options, "publicKey")?;
-
-        // Extract simple fields via serde (consumes options)
-        let opts: VerifyPublicKeyOptions = serde_wasm_bindgen::from_value(options.into())
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        let allow_signing_with_any_security_level = opts.allow_signing_with_any_security_level;
-        let allow_signing_with_any_purpose = opts.allow_signing_with_any_purpose;
+    pub fn verify_public_key(
+        &self,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
+        #[wasm_bindgen(js_name = "allowSigningWithAnySecurityLevel")]
+        allow_signing_with_any_security_level: Option<bool>,
+        #[wasm_bindgen(js_name = "allowSigningWithAnyPurpose")]
+        allow_signing_with_any_purpose: Option<bool>,
+    ) -> WasmDppResult<()> {
+        let allow_signing_with_any_security_level =
+            allow_signing_with_any_security_level.unwrap_or(false);
+        let allow_signing_with_any_purpose = allow_signing_with_any_purpose.unwrap_or(false);
 
         match &self.0 {
             DataContractCreate(st) => {
