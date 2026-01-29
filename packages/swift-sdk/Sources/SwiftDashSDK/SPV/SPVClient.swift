@@ -254,9 +254,6 @@ public class SPVClient {
         return client
     }
 
-    // Event polling task
-    private var eventPollingTask: Task<Void, Never>?
-
     // Callback context
     private var callbackContext: CallbackContext?
 
@@ -382,10 +379,6 @@ public class SPVClient {
         if !hasBeenFreed {
             print("[SPV][deinit] WARNING: SPVClient was not freed before deinit, call SPVClient::destroy")
         }
-
-        // Stop event polling (synchronously cancel the task)
-        eventPollingTask?.cancel()
-        // Minimal teardown; prefer explicit stop() by callers.
     }
 
     private static func readLocalCorePeers() -> [String] {
@@ -494,9 +487,6 @@ public class SPVClient {
         syncCancelled = false
         blocksHit = 0
 
-        // Start event polling to drain Rust event queue
-        startEventPolling()
-
         // Use a stable callback context; create if needed
         let context: CallbackContext
         if let existing = self.callbackContext {
@@ -525,8 +515,6 @@ public class SPVClient {
     }
 
     public func stopSync() {
-        stopEventPolling()
-
         let cancelResult = dash_spv_ffi_client_cancel_sync(client)
         if cancelResult != 0 {
             let message = SPVClient.getLastDashFFIError()
@@ -680,25 +668,6 @@ public class SPVClient {
         delegate.spvClient(self, didReceiveTransaction: transaction)
     }
 
-    // MARK: - Event Polling
-
-    private func startEventPolling() {
-        eventPollingTask?.cancel()
-
-        eventPollingTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self = self else { break }
-                dash_spv_ffi_client_drain_events(client)
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-        }
-    }
-
-    private func stopEventPolling() {
-        eventPollingTask?.cancel()
-        eventPollingTask = nil
-    }
-
     // MARK: - Wallet Manager Access
 
     /// Produce a Swift wallet manager that shares the SPV client's underlying wallet state.
@@ -708,49 +677,6 @@ public class SPVClient {
         let ffiWalletManager = dash_spv_ffi_client_get_wallet_manager(self.client)!
         
         return try WalletManager(handle: ffiWalletManager)
-    }
-
-    // MARK: - Statistics
-
-    public func getStats() -> SPVStats? {
-
-        let statsPtr = dash_spv_ffi_client_get_stats(client)
-        guard let statsPtr = statsPtr else { return nil }
-
-        // Convert FFI stats to Swift struct
-        let stats = SPVStats(
-            connectedPeers: Int(statsPtr.pointee.connected_peers),
-            headerHeight: Int(statsPtr.pointee.header_height),
-            filterHeight: Int(statsPtr.pointee.filter_height),
-            filtersDownloaded: UInt64(statsPtr.pointee.filters_downloaded),
-            filterHeadersDownloaded: UInt64(statsPtr.pointee.filter_headers_downloaded),
-            blocksProcessed: UInt64(statsPtr.pointee.blocks_processed),
-            mempoolSize: 0 // mempool_size not available in current FFI
-        )
-
-        dash_spv_ffi_spv_stats_destroy(statsPtr)
-
-        return stats
-    }
-
-    // MARK: - Tip Info
-    /// Returns the current chain tip height known to the client (absolute), or nil if unavailable.
-    public func getTipHeight() -> UInt32? {
-        var out: UInt32 = 0
-        let rc = dash_spv_ffi_client_get_tip_height(client, &out)
-        if rc == 0 { return out }
-        return nil
-    }
-
-    /// Returns the current chain tip hash (32 bytes) known to the client, or nil if unavailable.
-    public func getTipHash() -> Data? {
-        var buf = [UInt8](repeating: 0, count: 32)
-        let rc = buf.withUnsafeMutableBufferPointer { bp -> Int32 in
-            guard let base = bp.baseAddress else { return -1 }
-            return dash_spv_ffi_client_get_tip_hash(client, base)
-        }
-        if rc == 0 { return Data(buf) }
-        return nil
     }
 }
 
@@ -799,16 +725,6 @@ private class CallbackContext {
 }
 
 // MARK: - Supporting Types
-
-public struct SPVStats: Sendable {
-    public let connectedPeers: Int
-    public let headerHeight: Int
-    public let filterHeight: Int
-    public let filtersDownloaded: UInt64
-    public let filterHeadersDownloaded: UInt64
-    public let blocksProcessed: UInt64
-    public let mempoolSize: Int
-}
 
 public enum SPVError: LocalizedError {
     case notInitialized
