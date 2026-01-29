@@ -33,7 +33,7 @@ use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
-use wasm_dpp2::utils::try_from_options_optional;
+use wasm_dpp2::utils::{try_from_options, try_from_options_optional};
 use wasm_dpp2::IdentitySignerWasm;
 
 /// Helper function to convert a Document to DocumentWasm with the required metadata.
@@ -121,16 +121,12 @@ extern "C" {
     pub type TokenMintOptionsJs;
 }
 
-/// Main input struct for token mint options.
+/// Main input struct for token mint options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenMintOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
     amount: u64,
-    identity_id: IdentifierWasm,
-    #[serde(default)]
-    recipient_id: Option<IdentifierWasm>,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -235,12 +231,15 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
+        let recipient_id: Option<Identifier> =
+            try_from_options_optional::<IdentifierWasm>(&options, "recipientId")?.map(Into::into);
+
+        // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_mint_options(options.into())?;
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let identity_id: Identifier = parsed.identity_id.into();
         let amount = parsed.amount as TokenAmount;
 
         // Fetch and cache the data contract
@@ -255,8 +254,8 @@ impl WasmSdk {
         );
 
         // Add optional recipient
-        if let Some(recipient_id) = parsed.recipient_id {
-            builder = builder.issued_to_identity_id(recipient_id.into());
+        if let Some(recipient_id) = recipient_id {
+            builder = builder.issued_to_identity_id(recipient_id);
         }
 
         // Add optional public note
@@ -357,14 +356,12 @@ extern "C" {
     pub type TokenBurnOptionsJs;
 }
 
-/// Main input struct for token burn options.
+/// Main input struct for token burn options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenBurnOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
     amount: u64,
-    identity_id: IdentifierWasm,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -467,12 +464,13 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
+
+        // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_burn_options(options.into())?;
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let identity_id: Identifier = parsed.identity_id.into();
         let amount = parsed.amount as TokenAmount;
 
         // Fetch and cache the data contract
@@ -582,15 +580,12 @@ extern "C" {
     pub type TokenTransferOptionsJs;
 }
 
-/// Main input struct for token transfer options.
+/// Main input struct for token transfer options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenTransferOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
     amount: u64,
-    sender_id: IdentifierWasm,
-    recipient_id: IdentifierWasm,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -700,13 +695,14 @@ impl WasmSdk {
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize simple fields last (consumes options)
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let sender_id: Identifier = try_from_options::<IdentifierWasm>(&options, "senderId")?.into();
+        let recipient_id: Identifier = try_from_options::<IdentifierWasm>(&options, "recipientId")?.into();
+
+        // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_transfer_options(options.into())?;
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let sender_id: Identifier = parsed.sender_id.into();
-        let recipient_id: Identifier = parsed.recipient_id.into();
         let amount = parsed.amount as TokenAmount;
 
         // Validate not transferring to self
@@ -826,14 +822,11 @@ extern "C" {
     pub type TokenFreezeOptionsJs;
 }
 
-/// Main input struct for token freeze options.
+/// Main input struct for token freeze options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenFreezeOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    authority_id: IdentifierWasm,
-    frozen_identity_id: IdentifierWasm,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -922,13 +915,13 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_token_freeze_options(options.into())?;
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let frozen_identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let authority_id: Identifier = parsed.authority_id.into();
-        let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_freeze_options(options.into())?;
 
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -1039,14 +1032,11 @@ extern "C" {
     pub type TokenUnfreezeOptionsJs;
 }
 
-/// Main input struct for token unfreeze options.
+/// Main input struct for token unfreeze options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenUnfreezeOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    authority_id: IdentifierWasm,
-    frozen_identity_id: IdentifierWasm,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -1135,13 +1125,13 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_token_unfreeze_options(options.into())?;
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let frozen_identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let authority_id: Identifier = parsed.authority_id.into();
-        let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_unfreeze_options(options.into())?;
 
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -1252,14 +1242,11 @@ extern "C" {
     pub type TokenDestroyFrozenOptionsJs;
 }
 
-/// Main input struct for token destroy frozen options.
+/// Main input struct for token destroy frozen options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenDestroyFrozenOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    authority_id: IdentifierWasm,
-    frozen_identity_id: IdentifierWasm,
     #[serde(default)]
     public_note: Option<String>,
 }
@@ -1334,13 +1321,13 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_token_destroy_frozen_options(options.into())?;
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let frozen_identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let authority_id: Identifier = parsed.authority_id.into();
-        let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_destroy_frozen_options(options.into())?;
 
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -1456,13 +1443,11 @@ extern "C" {
     pub type TokenEmergencyActionOptionsJs;
 }
 
-/// Main input struct for token emergency action options.
+/// Main input struct for token emergency action options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenEmergencyActionOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    authority_id: IdentifierWasm,
     action: String,
     #[serde(default)]
     public_note: Option<String>,
@@ -1538,12 +1523,12 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_token_emergency_action_options(options.into())?;
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let authority_id: Identifier = parsed.authority_id.into();
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_emergency_action_options(options.into())?;
 
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -1664,13 +1649,11 @@ extern "C" {
     pub type TokenClaimOptionsJs;
 }
 
-/// Main input struct for token claim options.
+/// Main input struct for token claim options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenClaimOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    identity_id: IdentifierWasm,
     distribution_type: String,
     #[serde(default)]
     public_note: Option<String>,
@@ -1741,12 +1724,12 @@ impl WasmSdk {
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_token_claim_options(options.into())?;
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let identity_id: Identifier = parsed.identity_id.into();
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_claim_options(options.into())?;
 
         // Parse the distribution type
         let distribution_type = match parsed.distribution_type.to_lowercase().as_str() {
@@ -1864,13 +1847,11 @@ extern "C" {
     pub type TokenSetPriceOptionsJs;
 }
 
-/// Main input struct for token set price options.
+/// Main input struct for token set price options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenSetPriceOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    authority_id: IdentifierWasm,
     #[serde(default)]
     price: Option<u64>,
     #[serde(default)]
@@ -1980,12 +1961,12 @@ impl WasmSdk {
         let group_info =
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize simple fields last (consumes options)
-        let parsed = deserialize_token_set_price_options(options.into())?;
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let authority_id: Identifier = parsed.authority_id.into();
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_set_price_options(options.into())?;
 
         // Convert price to pricing schedule
         let pricing_schedule = parsed.price.map(TokenPricingSchedule::SinglePrice);
@@ -2097,13 +2078,11 @@ extern "C" {
     pub type TokenDirectPurchaseOptionsJs;
 }
 
-/// Main input struct for token direct purchase options.
+/// Main input struct for token direct purchase options (primitives only).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenDirectPurchaseOptionsInput {
-    data_contract_id: IdentifierWasm,
     token_position: u16,
-    buyer_id: IdentifierWasm,
     amount: u64,
     max_total_cost: u64,
 }
@@ -2203,12 +2182,13 @@ impl WasmSdk {
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize simple fields last (consumes options)
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let buyer_id: Identifier = try_from_options::<IdentifierWasm>(&options, "buyerId")?.into();
+
+        // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_direct_purchase_options(options.into())?;
 
-        // Convert identifiers
-        let contract_id: Identifier = parsed.data_contract_id.into();
-        let buyer_id: Identifier = parsed.buyer_id.into();
         let amount = parsed.amount as TokenAmount;
         let max_total_cost = parsed.max_total_cost;
 

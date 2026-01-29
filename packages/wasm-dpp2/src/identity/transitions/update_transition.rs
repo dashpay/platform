@@ -6,7 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{try_from_options_with, try_to_array, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options, try_from_options_with, try_to_array, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -77,11 +77,10 @@ extern "C" {
     pub type IdentityUpdateTransitionJSONJs;
 }
 
-/// Serde struct for IdentityUpdateTransitionOptions
+/// Serde struct for IdentityUpdateTransitionOptions (primitives only)
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityUpdateTransitionOptionsInput {
-    identity_id: IdentifierWasm,
     revision: Revision,
     nonce: IdentityNonce,
     #[serde(default)]
@@ -99,6 +98,8 @@ impl IdentityUpdateTransitionWasm {
         options: IdentityUpdateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
         // Extract complex types first (borrows &options)
+        let identity_id: IdentifierWasm = try_from_options(&options, "identityId")?;
+
         let add_public_keys_array = try_from_options_with(&options, "addPublicKeys", |v| {
             try_to_array(v, "addPublicKeys")
         })?;
@@ -115,14 +116,14 @@ impl IdentityUpdateTransitionWasm {
             .map(|(i, v)| try_to_u32(&v, &format!("disablePublicKeys[{}]", i)))
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
-        // Deserialize simple fields via serde last (consumes options)
+        // Deserialize primitive fields via serde last (consumes options)
         let input: IdentityUpdateTransitionOptionsInput =
             serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
-                identity_id: input.identity_id.into(),
+                identity_id: identity_id.into(),
                 revision: input.revision,
                 nonce: input.nonce,
                 add_public_keys: add_public_keys

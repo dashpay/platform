@@ -170,35 +170,32 @@ pub fn tokens_configuration_from_js_value(
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DataContractOptionsJs) -> WasmDppResult<DataContractWasm> {
-        // Extract ownerId (required)
+        // Extract complex types first (borrows &options)
         let owner_id: IdentifierWasm = try_from_options(&options, "ownerId")?;
+        let owner_id: Identifier = owner_id.into();
 
-        // Extract schemas (required)
+        let platform_version: PlatformVersion =
+            try_from_options_optional::<PlatformVersionWasm>(&options, "platformVersion")?
+                .map(Into::into)
+                .unwrap_or_else(|| PlatformVersionWasm::default().into());
+
         let schema: Value = try_from_options_with(&options, "schemas", |v| {
             serialization::platform_value_from_object(v)
         })?;
 
-        // Extract definitions (optional)
         let definitions: Option<Value> = try_from_options_optional_with(
             &options,
             "definitions",
             serialization::platform_value_from_object,
         )?;
 
-        // Extract tokens (optional)
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
             try_from_options_optional_with(&options, "tokens", |v| {
                 tokens_configuration_from_js_value(v)
             })?
             .unwrap_or_default();
 
-        // Extract platformVersion (optional)
-        let platform_version: PlatformVersion =
-            try_from_options_optional::<PlatformVersionWasm>(&options, "platformVersion")?
-                .map(Into::into)
-                .unwrap_or_else(|| PlatformVersionWasm::default().into());
-
-        // Extract simple fields via serde
+        // Extract primitive fields via serde last (consumes options)
         let opts: DataContractOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
@@ -213,7 +210,7 @@ impl DataContractWasm {
         let definitions_value = Value::from(definitions);
 
         let data_contract_id =
-            DataContract::generate_data_contract_id_v0(owner_id.to_bytes(), opts.identity_nonce);
+            DataContract::generate_data_contract_id_v0(owner_id.to_buffer().to_vec(), opts.identity_nonce);
 
         let data_contract_id_value = Value::Identifier(data_contract_id.to_buffer());
 
@@ -240,13 +237,8 @@ impl DataContractWasm {
             .set_value("version", Value::from(1u16))
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let owner_id_bytes: [u8; 32] = owner_id
-            .to_bytes()
-            .try_into()
-            .map_err(|_| WasmDppError::invalid_argument("Invalid owner ID length"))?;
-
         contract_value
-            .set_value("ownerId", Value::Identifier(owner_id_bytes))
+            .set_value("ownerId", Value::Identifier(owner_id.to_buffer()))
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         contract_value

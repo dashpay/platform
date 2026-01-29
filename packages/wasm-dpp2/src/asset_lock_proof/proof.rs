@@ -1,5 +1,9 @@
-use crate::asset_lock_proof::chain::ChainAssetLockProofWasm;
-use crate::asset_lock_proof::instant::InstantAssetLockProofWasm;
+use crate::asset_lock_proof::chain::{
+    ChainAssetLockProofJSONJs, ChainAssetLockProofObjectJs, ChainAssetLockProofWasm,
+};
+use crate::asset_lock_proof::instant::{
+    InstantAssetLockProofJSONJs, InstantAssetLockProofObjectJs, InstantAssetLockProofWasm,
+};
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::enums::lock_types::AssetLockProofTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
@@ -38,6 +42,30 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "AssetLockProofJSON")]
     pub type AssetLockProofJSONJs;
+}
+
+impl From<AssetLockProofObjectJs> for InstantAssetLockProofObjectJs {
+    fn from(value: AssetLockProofObjectJs) -> Self {
+        JsValue::from(value).into()
+    }
+}
+
+impl From<AssetLockProofObjectJs> for ChainAssetLockProofObjectJs {
+    fn from(value: AssetLockProofObjectJs) -> Self {
+        JsValue::from(value).into()
+    }
+}
+
+impl From<AssetLockProofJSONJs> for InstantAssetLockProofJSONJs {
+    fn from(value: AssetLockProofJSONJs) -> Self {
+        JsValue::from(value).into()
+    }
+}
+
+impl From<AssetLockProofJSONJs> for ChainAssetLockProofJSONJs {
+    fn from(value: AssetLockProofJSONJs) -> Self {
+        JsValue::from(value).into()
+    }
 }
 
 #[wasm_bindgen(js_name = "AssetLockProof")]
@@ -200,16 +228,14 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(object: AssetLockProofObjectJs) -> WasmDppResult<AssetLockProofWasm> {
-        let js_value: JsValue = object.into();
-        let proof_type: AssetLockProofTypeWasm = try_from_options(&js_value, "type")?;
+        let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
 
         match proof_type {
             AssetLockProofTypeWasm::Instant => {
-                InstantAssetLockProofWasm::from_object(js_value.into())
-                    .map(AssetLockProofWasm::from)
+                InstantAssetLockProofWasm::from_object(object.into()).map(AssetLockProofWasm::from)
             }
             AssetLockProofTypeWasm::Chain => {
-                ChainAssetLockProofWasm::from_object(js_value.into()).map(AssetLockProofWasm::from)
+                ChainAssetLockProofWasm::from_object(object.into()).map(AssetLockProofWasm::from)
             }
         }
     }
@@ -242,15 +268,14 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(object: AssetLockProofJSONJs) -> WasmDppResult<AssetLockProofWasm> {
-        let js_value: JsValue = object.into();
-        let proof_type: AssetLockProofTypeWasm = try_from_options(&js_value, "type")?;
+        let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
 
         match proof_type {
             AssetLockProofTypeWasm::Instant => {
-                InstantAssetLockProofWasm::from_json(js_value.into()).map(AssetLockProofWasm::from)
+                InstantAssetLockProofWasm::from_json(object.into()).map(AssetLockProofWasm::from)
             }
             AssetLockProofTypeWasm::Chain => {
-                ChainAssetLockProofWasm::from_json(js_value.into()).map(AssetLockProofWasm::from)
+                ChainAssetLockProofWasm::from_json(object.into()).map(AssetLockProofWasm::from)
             }
         }
     }

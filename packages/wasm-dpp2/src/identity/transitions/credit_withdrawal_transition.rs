@@ -8,7 +8,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_to_u16, try_to_u32, try_to_u64,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -85,11 +85,10 @@ extern "C" {
     pub type IdentityCreditWithdrawalTransitionJSONJs;
 }
 
-/// Serde struct for IdentityCreditWithdrawalTransitionOptions
+/// Serde struct for IdentityCreditWithdrawalTransitionOptions (primitives only)
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreditWithdrawalTransitionOptionsInput {
-    identity_id: IdentifierWasm,
     amount: u64,
     core_fee_per_byte: u32,
     #[serde(default)]
@@ -108,6 +107,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         options: IdentityCreditWithdrawalTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         // Extract complex types first (borrows &options)
+        let identity_id: IdentifierWasm = try_from_options(&options, "identityId")?;
+
         let pooling: PoolingWasm = PoolingWasm::try_from_options(&options, "pooling")?;
 
         let output_script: Option<CoreScript> =
@@ -116,7 +117,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
                     .map(|cs| cs.clone().into())
             })?;
 
-        // Deserialize simple fields via serde last (consumes options)
+        // Deserialize primitive fields via serde last (consumes options)
         let input: IdentityCreditWithdrawalTransitionOptionsInput =
             serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
@@ -124,7 +125,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         Ok(IdentityCreditWithdrawalTransitionWasm(
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
                 amount: input.amount,
-                identity_id: input.identity_id.into(),
+                identity_id: identity_id.into(),
                 output_script,
                 core_fee_per_byte: input.core_fee_per_byte,
                 pooling: pooling.into(),

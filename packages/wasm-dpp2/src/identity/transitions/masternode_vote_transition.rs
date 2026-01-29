@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{IntoWasm, try_from_options, try_from_options_with, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -72,12 +72,10 @@ extern "C" {
     pub type MasternodeVoteTransitionJSONJs;
 }
 
-/// Serde struct for MasternodeVoteTransitionOptions
+/// Serde struct for MasternodeVoteTransitionOptions (primitives only)
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MasternodeVoteTransitionOptionsInput {
-    pro_tx_hash: IdentifierWasm,
-    voter_identity_id: IdentifierWasm,
     nonce: IdentityNonce,
     #[serde(default)]
     signature_public_key_id: KeyID,
@@ -108,19 +106,22 @@ impl MasternodeVoteTransitionWasm {
         options: MasternodeVoteTransitionOptionsJs,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
         // Extract complex types first (borrows &options)
+        let pro_tx_hash: IdentifierWasm = try_from_options(&options, "proTxHash")?;
+        let voter_identity_id: IdentifierWasm = try_from_options(&options, "voterIdentityId")?;
+
         let vote: VoteWasm = try_from_options_with(&options, "vote", |v| {
             v.to_wasm::<VoteWasm>("Vote").map(|r| r.clone())
         })?;
 
-        // Deserialize simple fields via serde last (consumes options)
+        // Deserialize primitive fields via serde last (consumes options)
         let input: MasternodeVoteTransitionOptionsInput =
             serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
-                pro_tx_hash: input.pro_tx_hash.into(),
-                voter_identity_id: input.voter_identity_id.into(),
+                pro_tx_hash: pro_tx_hash.into(),
+                voter_identity_id: voter_identity_id.into(),
                 vote: vote.into(),
                 nonce: input.nonce,
                 signature_public_key_id: input.signature_public_key_id,

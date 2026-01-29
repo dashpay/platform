@@ -3,7 +3,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -68,12 +68,10 @@ extern "C" {
     pub type IdentityCreditTransferJSONJs;
 }
 
-/// Serde struct for IdentityCreditTransferOptions
+/// Serde struct for IdentityCreditTransferOptions (primitives only)
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreditTransferOptionsInput {
-    sender_id: IdentifierWasm,
-    recipient_id: IdentifierWasm,
     amount: u64,
     nonce: u64,
     #[serde(default)]
@@ -90,14 +88,19 @@ impl IdentityCreditTransferWasm {
     pub fn constructor(
         options: IdentityCreditTransferOptionsJs,
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
+        // Extract complex types first (borrows &options)
+        let sender_id: IdentifierWasm = try_from_options(&options, "senderId")?;
+        let recipient_id: IdentifierWasm = try_from_options(&options, "recipientId")?;
+
+        // Deserialize primitive fields via serde last (consumes options)
         let input: IdentityCreditTransferOptionsInput =
             serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
-                identity_id: input.sender_id.into(),
-                recipient_id: input.recipient_id.into(),
+                identity_id: sender_id.into(),
+                recipient_id: recipient_id.into(),
                 amount: input.amount,
                 nonce: input.nonce,
                 user_fee_increase: input.user_fee_increase,

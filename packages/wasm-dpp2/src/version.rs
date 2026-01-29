@@ -1,6 +1,7 @@
 use crate::error::WasmDppError;
 use dpp::version::PlatformVersion;
 use dpp::version::v1::PLATFORM_V1;
+use dpp::version::v10::PLATFORM_V10;
 use dpp::version::v2::PLATFORM_V2;
 use dpp::version::v3::PLATFORM_V3;
 use dpp::version::v4::PLATFORM_V4;
@@ -9,7 +10,6 @@ use dpp::version::v6::PLATFORM_V6;
 use dpp::version::v7::PLATFORM_V7;
 use dpp::version::v8::PLATFORM_V8;
 use dpp::version::v9::PLATFORM_V9;
-use dpp::version::v10::PLATFORM_V10;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 

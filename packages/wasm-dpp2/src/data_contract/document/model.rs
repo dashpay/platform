@@ -5,10 +5,7 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{
-    ToSerdeJSONExt, try_from_options_optional_with, try_from_options_with, try_to_fixed_bytes,
-    try_to_string,
-};
+use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_optional, try_from_options_with};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
@@ -174,16 +171,15 @@ extern "C" {
     pub type DocumentPropertiesJs;
 }
 
-/// Serde struct for DocumentOptions
+/// Serde struct for DocumentOptions (primitives only)
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DocumentOptionsInput {
-    data_contract_id: IdentifierWasm,
-    owner_id: IdentifierWasm,
+    document_type_name: String,
     #[serde(default)]
     revision: Option<u64>,
     #[serde(default)]
-    id: Option<IdentifierWasm>,
+    entropy: Option<[u8; 32]>,
 }
 
 #[wasm_bindgen(js_class = Document)]
@@ -191,28 +187,26 @@ impl DocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DocumentOptionsJs) -> WasmDppResult<DocumentWasm> {
         // Extract complex types first (borrows &options)
-        let document_type_name = try_from_options_with(&options, "documentTypeName", |v| {
-            try_to_string(v, "documentTypeName")
-        })?;
+        let data_contract_id: IdentifierWasm = try_from_options(&options, "dataContractId")?;
+        let data_contract_id: Identifier = data_contract_id.into();
+
+        let owner_id: IdentifierWasm = try_from_options(&options, "ownerId")?;
+        let owner_id: Identifier = owner_id.into();
+
+        let id: Option<IdentifierWasm> = try_from_options_optional(&options, "id")?;
 
         let properties = try_from_options_with(&options, "properties", |v| {
             v.with_serde_to_platform_value_map()
         })?;
 
-        let entropy: Option<[u8; 32]> =
-            try_from_options_optional_with(&options, "entropy", |v| {
-                try_to_fixed_bytes::<32>(v.clone(), "entropy")
-            })?;
-
-        // Deserialize simple fields via serde last (consumes options)
+        // Deserialize primitive fields via serde last (consumes options)
         let input: DocumentOptionsInput = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        let data_contract_id: Identifier = input.data_contract_id.into();
-        let owner_id: Identifier = input.owner_id.into();
+        let document_type_name = input.document_type_name;
         let revision = input.revision.unwrap_or(1);
 
-        let entropy: [u8; 32] = entropy.map_or_else(
+        let entropy: [u8; 32] = input.entropy.map_or_else(
             || {
                 entropy_generator::DefaultEntropyGenerator
                     .generate()
@@ -221,7 +215,7 @@ impl DocumentWasm {
             Ok,
         )?;
 
-        let doc_id: Identifier = input.id.map_or_else(
+        let doc_id: Identifier = id.map_or_else(
             || {
                 crate::utils::generate_document_id_v0(
                     &data_contract_id,
