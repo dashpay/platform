@@ -1,13 +1,15 @@
 //! Main server process for RS-Drive-ABCI
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
+#[cfg(feature = "replay")]
+use drive_abci::replay::{self, ReplayArgs};
+use drive_abci::verify::verify_grovedb;
 
 use clap::{Parser, Subcommand};
 use dapi_grpc::platform::v0::get_status_request;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::transport::Uri;
-use dpp::version::PlatformVersion;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
@@ -16,7 +18,6 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
 use itertools::Itertools;
-use std::fs::remove_file;
 #[cfg(all(tokio_unstable, feature = "console"))]
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -63,6 +64,11 @@ enum Commands {
     /// Print current software version
     #[command()]
     Version,
+
+    /// Replay ABCI requests captured from drive-abci logs.
+    #[cfg(feature = "replay")]
+    #[command()]
+    Replay(ReplayArgs),
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -151,8 +157,13 @@ impl Cli {
             }
             Commands::Config => dump_config(&config)?,
             Commands::Status => runtime.block_on(check_status(&config))?,
-            Commands::Verify => verify_grovedb(&config.db_path, true)?,
+            Commands::Verify => drive_abci::verify::run(&config, true)?,
             Commands::Version => print_version(),
+            #[cfg(feature = "replay")]
+            Commands::Replay(args) => {
+                replay::run(config, args, cancel.clone()).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
         };
 
         Ok(())
@@ -329,62 +340,6 @@ async fn check_status(config: &PlatformConfig) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|e| format!("can't request status: {e}"))
-}
-
-/// Verify GroveDB integrity.
-///
-/// This function will execute GroveDB integrity checks if one of the following conditions is met:
-/// - `force` is `true`
-/// - file `.fsck` in `config.db_path` exists
-///
-/// After successful verification, .fsck file is removed.
-fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
-    let fsck = PathBuf::from(db_path).join(".fsck");
-
-    if !force {
-        if !fsck.exists() {
-            return Ok(());
-        }
-        tracing::info!(
-            "found {} file, starting grovedb verification",
-            fsck.display()
-        );
-    }
-
-    let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
-    //todo: get platform version instead of taking latest
-    let result = grovedb
-        .visualize_verify_grovedb(
-            None,
-            true,
-            true,
-            &PlatformVersion::latest().drive.grove_version,
-        )
-        .map_err(|e| e.to_string());
-
-    match result {
-        Ok(data) => {
-            for result in data {
-                tracing::warn!(?result, "grovedb verification")
-            }
-            tracing::info!("grovedb verification finished");
-
-            if fsck.exists() {
-                if let Err(e) = remove_file(&fsck) {
-                    tracing::warn!(
-                        error = ?e,
-                        path  =fsck.display().to_string(),
-                        "grovedb verification: cannot remove .fsck file: please remove it manually to avoid running verification again",
-                    );
-                }
-            }
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!("grovedb verification failed: {}", e);
-            Err(e)
-        }
-    }
 }
 
 /// Print current software version.

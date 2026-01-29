@@ -118,7 +118,7 @@ async fn test_fetch_all_groups_since_1_inclusive() {
         groups.get(&2),
         Some(Some(Group::V0(GroupV0 {
             members,
-            required_power: 2
+            required_power: 1
         }))) if members == &BTreeMap::from([(IDENTITY_ID_1, 1), (IDENTITY_ID_3, 1)])
     );
 }

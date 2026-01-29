@@ -53,6 +53,9 @@ inputs:
   cache_to_name:
     description: "Save cache to name manifest (should be used only on default branch)"
     default: "false"
+  additional_features:
+    description: Extra Cargo features to enable (comma-separated)
+    default: ""
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -195,6 +198,7 @@ runs:
           AWS=${{ env.HOME }}/.aws/credentials
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
+          ADDITIONAL_FEATURES=${{ inputs.additional_features }}
           ${{ inputs.build_args }}
           ${{ steps.sccache.outputs.env_vars }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}

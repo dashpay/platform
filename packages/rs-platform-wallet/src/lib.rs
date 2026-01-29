@@ -241,11 +241,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.set_description(description)
     }
 
-    fn birth_height(&self) -> Option<u32> {
+    fn birth_height(&self) -> u32 {
         self.wallet_info.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: Option<u32>) {
+    fn set_birth_height(&mut self, height: u32) {
         self.wallet_info.set_birth_height(height)
     }
 
