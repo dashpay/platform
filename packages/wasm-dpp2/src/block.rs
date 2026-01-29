@@ -3,10 +3,30 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use serde::Deserialize;
 use wasm_bindgen::prelude::*;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlockInfoOptions {
+    time_ms: u64,
+    height: u64,
+    core_height: u32,
+    epoch_index: u16,
+}
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
+/**
+ * Options for creating a BlockInfo instance.
+ */
+export interface BlockInfoOptions {
+    timeMs: bigint;
+    height: bigint;
+    coreHeight: number;
+    epochIndex: number;
+}
+
 /**
  * BlockInfo serialized as a plain object.
  */
@@ -30,6 +50,9 @@ export interface BlockInfoJSON {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "BlockInfoOptions")]
+    pub type BlockInfoOptionsJs;
+
     #[wasm_bindgen(typescript_type = "BlockInfoObject")]
     pub type BlockInfoObjectJs;
 
@@ -44,19 +67,17 @@ pub struct BlockInfoWasm(BlockInfo);
 #[wasm_bindgen(js_class = BlockInfo)]
 impl BlockInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn constructor(
-        #[wasm_bindgen(js_name = "timeMs")] time_ms: u64,
-        height: u64,
-        #[wasm_bindgen(js_name = "coreHeight")] core_height: u32,
-        #[wasm_bindgen(js_name = "epochIndex")] epoch_index: u16,
-    ) -> WasmDppResult<BlockInfoWasm> {
-        let epoch =
-            Epoch::new(epoch_index).map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+    pub fn constructor(options: BlockInfoOptionsJs) -> WasmDppResult<BlockInfoWasm> {
+        let opts: BlockInfoOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let epoch = Epoch::new(opts.epoch_index)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(BlockInfoWasm(BlockInfo {
-            time_ms,
-            height,
-            core_height,
+            time_ms: opts.time_ms,
+            height: opts.height,
+            core_height: opts.core_height,
             epoch,
         }))
     }

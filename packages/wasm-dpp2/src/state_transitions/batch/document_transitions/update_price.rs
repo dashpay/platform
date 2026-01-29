@@ -5,14 +5,31 @@ use crate::state_transitions::batch::document_base_transition::DocumentBaseTrans
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_update_price_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u64};
 use dpp::fee::Credits;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::DocumentUpdatePriceTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_UPDATE_PRICE_OPTIONS_TS: &str = r#"
+export interface DocumentUpdatePriceTransitionOptions {
+    document: Document;
+    identityContractNonce: bigint;
+    price: bigint;
+    tokenPaymentInfo?: TokenPaymentInfo;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentUpdatePriceTransitionOptions")]
+    pub type DocumentUpdatePriceTransitionOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "DocumentUpdatePriceTransition")]
 pub struct DocumentUpdatePriceTransitionWasm(DocumentUpdatePriceTransition);
@@ -27,15 +44,23 @@ impl From<DocumentUpdatePriceTransition> for DocumentUpdatePriceTransitionWasm {
 impl DocumentUpdatePriceTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        document: &DocumentWasm,
-        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
-        price: Credits,
-        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<
-            TokenPaymentInfoWasm,
-        >,
+        options: DocumentUpdatePriceTransitionOptionsJs,
     ) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
+        let document: DocumentWasm = try_from_options(&options, "document")?;
+
+        let identity_contract_nonce: IdentityNonce =
+            try_from_options_with(&options, "identityContractNonce", |v| {
+                try_to_u64(v, "identityContractNonce")
+            })?;
+
+        let price: Credits =
+            try_from_options_with(&options, "price", |v| try_to_u64(v, "price"))?;
+
+        let token_payment_info: Option<TokenPaymentInfoWasm> =
+            try_from_options_optional(&options, "tokenPaymentInfo")?;
+
         let rs_document_update_price_transition = generate_update_price_transition(
-            document,
+            &document,
             identity_contract_nonce,
             document.document_type_name().to_string(),
             price,

@@ -7,7 +7,10 @@ use crate::state_transitions::batch::document_transition::DocumentTransitionWasm
 use crate::state_transitions::batch::generators::generate_create_transition;
 use crate::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{
+    try_from_options, try_from_options_optional, try_from_options_with, try_to_u64,
+    ToSerdeJSONExt,
+};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -16,8 +19,21 @@ use dpp::state_transition::batch_transition::DocumentCreateTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_CREATE_OPTIONS_TS: &str = r#"
+export interface DocumentCreateTransitionOptions {
+    document: Document;
+    identityContractNonce: bigint;
+    prefundedVotingBalance?: PrefundedVotingBalance;
+    tokenPaymentInfo?: TokenPaymentInfo;
+}
+"#;
+
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentCreateTransitionOptions")]
+    pub type DocumentCreateTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "Record<string, unknown>")]
     pub type DocumentTransitionDataJs;
 }
@@ -42,17 +58,23 @@ impl From<DocumentCreateTransition> for DocumentCreateTransitionWasm {
 impl DocumentCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        document: &DocumentWasm,
-        #[wasm_bindgen(js_name = "identityContractNonce")] identity_contract_nonce: IdentityNonce,
-        #[wasm_bindgen(js_name = "prefundedVotingBalance")] prefunded_voting_balance: Option<
-            PrefundedVotingBalanceWasm,
-        >,
-        #[wasm_bindgen(js_name = "tokenPaymentInfo")] token_payment_info: Option<
-            TokenPaymentInfoWasm,
-        >,
+        options: DocumentCreateTransitionOptionsJs,
     ) -> WasmDppResult<DocumentCreateTransitionWasm> {
+        let document: DocumentWasm = try_from_options(&options, "document")?;
+
+        let identity_contract_nonce: IdentityNonce =
+            try_from_options_with(&options, "identityContractNonce", |v| {
+                try_to_u64(v, "identityContractNonce")
+            })?;
+
+        let prefunded_voting_balance: Option<PrefundedVotingBalanceWasm> =
+            try_from_options_optional(&options, "prefundedVotingBalance")?;
+
+        let token_payment_info: Option<TokenPaymentInfoWasm> =
+            try_from_options_optional(&options, "tokenPaymentInfo")?;
+
         let rs_create_transition = generate_create_transition(
-            document,
+            &document,
             identity_contract_nonce,
             document.document_type_name().to_string(),
             prefunded_voting_balance,

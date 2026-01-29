@@ -3,14 +3,30 @@ use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{try_from_options, try_from_options_optional_with, try_to_string, IntoWasm};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransitionV0;
 use dpp::state_transition::batch_transition::TokenSetPriceForDirectPurchaseTransition;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_SET_PRICE_OPTIONS_TS: &str = r#"
+export interface TokenSetPriceForDirectPurchaseTransitionOptions {
+    base: TokenBaseTransition;
+    price?: TokenPricingSchedule;
+    publicNote?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenSetPriceForDirectPurchaseTransitionOptions")]
+    pub type TokenSetPriceForDirectPurchaseTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenSetPriceForDirectPurchaseTransition")]
@@ -36,25 +52,29 @@ impl From<TokenSetPriceForDirectPurchaseTransitionWasm>
 impl TokenSetPriceForDirectPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        base: &TokenBaseTransitionWasm,
-        price: &JsValue,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
+        options: TokenSetPriceForDirectPurchaseTransitionOptionsJs,
     ) -> WasmDppResult<TokenSetPriceForDirectPurchaseTransitionWasm> {
-        let price: Option<TokenPricingSchedule> = if price.is_undefined() {
-            None
-        } else {
-            Some(
-                price
-                    .to_wasm::<TokenPricingScheduleWasm>("TokenPricingSchedule")?
-                    .clone()
-                    .into(),
-            )
-        };
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let price: Option<TokenPricingSchedule> =
+            Reflect::get(&options, &JsValue::from_str("price"))
+                .ok()
+                .filter(|v| !v.is_undefined())
+                .map(|v| {
+                    v.to_wasm::<TokenPricingScheduleWasm>("TokenPricingSchedule")
+                        .map(|p| p.clone().into())
+                })
+                .transpose()?;
+
+        let public_note: Option<String> =
+            try_from_options_optional_with(&options, "publicNote", |v| {
+                try_to_string(v, "publicNote")
+            })?;
 
         Ok(TokenSetPriceForDirectPurchaseTransitionWasm(
             TokenSetPriceForDirectPurchaseTransition::V0(
                 TokenSetPriceForDirectPurchaseTransitionV0 {
-                    base: base.clone().into(),
+                    base: base.into(),
                     price,
                     public_note,
                 },

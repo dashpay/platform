@@ -2,16 +2,35 @@ use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::utils::try_to_u64;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::tokens::configuration::TokenConfigurationWasm;
+use crate::utils::{
+    try_from_options, try_from_options_optional, try_from_options_optional_with,
+    try_from_options_with, try_to_string, try_to_u64,
+};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::TokenMintTransition;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_MINT_OPTIONS_TS: &str = r#"
+export interface TokenMintTransitionOptions {
+    base: TokenBaseTransition;
+    amount: bigint;
+    issuedToIdentityId?: IdentifierLike;
+    publicNote?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenMintTransitionOptions")]
+    pub type TokenMintTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenMintTransition")]
@@ -33,18 +52,24 @@ impl From<TokenMintTransitionWasm> for TokenMintTransition {
 impl TokenMintTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(js_name = "issuedToIdentityId")]
-        issued_to_identity_id: IdentifierLikeOrUndefinedJs,
-        amount: u64,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
+        options: TokenMintTransitionOptionsJs,
     ) -> WasmDppResult<TokenMintTransitionWasm> {
-        let issued_to_identity_id: Option<Identifier> = issued_to_identity_id.try_into()?;
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let amount = try_from_options_with(&options, "amount", |v| try_to_u64(v, "amount"))?;
+
+        let issued_to_identity_id: Option<IdentifierWasm> =
+            try_from_options_optional(&options, "issuedToIdentityId")?;
+
+        let public_note: Option<String> =
+            try_from_options_optional_with(&options, "publicNote", |v| {
+                try_to_string(v, "publicNote")
+            })?;
 
         Ok(TokenMintTransitionWasm(TokenMintTransition::V0(
             TokenMintTransitionV0 {
-                base: base.clone().into(),
-                issued_to_identity_id,
+                base: base.into(),
+                issued_to_identity_id: issued_to_identity_id.map(Into::into),
                 amount,
                 public_note,
             },

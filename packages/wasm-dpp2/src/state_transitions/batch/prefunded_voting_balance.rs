@@ -1,3 +1,4 @@
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::fee::Credits;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -48,4 +49,5 @@ impl PrefundedVotingBalanceWasm {
     }
 }
 
+impl_try_from_js_value!(PrefundedVotingBalanceWasm, "PrefundedVotingBalance");
 impl_wasm_type_info!(PrefundedVotingBalanceWasm, PrefundedVotingBalance);
