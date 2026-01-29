@@ -170,39 +170,36 @@ pub fn tokens_configuration_from_js_value(
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DataContractOptionsJs) -> WasmDppResult<DataContractWasm> {
-        let options: JsValue = options.into();
-        let object = try_to_object(options.clone(), "options")?;
-
         // Extract ownerId (required)
-        let owner_id: IdentifierWasm = try_from_options(&object, "ownerId")?;
+        let owner_id: IdentifierWasm = try_from_options(&options, "ownerId")?;
 
         // Extract schemas (required)
-        let schema: Value = try_from_options_with(&object, "schemas", |v| {
+        let schema: Value = try_from_options_with(&options, "schemas", |v| {
             serialization::platform_value_from_object(v)
         })?;
 
         // Extract definitions (optional)
         let definitions: Option<Value> = try_from_options_optional_with(
-            &object,
+            &options,
             "definitions",
             serialization::platform_value_from_object,
         )?;
 
         // Extract tokens (optional)
         let tokens: BTreeMap<TokenContractPosition, TokenConfiguration> =
-            try_from_options_optional_with(&object, "tokens", |v| {
+            try_from_options_optional_with(&options, "tokens", |v| {
                 tokens_configuration_from_js_value(v)
             })?
             .unwrap_or_default();
 
         // Extract platformVersion (optional)
         let platform_version: PlatformVersion =
-            try_from_options_optional::<PlatformVersionWasm>(&object, "platformVersion")?
+            try_from_options_optional::<PlatformVersionWasm>(&options, "platformVersion")?
                 .map(Into::into)
                 .unwrap_or_else(|| PlatformVersionWasm::default().into());
 
         // Extract simple fields via serde
-        let opts: DataContractOptions = serde_wasm_bindgen::from_value(options)
+        let opts: DataContractOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let data_contract_structure_version_value = Value::from(

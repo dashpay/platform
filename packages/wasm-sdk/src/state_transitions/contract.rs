@@ -83,23 +83,19 @@ impl WasmSdk {
         &self,
         options: ContractPublishOptionsJs,
     ) -> Result<DataContractWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract data contract from options
-        let data_contract_wasm =
-            DataContractWasm::try_from_options(&options_value, "dataContract")?;
+        let data_contract_wasm = DataContractWasm::try_from_options(&options, "dataContract")?;
         let data_contract: DataContract = data_contract_wasm.into();
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Create and broadcast the contract
@@ -180,11 +176,8 @@ impl WasmSdk {
         &self,
         options: ContractUpdateOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract data contract from options
-        let data_contract_wasm =
-            DataContractWasm::try_from_options(&options_value, "dataContract")?;
+        let data_contract_wasm = DataContractWasm::try_from_options(&options, "dataContract")?;
         let updated_contract: DataContract = data_contract_wasm.into();
 
         // Get identifiers from the contract
@@ -192,15 +185,14 @@ impl WasmSdk {
         let owner_id: Identifier = updated_contract.owner_id();
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Get identity contract nonce

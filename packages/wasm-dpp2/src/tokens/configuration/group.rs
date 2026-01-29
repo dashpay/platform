@@ -104,7 +104,7 @@ impl GroupWasm {
         members: GroupMembersMapJs,
         #[wasm_bindgen(js_name = "requiredPower")] required_power: GroupRequiredPower,
     ) -> WasmDppResult<GroupWasm> {
-        let members = members_map_to_btree(&try_to_map(members.into(), "members")?)?;
+        let members = members_map_to_btree(&try_to_map(members, "members")?)?;
 
         Ok(GroupWasm(Group::V0(GroupV0 {
             members,
@@ -131,7 +131,7 @@ impl GroupWasm {
 
     #[wasm_bindgen(setter = "members")]
     pub fn set_members(&mut self, members: GroupMembersMapJs) -> WasmDppResult<()> {
-        let members = members_map_to_btree(&try_to_map(members.into(), "members")?)?;
+        let members = members_map_to_btree(&try_to_map(members, "members")?)?;
 
         self.0.set_members(members);
 

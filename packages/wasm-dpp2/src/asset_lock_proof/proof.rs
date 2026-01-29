@@ -7,9 +7,9 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, get_class_type, try_from_options, try_to_object};
+use crate::utils::{IntoWasm, get_class_type, try_from_options};
 use dpp::prelude::AssetLockProof;
-use js_sys::{Object, Reflect};
+use js_sys::Reflect;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -184,26 +184,24 @@ impl AssetLockProofWasm {
         };
 
         // Add type field: 0 = Instant, 1 = Chain
-        let object = Object::from(inner_object);
         let proof_type: u8 = match &self.0 {
             AssetLockProof::Instant(_) => 0,
             AssetLockProof::Chain(_) => 1,
         };
         Reflect::set(
-            &object,
+            &inner_object,
             &JsValue::from_str("type"),
             &JsValue::from(proof_type),
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(JsValue::from(object).into())
+        Ok(inner_object.into())
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(object: AssetLockProofObjectJs) -> WasmDppResult<AssetLockProofWasm> {
         let js_value: JsValue = object.into();
-        let object = try_to_object(js_value.clone(), "object")?;
-        let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
+        let proof_type: AssetLockProofTypeWasm = try_from_options(&js_value, "type")?;
 
         match proof_type {
             AssetLockProofTypeWasm::Instant => {
@@ -228,26 +226,24 @@ impl AssetLockProofWasm {
         };
 
         // Add type field: 0 = Instant, 1 = Chain
-        let object = Object::from(inner_json);
         let proof_type: u8 = match &self.0 {
             AssetLockProof::Instant(_) => 0,
             AssetLockProof::Chain(_) => 1,
         };
         Reflect::set(
-            &object,
+            &inner_json,
             &JsValue::from_str("type"),
             &JsValue::from(proof_type),
         )
         .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
 
-        Ok(JsValue::from(object).into())
+        Ok(inner_json.into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(object: AssetLockProofJSONJs) -> WasmDppResult<AssetLockProofWasm> {
         let js_value: JsValue = object.into();
-        let object = try_to_object(js_value.clone(), "json")?;
-        let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
+        let proof_type: AssetLockProofTypeWasm = try_from_options(&js_value, "type")?;
 
         match proof_type {
             AssetLockProofTypeWasm::Instant => {

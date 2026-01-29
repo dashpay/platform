@@ -5,7 +5,7 @@ use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional, try_from_options_with, try_to_object,
+    IntoWasm, try_from_options, try_from_options_optional, try_from_options_with,
 };
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
@@ -57,33 +57,31 @@ impl TokenDistributionRulesWasm {
     pub fn constructor(
         options: TokenDistributionRulesOptionsJs,
     ) -> WasmDppResult<TokenDistributionRulesWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
-
         let perpetual_distribution = try_from_options_optional::<TokenPerpetualDistributionWasm>(
-            &options_obj,
+            &options,
             "perpetualDistribution",
         )?
         .map(Into::into);
 
         let perpetual_distribution_rules: ChangeControlRulesWasm =
-            try_from_options(&options_obj, "perpetualDistributionRules")?;
+            try_from_options(&options, "perpetualDistributionRules")?;
 
         let pre_programmed_distribution = try_from_options_optional::<
             TokenPreProgrammedDistributionWasm,
-        >(&options_obj, "preProgrammedDistribution")?
+        >(&options, "preProgrammedDistribution")?
         .map(Into::into);
 
         let new_tokens_destination_identity = try_from_options_optional::<IdentifierWasm>(
-            &options_obj,
+            &options,
             "newTokensDestinationIdentity",
         )?
         .map(Into::into);
 
         let new_tokens_destination_identity_rules: ChangeControlRulesWasm =
-            try_from_options(&options_obj, "newTokensDestinationIdentityRules")?;
+            try_from_options(&options, "newTokensDestinationIdentityRules")?;
 
         let minting_allow_choosing_destination =
-            try_from_options_with(&options_obj, "mintingAllowChoosingDestination", |v| {
+            try_from_options_with(&options, "mintingAllowChoosingDestination", |v| {
                 v.as_bool().ok_or_else(|| {
                     WasmDppError::invalid_argument(
                         "mintingAllowChoosingDestination must be a boolean",
@@ -92,10 +90,10 @@ impl TokenDistributionRulesWasm {
             })?;
 
         let minting_allow_choosing_destination_rules: ChangeControlRulesWasm =
-            try_from_options(&options_obj, "mintingAllowChoosingDestinationRules")?;
+            try_from_options(&options, "mintingAllowChoosingDestinationRules")?;
 
         let change_direct_purchase_pricing_rules: ChangeControlRulesWasm =
-            try_from_options(&options_obj, "changeDirectPurchasePricingRules")?;
+            try_from_options(&options, "changeDirectPurchasePricingRules")?;
 
         Ok(TokenDistributionRulesWasm(TokenDistributionRules::V0(
             TokenDistributionRulesV0 {

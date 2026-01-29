@@ -2,9 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{
-    JsMapExt, try_from_options_with, try_to_map, try_to_object, try_to_u32, try_to_u64,
-};
+use crate::utils::{JsMapExt, try_from_options_with, try_to_map, try_to_u32, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
@@ -161,51 +159,49 @@ impl FinalizedEpochInfoWasm {
     pub fn constructor(
         options: FinalizedEpochInfoOptionsJs,
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
-
-        let first_block_time = try_from_options_with(&options_obj, "firstBlockTime", |v| {
+        let first_block_time = try_from_options_with(&options, "firstBlockTime", |v| {
             try_to_u64(v, "firstBlockTime")
         })?;
 
-        let first_block_height = try_from_options_with(&options_obj, "firstBlockHeight", |v| {
+        let first_block_height = try_from_options_with(&options, "firstBlockHeight", |v| {
             try_to_u64(v, "firstBlockHeight")
         })?;
 
         let total_blocks_in_epoch =
-            try_from_options_with(&options_obj, "totalBlocksInEpoch", |v| {
+            try_from_options_with(&options, "totalBlocksInEpoch", |v| {
                 try_to_u64(v, "totalBlocksInEpoch")
             })?;
 
         let first_core_block_height =
-            try_from_options_with(&options_obj, "firstCoreBlockHeight", |v| {
+            try_from_options_with(&options, "firstCoreBlockHeight", |v| {
                 try_to_u32(v, "firstCoreBlockHeight")
             })?;
 
         let next_epoch_start_core_block_height =
-            try_from_options_with(&options_obj, "nextEpochStartCoreBlockHeight", |v| {
+            try_from_options_with(&options, "nextEpochStartCoreBlockHeight", |v| {
                 try_to_u32(v, "nextEpochStartCoreBlockHeight")
             })?;
 
         let total_processing_fees =
-            try_from_options_with(&options_obj, "totalProcessingFees", |v| {
+            try_from_options_with(&options, "totalProcessingFees", |v| {
                 try_to_u64(v, "totalProcessingFees")
             })?;
 
         let total_distributed_storage_fees =
-            try_from_options_with(&options_obj, "totalDistributedStorageFees", |v| {
+            try_from_options_with(&options, "totalDistributedStorageFees", |v| {
                 try_to_u64(v, "totalDistributedStorageFees")
             })?;
 
         let total_created_storage_fees =
-            try_from_options_with(&options_obj, "totalCreatedStorageFees", |v| {
+            try_from_options_with(&options, "totalCreatedStorageFees", |v| {
                 try_to_u64(v, "totalCreatedStorageFees")
             })?;
 
-        let core_block_rewards = try_from_options_with(&options_obj, "coreBlockRewards", |v| {
+        let core_block_rewards = try_from_options_with(&options, "coreBlockRewards", |v| {
             try_to_u64(v, "coreBlockRewards")
         })?;
 
-        let block_proposers = try_from_options_with(&options_obj, "blockProposers", |v| {
+        let block_proposers = try_from_options_with(&options, "blockProposers", |v| {
             if !v.is_instance_of::<Map>() {
                 return Err(WasmDppError::invalid_argument(
                     "'blockProposers' must be a Map",
@@ -215,11 +211,11 @@ impl FinalizedEpochInfoWasm {
         })?;
 
         let fee_multiplier_permille =
-            try_from_options_with(&options_obj, "feeMultiplierPermille", |v| {
+            try_from_options_with(&options, "feeMultiplierPermille", |v| {
                 try_to_u64(v, "feeMultiplierPermille")
             })?;
 
-        let protocol_version = try_from_options_with(&options_obj, "protocolVersion", |v| {
+        let protocol_version = try_from_options_with(&options, "protocolVersion", |v| {
             try_to_u32(v, "protocolVersion")
         })?;
 
@@ -386,7 +382,7 @@ impl FinalizedEpochInfoWasm {
         #[wasm_bindgen(js_name = "blockProposers")] block_proposers: BlockProposersMapJs,
     ) -> WasmDppResult<()> {
         let block_proposers_map =
-            block_proposers_from_map(&try_to_map(block_proposers.into(), "blockProposers")?)?;
+            block_proposers_from_map(&try_to_map(block_proposers, "blockProposers")?)?;
         self.v0_mut().block_proposers = block_proposers_map;
         Ok(())
     }

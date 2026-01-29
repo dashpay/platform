@@ -3,8 +3,8 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::GroupStateTransitionInfoWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
-    try_to_object, try_to_u16, try_to_u64,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
+    try_to_u64,
 };
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
@@ -53,24 +53,22 @@ impl TokenBaseTransitionWasm {
     pub fn constructor(
         options: TokenBaseTransitionOptionsJs,
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
-
         let identity_contract_nonce =
-            try_from_options_with(&options_obj, "identityContractNonce", |v| {
+            try_from_options_with(&options, "identityContractNonce", |v| {
                 try_to_u64(v, "identityContractNonce")
             })?;
 
         let token_contract_position =
-            try_from_options_with(&options_obj, "tokenContractPosition", |v| {
+            try_from_options_with(&options, "tokenContractPosition", |v| {
                 try_to_u16(v, "tokenContractPosition")
             })?;
 
-        let data_contract_id: IdentifierWasm = try_from_options(&options_obj, "dataContractId")?;
+        let data_contract_id: IdentifierWasm = try_from_options(&options, "dataContractId")?;
 
-        let token_id: IdentifierWasm = try_from_options(&options_obj, "tokenId")?;
+        let token_id: IdentifierWasm = try_from_options(&options, "tokenId")?;
 
         let group_info: Option<GroupStateTransitionInfo> =
-            try_from_options_optional_with(&options_obj, "usingGroupInfo", |v| {
+            try_from_options_optional_with(&options, "usingGroupInfo", |v| {
                 v.to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")
                     .map(|gi| gi.clone().into())
             })?;

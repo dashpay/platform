@@ -7,8 +7,7 @@ use crate::tokens::configuration::action_taker::ActionTakerWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
-    try_to_object, try_to_u16,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
 };
 use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
@@ -81,24 +80,21 @@ impl From<ChangeControlRulesWasm> for ChangeControlRules {
 impl ChangeControlRulesWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: ChangeControlRulesOptionsJs) -> WasmDppResult<Self> {
-        let options: JsValue = options.into();
-        let object = try_to_object(options.clone(), "options")?;
-
         // Extract AuthorizedActionTakers objects which need special handling
         let authorized_to_make_change: AuthorizedActionTakersWasm =
-            try_from_options_with(&object, "authorizedToMakeChange", |v| {
+            try_from_options_with(&options, "authorizedToMakeChange", |v| {
                 v.to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")
                     .map(|r| r.clone())
             })?;
 
         let admin_action_takers: AuthorizedActionTakersWasm =
-            try_from_options_with(&object, "adminActionTakers", |v| {
+            try_from_options_with(&options, "adminActionTakers", |v| {
                 v.to_wasm::<AuthorizedActionTakersWasm>("AuthorizedActionTakers")
                     .map(|r| r.clone())
             })?;
 
         // Extract boolean options with serde (they have defaults)
-        let opts: ChangeControlRulesOptions = serde_wasm_bindgen::from_value(options)
+        let opts: ChangeControlRulesOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(ChangeControlRulesWasm(ChangeControlRules::V0(
@@ -222,25 +218,23 @@ impl ChangeControlRulesWasm {
         &self,
         options: CanChangeAdminActionTakersOptionsJs,
     ) -> WasmDppResult<bool> {
-        let object = try_to_object(options, "options")?;
-
         let admin_action_takers: AuthorizedActionTakersWasm =
-            try_from_options(&object, "adminActionTakers")?;
+            try_from_options(&options, "adminActionTakers")?;
 
         let contract_owner_id: Identifier =
-            try_from_options::<IdentifierWasm>(&object, "contractOwnerId")?.into();
+            try_from_options::<IdentifierWasm>(&options, "contractOwnerId")?.into();
 
         let main_group: Option<GroupContractPosition> =
-            try_from_options_optional_with(&object, "mainGroup", |v| try_to_u16(v, "mainGroup"))?;
+            try_from_options_optional_with(&options, "mainGroup", |v| try_to_u16(v, "mainGroup"))?;
 
-        let action_taker: ActionTakerWasm = try_from_options(&object, "actionTaker")?;
+        let action_taker: ActionTakerWasm = try_from_options(&options, "actionTaker")?;
 
-        let goal = try_from_options_with(&object, "goal", |v| ActionGoalWasm::try_from(v.clone()))?;
+        let goal = try_from_options_with(&options, "goal", |v| ActionGoalWasm::try_from(v.clone()))?;
 
-        // Extract groups
+        // Extract groups - need Object for Object::keys
         let groups_value: JsValue =
-            try_from_options_with(&object, "groups", |v| Ok::<_, WasmDppError>(v.clone()))?;
-        let groups_object = try_to_object(groups_value, "groups")?;
+            try_from_options_with(&options, "groups", |v| Ok::<_, WasmDppError>(v.clone()))?;
+        let groups_object = Object::from(groups_value);
         let groups_keys = Object::keys(&groups_object);
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();

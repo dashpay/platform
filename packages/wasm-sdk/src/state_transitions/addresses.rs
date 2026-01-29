@@ -155,24 +155,20 @@ impl WasmSdk {
         &self,
         options: AddressFundsTransferOptionsJs,
     ) -> Result<Map, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
+            .map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_transfer_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_transfer_options(options.into())?;
 
         // Convert inputs and outputs to maps
         let inputs_map = outputs_to_btree_map(parsed.inputs);
         let outputs_map = outputs_to_btree_map(parsed.outputs);
 
-        // Extract signer from options
-        let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
-
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Use the SDK's transfer_address_funds method which handles nonces, building, and broadcasting
         let address_infos = self
@@ -286,23 +282,17 @@ impl WasmSdk {
         &self,
         options: IdentityTopUpFromAddressesOptionsJs,
     ) -> Result<IdentityTopUpFromAddressesResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
+            .map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_identity_top_up_options(options_value.clone())?;
-
-        // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_identity_top_up_options(options.into())?;
 
         // Convert inputs to map
         let inputs_map = outputs_to_btree_map(parsed.inputs);
-
-        // Extract signer from options
-        let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Use the SDK's top_up_from_addresses method
         let (address_infos, new_balance) = identity
@@ -435,10 +425,15 @@ impl WasmSdk {
         &self,
         options: AddressFundsWithdrawOptionsJs,
     ) -> Result<Map, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let output_script: CoreScript =
+            CoreScriptWasm::try_from_options(&options, "outputScript")?.into();
+        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
+            .map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_withdraw_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_withdraw_options(options.into())?;
 
         // Convert inputs to map
         let inputs_map = outputs_to_btree_map(parsed.inputs);
@@ -446,22 +441,11 @@ impl WasmSdk {
         // Convert change output if provided
         let change_output = parsed.change_output.map(|output| output.into_inner());
 
-        // Extract output script from options
-        let output_script: CoreScript =
-            CoreScriptWasm::try_from_options(&options_value, "outputScript")?.into();
-
-        // Extract signer from options
-        let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
-
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
 
         // Convert pooling
         let pooling = parsed.pooling.into();
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Use the SDK's withdraw_address_funds method which handles nonces, building, and broadcasting
         let address_infos = self
@@ -496,13 +480,14 @@ impl WasmSdk {
         &self,
         options: IdentityTransferToAddressesOptionsJs,
     ) -> Result<IdentityTransferToAddressesResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
+            .map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_identity_transfer_options(options_value.clone())?;
-
-        // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_identity_transfer_options(options.into())?;
 
         // Convert outputs to map (recipient addresses with amounts)
         let outputs_map = outputs_to_btree_map(parsed.outputs);
@@ -517,13 +502,6 @@ impl WasmSdk {
                 })
             })
             .transpose()?;
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Use the SDK's transfer_credits_to_addresses method
         let (address_infos, new_balance) = identity
@@ -745,31 +723,23 @@ impl WasmSdk {
         use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
         use wasm_dpp2::PrivateKeyWasm;
 
-        let options_value: JsValue = options.into();
-
-        // Deserialize and validate options
-        let parsed = deserialize_address_funding_options(options_value.clone())?;
-
-        // Extract asset lock proof from options
+        // Extract complex types first (borrows &options)
         let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
-            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
-
-        // Extract asset lock private key from options
+            AssetLockProofWasm::try_from_options(&options, "assetLockProof")?.into();
         let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
-            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
+            PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
+        let signer = PlatformAddressSignerWasm::try_from_options(&options)?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
+            .map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_address_funding_options(options.into())?;
 
         // Convert outputs to map (address -> optional amount)
         let outputs_map = outputs_to_optional_btree_map(parsed.outputs);
 
-        // Extract signer from options
-        let signer = PlatformAddressSignerWasm::try_from_options(&options_value)?;
-
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Use the SDK's top_up method for addresses
         let address_infos = outputs_map
@@ -918,14 +888,18 @@ impl WasmSdk {
     ) -> Result<IdentityCreateFromAddressesResultWasm, WasmSdkError> {
         use dash_sdk::platform::transition::put_identity::PutIdentity;
 
-        let options_value: JsValue = options.into();
-
-        // Deserialize and validate options
-        let parsed = deserialize_identity_create_options(options_value.clone())?;
-
-        // Extract identity from options
+        // Extract complex types first (borrows &options)
         let identity: Identity =
-            wasm_dpp2::IdentityWasm::try_from_options(&options_value, "identity")?.into();
+            wasm_dpp2::IdentityWasm::try_from_options(&options, "identity")?.into();
+        let identity_signer =
+            IdentitySignerWasm::try_from_options_with_field(&options, "identitySigner")?;
+        let address_signer =
+            PlatformAddressSignerWasm::try_from_options_with_field(&options, "addressSigner")?;
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
+            .map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_identity_create_options(options.into())?;
 
         // Convert inputs to map (address -> amount)
         let inputs_map = outputs_to_btree_map(parsed.inputs);
@@ -933,18 +907,6 @@ impl WasmSdk {
         let inputs = fetch_nonces_into_address_map(self.inner_sdk(), inputs_map).await?;
         // Convert change output if provided
         let change_output = parsed.change_output.map(|output| output.into_inner());
-
-        // Extract signers from options using helper methods
-        let identity_signer =
-            IdentitySignerWasm::try_from_options_with_field(&options_value, "identitySigner")?;
-        let address_signer = PlatformAddressSignerWasm::try_from_options_with_field(
-            &options_value,
-            "addressSigner",
-        )?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Use the SDK's put_with_address_funding method
         let (created_identity, address_infos) = identity

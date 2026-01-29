@@ -6,7 +6,6 @@ use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::
 };
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
@@ -66,8 +65,7 @@ impl TokenKeepsHistoryRulesWasm {
     pub fn constructor(
         options: TokenKeepsHistoryRulesOptionsJs,
     ) -> WasmDppResult<TokenKeepsHistoryRulesWasm> {
-        let options: JsValue = options.into();
-        let opts: TokenKeepsHistoryRulesOptions = serde_wasm_bindgen::from_value(options)
+        let opts: TokenKeepsHistoryRulesOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(TokenKeepsHistoryRulesWasm(TokenKeepsHistoryRules::V0(

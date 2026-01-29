@@ -5,7 +5,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -107,18 +107,15 @@ impl MasternodeVoteTransitionWasm {
     pub fn constructor(
         options: MasternodeVoteTransitionOptionsJs,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let options_value: JsValue = options.into();
-        let options_obj = try_to_object(options_value.clone(), "options")?;
-
-        // Deserialize fields via serde (includes IdentifierWasm)
-        let input: MasternodeVoteTransitionOptionsInput =
-            serde_wasm_bindgen::from_value(options_value)
-                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        // Extract complex types that don't have Deserialize
-        let vote: VoteWasm = try_from_options_with(&options_obj, "vote", |v| {
+        // Extract complex types first (borrows &options)
+        let vote: VoteWasm = try_from_options_with(&options, "vote", |v| {
             v.to_wasm::<VoteWasm>("Vote").map(|r| r.clone())
         })?;
+
+        // Deserialize simple fields via serde last (consumes options)
+        let input: MasternodeVoteTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {

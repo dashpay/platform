@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_object, try_to_u16};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u16};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -18,7 +18,6 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
-use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -96,24 +95,21 @@ impl IdentityCreateTransitionWasm {
     pub fn constructor(
         options: IdentityCreateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
-        let options: JsValue = options.into();
-        let object = try_to_object(options.clone(), "options")?;
-
         // Extract publicKeys (required array)
         let js_public_keys_array =
-            try_from_options_with(&object, "publicKeys", |v| try_to_array(v, "publicKeys"))?;
+            try_from_options_with(&options, "publicKeys", |v| try_to_array(v, "publicKeys"))?;
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&js_public_keys_array)?;
 
         // Extract assetLockProof (required)
         let asset_lock: AssetLockProofWasm =
-            try_from_options_with(&object, "assetLockProof", |v| {
+            try_from_options_with(&options, "assetLockProof", |v| {
                 v.to_wasm::<AssetLockProofWasm>("AssetLockProof")
                     .map(|r| r.clone())
             })?;
 
         // Extract simple fields via serde
-        let opts: IdentityCreateTransitionOptions = serde_wasm_bindgen::from_value(options)
+        let opts: IdentityCreateTransitionOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityCreateTransitionWasm(IdentityCreateTransition::V0(

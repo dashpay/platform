@@ -88,10 +88,8 @@ impl WasmSdk {
         &self,
         options: DocumentCreateOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options_value, "document")?;
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -113,12 +111,11 @@ impl WasmSdk {
         entropy_array.copy_from_slice(&entropy);
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -127,7 +124,7 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Use PutDocument trait for creation
@@ -208,10 +205,8 @@ impl WasmSdk {
         &self,
         options: DocumentReplaceOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options_value, "document")?;
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -219,12 +214,11 @@ impl WasmSdk {
         let document_type_name = document_wasm.document_type_name();
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -233,7 +227,7 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Use PutDocument trait for replacement (revision > INITIAL_REVISION triggers replace)
@@ -323,10 +317,8 @@ impl WasmSdk {
         &self,
         options: DocumentDeleteOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract document field - can be either a Document instance or plain object
-        let document_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("document"))
+        let document_js = js_sys::Reflect::get(&options, &JsValue::from_str("document"))
             .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
 
         if document_js.is_undefined() || document_js.is_null() {
@@ -364,18 +356,17 @@ impl WasmSdk {
         };
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Build and execute delete transition using DocumentDeleteTransitionBuilder
@@ -464,10 +455,8 @@ impl WasmSdk {
         &self,
         options: DocumentTransferOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options_value, "document")?;
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -477,7 +466,7 @@ impl WasmSdk {
 
         // Extract recipient ID from options
         let recipient_id: Identifier =
-            IdentifierWasm::try_from_options(&options_value, "recipientId")?.into();
+            IdentifierWasm::try_from_options(&options, "recipientId")?.into();
 
         // Validate not transferring to self
         if owner_id == recipient_id {
@@ -487,12 +476,11 @@ impl WasmSdk {
         }
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -501,7 +489,7 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Use TransferDocument trait
@@ -591,10 +579,8 @@ impl WasmSdk {
         &self,
         options: DocumentPurchaseOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options_value, "document")?;
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -602,20 +588,18 @@ impl WasmSdk {
         let document_type_name = document_wasm.document_type_name();
 
         // Extract buyer ID from options
-        let buyer_id: Identifier =
-            IdentifierWasm::try_from_options(&options_value, "buyerId")?.into();
+        let buyer_id: Identifier = IdentifierWasm::try_from_options(&options, "buyerId")?.into();
 
         // Extract price from options
         let price: Credits =
-            try_from_options_with(&options_value, "price", |v| try_to_u64(v, "price"))?;
+            try_from_options_with(&options, "price", |v| try_to_u64(v, "price"))?;
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -624,7 +608,7 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Use PurchaseDocument trait
@@ -710,10 +694,8 @@ impl WasmSdk {
         &self,
         options: DocumentSetPriceOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options_value, "document")?;
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -722,15 +704,14 @@ impl WasmSdk {
 
         // Extract price from options
         let price: Credits =
-            try_from_options_with(&options_value, "price", |v| try_to_u64(v, "price"))?;
+            try_from_options_with(&options, "price", |v| try_to_u64(v, "price"))?;
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -739,7 +720,7 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
+        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
             .map(Into::into);
 
         // Use UpdatePriceOfDocument trait

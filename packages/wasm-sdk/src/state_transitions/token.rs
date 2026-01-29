@@ -7,6 +7,7 @@ use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -225,30 +226,25 @@ impl WasmSdk {
         &self,
         options: TokenMintOptionsJs,
     ) -> Result<TokenMintResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_mint_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_mint_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let identity_id: Identifier = parsed.identity_id.into();
         let amount = parsed.amount as TokenAmount;
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the mint transition using rs-sdk builder
         let mut builder = TokenMintTransitionBuilder::new(
@@ -269,24 +265,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -471,30 +458,25 @@ impl WasmSdk {
         &self,
         options: TokenBurnOptionsJs,
     ) -> Result<TokenBurnResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_burn_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_burn_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let identity_id: Identifier = parsed.identity_id.into();
         let amount = parsed.amount as TokenAmount;
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the burn transition using rs-sdk builder
         let mut builder = TokenBurnTransitionBuilder::new(
@@ -510,24 +492,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -720,10 +693,15 @@ impl WasmSdk {
         &self,
         options: TokenTransferOptionsJs,
     ) -> Result<TokenTransferResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_transfer_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_transfer_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
@@ -738,20 +716,8 @@ impl WasmSdk {
             ));
         }
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the transfer transition using rs-sdk builder
         let mut builder = TokenTransferTransitionBuilder::new(
@@ -767,17 +733,11 @@ impl WasmSdk {
             builder = builder.with_public_note(note);
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -953,30 +913,25 @@ impl WasmSdk {
         &self,
         options: TokenFreezeOptionsJs,
     ) -> Result<TokenFreezeResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_freeze_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_freeze_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let authority_id: Identifier = parsed.authority_id.into();
         let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the freeze transition using rs-sdk builder
         let mut builder = TokenFreezeTransitionBuilder::new(
@@ -992,24 +947,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1180,30 +1126,25 @@ impl WasmSdk {
         &self,
         options: TokenUnfreezeOptionsJs,
     ) -> Result<TokenUnfreezeResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_unfreeze_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_unfreeze_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let authority_id: Identifier = parsed.authority_id.into();
         let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the unfreeze transition using rs-sdk builder
         let mut builder = TokenUnfreezeTransitionBuilder::new(
@@ -1219,24 +1160,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1393,30 +1325,25 @@ impl WasmSdk {
         &self,
         options: TokenDestroyFrozenOptionsJs,
     ) -> Result<TokenDestroyFrozenResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_destroy_frozen_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_destroy_frozen_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let authority_id: Identifier = parsed.authority_id.into();
         let frozen_identity_id: Identifier = parsed.frozen_identity_id.into();
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the destroy frozen transition using rs-sdk builder
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
@@ -1432,24 +1359,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1611,29 +1529,24 @@ impl WasmSdk {
         &self,
         options: TokenEmergencyActionOptionsJs,
     ) -> Result<TokenEmergencyActionResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_emergency_action_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_emergency_action_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
         let authority_id: Identifier = parsed.authority_id.into();
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the emergency action transition using rs-sdk builder
         // Use the appropriate constructor based on the action
@@ -1661,24 +1574,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -1829,10 +1733,16 @@ impl WasmSdk {
     ) -> Result<TokenClaimResultWasm, WasmSdkError> {
         use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm =
+            IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_claim_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_claim_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
@@ -1849,20 +1759,8 @@ impl WasmSdk {
             }
         };
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the claim transition using rs-sdk builder
         let mut builder = TokenClaimTransitionBuilder::new(
@@ -1877,17 +1775,11 @@ impl WasmSdk {
             builder = builder.with_public_note(note);
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -2079,10 +1971,17 @@ impl WasmSdk {
     ) -> Result<TokenSetPriceResultWasm, WasmSdkError> {
         use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_set_price_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_set_price_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
@@ -2091,20 +1990,8 @@ impl WasmSdk {
         // Convert price to pricing schedule
         let pricing_schedule = parsed.price.map(TokenPricingSchedule::SinglePrice);
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the set price transition using rs-sdk builder
         let mut builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
@@ -2124,24 +2011,15 @@ impl WasmSdk {
         }
 
         // Add optional group info
-        if let Some(group_info) = GroupStateTransitionInfoStatusWasm::try_from_optional_options(
-            &options_value,
-            "groupInfo",
-        )? {
+        if let Some(group_info) = group_info {
             builder = builder.with_using_group_info(group_info.into());
         }
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
@@ -2318,10 +2196,15 @@ impl WasmSdk {
         &self,
         options: TokenDirectPurchaseOptionsJs,
     ) -> Result<TokenDirectPurchaseResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_token_direct_purchase_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_token_direct_purchase_options(options.into())?;
 
         // Convert identifiers
         let contract_id: Identifier = parsed.data_contract_id.into();
@@ -2329,20 +2212,8 @@ impl WasmSdk {
         let amount = parsed.amount as TokenAmount;
         let max_total_cost = parsed.max_total_cost;
 
-        // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
-        let identity_key: IdentityPublicKey = identity_key_wasm.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
-
-        // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-            .map(Into::into);
 
         // Build the direct purchase transition using rs-sdk builder
         let mut builder = TokenDirectPurchaseTransitionBuilder::new(
@@ -2353,17 +2224,11 @@ impl WasmSdk {
             max_total_cost,
         );
 
-        // Add settings
-        if let Some(settings) = settings {
-            builder = builder.with_settings(settings);
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(settings.clone());
         }
-
-        // Add user fee increase from settings
-        let user_fee_increase = get_user_fee_increase(
-            try_from_options_optional::<PutSettingsInput>(&options_value, "settings")?
-                .map(Into::into)
-                .as_ref(),
-        );
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
             builder = builder.with_user_fee_increase(user_fee_increase);
         }

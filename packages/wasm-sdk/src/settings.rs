@@ -91,13 +91,11 @@ pub fn parse_request_settings(
         return Ok(None);
     };
 
-    let js_value: JsValue = settings_js.into();
-
-    if js_value.is_undefined() || js_value.is_null() {
+    if settings_js.is_undefined() || settings_js.is_null() {
         return Ok(None);
     }
 
-    let input: RequestSettingsInput = from_object(js_value)?;
+    let input: RequestSettingsInput = from_object(settings_js.into())?;
     Ok(Some(input.into()))
 }
 
@@ -251,13 +249,11 @@ pub fn parse_put_settings(
         return Ok(None);
     };
 
-    let js_value: JsValue = settings_js.into();
-
-    if js_value.is_undefined() || js_value.is_null() {
+    if settings_js.is_undefined() || settings_js.is_null() {
         return Ok(None);
     }
 
-    let input: PutSettingsInput = from_object(js_value)?;
+    let input: PutSettingsInput = from_object(settings_js.into())?;
     Ok(Some(input.into()))
 }
 

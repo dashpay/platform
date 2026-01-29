@@ -7,7 +7,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     ToSerdeJSONExt, try_from_options_optional_with, try_from_options_with, try_to_fixed_bytes,
-    try_to_object, try_to_string,
+    try_to_string,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -190,30 +190,27 @@ struct DocumentOptionsInput {
 impl DocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DocumentOptionsJs) -> WasmDppResult<DocumentWasm> {
-        let options_value: JsValue = options.into();
-        let options_obj = try_to_object(options_value.clone(), "options")?;
+        // Extract complex types first (borrows &options)
+        let document_type_name = try_from_options_with(&options, "documentTypeName", |v| {
+            try_to_string(v, "documentTypeName")
+        })?;
 
-        // Deserialize fields via serde (includes IdentifierWasm)
-        let input: DocumentOptionsInput = serde_wasm_bindgen::from_value(options_value)
+        let properties = try_from_options_with(&options, "properties", |v| {
+            v.with_serde_to_platform_value_map()
+        })?;
+
+        let entropy: Option<[u8; 32]> =
+            try_from_options_optional_with(&options, "entropy", |v| {
+                try_to_fixed_bytes::<32>(v.clone(), "entropy")
+            })?;
+
+        // Deserialize simple fields via serde last (consumes options)
+        let input: DocumentOptionsInput = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let data_contract_id: Identifier = input.data_contract_id.into();
         let owner_id: Identifier = input.owner_id.into();
         let revision = input.revision.unwrap_or(1);
-
-        // Extract complex types that don't have Deserialize
-        let document_type_name = try_from_options_with(&options_obj, "documentTypeName", |v| {
-            try_to_string(v, "documentTypeName")
-        })?;
-
-        let properties = try_from_options_with(&options_obj, "properties", |v| {
-            v.with_serde_to_platform_value_map()
-        })?;
-
-        let entropy: Option<[u8; 32]> =
-            try_from_options_optional_with(&options_obj, "entropy", |v| {
-                try_to_fixed_bytes::<32>(v.clone(), "entropy")
-            })?;
 
         let entropy: [u8; 32] = entropy.map_or_else(
             || {

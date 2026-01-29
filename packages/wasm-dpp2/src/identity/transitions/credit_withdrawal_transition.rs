@@ -8,7 +8,7 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_to_object, try_to_u16, try_to_u32, try_to_u64,
+    IntoWasm, try_from_options_optional_with, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -107,22 +107,19 @@ impl IdentityCreditWithdrawalTransitionWasm {
     pub fn constructor(
         options: IdentityCreditWithdrawalTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
-        let options_value: JsValue = options.into();
-        let options_obj = try_to_object(options_value.clone(), "options")?;
-
-        // Deserialize fields via serde (includes IdentifierWasm)
-        let input: IdentityCreditWithdrawalTransitionOptionsInput =
-            serde_wasm_bindgen::from_value(options_value)
-                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        // Extract complex types that don't have Deserialize
-        let pooling: PoolingWasm = PoolingWasm::try_from_options(&options_obj, "pooling")?;
+        // Extract complex types first (borrows &options)
+        let pooling: PoolingWasm = PoolingWasm::try_from_options(&options, "pooling")?;
 
         let output_script: Option<CoreScript> =
-            try_from_options_optional_with(&options_obj, "outputScript", |v| {
+            try_from_options_optional_with(&options, "outputScript", |v| {
                 v.to_wasm::<CoreScriptWasm>("CoreScript")
                     .map(|cs| cs.clone().into())
             })?;
+
+        // Deserialize simple fields via serde last (consumes options)
+        let input: IdentityCreditWithdrawalTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityCreditWithdrawalTransitionWasm(
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {

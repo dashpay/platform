@@ -6,7 +6,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{try_from_options_with, try_to_array, try_to_object, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options_with, try_to_array, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -98,23 +98,15 @@ impl IdentityUpdateTransitionWasm {
     pub fn constructor(
         options: IdentityUpdateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
-        let options_value: JsValue = options.into();
-        let options_obj = try_to_object(options_value.clone(), "options")?;
-
-        // Deserialize fields via serde (includes IdentifierWasm)
-        let input: IdentityUpdateTransitionOptionsInput =
-            serde_wasm_bindgen::from_value(options_value)
-                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        // Extract complex types that don't have Deserialize
-        let add_public_keys_array = try_from_options_with(&options_obj, "addPublicKeys", |v| {
+        // Extract complex types first (borrows &options)
+        let add_public_keys_array = try_from_options_with(&options, "addPublicKeys", |v| {
             try_to_array(v, "addPublicKeys")
         })?;
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_array(&add_public_keys_array)?;
 
         let disable_public_keys_array =
-            try_from_options_with(&options_obj, "disablePublicKeys", |v| {
+            try_from_options_with(&options, "disablePublicKeys", |v| {
                 try_to_array(v, "disablePublicKeys")
             })?;
         let disable_public_keys: Vec<KeyID> = disable_public_keys_array
@@ -122,6 +114,11 @@ impl IdentityUpdateTransitionWasm {
             .enumerate()
             .map(|(i, v)| try_to_u32(&v, &format!("disablePublicKeys[{}]", i)))
             .collect::<WasmDppResult<Vec<KeyID>>>()?;
+
+        // Deserialize simple fields via serde last (consumes options)
+        let input: IdentityUpdateTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {

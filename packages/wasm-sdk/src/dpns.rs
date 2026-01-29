@@ -325,25 +325,22 @@ impl WasmSdk {
         &self,
         options: DpnsRegisterNameOptionsJs,
     ) -> Result<RegisterDpnsNameResultWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract label from options
         let label: String =
-            try_from_options_with(&options_value, "label", |v| try_to_string(v, "label"))?;
+            try_from_options_with(&options, "label", |v| try_to_string(v, "label"))?;
 
         // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_public_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options)?;
 
         // Extract optional preorder callback
-        let preorder_callback = extract_callback_from_options(&options_value, "preorderCallback")?;
+        let preorder_callback = extract_callback_from_options(&options, "preorderCallback")?;
 
         // Set up the callback if provided
         thread_local! {

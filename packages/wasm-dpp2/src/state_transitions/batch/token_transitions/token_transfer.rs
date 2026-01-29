@@ -5,8 +5,8 @@ use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionW
 use crate::tokens::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
 use crate::tokens::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options, try_from_options_with,
-    try_to_object, try_to_string, try_to_u64,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
+    try_to_string, try_to_u64,
 };
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
@@ -56,30 +56,28 @@ impl TokenTransferTransitionWasm {
     pub fn constructor(
         options: TokenTransferTransitionOptionsJs,
     ) -> WasmDppResult<TokenTransferTransitionWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
-
-        let base: TokenBaseTransitionWasm = try_from_options_with(&options_obj, "base", |v| {
+        let base: TokenBaseTransitionWasm = try_from_options_with(&options, "base", |v| {
             v.to_wasm::<TokenBaseTransitionWasm>("TokenBaseTransition")
                 .map(|r| r.clone())
         })?;
 
-        let recipient_id: IdentifierWasm = try_from_options(&options_obj, "recipientId")?;
+        let recipient_id: IdentifierWasm = try_from_options(&options, "recipientId")?;
 
-        let amount = try_from_options_with(&options_obj, "amount", |v| try_to_u64(v, "amount"))?;
+        let amount = try_from_options_with(&options, "amount", |v| try_to_u64(v, "amount"))?;
 
         let public_note: Option<String> =
-            try_from_options_optional_with(&options_obj, "publicNote", |v| {
+            try_from_options_optional_with(&options, "publicNote", |v| {
                 try_to_string(v, "publicNote")
             })?;
 
         let shared_encrypted_note: Option<SharedEncryptedNote> =
-            try_from_options_optional_with(&options_obj, "sharedEncryptedNote", |v| {
+            try_from_options_optional_with(&options, "sharedEncryptedNote", |v| {
                 v.to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")
                     .map(|n| n.clone().into())
             })?;
 
         let private_encrypted_note: Option<PrivateEncryptedNote> =
-            try_from_options_optional_with(&options_obj, "privateEncryptedNote", |v| {
+            try_from_options_optional_with(&options, "privateEncryptedNote", |v| {
                 v.to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")
                     .map(|n| n.clone().into())
             })?;

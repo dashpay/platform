@@ -1,13 +1,13 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with, try_to_object};
+use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with};
 use crate::{
     impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
 };
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
-use js_sys::{Array, Object};
+use js_sys::Array;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -81,14 +81,11 @@ impl From<VotePollWasm> for VotePoll {
 impl VotePollWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: VotePollOptionsJs) -> WasmDppResult<VotePollWasm> {
-        let options: JsValue = options.into();
-        let object = try_to_object(options.clone(), "options")?;
-
         // Extract contractId (required)
-        let contract_id: IdentifierWasm = try_from_options(&object, "contractId")?;
+        let contract_id: IdentifierWasm = try_from_options(&options, "contractId")?;
 
         // Extract indexValues (required)
-        let index_values = try_from_options_with(&object, "indexValues", |v| {
+        let index_values = try_from_options_with(&options, "indexValues", |v| {
             let index_values_value = v.with_serde_to_platform_value()?;
             index_values_value
                 .into_array()
@@ -96,7 +93,7 @@ impl VotePollWasm {
         })?;
 
         // Extract simple fields via serde
-        let opts: VotePollOptions = serde_wasm_bindgen::from_value(options)
+        let opts: VotePollOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(VotePollWasm(VotePoll::ContestedDocumentResourceVotePoll(

@@ -3,14 +3,13 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options_optional_with, try_to_object};
+use crate::utils::try_from_options_optional_with;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
-use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -64,19 +63,16 @@ impl From<TokenPaymentInfoWasm> for TokenPaymentInfo {
 impl TokenPaymentInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: TokenPaymentInfoOptionsJs) -> WasmDppResult<Self> {
-        let options: JsValue = options.into();
-        let object = try_to_object(options.clone(), "options")?;
-
-        // Deserialize fields via serde (includes IdentifierWasm)
-        let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options)
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        // Extract complex types that don't have Deserialize
+        // Extract complex types first (borrows &options)
         let gas_fees_paid_by: GasFeesPaidBy =
-            try_from_options_optional_with(&object, "gasFeesPaidBy", |v| {
+            try_from_options_optional_with(&options, "gasFeesPaidBy", |v| {
                 GasFeesPaidByWasm::try_from(v).map(|g| g.into())
             })?
             .unwrap_or_default();
+
+        // Deserialize simple fields via serde last (consumes options)
+        let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(TokenPaymentInfoWasm(TokenPaymentInfo::V0(
             TokenPaymentInfoV0 {

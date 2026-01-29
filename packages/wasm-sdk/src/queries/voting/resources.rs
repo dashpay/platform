@@ -169,16 +169,14 @@ fn contested_resources_into_wasm(
 fn parse_vote_polls_by_document_type_query(
     query: VotePollsByDocumentTypeQueryJs,
 ) -> Result<(VotePollsByDocumentTypeQueryInput, Option<JsValue>), WasmSdkError> {
-    let value: JsValue = query.into();
-
-    if value.is_null() || value.is_undefined() {
+    if query.is_null() || query.is_undefined() {
         return Err(WasmSdkError::invalid_argument(
             "Query object is required".to_string(),
         ));
     }
 
     let start_at_value =
-        Reflect::get(&value, &JsValue::from_str("startAtValue")).map_err(|err| {
+        Reflect::get(&query, &JsValue::from_str("startAtValue")).map_err(|err| {
             let message = err
                 .as_string()
                 .unwrap_or_else(|| "unable to access property".to_string());
@@ -196,7 +194,7 @@ fn parse_vote_polls_by_document_type_query(
     };
 
     let query_input = deserialize_required_query(
-        value,
+        query,
         "Query object is required",
         "vote polls by document type options",
     )?;

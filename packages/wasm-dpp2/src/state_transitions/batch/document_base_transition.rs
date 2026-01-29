@@ -2,14 +2,13 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::{try_from_options, try_from_options_optional, try_to_object, try_to_u64};
+use crate::utils::{try_from_options, try_from_options_optional, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
-use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -60,22 +59,19 @@ impl DocumentBaseTransitionWasm {
     pub fn constructor(
         options: DocumentBaseTransitionOptionsJs,
     ) -> WasmDppResult<DocumentBaseTransitionWasm> {
-        let options: JsValue = options.into();
-        let object = try_to_object(options.clone(), "options")?;
-
         // Extract documentId (required)
-        let document_id: IdentifierWasm = try_from_options(&object, "documentId")?;
+        let document_id: IdentifierWasm = try_from_options(&options, "documentId")?;
 
         // Extract dataContractId (required)
-        let data_contract_id: IdentifierWasm = try_from_options(&object, "dataContractId")?;
+        let data_contract_id: IdentifierWasm = try_from_options(&options, "dataContractId")?;
 
         // Extract tokenPaymentInfo (optional)
         let token_payment_info: Option<TokenPaymentInfo> =
-            try_from_options_optional::<TokenPaymentInfoWasm>(&object, "tokenPaymentInfo")?
+            try_from_options_optional::<TokenPaymentInfoWasm>(&options, "tokenPaymentInfo")?
                 .map(Into::into);
 
         // Extract simple fields via serde
-        let opts: DocumentBaseTransitionOptions = serde_wasm_bindgen::from_value(options)
+        let opts: DocumentBaseTransitionOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         let rs_base_v1 = DocumentBaseTransitionV1 {

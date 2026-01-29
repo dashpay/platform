@@ -151,7 +151,7 @@ impl TokenPreProgrammedDistributionWasm {
         distributions: PreProgrammedDistributionsMapJs,
     ) -> WasmDppResult<TokenPreProgrammedDistributionWasm> {
         let distributions_map =
-            distributions_from_map(&try_to_map(distributions.into(), "distributions")?)?;
+            distributions_from_map(&try_to_map(distributions, "distributions")?)?;
 
         Ok(TokenPreProgrammedDistributionWasm(
             TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 {
@@ -171,7 +171,7 @@ impl TokenPreProgrammedDistributionWasm {
         distributions: PreProgrammedDistributionsMapJs,
     ) -> WasmDppResult<()> {
         let distributions_map =
-            distributions_from_map(&try_to_map(distributions.into(), "distributions")?)?;
+            distributions_from_map(&try_to_map(distributions, "distributions")?)?;
 
         self.0.set_distributions(distributions_map);
 

@@ -156,8 +156,6 @@ impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: IdentityPublicKeyOptionsJs) -> WasmDppResult<Self> {
-        let options: JsValue = options.into();
-
         // Extract purpose (required, complex type)
         let purpose: PurposeWasm = try_from_options(&options, "purpose")?;
 
@@ -173,7 +171,7 @@ impl IdentityPublicKeyWasm {
                 .map(Into::into);
 
         // Extract simple fields via serde
-        let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options)
+        let opts: IdentityPublicKeyOptions = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityPublicKeyWasm(IdentityPublicKey::from(

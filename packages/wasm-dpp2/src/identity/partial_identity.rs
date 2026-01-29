@@ -76,24 +76,22 @@ impl From<PartialIdentity> for PartialIdentityWasm {
 impl PartialIdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: PartialIdentityOptionsJs) -> WasmDppResult<Self> {
-        let options_obj = try_to_object(options.into(), "options")?;
+        let id: IdentifierWasm = try_from_options(&options, "id")?;
 
-        let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
-
-        let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
+        let loaded_public_keys = try_from_options_with(&options, "loadedPublicKeys", |v| {
             value_to_loaded_public_keys(v)
         })?;
 
         let balance: Option<Credits> =
-            try_from_options_optional_with(&options_obj, "balance", |v| try_to_u64(v, "balance"))?;
+            try_from_options_optional_with(&options, "balance", |v| try_to_u64(v, "balance"))?;
 
         let revision: Option<Revision> =
-            try_from_options_optional_with(&options_obj, "revision", |v| {
+            try_from_options_optional_with(&options, "revision", |v| {
                 try_to_u64(v, "revision")
             })?;
 
         let not_found_public_keys: Option<Array> =
-            try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
+            try_from_options_optional_with(&options, "notFoundPublicKeys", |v| {
                 try_to_array(v, "notFoundPublicKeys")
             })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
@@ -211,29 +209,29 @@ impl PartialIdentityWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(obj: PartialIdentityObjectJs) -> WasmDppResult<PartialIdentityWasm> {
-        let options_obj = try_to_object(obj, "obj")?;
+        let obj: JsValue = obj.into();
 
         // id - can be Uint8Array or Identifier
-        let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
+        let id: IdentifierWasm = try_from_options(&obj, "id")?;
 
         // loadedPublicKeys - values are plain objects
-        let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
+        let loaded_public_keys = try_from_options_with(&obj, "loadedPublicKeys", |v| {
             value_to_loaded_public_keys_from_object(v)
         })?;
 
         // balance - can be BigInt, number, or undefined
         let balance: Option<Credits> =
-            try_from_options_optional_with(&options_obj, "balance", |v| try_to_u64(v, "balance"))?;
+            try_from_options_optional_with(&obj, "balance", |v| try_to_u64(v, "balance"))?;
 
         // revision - can be BigInt, number, or undefined
         let revision: Option<Revision> =
-            try_from_options_optional_with(&options_obj, "revision", |v| {
+            try_from_options_optional_with(&obj, "revision", |v| {
                 try_to_u64(v, "revision")
             })?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
-            try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
+            try_from_options_optional_with(&obj, "notFoundPublicKeys", |v| {
                 try_to_array(v, "notFoundPublicKeys")
             })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
@@ -249,29 +247,29 @@ impl PartialIdentityWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(json: PartialIdentityJSONJs) -> WasmDppResult<PartialIdentityWasm> {
-        let options_obj = try_to_object(json, "json")?;
+        let json: JsValue = json.into();
 
         // id - base58 string
-        let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
+        let id: IdentifierWasm = try_from_options(&json, "id")?;
 
         // loadedPublicKeys - values are JSON objects
-        let loaded_public_keys = try_from_options_with(&options_obj, "loadedPublicKeys", |v| {
+        let loaded_public_keys = try_from_options_with(&json, "loadedPublicKeys", |v| {
             value_to_loaded_public_keys_from_json(v)
         })?;
 
         // balance - can be BigInt, number, or string (JSON doesn't support BigInt natively)
         let balance: Option<Credits> =
-            try_from_options_optional_with(&options_obj, "balance", |v| try_to_u64(v, "balance"))?;
+            try_from_options_optional_with(&json, "balance", |v| try_to_u64(v, "balance"))?;
 
         // revision - can be BigInt, number, or string (JSON doesn't support BigInt natively)
         let revision: Option<Revision> =
-            try_from_options_optional_with(&options_obj, "revision", |v| {
+            try_from_options_optional_with(&json, "revision", |v| {
                 try_to_u64(v, "revision")
             })?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
-            try_from_options_optional_with(&options_obj, "notFoundPublicKeys", |v| {
+            try_from_options_optional_with(&json, "notFoundPublicKeys", |v| {
                 try_to_array(v, "notFoundPublicKeys")
             })?;
         let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
