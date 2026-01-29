@@ -6,8 +6,8 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
-    ToSerdeJSONExt, try_from_options_optional, try_from_options_optional_with,
-    try_from_options_with, try_to_fixed_bytes, try_to_string, try_to_u64,
+    ToSerdeJSONExt, try_from_options_optional_with, try_from_options_with, try_to_fixed_bytes,
+    try_to_string,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -175,6 +175,18 @@ extern "C" {
     pub type DocumentPropertiesJs;
 }
 
+/// Serde struct for DocumentOptions
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentOptionsInput {
+    data_contract_id: IdentifierWasm,
+    owner_id: IdentifierWasm,
+    #[serde(default)]
+    revision: Option<u64>,
+    #[serde(default)]
+    id: Option<IdentifierWasm>,
+}
+
 #[wasm_bindgen(js_class = Document)]
 impl DocumentWasm {
     #[wasm_bindgen(constructor)]
@@ -182,28 +194,22 @@ impl DocumentWasm {
         let options_value: JsValue = options.into();
         let options_obj = Object::from(options_value.clone());
 
-        // Extract required properties
+        // Deserialize fields via serde (includes IdentifierWasm)
+        let input: DocumentOptionsInput = serde_wasm_bindgen::from_value(options_value)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let data_contract_id: Identifier = input.data_contract_id.into();
+        let owner_id: Identifier = input.owner_id.into();
+        let revision = input.revision.unwrap_or(1);
+
+        // Extract complex types that don't have Deserialize
         let document_type_name = try_from_options_with(&options_obj, "documentTypeName", |v| {
             try_to_string(v, "documentTypeName")
         })?;
 
-        let data_contract_id: Identifier =
-            IdentifierWasm::try_from_options(&options_obj, "dataContractId")?.into();
-
-        let owner_id: Identifier =
-            IdentifierWasm::try_from_options(&options_obj, "ownerId")?.into();
-
         let properties = try_from_options_with(&options_obj, "properties", |v| {
             v.with_serde_to_platform_value_map()
         })?;
-
-        // Extract optional properties
-        let revision = try_from_options_optional_with(&options_obj, "revision", |v| {
-            try_to_u64(v, "revision")
-        })?
-        .unwrap_or(1);
-
-        let id: Option<IdentifierWasm> = try_from_options_optional(&options_obj, "id")?;
 
         let entropy: Option<[u8; 32]> =
             try_from_options_optional_with(&options_obj, "entropy", |v| {
@@ -219,7 +225,7 @@ impl DocumentWasm {
             Ok,
         )?;
 
-        let doc_id: Identifier = id.map_or_else(
+        let doc_id: Identifier = input.id.map_or_else(
             || {
                 crate::utils::generate_document_id_v0(
                     &data_contract_id,

@@ -3,10 +3,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options_optional, try_from_options_optional_with};
+use crate::utils::try_from_options_optional_with;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
-use dpp::prelude::Identifier;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
@@ -19,6 +18,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenPaymentInfoOptions {
+    #[serde(default)]
+    payment_token_contract_id: Option<IdentifierWasm>,
     token_contract_position: TokenContractPosition,
     #[serde(default)]
     minimum_token_cost: Option<TokenAmount>,
@@ -66,25 +67,20 @@ impl TokenPaymentInfoWasm {
         let options: JsValue = options.into();
         let object = Object::from(options.clone());
 
-        // Extract paymentTokenContractId (optional, can be null/undefined)
-        let payment_token_contract_id: Option<Identifier> =
-            try_from_options_optional::<IdentifierWasm>(&object, "paymentTokenContractId")?
-                .map(Into::into);
+        // Deserialize fields via serde (includes IdentifierWasm)
+        let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        // Extract gasFeesPaidBy (optional)
+        // Extract complex types that don't have Deserialize
         let gas_fees_paid_by: GasFeesPaidBy =
             try_from_options_optional_with(&object, "gasFeesPaidBy", |v| {
                 GasFeesPaidByWasm::try_from(v).map(|g| g.into())
             })?
             .unwrap_or_default();
 
-        // Extract simple fields via serde
-        let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options)
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
         Ok(TokenPaymentInfoWasm(TokenPaymentInfo::V0(
             TokenPaymentInfoV0 {
-                payment_token_contract_id,
+                payment_token_contract_id: opts.payment_token_contract_id.map(Into::into),
                 token_contract_position: opts.token_contract_position,
                 minimum_token_cost: opts.minimum_token_cost,
                 maximum_token_cost: opts.maximum_token_cost,

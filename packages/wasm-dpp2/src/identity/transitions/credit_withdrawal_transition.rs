@@ -13,7 +13,6 @@ use crate::utils::{
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
-use dpp::platform_value::Identifier;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
@@ -86,10 +85,11 @@ extern "C" {
     pub type IdentityCreditWithdrawalTransitionJSONJs;
 }
 
-/// Serde struct for primitive fields in IdentityCreditWithdrawalTransitionOptions
+/// Serde struct for IdentityCreditWithdrawalTransitionOptions
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreditWithdrawalTransitionOptionsInput {
+    identity_id: IdentifierWasm,
     amount: u64,
     core_fee_per_byte: u32,
     #[serde(default)]
@@ -110,15 +110,12 @@ impl IdentityCreditWithdrawalTransitionWasm {
         let options_value: JsValue = options.into();
         let options_obj = try_to_object(options_value.clone(), "options")?;
 
-        // Deserialize primitive fields via serde
+        // Deserialize fields via serde (includes IdentifierWasm)
         let input: IdentityCreditWithdrawalTransitionOptionsInput =
             serde_wasm_bindgen::from_value(options_value)
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        // Extract complex types manually
-        let identity_id: Identifier =
-            IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
-
+        // Extract complex types that don't have Deserialize
         let pooling: PoolingWasm = PoolingWasm::try_from_options(&options_obj, "pooling")?;
 
         let output_script: Option<CoreScript> =
@@ -130,7 +127,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         Ok(IdentityCreditWithdrawalTransitionWasm(
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
                 amount: input.amount,
-                identity_id,
+                identity_id: input.identity_id.into(),
                 output_script,
                 core_fee_per_byte: input.core_fee_per_byte,
                 pooling: pooling.into(),

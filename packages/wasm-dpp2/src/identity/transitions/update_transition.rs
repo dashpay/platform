@@ -77,10 +77,11 @@ extern "C" {
     pub type IdentityUpdateTransitionJSONJs;
 }
 
-/// Serde struct for primitive fields in IdentityUpdateTransitionOptions
+/// Serde struct for IdentityUpdateTransitionOptions
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityUpdateTransitionOptionsInput {
+    identity_id: IdentifierWasm,
     revision: Revision,
     nonce: IdentityNonce,
     #[serde(default)]
@@ -100,14 +101,12 @@ impl IdentityUpdateTransitionWasm {
         let options_value: JsValue = options.into();
         let options_obj = try_to_object(options_value.clone(), "options")?;
 
-        // Deserialize primitive fields via serde
+        // Deserialize fields via serde (includes IdentifierWasm)
         let input: IdentityUpdateTransitionOptionsInput =
             serde_wasm_bindgen::from_value(options_value)
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        // Extract complex types manually
-        let identity_id = IdentifierWasm::try_from_options(&options_obj, "identityId")?.into();
-
+        // Extract complex types that don't have Deserialize
         let add_public_keys_array = try_from_options_with(&options_obj, "addPublicKeys", |v| {
             try_to_array(v, "addPublicKeys")
         })?;
@@ -126,7 +125,7 @@ impl IdentityUpdateTransitionWasm {
 
         Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
-                identity_id,
+                identity_id: input.identity_id.into(),
                 revision: input.revision,
                 nonce: input.nonce,
                 add_public_keys: add_public_keys

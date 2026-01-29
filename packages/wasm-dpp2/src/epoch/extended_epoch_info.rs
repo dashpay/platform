@@ -1,9 +1,10 @@
-use crate::error::WasmDppResult;
-use crate::utils::{try_from_options_with, try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
 use crate::{impl_wasm_conversions, impl_wasm_type_info};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use js_sys::BigInt;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -54,6 +55,18 @@ extern "C" {
     pub type ExtendedEpochInfoJSONJs;
 }
 
+/// Serde struct for ExtendedEpochInfoOptions
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtendedEpochInfoOptionsInput {
+    index: u16,
+    first_block_time: u64,
+    first_block_height: u64,
+    first_core_block_height: u32,
+    fee_multiplier_permille: u64,
+    protocol_version: u32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ExtendedEpochInfo")]
 pub struct ExtendedEpochInfoWasm(ExtendedEpochInfo);
@@ -84,40 +97,18 @@ impl ExtendedEpochInfoWasm {
     pub fn constructor(
         options: ExtendedEpochInfoOptionsJs,
     ) -> WasmDppResult<ExtendedEpochInfoWasm> {
-        let options_obj = try_to_object(options.into(), "options")?;
-
-        let index = try_from_options_with(&options_obj, "index", |v| try_to_u16(v, "index"))?;
-
-        let first_block_time = try_from_options_with(&options_obj, "firstBlockTime", |v| {
-            try_to_u64(v, "firstBlockTime")
-        })?;
-
-        let first_block_height = try_from_options_with(&options_obj, "firstBlockHeight", |v| {
-            try_to_u64(v, "firstBlockHeight")
-        })?;
-
-        let first_core_block_height =
-            try_from_options_with(&options_obj, "firstCoreBlockHeight", |v| {
-                try_to_u32(v, "firstCoreBlockHeight")
-            })?;
-
-        let fee_multiplier_permille =
-            try_from_options_with(&options_obj, "feeMultiplierPermille", |v| {
-                try_to_u64(v, "feeMultiplierPermille")
-            })?;
-
-        let protocol_version = try_from_options_with(&options_obj, "protocolVersion", |v| {
-            try_to_u32(v, "protocolVersion")
-        })?;
+        let input: ExtendedEpochInfoOptionsInput =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(ExtendedEpochInfoWasm(ExtendedEpochInfo::V0(
             ExtendedEpochInfoV0 {
-                index,
-                first_block_time,
-                first_block_height,
-                first_core_block_height,
-                fee_multiplier_permille,
-                protocol_version,
+                index: input.index,
+                first_block_time: input.first_block_time,
+                first_block_height: input.first_block_height,
+                first_core_block_height: input.first_core_block_height,
+                fee_multiplier_permille: input.fee_multiplier_permille,
+                protocol_version: input.protocol_version,
             },
         )))
     }

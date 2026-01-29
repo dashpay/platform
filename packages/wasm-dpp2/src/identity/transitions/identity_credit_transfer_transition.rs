@@ -3,11 +3,11 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{try_to_object, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::prelude::{Identifier, UserFeeIncrease};
+use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -68,10 +68,12 @@ extern "C" {
     pub type IdentityCreditTransferJSONJs;
 }
 
-/// Serde struct for primitive fields in IdentityCreditTransferOptions
+/// Serde struct for IdentityCreditTransferOptions
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityCreditTransferOptionsInput {
+    sender_id: IdentifierWasm,
+    recipient_id: IdentifierWasm,
     amount: u64,
     nonce: u64,
     #[serde(default)]
@@ -88,23 +90,14 @@ impl IdentityCreditTransferWasm {
     pub fn constructor(
         options: IdentityCreditTransferOptionsJs,
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
-        let options_value: wasm_bindgen::JsValue = options.into();
-        let options_obj = try_to_object(options_value.clone(), "options")?;
-
-        // Deserialize primitive fields via serde
         let input: IdentityCreditTransferOptionsInput =
-            serde_wasm_bindgen::from_value(options_value)
+            serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-
-        // Extract complex types manually
-        let sender: Identifier = IdentifierWasm::try_from_options(&options_obj, "senderId")?.into();
-        let recipient: Identifier =
-            IdentifierWasm::try_from_options(&options_obj, "recipientId")?.into();
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
-                identity_id: sender,
-                recipient_id: recipient,
+                identity_id: input.sender_id.into(),
+                recipient_id: input.recipient_id.into(),
                 amount: input.amount,
                 nonce: input.nonce,
                 user_fee_increase: input.user_fee_increase,
