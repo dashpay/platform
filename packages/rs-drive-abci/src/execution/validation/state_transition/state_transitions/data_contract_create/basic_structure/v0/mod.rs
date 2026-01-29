@@ -1,9 +1,9 @@
 use crate::error::Error;
 use dpp::consensus::basic::data_contract::{
-    DuplicateKeywordsError, InvalidDataContractVersionError, InvalidDescriptionLengthError,
-    InvalidKeywordCharacterError, InvalidKeywordLengthError, InvalidTokenBaseSupplyError,
-    NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractTokenPositionsError,
-    TooManyKeywordsError, GroupPositionDoesNotExistError,
+    DuplicateKeywordsError, GroupPositionDoesNotExistError, InvalidDataContractVersionError,
+    InvalidDescriptionLengthError, InvalidKeywordCharacterError, InvalidKeywordLengthError,
+    InvalidTokenBaseSupplyError, NewTokensDestinationIdentityOptionRequiredError,
+    NonContiguousContractTokenPositionsError, TooManyKeywordsError,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
@@ -14,12 +14,12 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::methods:
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::{TokenContractPosition, INITIAL_DATA_CONTRACT_VERSION};
+use dpp::platform_value::Value;
 use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::platform_value::Value;
 use std::collections::HashSet;
 
 const CREATION_RESTRICTION_MODE: &str = "creationRestrictionMode";
@@ -76,12 +76,12 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
                 CREATION_RESTRICTION_MODE,
             ) {
                 Ok(value) => value.unwrap_or(0),
-                    Err(err) => {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DataContractError::from(err).into(),
-                        ));
-                    }
-                };
+                Err(err) => {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        DataContractError::from(err).into(),
+                    ));
+                }
+            };
 
             if creation_restriction_mode == 3 {
                 let group_position = match Value::inner_optional_integer_value::<u16>(
@@ -278,16 +278,16 @@ mod tests {
 
     mod validate_basic_structure {
         use super::*;
+        use dpp::consensus::basic::data_contract::GroupPositionDoesNotExistError;
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
-        use dpp::consensus::basic::data_contract::GroupPositionDoesNotExistError;
-        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::data_contract::accessors::v0::DataContractV0Setters;
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::data_contract::INITIAL_DATA_CONTRACT_VERSION;
+        use dpp::platform_value::platform_value;
         use dpp::prelude::IdentityNonce;
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
         use dpp::tests::fixtures::get_data_contract_fixture;
-        use dpp::platform_value::platform_value;
         use platform_version::version::PlatformVersion;
         use platform_version::TryIntoPlatformVersioned;
 
