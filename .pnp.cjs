@@ -2474,7 +2474,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
-          ["@grpc/grpc-js", "npm:1.4.4"],\
+          ["@grpc/grpc-js", "npm:1.14.3"],\
           ["@pshenmic/zeromq", "npm:6.0.0-beta.22"],\
           ["ajv", "npm:8.12.0"],\
           ["bs58", "npm:4.0.1"],\
@@ -2572,7 +2572,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/protobufjs", "npm:6.10.5"],\
-          ["@grpc/grpc-js", "npm:1.4.4"],\
+          ["@grpc/grpc-js", "npm:1.14.3"],\
           ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -2800,7 +2800,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/protobufjs", "npm:6.10.5"],\
-          ["@grpc/grpc-js", "npm:1.4.4"],\
+          ["@grpc/grpc-js", "npm:1.14.3"],\
           ["@grpc/proto-loader", "npm:0.5.6"],\
           ["cbor", "npm:8.1.0"],\
           ["chai", "npm:4.3.10"],\
@@ -3325,12 +3325,12 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:1.4.4", {\
-        "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.4.4-f333f82239-9d9c1aad22.zip/node_modules/@grpc/grpc-js/",\
+      ["npm:1.14.3", {\
+        "packageLocation": "./.yarn/cache/@grpc-grpc-js-npm-1.14.3-4316f67c48-bb9bfe2f74.zip/node_modules/@grpc/grpc-js/",\
         "packageDependencies": [\
-          ["@grpc/grpc-js", "npm:1.4.4"],\
-          ["@grpc/proto-loader", "npm:0.6.13"],\
-          ["@types/node", "npm:18.16.1"]\
+          ["@grpc/grpc-js", "npm:1.14.3"],\
+          ["@grpc/proto-loader", "npm:0.8.0"],\
+          ["@js-sdsl/ordered-map", "npm:4.4.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3345,22 +3345,21 @@ const RAW_RUNTIME_STATE =
         ],\
         "linkType": "HARD"\
       }],\
-      ["npm:0.6.13", {\
-        "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.6.13-658ac26dfb-a881bea00a.zip/node_modules/@grpc/proto-loader/",\
-        "packageDependencies": [\
-          ["@grpc/proto-loader", "npm:0.6.13"],\
-          ["@types/long", "npm:4.0.1"],\
-          ["lodash.camelcase", "npm:4.3.0"],\
-          ["long", "npm:4.0.0"],\
-          ["protobufjs", "npm:6.11.4"],\
-          ["yargs", "npm:16.2.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:0.7.13", {\
         "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.7.13-be5b6af1c1-7e2d842c20.zip/node_modules/@grpc/proto-loader/",\
         "packageDependencies": [\
           ["@grpc/proto-loader", "npm:0.7.13"],\
+          ["lodash.camelcase", "npm:4.3.0"],\
+          ["long", "npm:5.3.1"],\
+          ["protobufjs", "npm:6.11.4"],\
+          ["yargs", "npm:17.7.2"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:0.8.0", {\
+        "packageLocation": "./.yarn/cache/@grpc-proto-loader-npm-0.8.0-b53ddeb647-216813bdca.zip/node_modules/@grpc/proto-loader/",\
+        "packageDependencies": [\
+          ["@grpc/proto-loader", "npm:0.8.0"],\
           ["lodash.camelcase", "npm:4.3.0"],\
           ["long", "npm:5.3.1"],\
           ["protobufjs", "npm:6.11.4"],\

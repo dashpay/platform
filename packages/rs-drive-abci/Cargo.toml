@@ -42,7 +42,7 @@ dapi-grpc = { path = "../dapi-grpc", default-features = false, features = [
   "server",
   "platform",
 ] }
-tracing-subscriber = { version = "0.3.16", default-features = false, features = [
+tracing-subscriber = { version = "0.3.22", default-features = false, features = [
   "env-filter",
   "ansi",
   "json",
@@ -51,8 +51,13 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.5.0-dev.2", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.5.0", features = [
   "grpc",
+] }
+time = { version = "0.3", optional = true, features = [
+  "macros",
+  "formatting",
+  "serde-human-readable",
 ] }
 
 lazy_static = "1.4.0"
@@ -105,7 +110,6 @@ dash-platform-macros = { path = "../rs-dash-platform-macros" }
 libc = "0.2"
 
 # For tests of grovedb verify
-# TODO: Switch back to crates.io once https://github.com/rust-rocksdb/rust-rocksdb/pull/1055 is merged and released
 rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
 integer-encoding = { version = "4.0.0" }
 
@@ -115,7 +119,8 @@ mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
 grovedbg = ["drive/grovedbg"]
-
+# `abci-server replay` command
+replay = ["dep:time", "tenderdash-abci/serde"]
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
