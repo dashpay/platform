@@ -98,29 +98,29 @@ struct GlobalSyncIndicator: View {
     
     // Helpers
     private var phaseTitle: String {
-        switch walletService.stage {
+        switch walletService.syncProgress.stage {
         case .idle:
             return "Idle"
         case .downloading:
-            let h = Double(walletService.headerCurrentHeight) / Double(walletService.headerTargetHeight)
+            let h = Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight)
             return "Block Headers (\(Int(h * 100))%)"
         case .downloadingFilterHeaders:
-            let fh = Double(walletService.latestFilterHeaderHeight) / Double(walletService.headerTargetHeight)
+            let fh = Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight)
             return "Filter Headers (\(Int(fh * 100))%)"
         case .downloadingFilters:
-            let f = Double(walletService.latestFilterHeight) / Double(walletService.headerTargetHeight)
+            let f = Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight)
             return "Filters (\(Int(f * 100))%)"
         case .complete:
             return "Complete"
         default:
-            return "Unexpected stage (\(walletService.stage))"
+            return "Unexpected stage (\(walletService.syncProgress.stage))"
         }
     }
 
     private var fillProgress: Double {
-        let h = Double(walletService.headerCurrentHeight) / Double(walletService.headerTargetHeight)
-        let fh = Double(walletService.latestFilterHeaderHeight) / Double(walletService.headerTargetHeight)
-        let f = Double(walletService.latestFilterHeight) / Double(walletService.headerTargetHeight)
+        let h = Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight)
+        let fh = Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight)
+        let f = Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight)
         
         return (h + fh + f) / 3.0
     }

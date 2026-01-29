@@ -9,7 +9,6 @@ public final class HDWallet: HDWalletModels {
     public var label: String
     public var network: String
     public var createdAt: Date
-    public var lastSyncedHeight: Int
     public var isWatchOnly: Bool
     public var isImported: Bool
     
@@ -45,7 +44,6 @@ public final class HDWallet: HDWalletModels {
         self.label = label
         self.network = network.rawValue
         self.createdAt = Date()
-        self.lastSyncedHeight = 0
         self.isWatchOnly = isWatchOnly
         self.currentAccountIndex = 0
         self.syncProgress = 0.0

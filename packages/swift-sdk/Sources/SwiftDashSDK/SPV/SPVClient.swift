@@ -118,14 +118,58 @@ public struct SPVSyncProgress {
     public let stage: SPVSyncStage
     public let currentHeight: UInt32
     public let targetHeight: UInt32
-    /// Absolute blockchain height reached for filter headers.
     public let filterHeaderHeight: UInt32
-    /// Absolute blockchain height reached for compact filters.
     public let filterHeight: UInt32
-    /// UNIX timestamp (seconds) when the current sync run started. 0 if unavailable.
     public let syncStartedAt: TimeInterval
     public let rate: Double // blocks per second
     public let estimatedTimeRemaining: TimeInterval?
+    public let peerCount: UInt32
+
+    public static func `default`() -> SPVSyncProgress {
+        SPVSyncProgress(
+            stage: .idle,
+            currentHeight: 0,
+            targetHeight: 0,
+            filterHeaderHeight: 0,
+            filterHeight: 0,
+            syncStartedAt: 0,
+            rate: 0,
+            estimatedTimeRemaining: nil,
+            peerCount: 0
+        )
+    }
+
+    public static func from(_ ffiProgress: FFIDetailedSyncProgress) -> SPVSyncProgress {
+        let overview = ffiProgress.overview
+
+        return SPVSyncProgress(
+            stage: SPVSyncStage(ffiStage: ffiProgress.stage),
+            currentHeight: overview.header_height,
+            targetHeight: ffiProgress.total_height,
+            filterHeaderHeight: overview.filter_header_height,
+            filterHeight: overview.last_synced_filter_height,
+            syncStartedAt: TimeInterval(ffiProgress.sync_start_timestamp),
+            rate: ffiProgress.headers_per_second,
+            estimatedTimeRemaining: ffiProgress.estimated_seconds_remaining > 0
+                ? TimeInterval(ffiProgress.estimated_seconds_remaining)
+                : nil,
+            peerCount: overview.peer_count
+        )
+    }
+
+    public static func from(_ overview: FFISyncProgress) -> SPVSyncProgress {
+        SPVSyncProgress(
+            stage: .idle,
+            currentHeight: overview.header_height,
+            targetHeight: 0,
+            filterHeaderHeight: overview.filter_header_height,
+            filterHeight: overview.last_synced_filter_height,
+            syncStartedAt: 0, // TODO: This field exists in the Rust struct but the FFI does not provide it yet
+            rate: 0,
+            estimatedTimeRemaining: nil,
+            peerCount: overview.peer_count
+        )
+    }
 }
 
 public enum SPVSyncStage: String, Sendable {
@@ -192,18 +236,14 @@ public protocol SPVClientDelegate: AnyObject {
 // MARK: - SPV Client
 
 @MainActor
-public class SPVClient: ObservableObject {
-    // Published properties for SwiftUI
-    @Published public var isConnected = false
-    @Published public var isSyncing = false
-    @Published public var syncProgress: SPVSyncProgress?
-    @Published public var peerCount: Int = 0
-    @Published public var lastError: String?
-    @Published public var blocksHit: Int = 0
-    
+public class SPVClient {
+    public var isConnected = false
+    public var isSyncing = false
+    var blocksHit: Int = 0
+
     // Delegate for callbacks
-    public weak var delegate: SPVClientDelegate?
-    
+    public let delegate: SPVClientDelegate
+
     // FFI handles
     private var client: UnsafeMutablePointer<FFIDashSpvClient>
     private var config: UnsafeMutablePointer<FFIClientConfig>
@@ -219,35 +259,24 @@ public class SPVClient: ObservableObject {
 
     // Callback context
     private var callbackContext: CallbackContext?
-    
-    // Network
-    private let network: Network
-    private var masternodeSyncEnabled: Bool = true
-    
+
     // Sync tracking
-    private var syncStartTime: Date?
-    private var lastBlockHeight: UInt32 = 0
     internal var syncCancelled = false
-    fileprivate var currentSyncStartTimestamp: Int64 = 0
-    fileprivate var lastProgressUIUpdate: TimeInterval = 0
-    fileprivate let progressUICoalesceInterval: TimeInterval = 0.2
     fileprivate let swiftLoggingEnabled: Bool = {
         if let env = ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"], env.lowercased() == "1" || env.lowercased() == "true" {
             return true
         }
         return false
     }()
-    
+
     // Removed: Temporary poller for filter header progress (now event-driven via FFI)
-    
-    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, masternodesEnabled: Bool, startHeight: UInt32) throws {
-        self.network = network
-        
+
+    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, delegate: SPVClientDelegate) throws {
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
         }
-        
+
         // Create configuration based on network raw value
         let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
             switch network.rawValue {
@@ -262,7 +291,7 @@ public class SPVClient: ObservableObject {
                 return dash_spv_ffi_config_testnet()
             }
         }()
-        
+
         guard let configPtr = configPtr else {
             throw SPVError.configurationFailed
         }
@@ -280,9 +309,8 @@ public class SPVClient: ObservableObject {
             for addr in peers {
                 addr.withCString { cstr in
                     let rc = dash_spv_ffi_config_add_peer(configPtr, cstr)
-                    if rc != 0, let err = dash_spv_ffi_get_last_error() {
-                        let msg = String(cString: err)
-                        print("[SPV][Config] add_peer failed for \(addr): \(msg)")
+                    if rc != 0 {
+                        print("[SPV][Config] add_peer failed for \(addr): \(SPVClient.getLastDashFFIError())")
                     }
                 }
             }
@@ -301,7 +329,7 @@ public class SPVClient: ObservableObject {
                 throw SPVError.configurationFailed
             }
         }
-        
+
         // Enable mempool tracking and ensure detailed events are available
         dash_spv_ffi_config_set_mempool_tracking(configPtr, true)
         dash_spv_ffi_config_set_mempool_strategy(configPtr, FFIMempoolStrategy(rawValue: 0)) // FetchAll
@@ -319,49 +347,42 @@ public class SPVClient: ObservableObject {
             print("Setting user agent to \(ua)")
             let rc = dash_spv_ffi_config_set_user_agent(configPtr, ua)
             if rc != 0 {
-                if let cErr = dash_spv_ffi_get_last_error() {
-                    let err = String(cString: cErr)
-                    print("[SPV][Config] Failed to set user agent (rc=\(rc)): \(err)")
-                } else {
-                    print("[SPV][Config] Failed to set user agent (rc=\(rc))")
-                }
+                print("[SPV][Config] Failed to set user agent (rc=\(rc)): \(SPVClient.getLastDashFFIError())")
                 throw SPVError.configurationFailed
             }
             if swiftLoggingEnabled { print("[SPV][Config] User-Agent=\(ua)") }
         }
 
-        // Optionally override masternode sync behavior
-        self.masternodeSyncEnabled = masternodesEnabled
-
-        _ = dash_spv_ffi_config_set_masternode_sync_enabled(configPtr, masternodeSyncEnabled)
-
         _ = dash_spv_ffi_config_set_start_from_height(configPtr, startHeight)
-        
+
         // Create client
         let client = dash_spv_ffi_client_new(configPtr)
         guard let client = client else {
-            if let errorMsg = dash_spv_ffi_get_last_error() {
-              let error = String(cString: errorMsg)
-              self.lastError = error
-              print("[SPV][Init] Failed to create client: \(error)")
-            }
+            print("[SPV][Init] Failed to create client: \(SPVClient.getLastDashFFIError())")
             throw SPVError.initializationFailed
         }
-        
+
+        let result = dash_spv_ffi_client_start(client)
+        if result != 0 {
+            throw SPVError.startFailed(SPVClient.getLastDashFFIError())
+        }
+
+        self.isConnected = true
         self.client = client
-        
-        // Store config for cleanup
-        config = configPtr
+        self.delegate = delegate
+        self.config = configPtr
+
+        self.delegate.spvClient(self, didUpdateSyncProgress: self.getSyncProgress())
         
         // Set up event callbacks with stable context
         setupEventCallbacks()
     }
-    
+
     deinit {
         if !hasBeenFreed {
             print("[SPV][deinit] WARNING: SPVClient was not freed before deinit, call SPVClient::destroy")
         }
-      
+
         // Stop event polling (synchronously cancel the task)
         eventPollingTask?.cancel()
         // Minimal teardown; prefer explicit stop() by callers.
@@ -377,12 +398,30 @@ public class SPVClient: ObservableObject {
             .filter { !$0.isEmpty }
     }
 
+    public func getSyncProgress() -> SPVSyncProgress {
+        // IMPROVEMENT
+        // The return struct lacks information provided by FFIDetailedSyncProgress,
+        // Unification of both structs in the FFI would be a better aproach
+        guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else {
+          print("[SPV][GetSyncProgress] Failed to get sync progress (Should only fail if client is nil, but client is not nil)")
+          return SPVSyncProgress.default()
+        }
+        defer { dash_spv_ffi_sync_progress_destroy(ptr) }
+        let p = ptr.pointee
+        
+        return SPVSyncProgress.from(p)
+    }
+    
+    public static func getLastDashFFIError() -> String {
+        guard let errorMsg = dash_spv_ffi_get_last_error() else { return "No error" }
+        return String(cString: errorMsg)
+    }
+
     /// Enable/disable masternode sync. If the client is running, apply the update immediately.
     public func setMasternodeSyncEnabled(_ enabled: Bool) throws {
-        self.masternodeSyncEnabled = enabled
         var rc = dash_spv_ffi_config_set_masternode_sync_enabled(config, enabled)
         if rc != 0 { throw SPVError.configurationFailed }
-        
+
         rc = dash_spv_ffi_client_update_config(client, config)
         if rc != 0 { throw SPVError.configurationFailed }
     }
@@ -392,58 +431,22 @@ public class SPVClient: ObservableObject {
     public func setStartFromHeight(_ height: UInt32) throws {
         var rc = dash_spv_ffi_config_set_start_from_height(config, height)
         if rc != 0 { throw SPVError.configurationFailed }
-      
+
         rc = dash_spv_ffi_client_update_config(client, config)
         if rc != 0 { throw SPVError.configurationFailed }
-    }
-    
-    public func start() throws {
-        let result = dash_spv_ffi_client_start(client)
-        if result != 0 {
-            if let errorMsg = dash_spv_ffi_get_last_error() {
-                let error = String(cString: errorMsg)
-                self.lastError = error
-                throw SPVError.startFailed(error)
-            }
-            throw SPVError.startFailed("Unknown error")
-        }
-        
-        self.isConnected = true
     }
 
     /// Clear all persisted SPV storage (headers, filters, metadata, sync state).
     public func clearStorage() throws {
         let rc = dash_spv_ffi_client_clear_storage(client)
         if rc != 0 {
-            if let errorMsg = dash_spv_ffi_get_last_error() {
-                let message = String(cString: errorMsg)
-                throw SPVError.storageOperationFailed(message)
-            } else {
-                throw SPVError.storageOperationFailed("Failed to clear SPV storage (code \(rc))")
-            }
+            throw SPVError.storageOperationFailed(SPVClient.getLastDashFFIError())
         }
 
-        self.isConnected = false
-        self.isSyncing = false
-        self.syncProgress = nil
-        self.lastError = nil
-    }
-
-    /// Clear only the persisted sync-state snapshot while keeping headers/filters.
-    public func clearSyncState() throws {
-        // TODO: clear sync state doesnt exist anymore. Is it needed? Maybe wipe the directory?
-//        let rc = dash_spv_ffi_client_clear_sync_state(client)
-//        if rc != 0 {
-//            if let errorMsg = dash_spv_ffi_get_last_error() {
-//                let message = String(cString: errorMsg)
-//                throw SPVError.storageOperationFailed(message)
-//            } else {
-//                throw SPVError.storageOperationFailed("Failed to clear sync state (code \(rc))")
-//            }
-//        }
-
-        self.syncProgress = nil
-        self.lastError = nil
+        // IMPROVEMENT
+        // Manually calling the event doesn't look like the right approach,
+        // if FFISPVClient could send us an event callback automatically...
+        self.delegate.spvClient(self, didUpdateSyncProgress: SPVSyncProgress.default())
     }
 
     // MARK: - Wallet Transaction Queries
@@ -474,39 +477,26 @@ public class SPVClient: ObservableObject {
     public func destroy() {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
-        
+
         callbackContext = nil
-        
+
         self.hasBeenFreed = true
     }
-    
+
     // MARK: - Synchronization
-    
+
     public func startSync() async throws {
         guard !isSyncing else {
             throw SPVError.alreadySyncing
         }
-        
+
         self.isSyncing = true
         syncCancelled = false
-        syncStartTime = Date()
         blocksHit = 0
 
         // Start event polling to drain Rust event queue
         startEventPolling()
 
-        // Reset UI progress to known baseline (0%) before events arrive
-        self.syncProgress = SPVSyncProgress(
-            stage: .idle,
-            currentHeight: 0,
-            targetHeight: 0,
-            filterHeaderHeight: 0,
-            filterHeight: 0,
-            syncStartedAt: 0,
-            rate: 0.0,
-            estimatedTimeRemaining: nil
-        )
-        
         // Use a stable callback context; create if needed
         let context: CallbackContext
         if let existing = self.callbackContext {
@@ -516,60 +506,44 @@ public class SPVClient: ObservableObject {
             self.callbackContext = context
         }
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
-
-        // Start sync in the background to avoid blocking the main thread
-        // Copy pointer addresses to avoid capturing non-Sendable pointers inside the GCD closure
+        
         let clientAddr = UInt(bitPattern: self.client)
         let ctxAddr = UInt(bitPattern: contextPtr)
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let client = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
-                  let contextPtr = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
-            let result = dash_spv_ffi_client_sync_to_tip_with_progress(
-                client,
-                spvProgressCallback,
-                spvCompletionCallback,
-                contextPtr
-            )
+        
+        guard let client = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
+              let contextPtr = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
+        let result = dash_spv_ffi_client_sync_to_tip_with_progress(
+            client,
+            spvProgressCallback,
+            spvCompletionCallback,
+            contextPtr
+        )
 
-            guard result != 0 else { return }
-
-            let errorMessage: String = {
-                if let raw = dash_spv_ffi_get_last_error() {
-                    return String(cString: raw)
-                }
-                return "Unknown error"
-            }()
-
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.isSyncing = false
-                self.lastError = errorMessage
-            }
+        if result != 0 {
+            throw SPVError.syncFailed(SPVClient.getLastDashFFIError())
         }
-        // Filter progress now updates via FFI event callback; no polling needed
     }
-    
+
     public func stopSync() {
         stopEventPolling()
 
         let cancelResult = dash_spv_ffi_client_cancel_sync(client)
-        if cancelResult != 0, let err = dash_spv_ffi_get_last_error() {
-            let message = String(cString: err)
+        if cancelResult != 0 {
+            let message = SPVClient.getLastDashFFIError()
             if swiftLoggingEnabled {
                 print("[SPV][Cancel] cancel_sync failed: \(message)")
             }
-            lastError = message
         }
         isSyncing = false
     }
-    
+
     // MARK: - Event Callbacks
-    
+
     private func setupEventCallbacks() {
         let context = CallbackContext(client: self)
         self.callbackContext = context
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
-        
+
         var callbacks = FFIEventCallbacks()
 
         // Assign C-compatible top-level functions which match the imported C signatures
@@ -584,7 +558,7 @@ public class SPVClient: ObservableObject {
                 let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
                 guard let client = context.client else { return }
                 client.blocksHit &+= 1
-                client.delegate?.spvClient(client, didUpdateBlocksHit: client.blocksHit)
+                client.delegate.spvClient(client, didUpdateBlocksHit: client.blocksHit)
             }
         }
 
@@ -673,13 +647,13 @@ public class SPVClient: ObservableObject {
         }
 
         callbacks.user_data = contextPtr
-        
+
         dash_spv_ffi_client_set_event_callbacks(client, callbacks)
     }
 
     // MARK: - Filter progress event handler
     // MARK: - Event Handlers
-    
+
     fileprivate func handleBlockEvent(height: UInt32, hash: Data) {
         let block = SPVBlockEvent(
             height: height,
@@ -691,9 +665,9 @@ public class SPVClient: ObservableObject {
             print("[SPV][Block] height=\(height) hash=\(hash.map { String(format: "%02x", $0) }.joined().prefix(16))…")
         }
 
-        delegate?.spvClient(self, didReceiveBlock: block)
+        delegate.spvClient(self, didReceiveBlock: block)
     }
-    
+
     fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
         let transaction = SPVTransactionEvent(
             txid: txid,
@@ -703,7 +677,7 @@ public class SPVClient: ObservableObject {
             blockHeight: blockHeight
         )
 
-        delegate?.spvClient(self, didReceiveTransaction: transaction)
+        delegate.spvClient(self, didReceiveTransaction: transaction)
     }
 
     // MARK: - Event Polling
@@ -726,7 +700,7 @@ public class SPVClient: ObservableObject {
     }
 
     // MARK: - Wallet Manager Access
-    
+
     public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
         return dash_spv_ffi_client_get_wallet_manager(client)
     }
@@ -736,14 +710,14 @@ public class SPVClient: ObservableObject {
     public func makeSharedWalletManager() throws -> WalletManager {
         return try WalletManager(fromSPVClient: client)
     }
-    
+
     // MARK: - Statistics
-    
+
     public func getStats() -> SPVStats? {
-        
+
         let statsPtr = dash_spv_ffi_client_get_stats(client)
         guard let statsPtr = statsPtr else { return nil }
-        
+
         // Convert FFI stats to Swift struct
         let stats = SPVStats(
             connectedPeers: Int(statsPtr.pointee.connected_peers),
@@ -754,9 +728,9 @@ public class SPVClient: ObservableObject {
             blocksProcessed: UInt64(statsPtr.pointee.blocks_processed),
             mempoolSize: 0 // mempool_size not available in current FFI
         )
-        
+
         dash_spv_ffi_spv_stats_destroy(statsPtr)
-        
+
         return stats
     }
 
@@ -779,84 +753,6 @@ public class SPVClient: ObservableObject {
         if rc == 0 { return Data(buf) }
         return nil
     }
-
-    // MARK: - Sync Snapshot
-    public func getSyncSnapshot() -> SPVSyncSnapshot? {
-        guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else { return nil }
-        defer { dash_spv_ffi_sync_progress_destroy(ptr) }
-        let p = ptr.pointee
-        return SPVSyncSnapshot(
-            headerHeight: p.header_height,
-            filterHeaderHeight: p.filter_header_height,
-            masternodeHeight: p.masternode_height,
-            filterSyncAvailable: p.filter_sync_available,
-            filtersDownloaded: p.filters_downloaded,
-            lastSyncedFilterHeight: p.last_synced_filter_height
-        )
-    }
-
-    // MARK: - Checkpoints
-    // Tries to fetch the latest checkpoint height for this client's network.
-    // Requires newer FFI with dash_spv_ffi_checkpoint_latest. Returns nil if unavailable.
-    public func getLatestCheckpointHeight() -> UInt32? {
-        // Derive FFINetwork matching how we built config
-        let ffiNet: FFINetwork
-        switch network.rawValue {
-        case 0: ffiNet = FFINetwork(rawValue: 0)
-        case 1: ffiNet = FFINetwork(rawValue: 1)
-        case 2: ffiNet = FFINetwork(rawValue: 2)
-        case 3: ffiNet = FFINetwork(rawValue: 3)
-        default: ffiNet = FFINetwork(rawValue: 1)
-        }
-
-        var outHeight: UInt32 = 0
-        var outHash = [UInt8](repeating: 0, count: 32)
-        let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
-            dash_spv_ffi_checkpoint_latest(ffiNet, &outHeight, buf.baseAddress)
-        }
-        guard rc == 0 else { return nil }
-        return outHeight
-    }
-
-    /// Static helper: get latest checkpoint height for an arbitrary network
-    /// without depending on the client's configured network.
-    public static func latestCheckpointHeight(forNetwork net: DashSDKNetwork) -> UInt32? {
-        let ffiNet: FFINetwork
-        switch net.rawValue {
-        case 0: ffiNet = FFINetwork(rawValue: 0)
-        case 1: ffiNet = FFINetwork(rawValue: 1)
-        case 2: ffiNet = FFINetwork(rawValue: 2)
-        case 3: ffiNet = FFINetwork(rawValue: 3)
-        default: ffiNet = FFINetwork(rawValue: 1)
-        }
-
-        var outHeight: UInt32 = 0
-        var outHash = [UInt8](repeating: 0, count: 32)
-        let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
-            dash_spv_ffi_checkpoint_latest(ffiNet, &outHeight, buf.baseAddress)
-        }
-        guard rc == 0 else { return nil }
-        return outHeight
-    }
-
-    /// Returns the checkpoint height at or before a given UNIX timestamp (seconds) for this network
-    public func getCheckpointHeight(beforeTimestamp timestamp: UInt32) -> UInt32? {
-        let ffiNet: FFINetwork
-        switch network.rawValue {
-            case 0: ffiNet = FFINetwork(rawValue: 0)
-            case 1: ffiNet = FFINetwork(rawValue: 1)
-            case 2: ffiNet = FFINetwork(rawValue: 2)
-            case 3: ffiNet = FFINetwork(rawValue: 3)
-            default: ffiNet = FFINetwork(rawValue: 1)
-        }
-        var outHeight: UInt32 = 0
-        var outHash = [UInt8](repeating: 0, count: 32)
-        let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
-            dash_spv_ffi_checkpoint_before_timestamp(ffiNet, timestamp, &outHeight, buf.baseAddress)
-        }
-        guard rc == 0 else { return nil }
-        return outHeight
-    }
 }
 
 // MARK: - Callback Context
@@ -864,7 +760,7 @@ public class SPVClient: ObservableObject {
 @MainActor
 private class CallbackContext {
     weak var client: SPVClient?
-    
+
     init(client: SPVClient) {
         self.client = client
     }
@@ -872,63 +768,10 @@ private class CallbackContext {
     func handleProgressUpdate(_ ffiProgress: FFIDetailedSyncProgress) {
         guard let client = self.client else { return }
 
-        let overview = ffiProgress.overview
-        client.peerCount = Int(overview.peer_count)
-
-        var stage = SPVSyncStage(ffiStage: ffiProgress.stage)
-        let estimatedTime: TimeInterval? = (ffiProgress.estimated_seconds_remaining > 0)
-            ? TimeInterval(ffiProgress.estimated_seconds_remaining)
-            : nil
-
-        let syncStartTimestamp = ffiProgress.sync_start_timestamp
-        var previous = client.syncProgress
-        if syncStartTimestamp > 0 {
-            if syncStartTimestamp != client.currentSyncStartTimestamp {
-                client.currentSyncStartTimestamp = syncStartTimestamp
-                previous = nil
-            } else {
-                client.currentSyncStartTimestamp = syncStartTimestamp
-            }
-        } else if client.currentSyncStartTimestamp != 0 {
-            // Keep previous timestamp when FFI does not expose it
-        }
-
-        if client.swiftLoggingEnabled {
-            let pct = max(0.0, min(ffiProgress.percentage, 100.0))
-            let cur = overview.header_height
-            let tot = ffiProgress.total_height
-            let rate = ffiProgress.headers_per_second
-            let eta = ffiProgress.estimated_seconds_remaining
-            let filterHeaders = overview.filter_header_height
-            let filters = overview.last_synced_filter_height
-            print("[SPV][Progress] stage=\(stage.rawValue) header=\(cur)/\(tot) filterHeaders=\(filterHeaders) filters=\(filters) pct=\(pct) rate=\(rate) eta=\(eta)")
-        }
-
-        let tipHeight = ffiProgress.total_height;
-        let currentBlockHeaderHeight = overview.header_height
-        let currentFilterHeaderHeight = overview.filter_header_height
-        let currentFilterHeight = overview.last_synced_filter_height
-
-        let progress = SPVSyncProgress(
-            stage: stage,
-            currentHeight: currentBlockHeaderHeight,
-            targetHeight: tipHeight,
-            filterHeaderHeight: currentFilterHeaderHeight,
-            filterHeight: currentFilterHeight,
-            syncStartedAt: TimeInterval(syncStartTimestamp > 0 ? syncStartTimestamp : client.currentSyncStartTimestamp),
-            rate: ffiProgress.headers_per_second,
-            estimatedTimeRemaining: estimatedTime
-        )
-
-        let now = Date().timeIntervalSince1970
-        if now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
-            client.lastProgressUIUpdate = now
-            client.syncProgress = progress
-            client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
-        } else {
-            client.syncProgress = progress
-        }
+        let spvSyncProgress = SPVSyncProgress.from(ffiProgress)
+        client.delegate.spvClient(client, didUpdateSyncProgress: spvSyncProgress)
     }
+
     func handleSyncCompletion(success: Bool, error: String?) {
 
         if client?.swiftLoggingEnabled == true {
@@ -950,24 +793,8 @@ private class CallbackContext {
                 }
             }
             client.isSyncing = false
-            client.lastError = error
-            
-                if success {
-                    client.syncProgress = SPVSyncProgress(
-                        stage: .complete,
-                        currentHeight: client.syncProgress?.targetHeight ?? 0,
-                        targetHeight: client.syncProgress?.targetHeight ?? 0,
-                        filterHeaderHeight: client.syncProgress?.filterHeaderHeight ?? 0,
-                        filterHeight: client.syncProgress?.filterHeight ?? 0,
-                        syncStartedAt: client.syncProgress?.syncStartedAt ?? 0,
-                        rate: 0,
-                        estimatedTimeRemaining: nil
-                    )
-            } else {
-                client.syncProgress = nil
-            }
-            
-            client.delegate?.spvClient(client, didCompleteSync: success, error: error)
+
+            client.delegate.spvClient(client, didCompleteSync: success, error: error)
         }
     }
 }
@@ -984,16 +811,6 @@ public struct SPVStats: Sendable {
     public let mempoolSize: Int
 }
 
-// A lightweight snapshot of sync progress from FFISyncProgress
-public struct SPVSyncSnapshot: Sendable {
-    public let headerHeight: UInt32
-    public let filterHeaderHeight: UInt32
-    public let masternodeHeight: UInt32
-    public let filterSyncAvailable: Bool
-    public let filtersDownloaded: UInt32
-    public let lastSyncedFilterHeight: UInt32
-}
-
 public enum SPVError: LocalizedError {
     case notInitialized
     case alreadyInitialized
@@ -1003,7 +820,7 @@ public enum SPVError: LocalizedError {
     case alreadySyncing
     case syncFailed(String)
     case storageOperationFailed(String)
-    
+
     public var errorDescription: String? {
         switch self {
         case .notInitialized:

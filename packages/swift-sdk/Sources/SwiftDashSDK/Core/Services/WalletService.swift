@@ -115,13 +115,12 @@ public class WalletService: ObservableObject {
     public static let shared = WalletService()
     
     // Published properties
+    @Published public private(set) var syncProgress: SPVSyncProgress = SPVSyncProgress.default()
     @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var isSyncing = false
-    @Published public var stage: SPVSyncStage = .idle
+    
     // Absolute heights for header sync display (current/target)
-    @Published public var headerCurrentHeight: Int = 0
-    @Published public var headerTargetHeight: Int = 0
     @Published public var blocksHit: Int = 0
     @Published public var lastSyncError: Error?
 
@@ -145,50 +144,10 @@ public class WalletService: ObservableObject {
 
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
-    // Latest sync stats (for UI)
-    @Published public var latestHeaderHeight: Int = 0
-    @Published public var latestFilterHeaderHeight: Int = 0
-    @Published public var latestFilterHeight: Int = 0
-    @Published public var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
-    // Control whether to sync masternode list (default false; enable only in non-trusted mode)
-    @Published public var shouldSyncMasternodes: Bool = false
 
     // Expose SPV client for filter match queries
     public var spvClientHandle: UnsafeMutablePointer<FFIDashSpvClient>? {
         spvClient?.clientHandle
-    }
-
-    /// Returns the expected chain tip for the current network based on wall-clock time.
-    private func expectedChainTipHeight() -> Int? {
-        switch currentNetwork {
-        case .testnet:
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
-            guard let anchor = calendar.date(from: DateComponents(year: 2025, month: 9, day: 24)) else { return nil }
-            let today = Date()
-            let days = max(0, calendar.dateComponents([.day], from: anchor, to: today).day ?? 0)
-            return 1_332_564 + (576 * days)
-        default:
-            return nil
-        }
-    }
-
-    /// Normalizes raw tip heights reported by the SPV client so the UI presents realistic hints.
-    /// When the RPC returns absolute heights inflated by the checkpoint baseline, we fold them back
-    /// towards the expected tip to avoid showing impossible denominators.
-    fileprivate func normalizedChainTip(_ rawTip: Int, baseline: Int) -> Int {
-        guard baseline > 0, let expected = expectedChainTipHeight() else { return rawTip }
-
-        if abs(rawTip - expected) <= 100_000 {
-            return rawTip
-        }
-
-        let candidate = rawTip - baseline
-        if candidate > 0, abs(candidate - expected) <= 100_000 {
-            return candidate
-        }
-
-        return rawTip
     }
 
     private init() {}
@@ -210,7 +169,7 @@ public class WalletService: ObservableObject {
         SDKLogger.log("ModelContainer set: \(modelContainer)", minimumLevel: .high)
         SDKLogger.log("Network set: \(network.rawValue)", minimumLevel: .medium)
 
-        initializeSPVClient()
+        initializeNewSPVClient()
         
         SDKLogger.log("Loading current wallet...", minimumLevel: .medium)
         loadCurrentWallet()
@@ -222,7 +181,7 @@ public class WalletService: ObservableObject {
         SDKLogger.log("✅ WalletService configured with shared SDK", minimumLevel: .medium)
     }
     
-    private func initializeSPVClient() {
+    private func initializeNewSPVClient() {
       // This ensures no memory leaks when creating a new client
       // and unlocks the storage in case we are about to use the same (we are)
       if self.spvClient != nil {
@@ -235,7 +194,6 @@ public class WalletService: ObservableObject {
       // Determine baseline from stored per-wallet per-network sync-from heights
       let baseline: UInt32 = self.computeNetworkBaselineSyncFromHeight()
       let net = currentNetwork
-      let mnEnabled = shouldSyncMasternodes
       
       SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(baseline) on \(net.rawValue) during initialize()", minimumLevel: .high)
       
@@ -243,8 +201,8 @@ public class WalletService: ObservableObject {
           spvClient = try SPVClient(
               network: self.currentNetwork.sdkNetwork,
               dataDir: dataDir,
-              masternodesEnabled: mnEnabled,
-              startHeight: baseline
+              startHeight: baseline,
+              delegate: self
           )
       } catch {
           SDKLogger.error("Failed to initialize SPV Client: \(error)")
@@ -253,8 +211,6 @@ public class WalletService: ObservableObject {
       }
       
       SDKLogger.log("✅ SPV Client initialized successfully for \(net.rawValue) (deferred start)", minimumLevel: .medium)
-      
-      spvClient?.delegate = self
       
       // Capture current references on the main actor to avoid cross-actor hops later
       guard let client = spvClient, let mc = self.modelContainer else { return }
@@ -321,35 +277,6 @@ public class WalletService: ObservableObject {
             // Load the newly created wallet
             await loadWallet(wallet)
 
-            // Set per-network sync-from heights
-            // Imported wallets: mainnet=730000, testnet=0, devnet=0
-            // New wallets: use current known tip for the selected network (fallback to latestHeaderHeight/checkpoint)
-            let isImported = isImport
-            if isImported {
-                // Imported wallet: use fixed per-network baselines
-                wallet.syncBaseHeight = currentNetwork == .mainnet ? 730_000 : 0;
-            } else {
-                // New wallet: use the latest checkpoint height of that chain
-                switch currentNetwork {
-                case .mainnet:
-                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) ?? 0
-                    print("[WalletService] New wallet baseline mainnet checkpoint=\(cp)")
-                    wallet.syncBaseHeight = Int(cp)
-                case .testnet:
-                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) ?? 0
-                    print("[WalletService] New wallet baseline testnet checkpoint=\(cp)")
-                    wallet.syncBaseHeight = Int(cp)
-                case .regtest:
-                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) ?? 0
-                    print("[WalletService] New wallet baseline regtest checkpoint=\(cp)")
-                    wallet.syncBaseHeight = Int(cp)
-                case .devnet:
-                    let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 3)) ?? 0
-                    print("[WalletService] New wallet baseline devnet checkpoint=\(cp)")
-                    wallet.syncBaseHeight = Int(cp)
-                }
-            }
-
             // Persist sync-from changes
             try modelContainer?.mainContext.save()
             
@@ -398,7 +325,6 @@ public class WalletService: ObservableObject {
 
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
-        shouldSyncMasternodes = enabled
         // Try to apply immediately if the client exists
         do { try spvClient?.setMasternodeSyncEnabled(enabled) } catch { /* ignore */ }
     }
@@ -439,25 +365,6 @@ public class WalletService: ObservableObject {
             if Task.isCancelled { return }
 
             do {
-                // Ensure the underlying client is started (connected) before syncing
-                let connected = await client.isConnected
-                if connected == false {
-                    if Task.isCancelled { return }
-                    do {
-                        try await client.start()
-                        if Task.isCancelled { return }
-                        print("[SPV] Client started (connected) before sync")
-                    } catch {
-                        await MainActor.run {
-                            service.lastSyncError = error
-                            service.isSyncing = false
-                        }
-                        print("❌ Failed to start client: \(error)")
-                        return
-                    }
-                }
-
-                if Task.isCancelled { return }
                 try await client.startSync()
             } catch {
                 await MainActor.run {
@@ -477,12 +384,11 @@ public class WalletService: ObservableObject {
       client.stopSync()
       self.syncTask = nil
       
-      initializeSPVClient()
+      initializeNewSPVClient()
       
       isSyncing = false
     }
 
-    /// Clear SPV persistence either fully (headers, filters, state) or just the sync snapshot.
     public func clearSpvStorage() {
         guard self.syncTask == nil else {
             print("[SPV][Clear] Sync task is running, cannot clear storage")
@@ -509,14 +415,18 @@ public class WalletService: ObservableObject {
             do {
                 // Add timeout protection
                 try await withTimeout(seconds: 30) {
+                    // Fun fact and maybe a TODO, when SPVClient is initialized it is also 
+                    // connected to the network, that way we can get information from there,
+                    // eg targetHeight, but clear storage stops that connection so we have to
+                    // create a new client to reestablish the connection and be able to call
+                    // startSync. Solving this relyies on the DashSPV maintainers if 
+                    // it's possible to be solved
                     try await client.clearStorage()
+                    await service.initializeNewSPVClient()
                 }
 
                 print("[SPV][Clear] Storage cleared successfully")
 
-                await MainActor.run {
-                    service.resetAfterClearingStorage()
-                }
             } catch is TimeoutError {
                 print("❌ [SPV][Clear] Timeout waiting for storage clear - client may be busy")
                 await MainActor.run {
@@ -533,15 +443,6 @@ public class WalletService: ObservableObject {
                 service.isClearingStorage = false
             }
         }
-    }
-
-    private func resetAfterClearingStorage() {
-        latestHeaderHeight = 0
-        latestMasternodeListHeight = 0
-        blocksHit = 0
-        lastSyncError = nil
-
-        print("[SPV][Clear] Completed full storage reset for \(currentNetwork.rawValue)")
     }
     
     // MARK: - Network Management
@@ -712,20 +613,8 @@ public class WalletService: ObservableObject {
 
 extension WalletService: SPVClientDelegate {
     public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
-        let stage = progress.stage
-        let headerCurrent = Int(progress.currentHeight)
-        let headerTarget = Int(progress.targetHeight)
-        let filterHeaderHeight = Int(progress.filterHeaderHeight)
-        let filterHeight = Int(progress.filterHeight)
-        
         Task { @MainActor in
-            WalletService.shared.stage = stage
-            
-            WalletService.shared.headerCurrentHeight = headerCurrent
-            WalletService.shared.headerTargetHeight = headerTarget
-            
-            WalletService.shared.latestFilterHeaderHeight = filterHeaderHeight
-            WalletService.shared.latestFilterHeight = filterHeight
+            WalletService.shared.syncProgress = progress
         }
     }
     
@@ -776,12 +665,6 @@ extension WalletService: SPVClientDelegate {
                 }
                 self.updateBalance()
             }
-        }
-
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            self.latestFilterHeight = Int(client.syncProgress?.filterHeight ?? 0)
         }
     }
     
