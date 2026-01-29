@@ -1898,6 +1898,7 @@ dependencies = [
  "tempfile",
  "tenderdash-abci",
  "thiserror 1.0.69",
+ "time",
  "tokio",
  "tokio-util",
  "tracing",
@@ -6138,14 +6139,15 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.5.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
+version = "1.5.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0#7a6b7433f780938c244e4d201bf8e66aa02cd9c2"
 dependencies = [
  "bytes",
  "futures",
  "hex",
  "lhash",
  "semver",
+ "serde_json",
  "tenderdash-proto",
  "thiserror 2.0.17",
  "tokio",
@@ -6158,8 +6160,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.5.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
+version = "1.5.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0#7a6b7433f780938c244e4d201bf8e66aa02cd9c2"
 dependencies = [
  "bytes",
  "chrono",
@@ -6178,8 +6180,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.5.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
+version = "1.5.0"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0#7a6b7433f780938c244e4d201bf8e66aa02cd9c2"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -6188,7 +6190,7 @@ dependencies = [
  "tonic-prost-build",
  "ureq",
  "walkdir",
- "zip 5.1.1",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -6911,6 +6913,12 @@ dependencies = [
  "url",
  "utf-8",
 ]
+
+[[package]]
+name = "typed-path"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e43ffa54726cdc9ea78392023ffe9fe9cf9ac779e1c6fcb0d23f9862e3879d20"
 
 [[package]]
 name = "typenum"
@@ -7961,20 +7969,6 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "5.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f852905151ac8d4d06fdca66520a661c09730a74c6d4e2b0f27b436b382e532"
-dependencies = [
- "arbitrary",
- "crc32fast",
- "flate2",
- "indexmap 2.12.1",
- "memchr",
- "zopfli",
-]
-
-[[package]]
-name = "zip"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb2a05c7c36fde6c09b08576c9f7fb4cda705990f73b58fe011abf7dfb24168b"
@@ -7992,6 +7986,20 @@ dependencies = [
  "pbkdf2",
  "sha1",
  "zeroize",
+ "zopfli",
+]
+
+[[package]]
+name = "zip"
+version = "7.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap 2.12.1",
+ "memchr",
+ "typed-path",
  "zopfli",
 ]
 
