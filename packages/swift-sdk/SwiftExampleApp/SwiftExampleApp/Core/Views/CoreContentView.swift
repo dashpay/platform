@@ -105,8 +105,8 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
-                        .disabled(walletService.isSyncing || walletService.isInitializing)
-                        .opacity((walletService.isSyncing || walletService.isInitializing) ? 0.5 : 1.0)
+                        .disabled(walletService.isSyncing)
+                        .opacity((walletService.isSyncing) ? 0.5 : 1.0)
                     }
                 }
                 .padding(.vertical, 4)
@@ -271,9 +271,9 @@ var body: some View {
     }
 
     private func clearSyncData() {
-        // Button is disabled during sync and initialization
-        guard !walletService.isSyncing && !walletService.isInitializing else {
-            print("⚠️ Clear button should be disabled during sync/initialization")
+        // Button is disabled during sync
+        guard !walletService.isSyncing else {
+            print("⚠️ Clear button should be disabled during sync")
             return
         }
 

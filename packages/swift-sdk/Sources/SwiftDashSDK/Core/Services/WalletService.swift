@@ -134,7 +134,6 @@ public class WalletService: ObservableObject {
     private var balanceUpdateTask: Task<Void, Never>?
     // Stats polling removed (progress is event-driven)
     private var isClearingStorage = false
-    @Published public var isInitializing = false
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     public private(set) var walletManager: CoreWalletManager?
@@ -172,7 +171,28 @@ public class WalletService: ObservableObject {
         initializeNewSPVClient()
         
         SDKLogger.log("Loading current wallet...", minimumLevel: .medium)
-        loadCurrentWallet()
+        
+        guard modelContainer != nil else { return }
+        
+        // The WalletManager will handle loading and restoring wallets from persistence
+        // It will restore the serialized wallet bytes to the FFI wallet manager
+        // This happens automatically in WalletManager.init() through loadWallets()
+        
+        // Just sync the current wallet from WalletManager
+        if let walletManager = self.walletManager {
+            Task {
+                // WalletManager's loadWallets() is called in its init
+                // We just need to sync the current wallet
+                if let wallet = walletManager.currentWallet {
+                    self.currentWallet = wallet
+                    await loadWallet(wallet)
+                } else if let firstWallet = walletManager.wallets.first {
+                    self.currentWallet = firstWallet
+                    await loadWallet(firstWallet)
+                }
+            }
+        }
+        
         SDKLogger.log("=== WalletService.configure END ===", minimumLevel: .medium)
     }
 
@@ -217,35 +237,20 @@ public class WalletService: ObservableObject {
       
       // Capture current references on the main actor to avoid cross-actor hops later
       guard let client = spvClient, let mc = self.modelContainer else { return }
-      let clientBox = SendableBox(client)
-
-      // Mark as initializing
-      isInitializing = true
-
-      Task.detached(priority: .userInitiated) {
-          let clientLocal = clientBox.value
-          // Create the SDK wallet manager by reusing the SPV client's shared manager
-          do {
-              try await MainActor.run {
-                  let sdkWalletManager = try clientLocal.makeSharedWalletManager()
-                  let wrapper = try CoreWalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
-                  WalletService.shared.walletManager = wrapper
-                  WalletService.shared.walletManager?.transactionService = TransactionService(
-                      walletManager: wrapper,
-                      modelContainer: mc,
-                      spvClient: clientLocal
-                  )
-                  SDKLogger.log("✅ WalletManager wrapper initialized successfully", minimumLevel: .medium)
-              }
-          } catch {
-              SDKLogger.error("❌ Failed to initialize WalletManager wrapper:\nError: \(error)")
-          }
-
-          // Mark initialization as complete
-          await MainActor.run {
-              WalletService.shared.isInitializing = false
-              SDKLogger.log("✅ SPV Client initialization complete", minimumLevel: .medium)
-          }
+      
+      // Create the SDK wallet manager by reusing the SPV client's shared manager
+      do {
+          let sdkWalletManager = try client.makeSharedWalletManager()
+          let wrapper = try CoreWalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
+          self.walletManager = wrapper
+          self.walletManager?.transactionService = TransactionService(
+              walletManager: wrapper,
+              modelContainer: mc,
+              spvClient: client
+          )
+          SDKLogger.log("✅ WalletManager wrapper initialized successfully", minimumLevel: .medium)
+      } catch {
+          SDKLogger.error("❌ Failed to initialize WalletManager wrapper:\nError: \(error)")
       }
     }
     
@@ -301,29 +306,6 @@ public class WalletService: ObservableObject {
         
         // Update balance
         updateBalance()
-    }
-    
-    private func loadCurrentWallet() {
-        guard modelContainer != nil else { return }
-        
-        // The WalletManager will handle loading and restoring wallets from persistence
-        // It will restore the serialized wallet bytes to the FFI wallet manager
-        // This happens automatically in WalletManager.init() through loadWallets()
-        
-        // Just sync the current wallet from WalletManager
-        if let walletManager = self.walletManager {
-            Task {
-                // WalletManager's loadWallets() is called in its init
-                // We just need to sync the current wallet
-                if let wallet = walletManager.currentWallet {
-                    self.currentWallet = wallet
-                    await loadWallet(wallet)
-                } else if let firstWallet = walletManager.wallets.first {
-                    self.currentWallet = firstWallet
-                    await loadWallet(firstWallet)
-                }
-            }
-        }
     }
 
     // MARK: - Trusted Mode / Masternode Sync
@@ -404,47 +386,23 @@ public class WalletService: ObservableObject {
         }
         guard let spvClient = spvClient else { return }
 
-        isClearingStorage = true
 
-        let clientBox = SendableBox(spvClient)
-        let serviceBox = SendableBox(self)
+        print("[SPV][Clear] Starting storage clear operation...")
 
-        Task.detached(priority: .userInitiated) {
-            let client = clientBox.value
-            let service = serviceBox.value
+        do {
+            // Fun fact and maybe a TODO, when SPVClient is initialized it is also 
+            // connected to the network, that way we can get information from there,
+            // eg targetHeight, but clear storage stops that connection so we have to
+            // create a new client to reestablish the connection and be able to call
+            // startSync. Solving this relyies on the DashSPV maintainers if 
+            // it's possible to be solved
+            try spvClient.clearStorage()
+            self.initializeNewSPVClient()
 
-            print("[SPV][Clear] Starting storage clear operation...")
-
-            do {
-                // Add timeout protection
-                try await withTimeout(seconds: 30) {
-                    // Fun fact and maybe a TODO, when SPVClient is initialized it is also 
-                    // connected to the network, that way we can get information from there,
-                    // eg targetHeight, but clear storage stops that connection so we have to
-                    // create a new client to reestablish the connection and be able to call
-                    // startSync. Solving this relyies on the DashSPV maintainers if 
-                    // it's possible to be solved
-                    try await client.clearStorage()
-                    await service.initializeNewSPVClient()
-                }
-
-                print("[SPV][Clear] Storage cleared successfully")
-
-            } catch is TimeoutError {
-                print("❌ [SPV][Clear] Timeout waiting for storage clear - client may be busy")
-                await MainActor.run {
-                    service.lastSyncError = SPVError.storageOperationFailed("Clear operation timed out. Try stopping sync first.")
-                }
-            } catch {
-                await MainActor.run {
-                    service.lastSyncError = error
-                }
-                print("❌ Failed to clear SPV storage: \(error)")
-            }
-
-            await MainActor.run {
-                service.isClearingStorage = false
-            }
+            print("[SPV][Clear] Storage cleared successfully")
+        } catch {
+            self.lastSyncError = error
+            print("❌ Failed to clear SPV storage: \(error)")
         }
     }
     
@@ -452,12 +410,20 @@ public class WalletService: ObservableObject {
 
     public func switchNetwork(to network: AppNetwork) async {
         guard network != currentNetwork else { return }
+        currentNetwork = network
         
         print("=== WalletService.switchNetwork START ===")
         print("Switching from \(currentNetwork.rawValue) to \(network.rawValue)")
         
-        // Stop any ongoing sync
-        stopSync()
+        // Stop any ongoing sync and cleaning the storage
+        // NOTE: In dash-spv dev-v0.42 29/01/2026 the storage doesn't 
+        // store data in different location depending on the network, thats 
+        // why we need to manually drop the storage. If clearing the storage 
+        // fails this will lead to data inconsistency. If this note is not 
+        // removed when you see it, contact Borja @borja.castellano for an 
+        // update on how SPVClient implementation stores different network data 
+        self.stopSync()
+        self.clearSpvStorage()        
         
         // Clear current wallet manager
         walletManager = nil
@@ -466,7 +432,6 @@ public class WalletService: ObservableObject {
         balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
         
         // Reconfigure with new network
-        currentNetwork = network
         if let modelContainer = modelContainer {
             configure(modelContainer: modelContainer, network: network)
         }
@@ -617,7 +582,7 @@ public class WalletService: ObservableObject {
 extension WalletService: SPVClientDelegate {
     public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
         Task { @MainActor in
-            WalletService.shared.syncProgress = progress
+            self.syncProgress = progress
         }
     }
     
