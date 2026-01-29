@@ -3,7 +3,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::utils::try_from_options_optional_with;
+use crate::utils::{try_from_options_optional_with, try_to_object};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -65,7 +65,7 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: TokenPaymentInfoOptionsJs) -> WasmDppResult<Self> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Deserialize fields via serde (includes IdentifierWasm)
         let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options)

@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with};
+use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with, try_to_object};
 use crate::{
     impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
 };
@@ -82,7 +82,7 @@ impl VotePollWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: VotePollOptionsJs) -> WasmDppResult<VotePollWasm> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract contractId (required)
         let contract_id: IdentifierWasm = try_from_options(&object, "contractId")?;

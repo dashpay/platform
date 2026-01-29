@@ -6,7 +6,7 @@ use crate::tokens::configuration::distribution_structs::{
     DistributionLinearWasm, DistributionLogarithmicWasm, DistributionPolynomialWasm,
     DistributionRandomWasm, DistributionStepDecreasingAmountWasm,
 };
-use crate::utils::{JsValueExt, try_to_u64};
+use crate::utils::{JsValueExt, try_to_object, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use js_sys::{BigInt, Object, Reflect};
@@ -92,7 +92,7 @@ impl DistributionFunctionWasm {
     pub fn stepwise(
         #[wasm_bindgen(unchecked_param_type = "Record<string, bigint>")] steps_with_amount: JsValue,
     ) -> WasmDppResult<DistributionFunctionWasm> {
-        let obj = Object::from(steps_with_amount);
+        let obj = try_to_object(steps_with_amount, "stepsWithAmount")?;
 
         let mut steps_with_amount: BTreeMap<u64, TokenAmount> = BTreeMap::new();
 

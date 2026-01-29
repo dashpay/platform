@@ -445,8 +445,8 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 
     // Object (Map)
     if value.is_object() {
-        let obj = js_sys::Object::from(value.clone());
-        let keys = js_sys::Object::keys(&obj);
+        let obj = Object::from(value.clone());
+        let keys = Object::keys(&obj);
         let mut map = Vec::new();
         for i in 0..keys.length() {
             let key = keys.get(i);

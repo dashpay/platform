@@ -7,7 +7,7 @@ use crate::identifier::IdentifierWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, get_class_type, try_from_options};
+use crate::utils::{IntoWasm, get_class_type, try_from_options, try_to_object};
 use dpp::prelude::AssetLockProof;
 use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::*;
@@ -202,7 +202,7 @@ impl AssetLockProofWasm {
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(object: AssetLockProofObjectJs) -> WasmDppResult<AssetLockProofWasm> {
         let js_value: JsValue = object.into();
-        let object = Object::from(js_value.clone());
+        let object = try_to_object(js_value.clone(), "object")?;
         let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
 
         match proof_type {
@@ -246,7 +246,7 @@ impl AssetLockProofWasm {
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(object: AssetLockProofJSONJs) -> WasmDppResult<AssetLockProofWasm> {
         let js_value: JsValue = object.into();
-        let object = Object::from(js_value.clone());
+        let object = try_to_object(js_value.clone(), "json")?;
         let proof_type: AssetLockProofTypeWasm = try_from_options(&object, "type")?;
 
         match proof_type {

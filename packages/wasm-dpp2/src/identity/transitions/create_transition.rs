@@ -5,7 +5,7 @@ use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCre
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u16};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_object, try_to_u16};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -97,7 +97,7 @@ impl IdentityCreateTransitionWasm {
         options: IdentityCreateTransitionOptionsJs,
     ) -> WasmDppResult<IdentityCreateTransitionWasm> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract publicKeys (required array)
         let js_public_keys_array =

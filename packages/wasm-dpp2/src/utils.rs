@@ -381,8 +381,10 @@ pub fn try_to_u64(value: &JsValue, field_name: &str) -> WasmDppResult<u64> {
 /// Convert a JS value to Object with validation.
 ///
 /// Uses `dyn_into()` to safely convert, returning an error if the value is not an object.
-pub fn try_to_object(value: JsValue, field_name: &str) -> WasmDppResult<Object> {
+/// Accepts any type that implements `Into<JsValue>` for flexibility.
+pub fn try_to_object(value: impl Into<JsValue>, field_name: &str) -> WasmDppResult<Object> {
     value
+        .into()
         .dyn_into()
         .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be an object", field_name)))
 }
@@ -442,8 +444,10 @@ where
 ///
 /// Uses `dyn_into()` to safely convert, returning an error if the value is not a Map.
 /// This is preferred over `Map::from()` which unsafely casts any JsValue without validation.
-pub fn try_to_map(value: JsValue, field_name: &str) -> WasmDppResult<js_sys::Map> {
+/// Accepts any type that implements `Into<JsValue>` for flexibility.
+pub fn try_to_map(value: impl Into<JsValue>, field_name: &str) -> WasmDppResult<js_sys::Map> {
     value
+        .into()
         .dyn_into()
         .map_err(|_| WasmDppError::invalid_argument(format!("'{}' must be a Map", field_name)))
 }
@@ -464,10 +468,9 @@ pub fn try_to_string(value: &JsValue, field_name: &str) -> WasmDppResult<String>
 ///
 /// Validates that the value is a Uint8Array using `dyn_into()`.
 /// Returns an error if the value is not a Uint8Array.
-///
-/// Takes `&JsValue` to allow Deref coercion from js_sys types.
-pub fn try_to_bytes(value: &JsValue, field_name: &str) -> WasmDppResult<Vec<u8>> {
-    let array: js_sys::Uint8Array = value.clone().dyn_into().map_err(|_| {
+/// Accepts any type that implements `Into<JsValue>` for flexibility.
+pub fn try_to_bytes(value: impl Into<JsValue>, field_name: &str) -> WasmDppResult<Vec<u8>> {
+    let array: js_sys::Uint8Array = value.into().dyn_into().map_err(|_| {
         WasmDppError::invalid_argument(format!("'{}' must be a Uint8Array", field_name))
     })?;
     Ok(array.to_vec())
@@ -479,9 +482,9 @@ pub fn try_to_bytes(value: &JsValue, field_name: &str) -> WasmDppResult<Vec<u8>>
 /// - The value is a Uint8Array
 /// - The length is exactly N bytes
 ///
-/// Takes `&JsValue` to allow Deref coercion from js_sys types.
+/// Accepts any type that implements `Into<JsValue>` for flexibility.
 pub fn try_to_fixed_bytes<const N: usize>(
-    value: &JsValue,
+    value: impl Into<JsValue>,
     field_name: &str,
 ) -> WasmDppResult<[u8; N]> {
     let bytes = try_to_bytes(value, field_name)?;

@@ -8,7 +8,7 @@ use crate::tokens::configuration::TokenConfigurationWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
     IntoWasm, JsValueExt, try_from_options, try_from_options_optional,
-    try_from_options_optional_with, try_from_options_with, try_to_u16, try_to_u32,
+    try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u32,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -147,7 +147,7 @@ impl From<DataContractWasm> for DataContract {
 pub fn tokens_configuration_from_js_value(
     configuration: &JsValue,
 ) -> WasmDppResult<BTreeMap<TokenContractPosition, TokenConfiguration>> {
-    let configuration_object = Object::from(configuration.clone());
+    let configuration_object = try_to_object(configuration.clone(), "tokens")?;
     let configuration_keys = Object::keys(&configuration_object);
 
     let mut result: BTreeMap<TokenContractPosition, TokenConfiguration> = BTreeMap::new();
@@ -171,7 +171,7 @@ impl DataContractWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DataContractOptionsJs) -> WasmDppResult<DataContractWasm> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract ownerId (required)
         let owner_id: IdentifierWasm = try_from_options(&object, "ownerId")?;
@@ -544,7 +544,7 @@ impl DataContractWasm {
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "Record<number, Group>")] groups: &JsValue,
     ) -> WasmDppResult<()> {
-        let groups_object = Object::from(groups.clone());
+        let groups_object = try_to_object(groups.clone(), "groups")?;
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();
 

@@ -7,7 +7,8 @@ use crate::tokens::configuration::action_taker::ActionTakerWasm;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::group::GroupWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
+    try_to_object, try_to_u16,
 };
 use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
@@ -81,7 +82,7 @@ impl ChangeControlRulesWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: ChangeControlRulesOptionsJs) -> WasmDppResult<Self> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract AuthorizedActionTakers objects which need special handling
         let authorized_to_make_change: AuthorizedActionTakersWasm =
@@ -221,8 +222,7 @@ impl ChangeControlRulesWasm {
         &self,
         options: CanChangeAdminActionTakersOptionsJs,
     ) -> WasmDppResult<bool> {
-        let options: JsValue = options.into();
-        let object = Object::from(options);
+        let object = try_to_object(options, "options")?;
 
         let admin_action_takers: AuthorizedActionTakersWasm =
             try_from_options(&object, "adminActionTakers")?;
@@ -240,7 +240,7 @@ impl ChangeControlRulesWasm {
         // Extract groups
         let groups_value: JsValue =
             try_from_options_with(&object, "groups", |v| Ok::<_, WasmDppError>(v.clone()))?;
-        let groups_object = Object::from(groups_value);
+        let groups_object = try_to_object(groups_value, "groups")?;
         let groups_keys = Object::keys(&groups_object);
 
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();

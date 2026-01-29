@@ -7,7 +7,8 @@ use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyW
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u32,
+    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with,
+    try_to_object, try_to_u32,
 };
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -147,7 +148,7 @@ impl IdentityPublicKeyInCreationWasm {
         options: IdentityPublicKeyInCreationOptionsJs,
     ) -> WasmDppResult<IdentityPublicKeyInCreationWasm> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract purpose (required, complex type)
         let purpose: PurposeWasm = try_from_options(&object, "purpose")?;

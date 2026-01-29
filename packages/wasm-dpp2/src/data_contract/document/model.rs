@@ -7,7 +7,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     ToSerdeJSONExt, try_from_options_optional_with, try_from_options_with, try_to_fixed_bytes,
-    try_to_string,
+    try_to_object, try_to_string,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
@@ -21,7 +21,6 @@ use dpp::platform_value::{Value, ValueMapHelper};
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use dpp::version::PlatformVersion;
-use js_sys::Object;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -192,7 +191,7 @@ impl DocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(options: DocumentOptionsJs) -> WasmDppResult<DocumentWasm> {
         let options_value: JsValue = options.into();
-        let options_obj = Object::from(options_value.clone());
+        let options_obj = try_to_object(options_value.clone(), "options")?;
 
         // Deserialize fields via serde (includes IdentifierWasm)
         let input: DocumentOptionsInput = serde_wasm_bindgen::from_value(options_value)
@@ -213,7 +212,7 @@ impl DocumentWasm {
 
         let entropy: Option<[u8; 32]> =
             try_from_options_optional_with(&options_obj, "entropy", |v| {
-                try_to_fixed_bytes::<32>(v, "entropy")
+                try_to_fixed_bytes::<32>(v.clone(), "entropy")
             })?;
 
         let entropy: [u8; 32] = entropy.map_or_else(

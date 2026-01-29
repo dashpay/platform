@@ -8,7 +8,7 @@ use crate::tokens::configuration::configuration_convention::TokenConfigurationCo
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_u64};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_object, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -94,7 +94,7 @@ impl TokenConfigurationWasm {
         options: TokenConfigurationOptionsJs,
     ) -> WasmDppResult<TokenConfigurationWasm> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract conventions (required)
         let conventions = try_from_options_with(&object, "conventions", |v| {

@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::localization::TokenConfigurationLocalizationWasm;
-use crate::utils::{JsValueExt, try_from_options, try_to_string, try_to_u8};
+use crate::utils::{JsValueExt, try_from_options, try_to_object, try_to_string, try_to_u8};
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
@@ -103,7 +103,7 @@ impl TokenConfigurationConventionWasm {
 fn value_to_localizations(
     localizations_value: &JsValue,
 ) -> WasmDppResult<BTreeMap<String, TokenConfigurationLocalization>> {
-    let js_object = Object::from(localizations_value.clone());
+    let js_object = try_to_object(localizations_value.clone(), "localizations")?;
     let mut localizations = BTreeMap::new();
 
     for key in Object::keys(&js_object) {

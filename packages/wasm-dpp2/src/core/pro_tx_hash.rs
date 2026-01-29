@@ -125,7 +125,7 @@ impl TryFrom<JsValue> for ProTxHashWasm {
         }
 
         // Try as Uint8Array (validates type and 32-byte length)
-        if let Ok(arr) = try_to_fixed_bytes::<32>(&value, "proTxHash") {
+        if let Ok(arr) = try_to_fixed_bytes::<32>(value.clone(), "proTxHash") {
             let raw = sha256d::Hash::from_byte_array(arr);
             let hash = ProTxHash::from_raw_hash(raw);
             return Ok(ProTxHashWasm(hash));

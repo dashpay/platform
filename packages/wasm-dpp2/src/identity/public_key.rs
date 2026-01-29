@@ -131,7 +131,7 @@ pub fn public_key_hash_from_js(value: PublicKeyHashLikeJs) -> WasmDppResult<Vec<
         Ok(bytes)
     } else {
         // Validate type is Uint8Array and length is 20 bytes
-        let bytes = try_to_fixed_bytes::<20>(&js_value, "publicKeyHash")?;
+        let bytes = try_to_fixed_bytes::<20>(js_value, "publicKeyHash")?;
         Ok(bytes.to_vec())
     }
 }

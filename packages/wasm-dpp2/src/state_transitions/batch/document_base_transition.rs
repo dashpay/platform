@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::utils::{try_from_options, try_from_options_optional, try_to_u64};
+use crate::utils::{try_from_options, try_from_options_optional, try_to_object, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -61,7 +61,7 @@ impl DocumentBaseTransitionWasm {
         options: DocumentBaseTransitionOptionsJs,
     ) -> WasmDppResult<DocumentBaseTransitionWasm> {
         let options: JsValue = options.into();
-        let object = Object::from(options.clone());
+        let object = try_to_object(options.clone(), "options")?;
 
         // Extract documentId (required)
         let document_id: IdentifierWasm = try_from_options(&object, "documentId")?;

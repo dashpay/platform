@@ -211,8 +211,7 @@ impl PartialIdentityWasm {
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(obj: PartialIdentityObjectJs) -> WasmDppResult<PartialIdentityWasm> {
-        let obj_val: JsValue = obj.into();
-        let options_obj = Object::from(obj_val);
+        let options_obj = try_to_object(obj, "obj")?;
 
         // id - can be Uint8Array or Identifier
         let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
@@ -250,8 +249,7 @@ impl PartialIdentityWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(json: PartialIdentityJSONJs) -> WasmDppResult<PartialIdentityWasm> {
-        let obj_val: JsValue = json.into();
-        let options_obj = Object::from(obj_val);
+        let options_obj = try_to_object(json, "json")?;
 
         // id - base58 string
         let id: IdentifierWasm = try_from_options(&options_obj, "id")?;
@@ -293,15 +291,9 @@ impl_wasm_type_info!(PartialIdentityWasm, PartialIdentity);
 pub fn value_to_loaded_public_keys(
     loaded_public_keys: &JsValue,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
-    if !loaded_public_keys.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "loaded_public_keys must be an object",
-        ));
-    }
-
     let mut map = BTreeMap::new();
 
-    let pub_keys_object = Object::from(loaded_public_keys.clone());
+    let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
     let keys = Object::keys(&pub_keys_object);
 
     for key in keys.iter() {
@@ -351,14 +343,8 @@ pub fn option_array_to_not_found(
 pub fn value_to_loaded_public_keys_from_object(
     loaded_public_keys: &JsValue,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
-    if !loaded_public_keys.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "loaded_public_keys must be an object",
-        ));
-    }
-
     let mut map = BTreeMap::new();
-    let pub_keys_object = Object::from(loaded_public_keys.clone());
+    let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
     let keys = Object::keys(&pub_keys_object);
 
     for key in keys.iter() {
@@ -398,14 +384,8 @@ pub fn value_to_loaded_public_keys_from_object(
 pub fn value_to_loaded_public_keys_from_json(
     loaded_public_keys: &JsValue,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
-    if !loaded_public_keys.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "loaded_public_keys must be an object",
-        ));
-    }
-
     let mut map = BTreeMap::new();
-    let pub_keys_object = Object::from(loaded_public_keys.clone());
+    let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
     let keys = Object::keys(&pub_keys_object);
 
     for key in keys.iter() {
