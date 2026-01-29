@@ -98,7 +98,10 @@ impl DataContractFacade {
         new_data_contract: &DataContract,
         identity_contract_nonce: IdentityNonce,
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
-        self.factory
-            .create_data_contract_update_transition(old_data_contract, new_data_contract, identity_contract_nonce)
+        self.factory.create_data_contract_update_transition(
+            old_data_contract,
+            new_data_contract,
+            identity_contract_nonce,
+        )
     }
 }
