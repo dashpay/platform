@@ -92,4 +92,9 @@ extension Data {
 
         return encoded
     }
+
+    /// Convert to hex string
+    public func toHexString() -> String {
+        return self.map { String(format: "%02x", $0) }.joined()
+    }
 }
