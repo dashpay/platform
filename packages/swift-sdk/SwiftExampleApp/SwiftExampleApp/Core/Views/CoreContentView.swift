@@ -37,6 +37,13 @@ struct CoreContentView: View {
         return heightDisplay(numerator: cur, denominator: tot)
     }
     
+    private var masternodeHeightsDisplay: String? {
+        let cur = walletService.syncProgress.masternodeHeight
+        let tot = walletService.syncProgress.targetHeight
+
+        return heightDisplay(numerator: cur, denominator: tot)
+    }
+    
     private func heightDisplay(numerator: UInt32, denominator: UInt32) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -66,11 +73,11 @@ var body: some View {
                         value: filterHeaderHeightsDisplay
                     )
 
-                    if false { // TODO: Restore this to original behaviour or query spv config (better maybe?)
+                    if walletService.masternodesEnabled {
                         CompactSyncRow(
                             title: "Masternodes",
-                            progress: 0,
-                            value: formattedHeight(0) // TODO: Is this supported xd
+                            progress: Double(walletService.syncProgress.masternodeHeight) / Double(walletService.syncProgress.targetHeight),
+                            value: masternodeHeightsDisplay
                         )
                     }
 

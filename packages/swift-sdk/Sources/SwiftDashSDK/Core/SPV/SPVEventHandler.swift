@@ -245,23 +245,8 @@ public func ffiSyncProgressPtrIntoSpvSyncProgress(_ ptr: UnsafePointer<FFIDetail
         assert(false, "Progress pointer is nil!")
         return SPVSyncProgress.default()
     }
-    
-    let ffiProgress = ptr.pointee
-    let overview = ffiProgress.overview
 
-    return SPVSyncProgress(
-        stage: SPVSyncStage(ffiStage: ffiProgress.stage),
-        currentHeight: overview.header_height,
-        targetHeight: ffiProgress.total_height,
-        filterHeaderHeight: overview.filter_header_height,
-        filterHeight: overview.last_synced_filter_height,
-        syncStartedAt: TimeInterval(ffiProgress.sync_start_timestamp),
-        rate: ffiProgress.headers_per_second,
-        estimatedTimeRemaining: ffiProgress.estimated_seconds_remaining > 0
-            ? TimeInterval(ffiProgress.estimated_seconds_remaining)
-            : nil,
-        peerCount: overview.peer_count
-    )
+    return SPVSyncProgress.from(ptr.pointee)
 }
 
 // MARK: - SPV Event Types

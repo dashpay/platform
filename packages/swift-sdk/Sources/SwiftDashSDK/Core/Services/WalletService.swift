@@ -119,6 +119,7 @@ public class WalletService: ObservableObject {
     @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var isSyncing = false
+    @Published public var masternodesEnabled = true
     
     // Absolute heights for header sync display (current/target)
     @Published public var blocksHit: Int = 0
@@ -225,6 +226,8 @@ public class WalletService: ObservableObject {
               startHeight: startHeight,
               spvEventHandler: self.spvEventHandlerImpl!
           )
+          
+          try spvClient?.setMasternodeSyncEnabled(self.masternodesEnabled)
       } catch {
           SDKLogger.error("Failed to initialize SPV Client: \(error)")
           self.lastSyncError = error
@@ -308,6 +311,8 @@ public class WalletService: ObservableObject {
 
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
+        masternodesEnabled = enabled
+        
         // Try to apply immediately if the client exists
         do { try spvClient?.setMasternodeSyncEnabled(enabled) } catch { /* ignore */ }
     }

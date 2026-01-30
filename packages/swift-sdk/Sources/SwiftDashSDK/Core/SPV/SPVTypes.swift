@@ -4,6 +4,7 @@ import DashSDKFFI
 public struct SPVSyncProgress: Sendable {
     public let stage: SPVSyncStage
     public let currentHeight: UInt32
+    public let masternodeHeight: UInt32
     public let targetHeight: UInt32
     public let filterHeaderHeight: UInt32
     public let filterHeight: UInt32
@@ -16,6 +17,7 @@ public struct SPVSyncProgress: Sendable {
         SPVSyncProgress(
             stage: .idle,
             currentHeight: 0,
+            masternodeHeight: 0,
             targetHeight: 0,
             filterHeaderHeight: 0,
             filterHeight: 0,
@@ -26,10 +28,30 @@ public struct SPVSyncProgress: Sendable {
         )
     }
 
+    internal static func from(_ detailed: FFIDetailedSyncProgress) -> SPVSyncProgress {
+        let overview = detailed.overview
+    
+        return SPVSyncProgress(
+            stage: SPVSyncStage(ffiStage: detailed.stage),
+            currentHeight: overview.header_height,
+            masternodeHeight: overview.masternode_height,
+            targetHeight: detailed.total_height,
+            filterHeaderHeight: overview.filter_header_height,
+            filterHeight: overview.last_synced_filter_height,
+            syncStartedAt: TimeInterval(detailed.sync_start_timestamp),
+            rate: detailed.headers_per_second,
+            estimatedTimeRemaining: detailed.estimated_seconds_remaining > 0
+                ? TimeInterval(detailed.estimated_seconds_remaining)
+                : nil,
+            peerCount: overview.peer_count
+        )
+    }
+    
     internal static func from(_ overview: FFISyncProgress) -> SPVSyncProgress {
         SPVSyncProgress(
             stage: .idle,
             currentHeight: overview.header_height,
+            masternodeHeight: overview.masternode_height,
             targetHeight: 0,
             filterHeaderHeight: overview.filter_header_height,
             filterHeight: overview.last_synced_filter_height,
