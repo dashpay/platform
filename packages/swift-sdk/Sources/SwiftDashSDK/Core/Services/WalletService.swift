@@ -146,11 +146,6 @@ public class WalletService: ObservableObject {
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
 
-    // Expose SPV client for filter match queries
-    public var spvClientHandle: UnsafeMutablePointer<FFIDashSpvClient>? {
-        spvClient?.clientHandle
-    }
-
     private init() {}
     
     deinit {
@@ -342,10 +337,8 @@ public class WalletService: ObservableObject {
 
         // Capture references on MainActor
         let serviceBox = SendableBox(self)
-        let clientBox = SendableBox(spvClient)
         syncTask = Task.detached(priority: .userInitiated) {
             let service = serviceBox.value
-            let client = clientBox.value
             defer {
                 Task { @MainActor in service.syncTask = nil }
             }
@@ -353,7 +346,7 @@ public class WalletService: ObservableObject {
             if Task.isCancelled { return }
 
             do {
-                try await client.startSync()
+                try await spvClient.startSync()
             } catch {
                 await MainActor.run {
                     service.lastSyncError = error
@@ -579,24 +572,20 @@ public class WalletService: ObservableObject {
         return words.joined(separator: " ")
     }
     
-    class SPVEventHandlerImpl: SPVEventHandler {
-        weak var walletService: WalletService?
+    internal final class SPVEventHandlerImpl: SPVEventHandler & Sendable {
+        private let walletService: WalletService
         
         init(walletService: WalletService) {
             self.walletService = walletService
         }
         
         public func spvClient(didUpdateSyncProgress progress: SPVSyncProgress) {
-            guard let walletService = self.walletService else { return }
-            
             Task { @MainActor in 
                 walletService.syncProgress = progress
             }
         }
         
         public func spvClient(didReceiveBlock block: SPVBlockEvent) {
-            guard let walletService = self.walletService else { return }
-            
             SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
     
             // Sync wallet state after processing a block (which may contain relevant transactions)
@@ -611,8 +600,6 @@ public class WalletService: ObservableObject {
         }
         
         public func spvClient(didReceiveTransaction transaction: SPVTransactionEvent) {
-            guard let walletService = self.walletService else { return }
-            
             // Sync ALL wallets from Rust to SwiftData (transaction could belong to any wallet)
             Task { @MainActor in 
                 if let wm = walletService.walletManager {
@@ -630,8 +617,6 @@ public class WalletService: ObservableObject {
         }
         
         public func spvClient(didUpdateBlocksHit count: Int) {
-            guard let walletService = self.walletService else { return }
-            
             Task { @MainActor in 
                 walletService.blocksHit += count
         
@@ -648,8 +633,6 @@ public class WalletService: ObservableObject {
         }
         
         public func spvClient(didCompleteSync success: Bool, error: String?) {
-            guard let walletService = self.walletService else { return }
-            
             Task { @MainActor in 
                 walletService.isSyncing = false
         
