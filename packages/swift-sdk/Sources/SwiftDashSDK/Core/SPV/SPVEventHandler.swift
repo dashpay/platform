@@ -1,6 +1,13 @@
 import Foundation
 import DashSDKFFI
 
+/// swift callbacks that are triggered by the SPVClient
+/// 
+/// Important limitations:
+/// - Only didUpdateSyncProgress and didCompleteSync work with the 
+///   current SPVClient implementation, how the other events are triggered
+///   is subject to change in the SPVClient sync rewrite 
+
 internal protocol SPVEventHandler: AnyObject {
     func spvClient(didUpdateSyncProgress progress: SPVSyncProgress)
     func spvClient(didReceiveBlock block: SPVBlockEvent)
@@ -13,6 +20,9 @@ internal protocol SPVEventHandler: AnyObject {
 }
 
 internal extension SPVEventHandler {
+    /// Binds the swift callbacks into the FFIEventCallbacks struct by using 
+    /// C-compatible function pointers and returns struct ready to be used in
+    /// the SPVClient init process
     func intoFFIEventCallbacks() -> FFIEventCallbacks {
         var callbacks = FFIEventCallbacks()
 

@@ -1,6 +1,20 @@
 import Foundation
 import DashSDKFFI
 
+/// This class wraps the FFIDashSpvClient and provides a Swift interface for interacting with it
+///
+/// All dash_spv_ffi_* function calls are being wrapped in this class to avoid missusage
+///
+/// The FFI is still a work in progress, that means that some functionalities are not yet 
+/// implemented or may change in the future, this wrap was made with that in mind.
+///
+/// Important limitations:
+///  - Once stopped, the SPVClient cannot be restarted without creating a new instance, FFI limitation
+///  - The pointers are freed automatically but, to be able to create a new instance (with the same dataDir) 
+///    without causing the initialization to fail, you must call SPVClient::destroy manually, this is because, 
+///    FFIDashSpvClient locks the dir manually to avoid concurrency corruption and its only possible to
+///    ensure is unlocked by freeing the pointer, FFI limitation
+///  - Clearing the storage stops the SPVClient, a new one has to be created, FFI limitation
 internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
     // SPVEventHandler for callbacks
     private let spvEventHandler: T
@@ -142,7 +156,7 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
     }
 
     public func getSyncProgress() -> SPVSyncProgress {
-        // IMPROVEMENT
+        // TODO
         // The return struct lacks information provided by FFIDetailedSyncProgress,
         // Unification of both structs in the FFI would be a better aproach
         guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else {
@@ -176,7 +190,7 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
             throw SPVError.storageOperationFailed(SPVClient.getLastDashFFIError())
         }
 
-        // IMPROVEMENT
+        // TODO
         // Manually calling the event doesn't look like the right approach,
         // if FFISPVClient could send us an event callback automatically...
         self.spvEventHandler.spvClient(didUpdateSyncProgress: SPVSyncProgress.default())

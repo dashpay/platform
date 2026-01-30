@@ -1,3 +1,8 @@
+/**
+ This file contains wrappers and helpers to interact with the SPV FFI 
+ structs used in this SDK. Freeing FFI structs is handled always by the caller
+*/
+
 import Foundation
 import DashSDKFFI
 
