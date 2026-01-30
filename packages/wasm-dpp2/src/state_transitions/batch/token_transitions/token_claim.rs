@@ -3,12 +3,11 @@ use crate::error::WasmDppResult;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
-use crate::utils::{try_from_options, try_from_options_optional_with, try_to_string};
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_optional_with, try_to_string};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
 use dpp::state_transition::batch_transition::TokenClaimTransition;
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -51,12 +50,9 @@ impl TokenClaimTransitionWasm {
     ) -> WasmDppResult<TokenClaimTransitionWasm> {
         let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
 
-        let distribution_type = Reflect::get(&options, &JsValue::from_str("distributionType"))
-            .ok()
-            .filter(|v| !v.is_undefined())
-            .map(|v| TokenDistributionTypeWasm::try_from(v))
-            .transpose()?
-            .unwrap_or_default();
+        let distribution_type: TokenDistributionTypeWasm =
+            try_from_options_optional(&options, "distributionType")?
+                .unwrap_or_default();
 
         let public_note: Option<String> =
             try_from_options_optional_with(&options, "publicNote", |v| {

@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::utils::{JsValueExt, ToSerdeJSONExt};
 use dpp::balances::credits::TokenAmount;
@@ -106,4 +107,5 @@ impl TokenPricingScheduleWasm {
     }
 }
 
+impl_try_from_js_value!(TokenPricingScheduleWasm, "TokenPricingSchedule");
 impl_wasm_type_info!(TokenPricingScheduleWasm, TokenPricingSchedule);

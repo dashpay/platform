@@ -3,15 +3,13 @@ use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
-use crate::utils::{try_from_options, try_from_options_optional_with, try_to_string, IntoWasm};
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_optional_with, try_to_string};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransitionV0;
 use dpp::state_transition::batch_transition::TokenSetPriceForDirectPurchaseTransition;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-use js_sys::Reflect;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_SET_PRICE_OPTIONS_TS: &str = r#"
@@ -57,14 +55,8 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
         let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
 
         let price: Option<TokenPricingSchedule> =
-            Reflect::get(&options, &JsValue::from_str("price"))
-                .ok()
-                .filter(|v| !v.is_undefined())
-                .map(|v| {
-                    v.to_wasm::<TokenPricingScheduleWasm>("TokenPricingSchedule")
-                        .map(|p| p.clone().into())
-                })
-                .transpose()?;
+            try_from_options_optional::<TokenPricingScheduleWasm>(&options, "price")?
+                .map(Into::into);
 
         let public_note: Option<String> =
             try_from_options_optional_with(&options, "publicNote", |v| {

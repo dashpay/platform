@@ -3,7 +3,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options_optional, try_from_options_optional_with};
+use crate::utils::try_from_options_optional;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -11,7 +11,6 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
@@ -66,10 +65,9 @@ impl TokenPaymentInfoWasm {
             try_from_options_optional(&options, "paymentTokenContractId")?;
 
         let gas_fees_paid_by: GasFeesPaidBy =
-            try_from_options_optional_with(&options, "gasFeesPaidBy", |v| {
-                GasFeesPaidByWasm::try_from(v).map(|g| g.into())
-            })?
-            .unwrap_or_default();
+            try_from_options_optional::<GasFeesPaidByWasm>(&options, "gasFeesPaidBy")?
+                .map(Into::into)
+                .unwrap_or_default();
 
         // Deserialize primitive fields via serde last (consumes options)
         let opts: TokenPaymentInfoOptions = serde_wasm_bindgen::from_value(options.into())
@@ -152,15 +150,7 @@ impl TokenPaymentInfoWasm {
         &mut self,
         #[wasm_bindgen(js_name = "gasFeesPaidBy")] gas_fees_paid_by: GasFeesPaidByLikeJs,
     ) -> WasmDppResult<()> {
-        let value: JsValue = gas_fees_paid_by.into();
-        let gas_fees_paid_by = if value.is_undefined() || value.is_null() {
-            GasFeesPaidBy::default()
-        } else {
-            GasFeesPaidByWasm::try_from(value)?.into()
-        };
-
-        self.0.set_gas_fees_paid_by(gas_fees_paid_by);
-
+        self.0.set_gas_fees_paid_by(gas_fees_paid_by.try_into()?);
         Ok(())
     }
 }
