@@ -131,7 +131,6 @@ impl StatusNodeWasm {
 #[serde(rename_all = "camelCase")]
 pub struct StatusChainWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "isCatchingUp")]
-    #[serde(rename = "catchingUp")]
     pub is_catching_up: bool,
     #[wasm_bindgen(getter_with_clone)]
     pub latest_block_hash: String,
@@ -187,7 +186,6 @@ pub struct StatusNetworkWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub peers_count: u32,
     #[wasm_bindgen(getter_with_clone, js_name = "isListening")]
-    #[serde(rename = "listening")]
     pub is_listening: bool,
 }
 
