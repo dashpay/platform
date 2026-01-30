@@ -38,9 +38,9 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[serde(rename_all = "camelCase")]
 struct IdentityPublicKeyOptions {
     key_id: u32,
+    data: Vec<u8>,
     #[serde(default)]
     is_read_only: bool,
-    data: Vec<u8>,
     #[serde(default)]
     disabled_at: Option<TimestampMillis>,
 }

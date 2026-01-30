@@ -3,7 +3,7 @@ use crate::enums::keys::key_type::{KeyTypeLikeJs, KeyTypeWasm};
 use crate::enums::keys::purpose::{PurposeLikeJs, PurposeWasm};
 use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm};
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identity::public_key::{IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm};
+use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
@@ -11,13 +11,11 @@ use crate::utils::{try_from_options, try_from_options_optional, try_from_options
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::platform_value::string_encoding::Encoding::Hex;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
 use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -163,59 +161,9 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(js_name = "toIdentityPublicKey")]
-    pub fn to_identity_public_key(&self) -> WasmDppResult<IdentityPublicKeyWasm> {
-        // Build options object for IdentityPublicKey constructor
-        let options = Object::new();
-
-        Reflect::set(
-            &options,
-            &JsValue::from_str("keyId"),
-            &JsValue::from(self.0.id()),
-        )
-        .map_err(|e| WasmDppError::generic(format!("Failed to set keyId: {:?}", e)))?;
-        Reflect::set(
-            &options,
-            &JsValue::from_str("purpose"),
-            &JsValue::from(PurposeWasm::from(self.0.purpose())),
-        )
-        .map_err(|e| WasmDppError::generic(format!("Failed to set purpose: {:?}", e)))?;
-        Reflect::set(
-            &options,
-            &JsValue::from_str("securityLevel"),
-            &JsValue::from(SecurityLevelWasm::from(self.0.security_level())),
-        )
-        .map_err(|e| WasmDppError::generic(format!("Failed to set securityLevel: {:?}", e)))?;
-        Reflect::set(
-            &options,
-            &JsValue::from_str("keyType"),
-            &JsValue::from(KeyTypeWasm::from(self.0.key_type())),
-        )
-        .map_err(|e| WasmDppError::generic(format!("Failed to set keyType: {:?}", e)))?;
-        Reflect::set(
-            &options,
-            &JsValue::from_str("isReadOnly"),
-            &JsValue::from(self.0.read_only()),
-        )
-        .map_err(|e| WasmDppError::generic(format!("Failed to set isReadOnly: {:?}", e)))?;
-        Reflect::set(
-            &options,
-            &JsValue::from_str("data"),
-            &JsValue::from(self.0.data().to_string(Hex)),
-        )
-        .map_err(|e| WasmDppError::generic(format!("Failed to set data: {:?}", e)))?;
-
-        if let Some(bounds) = self.contract_bounds() {
-            Reflect::set(
-                &options,
-                &JsValue::from_str("contractBounds"),
-                &JsValue::from(bounds),
-            )
-            .map_err(|e| WasmDppError::generic(format!("Failed to set contractBounds: {:?}", e)))?;
-        }
-
-        let js_value: JsValue = options.into();
-        let options_js: IdentityPublicKeyOptionsJs = js_value.into();
-        IdentityPublicKeyWasm::constructor(options_js)
+    pub fn to_identity_public_key(&self) -> IdentityPublicKeyWasm {
+        let key: IdentityPublicKey = IdentityPublicKey::from(&self.0);
+        IdentityPublicKeyWasm::from(key)
     }
 
     #[wasm_bindgen(js_name = "getHash")]

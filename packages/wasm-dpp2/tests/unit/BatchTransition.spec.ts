@@ -51,7 +51,7 @@ describe('BatchTransition', () => {
     describe('documents', () => {
       it('should create batch transition from document transitions', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
         const documentTransition = createTransition.toDocumentTransition();
 
@@ -75,7 +75,7 @@ describe('BatchTransition', () => {
       it('should create batch transition from v1 transition', () => {
         const baseTransition = createTokenBaseTransition();
 
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(9999), 'bbbbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(9999), publicNote: 'bbbbbb' });
 
         const transition = new wasm.TokenTransition(mintTransition);
 
@@ -99,7 +99,7 @@ describe('BatchTransition', () => {
   describe('toBase64()', () => {
     it('should convert batch transition to base64', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -121,7 +121,7 @@ describe('BatchTransition', () => {
   describe('fromBase64()', () => {
     it('should create batch transition from base64', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -145,7 +145,7 @@ describe('BatchTransition', () => {
   describe('toObject()', () => {
     it('should convert batch transition to object', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
       const batchedTransition = new wasm.BatchedTransition(documentTransition);
@@ -164,7 +164,7 @@ describe('BatchTransition', () => {
   describe('toJSON()', () => {
     it('should convert batch transition to JSON', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
       const batchedTransition = new wasm.BatchedTransition(documentTransition);
@@ -183,7 +183,7 @@ describe('BatchTransition', () => {
   describe('fromJSON()', () => {
     it('should create batch transition from JSON', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
       const batchedTransition = new wasm.BatchedTransition(documentTransition);
@@ -208,7 +208,7 @@ describe('BatchTransition', () => {
   describe('transitions', () => {
     it('should return transitions', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -227,7 +227,7 @@ describe('BatchTransition', () => {
   describe('signature', () => {
     it('should return signature', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -246,7 +246,7 @@ describe('BatchTransition', () => {
   describe('signaturePublicKeyId', () => {
     it('should return signaturePublicKeyId', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -266,8 +266,8 @@ describe('BatchTransition', () => {
   describe('allPurchasesAmount', () => {
     it('should return allPurchasesAmount', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
-      const purchaseTransition = new wasm.DocumentPurchaseTransition(documentInstance, BigInt(1), BigInt(100));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+      const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
 
       const documentTransition = createTransition.toDocumentTransition();
       const documentTransition2 = purchaseTransition.toDocumentTransition();
@@ -285,7 +285,7 @@ describe('BatchTransition', () => {
   describe('ownerId', () => {
     it('should return ownerId', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -302,7 +302,7 @@ describe('BatchTransition', () => {
   describe('modifiedDataIds', () => {
     it('should return modifiedDataIds', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 
@@ -322,7 +322,7 @@ describe('BatchTransition', () => {
   describe('allConflictingIndexCollateralVotingFunds', () => {
     it('should return allConflictingIndexCollateralVotingFunds', () => {
       const documentInstance = createDocument();
-      const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+      const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
 
       const documentTransition = createTransition.toDocumentTransition();
 

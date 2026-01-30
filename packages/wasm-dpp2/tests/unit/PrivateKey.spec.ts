@@ -1,7 +1,7 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { wif, bytes, publicKeyHash } from './mocks/PrivateKey/index.js';
-import { fromHexString, toHexString } from './utils/hex.js';
+import { fromHexString, toHexString } from './utils/hex.ts';
 
 before(async () => {
   await initWasm();

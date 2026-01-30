@@ -21,7 +21,7 @@ describe('TokenTransitions', () => {
   describe('TokenBurnTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
+        const burnTransition = new wasm.TokenBurnTransition({ base: baseTransition, burnAmount: BigInt(11), publicNote: 'bbbb' });
 
         expect(burnTransition.constructor.name).to.equal('TokenBurnTransition');
         expect(burnTransition).to.be.an.instanceof(wasm.TokenBurnTransition);
@@ -31,13 +31,13 @@ describe('TokenTransitions', () => {
 
     describe('burnAmount', () => {
       it('should return burnAmount', () => {
-        const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
+        const burnTransition = new wasm.TokenBurnTransition({ base: baseTransition, burnAmount: BigInt(11), publicNote: 'bbbb' });
 
         expect(burnTransition.burnAmount).to.equal(BigInt(11));
       });
 
       it('should set burnAmount', () => {
-        const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
+        const burnTransition = new wasm.TokenBurnTransition({ base: baseTransition, burnAmount: BigInt(11), publicNote: 'bbbb' });
 
         burnTransition.burnAmount = BigInt(222);
 
@@ -47,7 +47,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
+        const burnTransition = new wasm.TokenBurnTransition({ base: baseTransition, burnAmount: BigInt(11), publicNote: 'bbbb' });
 
         expect(burnTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -55,13 +55,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
+        const burnTransition = new wasm.TokenBurnTransition({ base: baseTransition, burnAmount: BigInt(11), publicNote: 'bbbb' });
 
         expect(burnTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const burnTransition = new wasm.TokenBurnTransition(baseTransition, BigInt(11), 'bbbb');
+        const burnTransition = new wasm.TokenBurnTransition({ base: baseTransition, burnAmount: BigInt(11), publicNote: 'bbbb' });
 
         burnTransition.publicNote = 'aaaa';
 
@@ -73,7 +73,7 @@ describe('TokenTransitions', () => {
   describe('TokenMintTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(11), publicNote: 'bbbb' });
 
         expect(mintTransition.constructor.name).to.equal('TokenMintTransition');
         expect(mintTransition).to.be.an.instanceof(wasm.TokenMintTransition);
@@ -83,13 +83,13 @@ describe('TokenTransitions', () => {
 
     describe('amount', () => {
       it('should return amount', () => {
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(11), publicNote: 'bbbb' });
 
         expect(mintTransition.amount).to.equal(BigInt(11));
       });
 
       it('should set amount', () => {
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(11), publicNote: 'bbbb' });
 
         mintTransition.amount = BigInt(222);
 
@@ -99,7 +99,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(11), publicNote: 'bbbb' });
 
         expect(mintTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -107,13 +107,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(11), publicNote: 'bbbb' });
 
         expect(mintTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const mintTransition = new wasm.TokenMintTransition(baseTransition, ownerId, BigInt(11), 'bbbb');
+        const mintTransition = new wasm.TokenMintTransition({ base: baseTransition, issuedToIdentityId: ownerId, amount: BigInt(11), publicNote: 'bbbb' });
 
         mintTransition.publicNote = 'aaaa';
 
@@ -311,11 +311,7 @@ describe('TokenTransitions', () => {
   describe('TokenFreezeTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const freezeTransition = new wasm.TokenFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const freezeTransition = new wasm.TokenFreezeTransition({ base: baseTransition, identityToFreezeId: ownerId, publicNote: 'bbbb' });
 
         expect(freezeTransition.constructor.name).to.equal('TokenFreezeTransition');
         expect(freezeTransition).to.be.an.instanceof(wasm.TokenFreezeTransition);
@@ -325,11 +321,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const freezeTransition = new wasm.TokenFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const freezeTransition = new wasm.TokenFreezeTransition({ base: baseTransition, identityToFreezeId: ownerId, publicNote: 'bbbb' });
 
         expect(freezeTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -337,21 +329,13 @@ describe('TokenTransitions', () => {
 
     describe('frozenIdentityId', () => {
       it('should return frozenIdentityId', () => {
-        const freezeTransition = new wasm.TokenFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const freezeTransition = new wasm.TokenFreezeTransition({ base: baseTransition, identityToFreezeId: ownerId, publicNote: 'bbbb' });
 
         expect(freezeTransition.frozenIdentityId.toBase58()).to.equal(ownerId);
       });
 
       it('should set frozenIdentityId', () => {
-        const freezeTransition = new wasm.TokenFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const freezeTransition = new wasm.TokenFreezeTransition({ base: baseTransition, identityToFreezeId: ownerId, publicNote: 'bbbb' });
 
         freezeTransition.frozenIdentityId = dataContractId;
 
@@ -361,21 +345,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const freezeTransition = new wasm.TokenFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const freezeTransition = new wasm.TokenFreezeTransition({ base: baseTransition, identityToFreezeId: ownerId, publicNote: 'bbbb' });
 
         expect(freezeTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const freezeTransition = new wasm.TokenFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const freezeTransition = new wasm.TokenFreezeTransition({ base: baseTransition, identityToFreezeId: ownerId, publicNote: 'bbbb' });
 
         freezeTransition.publicNote = 'aaaa';
 
@@ -387,11 +363,7 @@ describe('TokenTransitions', () => {
   describe('TokenUnFreezeTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const unfreezeTransition = new wasm.TokenUnFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const unfreezeTransition = new wasm.TokenUnFreezeTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(unfreezeTransition.constructor.name).to.equal('TokenUnFreezeTransition');
         expect(unfreezeTransition).to.be.an.instanceof(wasm.TokenUnFreezeTransition);
@@ -401,11 +373,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const unfreezeTransition = new wasm.TokenUnFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const unfreezeTransition = new wasm.TokenUnFreezeTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(unfreezeTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -413,21 +381,13 @@ describe('TokenTransitions', () => {
 
     describe('frozenIdentityId', () => {
       it('should return frozenIdentityId', () => {
-        const unfreezeTransition = new wasm.TokenUnFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const unfreezeTransition = new wasm.TokenUnFreezeTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(unfreezeTransition.frozenIdentityId.toBase58()).to.equal(ownerId);
       });
 
       it('should set frozenIdentityId', () => {
-        const unfreezeTransition = new wasm.TokenUnFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const unfreezeTransition = new wasm.TokenUnFreezeTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         unfreezeTransition.frozenIdentityId = dataContractId;
 
@@ -437,21 +397,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const unfreezeTransition = new wasm.TokenUnFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const unfreezeTransition = new wasm.TokenUnFreezeTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(unfreezeTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const unfreezeTransition = new wasm.TokenUnFreezeTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const unfreezeTransition = new wasm.TokenUnFreezeTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         unfreezeTransition.publicNote = 'aaaa';
 
@@ -463,11 +415,7 @@ describe('TokenTransitions', () => {
   describe('TokenDestroyFrozenFundsTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(tokenDestroyFrozenFundsTransition.constructor.name).to.equal('TokenDestroyFrozenFundsTransition');
         expect(tokenDestroyFrozenFundsTransition).to.be.an.instanceof(wasm.TokenDestroyFrozenFundsTransition);
@@ -477,11 +425,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(tokenDestroyFrozenFundsTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -489,21 +433,13 @@ describe('TokenTransitions', () => {
 
     describe('frozenIdentityId', () => {
       it('should return frozenIdentityId', () => {
-        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(tokenDestroyFrozenFundsTransition.frozenIdentityId.toBase58()).to.equal(ownerId);
       });
 
       it('should set frozenIdentityId', () => {
-        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         tokenDestroyFrozenFundsTransition.frozenIdentityId = dataContractId;
 
@@ -513,21 +449,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         expect(tokenDestroyFrozenFundsTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition(
-          baseTransition,
-          ownerId,
-          'bbbb',
-        );
+        const tokenDestroyFrozenFundsTransition = new wasm.TokenDestroyFrozenFundsTransition({ base: baseTransition, frozenIdentityId: ownerId, publicNote: 'bbbb' });
 
         tokenDestroyFrozenFundsTransition.publicNote = 'aaaa';
 
@@ -539,11 +467,11 @@ describe('TokenTransitions', () => {
   describe('TokenClaimTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-          wasm.TokenDistributionType.PreProgrammed,
-          'bbbb',
-        );
+        const claimTransition = new wasm.TokenClaimTransition({
+          base: baseTransition,
+          distributionType: wasm.TokenDistributionType.PreProgrammed,
+          publicNote: 'bbbb',
+        });
 
         expect(claimTransition.constructor.name).to.equal('TokenClaimTransition');
         expect(claimTransition).to.be.an.instanceof(wasm.TokenClaimTransition);
@@ -551,9 +479,9 @@ describe('TokenTransitions', () => {
       });
 
       it('should create instance without distribution type', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-        );
+        const claimTransition = new wasm.TokenClaimTransition({
+          base: baseTransition,
+        });
 
         expect(claimTransition.constructor.name).to.equal('TokenClaimTransition');
         expect(claimTransition).to.be.an.instanceof(wasm.TokenClaimTransition);
@@ -563,11 +491,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-          wasm.TokenDistributionType.PreProgrammed,
-          'bbbb',
-        );
+        const claimTransition = new wasm.TokenClaimTransition({ base: baseTransition, distributionType: wasm.TokenDistributionType.PreProgrammed, publicNote: 'bbbb' });
 
         expect(claimTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -575,21 +499,13 @@ describe('TokenTransitions', () => {
 
     describe('distributionType', () => {
       it('should return distributionType', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-          wasm.TokenDistributionType.PreProgrammed,
-          'bbbb',
-        );
+        const claimTransition = new wasm.TokenClaimTransition({ base: baseTransition, distributionType: wasm.TokenDistributionType.PreProgrammed, publicNote: 'bbbb' });
 
         expect(claimTransition.distributionType).to.equal('PreProgrammed');
       });
 
       it('should set distributionType', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-          wasm.TokenDistributionType.Perpetual,
-          'bbbb',
-        );
+        const claimTransition = new wasm.TokenClaimTransition({ base: baseTransition, distributionType: wasm.TokenDistributionType.Perpetual, publicNote: 'bbbb' });
 
         claimTransition.distributionType = wasm.TokenDistributionType.Perpetual;
 
@@ -599,21 +515,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-          wasm.TokenDistributionType.PreProgrammed,
-          'bbbb',
-        );
+        const claimTransition = new wasm.TokenClaimTransition({ base: baseTransition, distributionType: wasm.TokenDistributionType.PreProgrammed, publicNote: 'bbbb' });
 
         expect(claimTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const claimTransition = new wasm.TokenClaimTransition(
-          baseTransition,
-          wasm.TokenDistributionType.Perpetual,
-          'bbbb',
-        );
+        const claimTransition = new wasm.TokenClaimTransition({ base: baseTransition, distributionType: wasm.TokenDistributionType.Perpetual, publicNote: 'bbbb' });
 
         claimTransition.publicNote = 'aaaa';
 
@@ -625,11 +533,11 @@ describe('TokenTransitions', () => {
   describe('TokenEmergencyActionTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition(
-          baseTransition,
-          wasm.TokenDistributionType.PreProgrammed,
-          'bbbb',
-        );
+        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition({
+          base: baseTransition,
+          emergencyAction: wasm.TokenEmergencyAction.Pause,
+          publicNote: 'bbbb',
+        });
 
         expect(emergencyActionTransition.constructor.name).to.equal('TokenEmergencyActionTransition');
         expect(emergencyActionTransition).to.be.an.instanceof(wasm.TokenEmergencyActionTransition);
@@ -639,11 +547,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition(
-          baseTransition,
-          wasm.TokenEmergencyAction.Pause,
-          'bbbb',
-        );
+        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition({ base: baseTransition, emergencyAction: wasm.TokenEmergencyAction.Pause, publicNote: 'bbbb' });
 
         expect(emergencyActionTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -651,21 +555,13 @@ describe('TokenTransitions', () => {
 
     describe('emergencyAction', () => {
       it('should return emergencyAction', () => {
-        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition(
-          baseTransition,
-          wasm.TokenEmergencyAction.Pause,
-          'bbbb',
-        );
+        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition({ base: baseTransition, emergencyAction: wasm.TokenEmergencyAction.Pause, publicNote: 'bbbb' });
 
         expect(emergencyActionTransition.emergencyAction).to.equal('Pause');
       });
 
       it('should set emergencyAction', () => {
-        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition(
-          baseTransition,
-          wasm.TokenEmergencyAction.Pause,
-          'bbbb',
-        );
+        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition({ base: baseTransition, emergencyAction: wasm.TokenEmergencyAction.Pause, publicNote: 'bbbb' });
 
         emergencyActionTransition.emergencyAction = wasm.TokenEmergencyAction.Resume;
 
@@ -675,21 +571,13 @@ describe('TokenTransitions', () => {
 
     describe('publicNote', () => {
       it('should return publicNote', () => {
-        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition(
-          baseTransition,
-          wasm.TokenEmergencyAction.Pause,
-          'bbbb',
-        );
+        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition({ base: baseTransition, emergencyAction: wasm.TokenEmergencyAction.Pause, publicNote: 'bbbb' });
 
         expect(emergencyActionTransition.publicNote).to.equal('bbbb');
       });
 
       it('should set publicNote', () => {
-        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition(
-          baseTransition,
-          wasm.TokenEmergencyAction.Pause,
-          'bbbb',
-        );
+        const emergencyActionTransition = new wasm.TokenEmergencyActionTransition({ base: baseTransition, emergencyAction: wasm.TokenEmergencyAction.Pause, publicNote: 'bbbb' });
 
         emergencyActionTransition.publicNote = 'aaaa';
 
@@ -703,11 +591,7 @@ describe('TokenTransitions', () => {
       it('should create instance from values', () => {
         const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-        const configUpdateTransition = new wasm.TokenConfigUpdateTransition(
-          baseTransition,
-          wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode),
-          'bbbb',
-        );
+        const configUpdateTransition = new wasm.TokenConfigUpdateTransition({ base: baseTransition, updateTokenConfigurationItem: wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode), publicNote: 'bbbb' });
 
         expect(configUpdateTransition.constructor.name).to.equal('TokenConfigUpdateTransition');
         expect(configUpdateTransition).to.be.an.instanceof(wasm.TokenConfigUpdateTransition);
@@ -720,11 +604,7 @@ describe('TokenTransitions', () => {
       it('should return base', () => {
         const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-        const configUpdateTransition = new wasm.TokenConfigUpdateTransition(
-          baseTransition,
-          wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode),
-          'bbbb',
-        );
+        const configUpdateTransition = new wasm.TokenConfigUpdateTransition({ base: baseTransition, updateTokenConfigurationItem: wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode), publicNote: 'bbbb' });
 
         expect(configUpdateTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -734,11 +614,7 @@ describe('TokenTransitions', () => {
       it('should return updateTokenConfigurationItem', () => {
         const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-        const configUpdateTransition = new wasm.TokenConfigUpdateTransition(
-          baseTransition,
-          wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode),
-          'bbbb',
-        );
+        const configUpdateTransition = new wasm.TokenConfigUpdateTransition({ base: baseTransition, updateTokenConfigurationItem: wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode), publicNote: 'bbbb' });
 
         expect(configUpdateTransition.updateTokenConfigurationItem.constructor.name).to.equal('TokenConfigurationChangeItem');
       });
@@ -748,11 +624,7 @@ describe('TokenTransitions', () => {
       it('should return publicNote', () => {
         const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-        const configUpdateTransition = new wasm.TokenConfigUpdateTransition(
-          baseTransition,
-          wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode),
-          'bbbb',
-        );
+        const configUpdateTransition = new wasm.TokenConfigUpdateTransition({ base: baseTransition, updateTokenConfigurationItem: wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode), publicNote: 'bbbb' });
 
         expect(configUpdateTransition.publicNote).to.equal('bbbb');
       });
@@ -761,11 +633,7 @@ describe('TokenTransitions', () => {
         // At this moment available only one trade mode
         const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-        const configUpdateTransition = new wasm.TokenConfigUpdateTransition(
-          baseTransition,
-          wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode),
-          'bbbb',
-        );
+        const configUpdateTransition = new wasm.TokenConfigUpdateTransition({ base: baseTransition, updateTokenConfigurationItem: wasm.TokenConfigurationChangeItem.MarketplaceTradeModeItem(tradeMode), publicNote: 'bbbb' });
 
         configUpdateTransition.publicNote = 'aaaa';
 
@@ -777,11 +645,7 @@ describe('TokenTransitions', () => {
   describe('TokenDirectPurchaseTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition(
-          baseTransition,
-          BigInt(111),
-          BigInt(111),
-        );
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
 
         expect(directPurchaseTransition.constructor.name).to.equal('TokenDirectPurchaseTransition');
         expect(directPurchaseTransition).to.be.an.instanceof(wasm.TokenDirectPurchaseTransition);
@@ -791,11 +655,7 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition(
-          baseTransition,
-          BigInt(111),
-          BigInt(111),
-        );
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
 
         expect(directPurchaseTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -803,21 +663,13 @@ describe('TokenTransitions', () => {
 
     describe('tokenCount', () => {
       it('should return tokenCount', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition(
-          baseTransition,
-          BigInt(111),
-          BigInt(111),
-        );
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
 
         expect(directPurchaseTransition.tokenCount).to.equal(BigInt(111));
       });
 
       it('should set tokenCount', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition(
-          baseTransition,
-          BigInt(111),
-          BigInt(111),
-        );
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
 
         directPurchaseTransition.tokenCount = BigInt(222);
 
@@ -827,21 +679,13 @@ describe('TokenTransitions', () => {
 
     describe('totalAgreedPrice', () => {
       it('should return totalAgreedPrice', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition(
-          baseTransition,
-          BigInt(111),
-          BigInt(111),
-        );
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
 
         expect(directPurchaseTransition.totalAgreedPrice).to.equal(BigInt(111));
       });
 
       it('should set totalAgreedPrice', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition(
-          baseTransition,
-          BigInt(111),
-          BigInt(111),
-        );
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
 
         directPurchaseTransition.totalAgreedPrice = BigInt(222);
 
@@ -855,11 +699,7 @@ describe('TokenTransitions', () => {
       it('should create instance from values', () => {
         const price = wasm.TokenPricingSchedule.SetPrices({ 100: 1000 });
 
-        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition(
-          baseTransition,
-          price,
-          'bbbb',
-        );
+        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition({ base: baseTransition, price, publicNote: 'bbbb' });
 
         expect(price.constructor.name).to.equal('TokenPricingSchedule');
         expect(setPriceDirectPurchaseTransition.constructor.name).to.equal('TokenSetPriceForDirectPurchaseTransition');
@@ -873,11 +713,7 @@ describe('TokenTransitions', () => {
       it('should return base', () => {
         const price = wasm.TokenPricingSchedule.SetPrices({ 100: 1000 });
 
-        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition(
-          baseTransition,
-          price,
-          'bbbb',
-        );
+        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition({ base: baseTransition, price, publicNote: 'bbbb' });
 
         expect(setPriceDirectPurchaseTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -887,11 +723,7 @@ describe('TokenTransitions', () => {
       it('should return price', () => {
         const price = wasm.TokenPricingSchedule.SetPrices({ 100: 1000 });
 
-        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition(
-          baseTransition,
-          price,
-          'bbbb',
-        );
+        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition({ base: baseTransition, price, publicNote: 'bbbb' });
 
         expect(setPriceDirectPurchaseTransition.price.constructor.name).to.equal('TokenPricingSchedule');
       });
@@ -899,11 +731,7 @@ describe('TokenTransitions', () => {
       it('should set price', () => {
         const price = wasm.TokenPricingSchedule.SetPrices({ 100: 1000 });
 
-        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition(
-          baseTransition,
-          price,
-          'bbbb',
-        );
+        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition({ base: baseTransition, price, publicNote: 'bbbb' });
 
         setPriceDirectPurchaseTransition.price = wasm.TokenPricingSchedule.SetPrices({ 101: 1010 });
 
@@ -915,11 +743,7 @@ describe('TokenTransitions', () => {
       it('should return publicNote', () => {
         const price = wasm.TokenPricingSchedule.SetPrices({ 100: 1000 });
 
-        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition(
-          baseTransition,
-          price,
-          'bbbb',
-        );
+        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition({ base: baseTransition, price, publicNote: 'bbbb' });
 
         expect(setPriceDirectPurchaseTransition.publicNote).to.equal('bbbb');
       });
@@ -927,11 +751,7 @@ describe('TokenTransitions', () => {
       it('should set publicNote', () => {
         const price = wasm.TokenPricingSchedule.SetPrices({ 100: 1000 });
 
-        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition(
-          baseTransition,
-          price,
-          'bbbb',
-        );
+        const setPriceDirectPurchaseTransition = new wasm.TokenSetPriceForDirectPurchaseTransition({ base: baseTransition, price, publicNote: 'bbbb' });
 
         setPriceDirectPurchaseTransition.publicNote = 'aaaa';
 

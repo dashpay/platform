@@ -99,7 +99,7 @@ describe('TokenBaseTransition', () => {
 
   describe('usingGroupInfo', () => {
     it('should return usingGroupInfo', () => {
-      const groupStInfo = new wasm.GroupStateTransitionInfo(2, dataContractId, false);
+      const groupStInfo = new wasm.GroupStateTransitionInfo({ groupContractPosition: 2, actionId: dataContractId, isActionProposer: false });
 
       const baseTransition = createBaseTransition({ usingGroupInfo: groupStInfo });
 
@@ -108,7 +108,7 @@ describe('TokenBaseTransition', () => {
     });
 
     it('should set usingGroupInfo', () => {
-      const groupStInfo = new wasm.GroupStateTransitionInfo(2, dataContractId, false);
+      const groupStInfo = new wasm.GroupStateTransitionInfo({ groupContractPosition: 2, actionId: dataContractId, isActionProposer: false });
 
       const baseTransition = createBaseTransition();
 

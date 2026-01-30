@@ -49,13 +49,21 @@ describe('IdentityTopUpTransition', () => {
   }
 
   function createTransition() {
-    return new wasm.IdentityTopUpTransition(createAssetLockProof(), testIdentityId, 11);
+    return new wasm.IdentityTopUpTransition({
+      assetLockProof: createAssetLockProof(),
+      identityId: testIdentityId,
+      userFeeIncrease: 11,
+    });
   }
 
   describe('constructor()', () => {
     it('should create IdentityTopUpTransition', () => {
       const assetLockProof = createAssetLockProof();
-      const transition = new wasm.IdentityTopUpTransition(assetLockProof, testIdentityId, 11);
+      const transition = new wasm.IdentityTopUpTransition({
+        assetLockProof,
+        identityId: testIdentityId,
+        userFeeIncrease: 11,
+      });
 
       expect(transition).to.be.an.instanceof(wasm.IdentityTopUpTransition);
       expect(assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);

@@ -8,7 +8,7 @@ before(async () => {
 describe('BlockInfo', () => {
   describe('constructor()', () => {
     it('should create BlockInfo with all parameters', () => {
-      const blockInfo = new wasm.BlockInfo(1000n, 100n, 50, 5);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1000n, height: 100n, coreHeight: 50, epochIndex: 5 });
 
       expect(blockInfo.timeMs).to.equal(1000n);
       expect(blockInfo.height).to.equal(100n);
@@ -17,7 +17,7 @@ describe('BlockInfo', () => {
     });
 
     it('should create BlockInfo with zero values', () => {
-      const blockInfo = new wasm.BlockInfo(0n, 0n, 0, 0);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 0n, height: 0n, coreHeight: 0, epochIndex: 0 });
 
       expect(blockInfo.timeMs).to.equal(0n);
       expect(blockInfo.height).to.equal(0n);
@@ -28,7 +28,7 @@ describe('BlockInfo', () => {
 
   describe('toJSON()', () => {
     it('should round-trip via toJSON/fromJSON', () => {
-      const blockInfo = new wasm.BlockInfo(1234567890n, 999n, 500, 10);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
 
       const json = blockInfo.toJSON();
       // serde uses snake_case by default
@@ -47,7 +47,7 @@ describe('BlockInfo', () => {
 
   describe('toObject()', () => {
     it('should round-trip via toObject/fromObject', () => {
-      const blockInfo = new wasm.BlockInfo(1234567890n, 999n, 500, 10);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
 
       const obj = blockInfo.toObject();
       // serde uses snake_case by default
@@ -68,7 +68,7 @@ describe('BlockInfo', () => {
       // Test with BigInt-sized values
       const largeTimeMs = 1702500000000n; // realistic timestamp in ms
       const largeHeight = 1000000n;
-      const blockInfo = new wasm.BlockInfo(largeTimeMs, largeHeight, 800000, 100);
+      const blockInfo = new wasm.BlockInfo({ timeMs: largeTimeMs, height: largeHeight, coreHeight: 800000, epochIndex: 100 });
 
       // JSON round-trip
       const json = blockInfo.toJSON();
@@ -86,28 +86,28 @@ describe('BlockInfo', () => {
 
   describe('timeMs', () => {
     it('should return timeMs', () => {
-      const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
       expect(blockInfo.timeMs).to.equal(5000n);
     });
   });
 
   describe('height', () => {
     it('should return height', () => {
-      const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
       expect(blockInfo.height).to.equal(100n);
     });
   });
 
   describe('coreHeight', () => {
     it('should return coreHeight', () => {
-      const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
       expect(blockInfo.coreHeight).to.equal(50);
     });
   });
 
   describe('epochIndex', () => {
     it('should return epochIndex', () => {
-      const blockInfo = new wasm.BlockInfo(5000n, 100n, 50, 5);
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
       expect(blockInfo.epochIndex).to.equal(5);
     });
   });

@@ -1,7 +1,7 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import { value, dataContractsBytes } from './mocks/DataContract/index.js';
-import { fromHexString } from './utils/hex.js';
+import { fromHexString } from './utils/hex.ts';
 
 let PlatformVersion: typeof wasm.PlatformVersion;
 

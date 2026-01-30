@@ -3,7 +3,7 @@ import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 import {
   json, object, id, ownerId,
 } from './mocks/DataContract/index.js';
-import { fromHexString } from './utils/hex.js';
+import { fromHexString } from './utils/hex.ts';
 
 let PlatformVersion: typeof wasm.PlatformVersion;
 

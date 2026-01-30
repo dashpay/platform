@@ -7,13 +7,15 @@ import {
   securityLevel,
   keyType,
   binaryData,
+  binaryDataHex,
   securityLevelSet,
   keyIdSet,
   purposeSet,
   keyTypeSet,
   binaryDataSet,
+  binaryDataSetHex,
 } from './mocks/PublicKey/index.js';
-import { toHexString } from './utils/hex.js';
+import { toHexString } from './utils/hex.ts';
 
 before(async () => {
   await initWasm();
@@ -263,7 +265,7 @@ describe('IdentityPublicKey', () => {
         data: binaryData,
       });
 
-      expect(pubKey.data).to.equal(binaryData);
+      expect(pubKey.data).to.equal(binaryDataHex);
     });
 
     it('should set data', () => {
@@ -276,9 +278,9 @@ describe('IdentityPublicKey', () => {
         data: binaryData,
       });
 
-      pubKey.data = binaryDataSet;
+      pubKey.data = binaryDataSetHex;
 
-      expect(pubKey.data).to.equal(binaryDataSet);
+      expect(pubKey.data).to.equal(binaryDataSetHex);
     });
   });
 

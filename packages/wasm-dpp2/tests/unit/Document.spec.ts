@@ -11,7 +11,7 @@ import {
   document2,
   documentBytes,
 } from './mocks/Document/index.js';
-import { fromHexString } from './utils/hex.js';
+import { fromHexString } from './utils/hex.ts';
 
 let PlatformVersion: typeof wasm.PlatformVersion;
 

@@ -36,8 +36,8 @@ describe('DocumentTransition', () => {
 
   before(async () => {
     documentInstance = createDocument();
-    createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
-    replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
+    createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+    replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
   });
 
   describe('toDocumentTransition()', () => {
