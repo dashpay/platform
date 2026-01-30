@@ -73,7 +73,7 @@ describe('TokenDistributionRules', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -114,7 +114,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -141,7 +141,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -176,7 +176,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -203,7 +203,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -234,7 +234,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -261,7 +261,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -292,7 +292,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 
@@ -319,7 +319,7 @@ describe('TokenDistributionRules', () => {
         BigInt(10000),
       );
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
-      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(BigInt(111));
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(new wasm.DistributionFixedAmount({ amount: BigInt(111) }));
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(BigInt(111), distributionFunction);
       const perpetualDistribution = new wasm.TokenPerpetualDistribution(distributionType, recipient);
 

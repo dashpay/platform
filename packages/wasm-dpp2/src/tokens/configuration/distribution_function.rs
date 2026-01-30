@@ -55,36 +55,31 @@ impl From<DistributionFunction> for DistributionFunctionWasm {
 #[wasm_bindgen(js_class = DistributionFunction)]
 impl DistributionFunctionWasm {
     #[wasm_bindgen(js_name = "FixedAmountDistribution")]
-    pub fn fixed_amount_distribution(amount: TokenAmount) -> DistributionFunctionWasm {
-        DistributionFunctionWasm(DistributionFunction::FixedAmount { amount })
+    pub fn fixed_amount_distribution(opts: DistributionFixedAmountWasm) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::FixedAmount {
+            amount: opts.amount,
+        })
     }
 
     #[wasm_bindgen(js_name = "Random")]
-    pub fn random(min: TokenAmount, max: TokenAmount) -> Self {
-        DistributionFunctionWasm(DistributionFunction::Random { min, max })
+    pub fn random(opts: DistributionRandomWasm) -> Self {
+        DistributionFunctionWasm(DistributionFunction::Random {
+            min: opts.min,
+            max: opts.max,
+        })
     }
 
     #[wasm_bindgen(js_name = "StepDecreasingAmount")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn step_decreasing_amount(
-        step_count: u32,
-        decrease_per_interval_numerator: u16,
-        decrease_per_interval_denominator: u16,
-        start_decreasing_offset: Option<u64>,
-        max_interval_count: Option<u16>,
-        distribution_start_amount: TokenAmount,
-        trailing_distribution_interval_amount: TokenAmount,
-        min_value: Option<u64>,
-    ) -> Self {
+    pub fn step_decreasing_amount(opts: DistributionStepDecreasingAmountWasm) -> Self {
         DistributionFunctionWasm(DistributionFunction::StepDecreasingAmount {
-            step_count,
-            decrease_per_interval_numerator,
-            decrease_per_interval_denominator,
-            start_decreasing_offset,
-            max_interval_count,
-            distribution_start_amount,
-            trailing_distribution_interval_amount,
-            min_value,
+            step_count: opts.step_count,
+            decrease_per_interval_numerator: opts.decrease_per_interval_numerator,
+            decrease_per_interval_denominator: opts.decrease_per_interval_denominator,
+            start_decreasing_offset: opts.start_decreasing_offset,
+            max_interval_count: opts.max_interval_count,
+            distribution_start_amount: opts.distribution_start_amount,
+            trailing_distribution_interval_amount: opts.trailing_distribution_interval_amount,
+            min_value: opts.min_value,
         })
     }
 
@@ -124,125 +119,76 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "Linear")]
-    pub fn linear(
-        a: i64,
-        d: u64,
-        start_step: Option<u64>,
-        starting_amount: TokenAmount,
-        min_value: Option<u64>,
-        max_value: Option<u64>,
-    ) -> DistributionFunctionWasm {
+    pub fn linear(opts: DistributionLinearWasm) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::Linear {
-            a,
-            d,
-            start_step,
-            starting_amount,
-            min_value,
-            max_value,
+            a: opts.a,
+            d: opts.d,
+            start_step: opts.start_step,
+            starting_amount: opts.starting_amount,
+            min_value: opts.min_value,
+            max_value: opts.max_value,
         })
     }
 
     #[wasm_bindgen(js_name = "Polynomial")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn polynomial(
-        a: i64,
-        d: u64,
-        m: i64,
-        n: u64,
-        o: i64,
-        start_moment: Option<u64>,
-        b: TokenAmount,
-        min_value: Option<u64>,
-        max_value: Option<u64>,
-    ) -> DistributionFunctionWasm {
+    pub fn polynomial(opts: DistributionPolynomialWasm) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::Polynomial {
-            a,
-            d,
-            m,
-            n,
-            o,
-            start_moment,
-            b,
-            min_value,
-            max_value,
+            a: opts.a,
+            d: opts.d,
+            m: opts.m,
+            n: opts.n,
+            o: opts.o,
+            start_moment: opts.start_moment,
+            b: opts.b,
+            min_value: opts.min_value,
+            max_value: opts.max_value,
         })
     }
 
     #[wasm_bindgen(js_name = "Exponential")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn exponential(
-        a: u64,
-        d: u64,
-        m: i64,
-        n: u64,
-        o: i64,
-        start_moment: Option<u64>,
-        b: TokenAmount,
-        min_value: Option<u64>,
-        max_value: Option<u64>,
-    ) -> DistributionFunctionWasm {
+    pub fn exponential(opts: DistributionExponentialWasm) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::Exponential {
-            a,
-            d,
-            m,
-            n,
-            o,
-            start_moment,
-            b,
-            min_value,
-            max_value,
+            a: opts.a,
+            d: opts.d,
+            m: opts.m,
+            n: opts.n,
+            o: opts.o,
+            start_moment: opts.start_moment,
+            b: opts.b,
+            min_value: opts.min_value,
+            max_value: opts.max_value,
         })
     }
 
     #[wasm_bindgen(js_name = "Logarithmic")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn logarithmic(
-        a: i64,
-        d: u64,
-        m: u64,
-        n: u64,
-        o: i64,
-        start_moment: Option<u64>,
-        b: TokenAmount,
-        min_value: Option<u64>,
-        max_value: Option<u64>,
-    ) -> DistributionFunctionWasm {
+    pub fn logarithmic(opts: DistributionLogarithmicWasm) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::Logarithmic {
-            a,
-            d,
-            m,
-            n,
-            o,
-            start_moment,
-            b,
-            min_value,
-            max_value,
+            a: opts.a,
+            d: opts.d,
+            m: opts.m,
+            n: opts.n,
+            o: opts.o,
+            start_moment: opts.start_moment,
+            b: opts.b,
+            min_value: opts.min_value,
+            max_value: opts.max_value,
         })
     }
 
     #[wasm_bindgen(js_name = "InvertedLogarithmic")]
-    #[allow(clippy::too_many_arguments)]
     pub fn inverted_logarithmic(
-        a: i64,
-        d: u64,
-        m: u64,
-        n: u64,
-        o: i64,
-        start_moment: Option<u64>,
-        b: TokenAmount,
-        min_value: Option<u64>,
-        max_value: Option<u64>,
+        opts: DistributionInvertedLogarithmicWasm,
     ) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::InvertedLogarithmic {
-            a,
-            d,
-            m,
-            n,
-            o,
-            start_moment,
-            b,
-            min_value,
-            max_value,
+            a: opts.a,
+            d: opts.d,
+            m: opts.m,
+            n: opts.n,
+            o: opts.o,
+            start_moment: opts.start_moment,
+            b: opts.b,
+            min_value: opts.min_value,
+            max_value: opts.max_value,
         })
     }
 

@@ -9,7 +9,7 @@ describe('RewardDistributionType', () => {
   describe('BlockBasedDistribution()', () => {
     it('should create BlockBasedDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -25,7 +25,7 @@ describe('RewardDistributionType', () => {
   describe('TimeBasedDistribution()', () => {
     it('should create TimeBasedDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.TimeBasedDistribution(
@@ -41,7 +41,7 @@ describe('RewardDistributionType', () => {
   describe('EpochBasedDistribution()', () => {
     it('should create EpochBasedDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.EpochBasedDistribution(
@@ -57,7 +57,7 @@ describe('RewardDistributionType', () => {
   describe('distribution', () => {
     it('should return BlockBasedDistribution for block-based type', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -70,7 +70,7 @@ describe('RewardDistributionType', () => {
 
     it('should return TimeBasedDistribution for time-based type', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.TimeBasedDistribution(
@@ -83,7 +83,7 @@ describe('RewardDistributionType', () => {
 
     it('should return EpochBasedDistribution for epoch-based type', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.EpochBasedDistribution(

@@ -11,7 +11,7 @@ describe('TokenPerpetualDistribution', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -36,7 +36,7 @@ describe('TokenPerpetualDistribution', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -56,7 +56,7 @@ describe('TokenPerpetualDistribution', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -87,7 +87,7 @@ describe('TokenPerpetualDistribution', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
@@ -108,7 +108,7 @@ describe('TokenPerpetualDistribution', () => {
       const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
-        BigInt(111),
+        new wasm.DistributionFixedAmount({ amount: BigInt(111) }),
       );
 
       const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
