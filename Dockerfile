@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.7-labs
+# syntax = docker/dockerfile:1.21
 
 # Docker image for rs-drive-abci
 #
@@ -46,7 +46,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.21
+ARG ALPINE_VERSION=3.23
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
@@ -421,6 +421,7 @@ FROM deps AS build-drive-abci
 # This is only for testing purpose and should be used only for
 # local development environment
 ARG SDK_TEST_DATA
+ARG ADDITIONAL_FEATURES=""
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
@@ -439,10 +440,13 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
+    export FEATURES_FLAG=""; \
+    ADDITIONAL_FEATURES_TRIMMED="$(echo "${ADDITIONAL_FEATURES}" | tr -d '[:space:]')"; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
-    else \
-    export FEATURES_FLAG="--features=console,grovedbg"; \
+    fi && \
+    if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
+    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
@@ -513,12 +517,16 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
+    export FEATURES_FLAG=""; \
+    ADDITIONAL_FEATURES_TRIMMED="$(echo "${ADDITIONAL_FEATURES}" | tr -d '[:space:]')"; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
     export OUT_DIRECTORY=release; \
     else \
-    export FEATURES_FLAG="--features=console,grovedbg"; \
     export OUT_DIRECTORY=debug; \
+    fi && \
+    if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
+    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \

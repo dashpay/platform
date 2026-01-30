@@ -415,6 +415,7 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
+                block_hash = hex::encode(block_proposal.block_hash.unwrap_or_default()),
                 platform_state_fingerprint = hex::encode(
                     block_execution_context
                         .block_platform_state()

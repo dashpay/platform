@@ -1570,7 +1570,7 @@ __metadata:
   dependencies:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/protobufjs": "npm:6.10.5"
-    "@grpc/grpc-js": "npm:1.4.4"
+    "@grpc/grpc-js": "npm:^1.14.3"
     "@improbable-eng/grpc-web": "npm:^0.15.0"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -1598,7 +1598,7 @@ __metadata:
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
-    "@grpc/grpc-js": "npm:1.4.4"
+    "@grpc/grpc-js": "npm:^1.14.3"
     "@pshenmic/zeromq": "npm:6.0.0-beta.22"
     ajv: "npm:^8.6.0"
     bs58: "npm:^4.0.1"
@@ -1812,7 +1812,7 @@ __metadata:
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
   dependencies:
     "@dashevo/protobufjs": "npm:6.10.5"
-    "@grpc/grpc-js": "npm:1.4.4"
+    "@grpc/grpc-js": "npm:^1.14.3"
     "@grpc/proto-loader": "npm:^0.5.2"
     cbor: "npm:^8.0.0"
     chai: "npm:^4.3.10"
@@ -2345,16 +2345,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@grpc/grpc-js@npm:1.4.4":
-  version: 1.4.4
-  resolution: "@grpc/grpc-js@npm:1.4.4"
-  dependencies:
-    "@grpc/proto-loader": "npm:^0.6.4"
-    "@types/node": "npm:>=12.12.47"
-  checksum: 10/9d9c1aad2257f1d1cc39b72ed3834e7c4c687f47c59912fbbe3629b9430e2f284f0eb1b1f0ee39628bf0b1359bfc3bba10313070c4d961d02f85ebeca76be20e
-  languageName: node
-  linkType: hard
-
 "@grpc/grpc-js@npm:^1.11.1":
   version: 1.13.2
   resolution: "@grpc/grpc-js@npm:1.13.2"
@@ -2365,6 +2355,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@grpc/grpc-js@npm:^1.14.3":
+  version: 1.14.3
+  resolution: "@grpc/grpc-js@npm:1.14.3"
+  dependencies:
+    "@grpc/proto-loader": "npm:^0.8.0"
+    "@js-sdsl/ordered-map": "npm:^4.4.2"
+  checksum: 10/bb9bfe2f749179ae5ac7774d30486dfa2e0b004518c28de158b248e0f6f65f40138f01635c48266fa540670220f850216726e3724e1eb29d078817581c96e4db
+  languageName: node
+  linkType: hard
+
 "@grpc/proto-loader@npm:^0.5.2":
   version: 0.5.6
   resolution: "@grpc/proto-loader@npm:0.5.6"
@@ -2372,21 +2372,6 @@ __metadata:
     lodash.camelcase: "npm:^4.3.0"
     protobufjs: "npm:^6.8.6"
   checksum: 10/f4021883c9243d76c2df407ef7916e33ea8ddb44b8a95d4db927f83f5b0c5b6e6b48500cade38540a169e45bb669b85093f29e325b78a3b8594fa039f89a8ef0
-  languageName: node
-  linkType: hard
-
-"@grpc/proto-loader@npm:^0.6.4":
-  version: 0.6.13
-  resolution: "@grpc/proto-loader@npm:0.6.13"
-  dependencies:
-    "@types/long": "npm:^4.0.1"
-    lodash.camelcase: "npm:^4.3.0"
-    long: "npm:^4.0.0"
-    protobufjs: "npm:^6.11.3"
-    yargs: "npm:^16.2.0"
-  bin:
-    proto-loader-gen-types: build/bin/proto-loader-gen-types.js
-  checksum: 10/a881bea00a1ab1c8d50e4bdf106c7e74f905121116fbcda91b9688548da1267edf1302bb754164a6f60ece82a949a28cefc503bfe058ffc1531dc26fa5188df3
   languageName: node
   linkType: hard
 
@@ -2401,6 +2386,20 @@ __metadata:
   bin:
     proto-loader-gen-types: build/bin/proto-loader-gen-types.js
   checksum: 10/7e2d842c2061cbaf6450c71da0077263be3bab165454d5c8a3e1ae4d3c6d2915f02fd27da63ff01f05e127b1221acd40705273f5d29303901e60514e852992f4
+  languageName: node
+  linkType: hard
+
+"@grpc/proto-loader@npm:^0.8.0":
+  version: 0.8.0
+  resolution: "@grpc/proto-loader@npm:0.8.0"
+  dependencies:
+    lodash.camelcase: "npm:^4.3.0"
+    long: "npm:^5.0.0"
+    protobufjs: "npm:^7.5.3"
+    yargs: "npm:^17.7.2"
+  bin:
+    proto-loader-gen-types: build/bin/proto-loader-gen-types.js
+  checksum: 10/216813bdca52cd3a84ac355ad93c2c3f54252be47327692fe666fd85baa5b1d50aa681ebc5626ab08926564fb2deae3b2ea435aa5bd883197650bbe56f2ae108
   languageName: node
   linkType: hard
 
@@ -3789,7 +3788,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:*, @types/node@npm:>=10.0.0, @types/node@npm:>=12.12.47, @types/node@npm:>=13.7.0, @types/node@npm:^18.11.11":
+"@types/node@npm:*, @types/node@npm:>=10.0.0, @types/node@npm:>=13.7.0, @types/node@npm:^18.11.11":
   version: 18.16.1
   resolution: "@types/node@npm:18.16.1"
   checksum: 10/d77a82fa404153804b916b31ea652507428a8076b447d4cbfe5da057fc3dd9abe26c2ac4b41d758d7287adaacc2d16a877e474105024b880aaaa2e193bebb356
