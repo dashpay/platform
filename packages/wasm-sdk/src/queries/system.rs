@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::ProTxHashWasm;
 
 #[wasm_bindgen(js_name = "StatusSoftware")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -100,15 +101,28 @@ impl StatusVersionWasm {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusNodeWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub id: String,
-    #[wasm_bindgen(getter_with_clone)]
-    pub pro_tx_hash: Option<String>,
+    pub(crate) id: String,
+    pub(crate) pro_tx_hash: Option<String>,
 }
 
 impl StatusNodeWasm {
     fn new(id: String, pro_tx_hash: Option<String>) -> Self {
         Self { id, pro_tx_hash }
+    }
+}
+
+#[wasm_bindgen(js_class = StatusNode)]
+impl StatusNodeWasm {
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    #[wasm_bindgen(getter = "proTxHash")]
+    pub fn pro_tx_hash(&self) -> Option<ProTxHashWasm> {
+        self.pro_tx_hash
+            .as_ref()
+            .and_then(|hex| ProTxHashWasm::from_hex(hex).ok())
     }
 }
 

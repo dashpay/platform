@@ -7,7 +7,7 @@ use js_sys::Map;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::ProTxHashLikeNullableJs;
+use wasm_dpp2::{ProTxHashLikeNullableJs, ProTxHashWasm};
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeState")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -68,29 +68,35 @@ impl ProtocolVersionUpgradeStateWasm {
 }
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct ProtocolVersionUpgradeVoteStatusWasm {
-    #[wasm_bindgen(getter_with_clone, js_name = "proTxHash")]
-    pub pro_tx_hash: String,
-    #[wasm_bindgen(getter_with_clone)]
-    pub version: u32,
+    pro_tx_hash: ProTxHashWasm,
+    version: u32,
 }
 
 impl ProtocolVersionUpgradeVoteStatusWasm {
-    pub(crate) fn new(pro_tx_hash: String, version: u32) -> Self {
+    pub(crate) fn new(pro_tx_hash: ProTxHash, version: u32) -> Self {
         Self {
-            pro_tx_hash,
+            pro_tx_hash: ProTxHashWasm::from(pro_tx_hash),
             version,
         }
     }
 }
 
+#[wasm_bindgen(js_class = ProtocolVersionUpgradeVoteStatus)]
+impl ProtocolVersionUpgradeVoteStatusWasm {
+    #[wasm_bindgen(getter = "proTxHash")]
+    pub fn pro_tx_hash(&self) -> ProTxHashWasm {
+        self.pro_tx_hash
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+}
+
 impl_wasm_serde_conversions!(ProtocolVersionUpgradeStateWasm, ProtocolVersionUpgradeState);
-impl_wasm_serde_conversions!(
-    ProtocolVersionUpgradeVoteStatusWasm,
-    ProtocolVersionUpgradeVoteStatus
-);
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -158,7 +164,7 @@ impl WasmSdk {
             if let Some(vote) = vote_opt {
                 let key = JsValue::from_str(&pro_tx_hash.to_string());
                 let value = JsValue::from(ProtocolVersionUpgradeVoteStatusWasm::new(
-                    pro_tx_hash.to_string(),
+                    pro_tx_hash,
                     vote.voted_version,
                 ));
                 votes_map.set(&key, &value);
@@ -251,7 +257,7 @@ impl WasmSdk {
             if let Some(vote) = vote_opt {
                 let key = JsValue::from_str(&pro_tx_hash.to_string());
                 let value = JsValue::from(ProtocolVersionUpgradeVoteStatusWasm::new(
-                    pro_tx_hash.to_string(),
+                    pro_tx_hash,
                     vote.voted_version,
                 ));
                 votes_map.set(&key, &value);

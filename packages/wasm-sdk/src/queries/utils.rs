@@ -10,7 +10,7 @@ use crate::WasmSdkError;
 pub(crate) fn deserialize_required_query<T, Q>(
     query: Q,
     missing_error: &str,
-    _context: &str,
+    context: &str,
 ) -> Result<T, WasmSdkError>
 where
     T: DeserializeOwned,
@@ -22,12 +22,13 @@ where
         return Err(WasmSdkError::invalid_argument(missing_error.to_string()));
     }
 
-    Ok(from_object(value)?)
+    from_object(value)
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, e)))
 }
 
 pub(crate) fn deserialize_query_with_default<T, Q>(
     query: Option<Q>,
-    _context: &str,
+    context: &str,
 ) -> Result<T, WasmSdkError>
 where
     T: Default + DeserializeOwned,
@@ -39,7 +40,8 @@ where
         return Ok(T::default());
     }
 
-    Ok(from_object(value)?)
+    from_object(value)
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, e)))
 }
 
 pub(crate) fn convert_optional_limit(

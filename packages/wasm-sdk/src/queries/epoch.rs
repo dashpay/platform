@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::utils::try_from_options_optional;
 use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::utils::JsMapExt;
 use wasm_dpp2::{ProTxHashLikeArrayJs, ProTxHashWasm};
@@ -162,10 +163,10 @@ export interface EvonodeProposedBlocksRangeQuery {
   limit?: number;
 
   /**
-   * ProTxHash (hex string) to resume from (exclusive by default).
+   * ProTxHash to resume from (exclusive by default).
    * @default undefined
    */
-  startAfter?: string;
+  startAfter?: ProTxHashLike;
 }
 "#;
 
@@ -181,8 +182,6 @@ struct EvonodeProposedBlocksRangeQueryInput {
     epoch: u16,
     #[serde(default)]
     limit: Option<u32>,
-    #[serde(default)]
-    start_after: Option<String>,
 }
 
 struct EvonodeProposedBlocksRangeQueryParsed {
@@ -194,14 +193,20 @@ struct EvonodeProposedBlocksRangeQueryParsed {
 fn parse_evonode_range_query(
     query: EvonodeProposedBlocksRangeQueryJs,
 ) -> Result<EvonodeProposedBlocksRangeQueryParsed, WasmSdkError> {
+    let query_js: JsValue = query.into();
+
+    // Extract startAfter before serde since it accepts ProTxHashLike (string, Uint8Array, or ProTxHash object)
+    let start_after: Option<ProTxHashWasm> =
+        try_from_options_optional(&query_js, "startAfter")?;
+
     let input: EvonodeProposedBlocksRangeQueryInput = deserialize_required_query(
-        query,
+        query_js,
         "Query object is required",
         "evonode proposed blocks range query",
     )?;
 
-    let start_info = if let Some(start) = input.start_after {
-        let pro_tx_hash: ProTxHash = ProTxHashWasm::from_hex(&start)?.into();
+    let start_info = if let Some(pro_tx_hash_wasm) = start_after {
+        let pro_tx_hash: ProTxHash = pro_tx_hash_wasm.into();
         Some(QueryStartInfo {
             start_key: pro_tx_hash.to_byte_array().to_vec(),
             start_included: false,
