@@ -7,7 +7,7 @@ use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u32};
+use crate::utils::{try_from_options, try_from_options_optional, try_to_u32};
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
@@ -24,6 +24,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[serde(rename_all = "camelCase")]
 struct IdentityPublicKeyInCreationOptions {
     key_id: u32,
+    data: Vec<u8>,
     #[serde(default)]
     is_read_only: bool,
     #[serde(default)]
@@ -132,12 +133,6 @@ impl IdentityPublicKeyInCreationWasm {
         // Extract keyType (required, complex type)
         let key_type: KeyTypeWasm = try_from_options(&options, "keyType")?;
 
-        // Extract data (required, Uint8Array)
-        let data: Vec<u8> = try_from_options_with(&options, "data", |v| {
-            serde_wasm_bindgen::from_value(v.clone())
-                .map_err(|e| WasmDppError::invalid_argument(format!("Invalid data: {}", e)))
-        })?;
-
         // Extract contractBounds (optional)
         let contract_bounds: Option<ContractBoundsWasm> =
             try_from_options_optional(&options, "contractBounds")?;
@@ -154,7 +149,7 @@ impl IdentityPublicKeyInCreationWasm {
                 security_level: SecurityLevel::from(security_level),
                 contract_bounds: contract_bounds.map(Into::into),
                 read_only: opts.is_read_only,
-                data: BinaryData::from(data),
+                data: BinaryData::new(opts.data),
                 signature: BinaryData::from(opts.signature.unwrap_or_default()),
             }),
         ))
