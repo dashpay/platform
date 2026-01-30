@@ -134,6 +134,11 @@ impl DistributionFixedAmountWasm {
     pub fn amount(&self) -> TokenAmount {
         self.amount
     }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_amount(&mut self, value: TokenAmount) {
+        self.amount = value;
+    }
 }
 
 // DistributionRandom
@@ -166,9 +171,19 @@ impl DistributionRandomWasm {
         self.min
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_min(&mut self, value: TokenAmount) {
+        self.min = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn max(&self) -> TokenAmount {
         self.max
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_max(&mut self, value: TokenAmount) {
+        self.max = value;
     }
 }
 
@@ -224,9 +239,19 @@ impl DistributionStepDecreasingAmountWasm {
         self.step_count
     }
 
+    #[wasm_bindgen(setter = "stepCount")]
+    pub fn set_step_count(&mut self, value: u32) {
+        self.step_count = value;
+    }
+
     #[wasm_bindgen(getter = "decreasePerIntervalNumerator")]
     pub fn decrease_per_interval_numerator(&self) -> u16 {
         self.decrease_per_interval_numerator
+    }
+
+    #[wasm_bindgen(setter = "decreasePerIntervalNumerator")]
+    pub fn set_decrease_per_interval_numerator(&mut self, value: u16) {
+        self.decrease_per_interval_numerator = value;
     }
 
     #[wasm_bindgen(getter = "decreasePerIntervalDenominator")]
@@ -234,9 +259,19 @@ impl DistributionStepDecreasingAmountWasm {
         self.decrease_per_interval_denominator
     }
 
+    #[wasm_bindgen(setter = "decreasePerIntervalDenominator")]
+    pub fn set_decrease_per_interval_denominator(&mut self, value: u16) {
+        self.decrease_per_interval_denominator = value;
+    }
+
     #[wasm_bindgen(getter = "startDecreasingOffset")]
     pub fn start_decreasing_offset(&self) -> Option<u64> {
         self.start_decreasing_offset
+    }
+
+    #[wasm_bindgen(setter = "startDecreasingOffset")]
+    pub fn set_start_decreasing_offset(&mut self, value: Option<u64>) {
+        self.start_decreasing_offset = value;
     }
 
     #[wasm_bindgen(getter = "maxIntervalCount")]
@@ -244,9 +279,19 @@ impl DistributionStepDecreasingAmountWasm {
         self.max_interval_count
     }
 
+    #[wasm_bindgen(setter = "maxIntervalCount")]
+    pub fn set_max_interval_count(&mut self, value: Option<u16>) {
+        self.max_interval_count = value;
+    }
+
     #[wasm_bindgen(getter = "distributionStartAmount")]
     pub fn distribution_start_amount(&self) -> TokenAmount {
         self.distribution_start_amount
+    }
+
+    #[wasm_bindgen(setter = "distributionStartAmount")]
+    pub fn set_distribution_start_amount(&mut self, value: TokenAmount) {
+        self.distribution_start_amount = value;
     }
 
     #[wasm_bindgen(getter = "trailingDistributionIntervalAmount")]
@@ -254,9 +299,19 @@ impl DistributionStepDecreasingAmountWasm {
         self.trailing_distribution_interval_amount
     }
 
+    #[wasm_bindgen(setter = "trailingDistributionIntervalAmount")]
+    pub fn set_trailing_distribution_interval_amount(&mut self, value: TokenAmount) {
+        self.trailing_distribution_interval_amount = value;
+    }
+
     #[wasm_bindgen(getter = "minValue")]
     pub fn min_value(&self) -> Option<u64> {
         self.min_value
+    }
+
+    #[wasm_bindgen(setter = "minValue")]
+    pub fn set_min_value(&mut self, value: Option<u64>) {
+        self.min_value = value;
     }
 }
 
@@ -306,9 +361,19 @@ impl DistributionLinearWasm {
         self.a
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_a(&mut self, value: i64) {
+        self.a = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn d(&self) -> u64 {
         self.d
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_d(&mut self, value: u64) {
+        self.d = value;
     }
 
     #[wasm_bindgen(getter = "startStep")]
@@ -316,9 +381,19 @@ impl DistributionLinearWasm {
         self.start_step
     }
 
+    #[wasm_bindgen(setter = "startStep")]
+    pub fn set_start_step(&mut self, value: Option<u64>) {
+        self.start_step = value;
+    }
+
     #[wasm_bindgen(getter = "startingAmount")]
     pub fn starting_amount(&self) -> TokenAmount {
         self.starting_amount
+    }
+
+    #[wasm_bindgen(setter = "startingAmount")]
+    pub fn set_starting_amount(&mut self, value: TokenAmount) {
+        self.starting_amount = value;
     }
 
     #[wasm_bindgen(getter = "minValue")]
@@ -326,9 +401,19 @@ impl DistributionLinearWasm {
         self.min_value
     }
 
+    #[wasm_bindgen(setter = "minValue")]
+    pub fn set_min_value(&mut self, value: Option<u64>) {
+        self.min_value = value;
+    }
+
     #[wasm_bindgen(getter = "maxValue")]
     pub fn max_value(&self) -> Option<u64> {
         self.max_value
+    }
+
+    #[wasm_bindgen(setter = "maxValue")]
+    pub fn set_max_value(&mut self, value: Option<u64>) {
+        self.max_value = value;
     }
 }
 
@@ -387,9 +472,19 @@ impl DistributionPolynomialWasm {
         self.a
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_a(&mut self, value: i64) {
+        self.a = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn d(&self) -> u64 {
         self.d
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_d(&mut self, value: u64) {
+        self.d = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -397,9 +492,19 @@ impl DistributionPolynomialWasm {
         self.m
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_m(&mut self, value: i64) {
+        self.m = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn n(&self) -> u64 {
         self.n
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_n(&mut self, value: u64) {
+        self.n = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -407,9 +512,19 @@ impl DistributionPolynomialWasm {
         self.o
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_o(&mut self, value: i64) {
+        self.o = value;
+    }
+
     #[wasm_bindgen(getter = "startMoment")]
     pub fn start_moment(&self) -> Option<u64> {
         self.start_moment
+    }
+
+    #[wasm_bindgen(setter = "startMoment")]
+    pub fn set_start_moment(&mut self, value: Option<u64>) {
+        self.start_moment = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -417,14 +532,29 @@ impl DistributionPolynomialWasm {
         self.b
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_b(&mut self, value: TokenAmount) {
+        self.b = value;
+    }
+
     #[wasm_bindgen(getter = "minValue")]
     pub fn min_value(&self) -> Option<u64> {
         self.min_value
     }
 
+    #[wasm_bindgen(setter = "minValue")]
+    pub fn set_min_value(&mut self, value: Option<u64>) {
+        self.min_value = value;
+    }
+
     #[wasm_bindgen(getter = "maxValue")]
     pub fn max_value(&self) -> Option<u64> {
         self.max_value
+    }
+
+    #[wasm_bindgen(setter = "maxValue")]
+    pub fn set_max_value(&mut self, value: Option<u64>) {
+        self.max_value = value;
     }
 }
 
@@ -483,9 +613,19 @@ impl DistributionExponentialWasm {
         self.a
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_a(&mut self, value: u64) {
+        self.a = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn d(&self) -> u64 {
         self.d
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_d(&mut self, value: u64) {
+        self.d = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -493,9 +633,19 @@ impl DistributionExponentialWasm {
         self.m
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_m(&mut self, value: i64) {
+        self.m = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn n(&self) -> u64 {
         self.n
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_n(&mut self, value: u64) {
+        self.n = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -503,9 +653,19 @@ impl DistributionExponentialWasm {
         self.o
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_o(&mut self, value: i64) {
+        self.o = value;
+    }
+
     #[wasm_bindgen(getter = "startMoment")]
     pub fn start_moment(&self) -> Option<u64> {
         self.start_moment
+    }
+
+    #[wasm_bindgen(setter = "startMoment")]
+    pub fn set_start_moment(&mut self, value: Option<u64>) {
+        self.start_moment = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -513,14 +673,29 @@ impl DistributionExponentialWasm {
         self.b
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_b(&mut self, value: TokenAmount) {
+        self.b = value;
+    }
+
     #[wasm_bindgen(getter = "minValue")]
     pub fn min_value(&self) -> Option<u64> {
         self.min_value
     }
 
+    #[wasm_bindgen(setter = "minValue")]
+    pub fn set_min_value(&mut self, value: Option<u64>) {
+        self.min_value = value;
+    }
+
     #[wasm_bindgen(getter = "maxValue")]
     pub fn max_value(&self) -> Option<u64> {
         self.max_value
+    }
+
+    #[wasm_bindgen(setter = "maxValue")]
+    pub fn set_max_value(&mut self, value: Option<u64>) {
+        self.max_value = value;
     }
 }
 
@@ -579,9 +754,19 @@ impl DistributionLogarithmicWasm {
         self.a
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_a(&mut self, value: i64) {
+        self.a = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn d(&self) -> u64 {
         self.d
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_d(&mut self, value: u64) {
+        self.d = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -589,9 +774,19 @@ impl DistributionLogarithmicWasm {
         self.m
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_m(&mut self, value: u64) {
+        self.m = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn n(&self) -> u64 {
         self.n
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_n(&mut self, value: u64) {
+        self.n = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -599,9 +794,19 @@ impl DistributionLogarithmicWasm {
         self.o
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_o(&mut self, value: i64) {
+        self.o = value;
+    }
+
     #[wasm_bindgen(getter = "startMoment")]
     pub fn start_moment(&self) -> Option<u64> {
         self.start_moment
+    }
+
+    #[wasm_bindgen(setter = "startMoment")]
+    pub fn set_start_moment(&mut self, value: Option<u64>) {
+        self.start_moment = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -609,14 +814,29 @@ impl DistributionLogarithmicWasm {
         self.b
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_b(&mut self, value: TokenAmount) {
+        self.b = value;
+    }
+
     #[wasm_bindgen(getter = "minValue")]
     pub fn min_value(&self) -> Option<u64> {
         self.min_value
     }
 
+    #[wasm_bindgen(setter = "minValue")]
+    pub fn set_min_value(&mut self, value: Option<u64>) {
+        self.min_value = value;
+    }
+
     #[wasm_bindgen(getter = "maxValue")]
     pub fn max_value(&self) -> Option<u64> {
         self.max_value
+    }
+
+    #[wasm_bindgen(setter = "maxValue")]
+    pub fn set_max_value(&mut self, value: Option<u64>) {
+        self.max_value = value;
     }
 }
 
@@ -675,9 +895,19 @@ impl DistributionInvertedLogarithmicWasm {
         self.a
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_a(&mut self, value: i64) {
+        self.a = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn d(&self) -> u64 {
         self.d
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_d(&mut self, value: u64) {
+        self.d = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -685,9 +915,19 @@ impl DistributionInvertedLogarithmicWasm {
         self.m
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_m(&mut self, value: u64) {
+        self.m = value;
+    }
+
     #[wasm_bindgen(getter)]
     pub fn n(&self) -> u64 {
         self.n
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_n(&mut self, value: u64) {
+        self.n = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -695,9 +935,19 @@ impl DistributionInvertedLogarithmicWasm {
         self.o
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_o(&mut self, value: i64) {
+        self.o = value;
+    }
+
     #[wasm_bindgen(getter = "startMoment")]
     pub fn start_moment(&self) -> Option<u64> {
         self.start_moment
+    }
+
+    #[wasm_bindgen(setter = "startMoment")]
+    pub fn set_start_moment(&mut self, value: Option<u64>) {
+        self.start_moment = value;
     }
 
     #[wasm_bindgen(getter)]
@@ -705,13 +955,28 @@ impl DistributionInvertedLogarithmicWasm {
         self.b
     }
 
+    #[wasm_bindgen(setter)]
+    pub fn set_b(&mut self, value: TokenAmount) {
+        self.b = value;
+    }
+
     #[wasm_bindgen(getter = "minValue")]
     pub fn min_value(&self) -> Option<u64> {
         self.min_value
     }
 
+    #[wasm_bindgen(setter = "minValue")]
+    pub fn set_min_value(&mut self, value: Option<u64>) {
+        self.min_value = value;
+    }
+
     #[wasm_bindgen(getter = "maxValue")]
     pub fn max_value(&self) -> Option<u64> {
         self.max_value
+    }
+
+    #[wasm_bindgen(setter = "maxValue")]
+    pub fn set_max_value(&mut self, value: Option<u64>) {
+        self.max_value = value;
     }
 }
