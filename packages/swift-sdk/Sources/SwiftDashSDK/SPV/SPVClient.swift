@@ -16,37 +16,29 @@ public enum SPVLogLevel: String, Sendable {
 // MARK: - C Callback Functions
 // Use top-level C-compatible functions to avoid actor-isolation init issues
 
-private func spvProgressCallback(
+private func spvProgressCallbackC(
     progressPtr: UnsafePointer<FFIDetailedSyncProgress>?,
     userData: UnsafeMutableRawPointer?
 ) {
-    guard let progressPtr = progressPtr,
-          let userData = userData else { return }
-    let snapshot = progressPtr.pointee
-    let ptrVal = UInt(bitPattern: userData)
-    DispatchQueue.main.async {
-        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
-        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        context.handleProgressUpdate(snapshot)
-    }
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+    
+    let spvSyncProgress = ffiSyncProgressPtrIntoSpvSyncProgress(progressPtr)
+    
+    spvEventHandler.spvClient(didUpdateSyncProgress: spvSyncProgress)
 }
 
-private func spvCompletionCallback(
+private func spvCompletionCallbackC(
     success: Bool,
     errorMsg: UnsafePointer<CChar>?,
     userData: UnsafeMutableRawPointer?
 ) {
-    guard let userData = userData else { return }
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+    
     let errorString: String? = errorMsg.map { String(cString: $0) }
-    let ptrVal = UInt(bitPattern: userData)
-    DispatchQueue.main.async {
-        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
-        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        context.handleSyncCompletion(success: success, error: errorString)
-    }
+ 
+    spvEventHandler.spvClient(didCompleteSync: success, error: errorString)
 }
 
-// Global C-compatible event callbacks that use userData context
 private typealias Byte32 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -59,21 +51,17 @@ private func onBlockCallbackC(
     _ hashPtr: UnsafePointer<Byte32>?,
     _ userData: UnsafeMutableRawPointer?
 ) {
-    guard let userData = userData else { return }
-    // Synchronously copy 32-byte hash into Swift-owned buffer to avoid TOCTOU
-    var hashBytes: [UInt8] = []
-    if let hashPtr = hashPtr {
-        let raw = UnsafeRawPointer(hashPtr).assumingMemoryBound(to: UInt8.self)
-        let buf = UnsafeBufferPointer(start: raw, count: 32)
-        hashBytes = Array(buf)
-    }
-    let ctxAddr = UInt(bitPattern: userData)
-    Task { @MainActor in
-        guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
-        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        let hashData = Data(hashBytes)
-        context.client?.handleBlockEvent(height: height, hash: hashData)
-    }
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+    
+    let hash = byte32PtrIntoData(hashPtr)
+
+    let block = SPVBlockEvent(
+        height: height,
+        hash: hash,
+        timestamp: Date()
+    )
+    
+    spvEventHandler.spvClient(didReceiveBlock: block)
 }
 
 private func onTransactionCallbackC(
@@ -84,37 +72,195 @@ private func onTransactionCallbackC(
     _ blockHeight: UInt32,
     _ userData: UnsafeMutableRawPointer?
 ) {
-    guard let userData = userData else { return }
-    // Synchronously copy 32-byte txid and address string to Swift-owned values
-    var txidBytes: [UInt8] = []
-    if let txidPtr = txidPtr {
-        let raw = UnsafeRawPointer(txidPtr).assumingMemoryBound(to: UInt8.self)
-        let buf = UnsafeBufferPointer(start: raw, count: 32)
-        txidBytes = Array(buf)
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+    
+    let txid = byte32PtrIntoData(txidPtr)
+    
+    let addresses = addressesPtrIntoString(addressesPtr)
+    
+    let transaction = SPVTransactionEvent(
+        txid: txid,
+        confirmed: confirmed,
+        amount: amount,
+        addresses: addresses,
+        blockHeight: blockHeight
+    )
+    
+    spvEventHandler.spvClient(didReceiveTransaction: transaction) 
+}
+
+private func onCompactFilterMatchedCallbackC(
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ scripts: UnsafePointer<CChar>?,
+    _ wallet: UnsafePointer<CChar>?,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+
+    spvEventHandler.spvClient(didUpdateBlocksHit: 1)
+}
+
+private func onMempoolTransactionAddedCallbackC(
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ amount: Int64,
+    _ addressPtr: UnsafePointer<CChar>?,
+    _ isInstantSend: Bool,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+
+    let txid = byte32PtrIntoData(txidPtr)
+
+    let addresses = addressesPtrIntoString(addressPtr)
+
+    let transaction = SPVTransactionEvent(
+        txid: txid,
+        confirmed: false,
+        amount: amount,
+        addresses: addresses,
+        blockHeight: 0
+    )
+    
+    spvEventHandler.spvClient(didReceiveTransaction: transaction) 
+}
+
+private func onMempoolTransactionConfirmedCallbackC(
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ blockHeight: UInt32,
+    _ blockHashPtr: UnsafePointer<Byte32>?,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+
+    let txid = byte32PtrIntoData(txidPtr)
+
+    // Amount and addresses are not provided here; emit a confirmation-only update
+    let transaction = SPVTransactionEvent(
+        txid: txid,
+        confirmed: true,
+        amount: 0,
+        addresses: [],
+        blockHeight: blockHeight
+    )
+    
+    spvEventHandler.spvClient(didReceiveTransaction: transaction) 
+}
+
+private func onMempoolTransactionRemovedCallbackC(
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ reason: UInt8,
+    _ userData: UnsafeMutableRawPointer?
+) { 
+    // Intentionally no-op; could surface to UI in future if needed
+}
+
+private func onWalletTransactionCallbackC(
+    _ walletId: UnsafePointer<CChar>?,
+    _ accountIndex: UInt32,
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ confirmed: Bool,
+    _ amount: Int64,
+    _ addressesPtr: UnsafePointer<CChar>?,
+    _ blockHeight: UInt32,
+    _ isOurs: Bool,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
+
+    let txid = byte32PtrIntoData(txidPtr)
+    
+    let addresses = addressesPtrIntoString(addressesPtr)
+
+    let transaction = SPVTransactionEvent(
+        txid: txid,
+        confirmed: confirmed,
+        amount: amount,
+        addresses: addresses,
+        blockHeight: blockHeight
+    )
+
+    spvEventHandler.spvClient(didReceiveTransaction: transaction) 
+}
+
+private func byte32PtrIntoData(_ ptr: UnsafePointer<Byte32>?) -> Data {
+    guard let ptr else {
+        // If the pointer in nil, a bug in the dash-spv library has occurred
+        assert(false, "Byte32 pointer is nil!")
+        return Data()
     }
-    var addresses: [String] = []
-    if let addressesPtr = addressesPtr {
-        let addressesStr = String(cString: addressesPtr)
-        addresses = addressesStr.components(separatedBy: ",")
+    
+    return Data(bytes: ptr, count: 32)
+}
+
+private func addressesPtrIntoString(_ ptr: UnsafePointer<CChar>?) -> [String] {
+    guard let ptr else {
+        // If the pointer in nil, a bug in the dash-spv library has occurred
+        assert(false, "Addresses pointer is nil!")
+        return [""]
     }
-    let ctxAddr = UInt(bitPattern: userData)
-    Task { @MainActor in
-        guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
-        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        let txid = Data(txidBytes)
-        context.client?.handleTransactionEvent(
-            txid: txid,
-            confirmed: confirmed,
-            amount: amount,
-            addresses: addresses,
-            blockHeight: blockHeight > 0 ? blockHeight : nil
-        )
+    
+    let str = String(cString: ptr)
+    return str.components(separatedBy: ",")
+}
+
+private func rawPtrIntoSpvEventHandler(_ ptr: UnsafeMutableRawPointer?) -> any SPVEventHandler {
+    guard let ptr else {
+        // If the pointer in nil, a bug in the dash-spv library has occurred
+        assert(false, "SPVEventHandler pointer is nil!")
+        return DummySPVEventHandler()
     }
+
+    return Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as! any SPVEventHandler
+}
+
+public func ffiSyncProgressPtrIntoSpvSyncProgress(_ ptr: UnsafePointer<FFIDetailedSyncProgress>?) -> SPVSyncProgress {
+    guard let ptr else {
+        // If the pointer in nil, a bug in the dash-spv library has occurred
+        assert(false, "Progress pointer is nil!")
+        return SPVSyncProgress.default()
+    }
+    
+    let ffiProgress = ptr.pointee
+    let overview = ffiProgress.overview
+
+    return SPVSyncProgress(
+        stage: SPVSyncStage(ffiStage: ffiProgress.stage),
+        currentHeight: overview.header_height,
+        targetHeight: ffiProgress.total_height,
+        filterHeaderHeight: overview.filter_header_height,
+        filterHeight: overview.last_synced_filter_height,
+        syncStartedAt: TimeInterval(ffiProgress.sync_start_timestamp),
+        rate: ffiProgress.headers_per_second,
+        estimatedTimeRemaining: ffiProgress.estimated_seconds_remaining > 0
+            ? TimeInterval(ffiProgress.estimated_seconds_remaining)
+            : nil,
+        peerCount: overview.peer_count
+    )
+}
+
+// MARK: - SPV Client event handler
+
+public protocol SPVEventHandler: AnyObject {
+    func spvClient(didUpdateSyncProgress progress: SPVSyncProgress)
+    func spvClient(didReceiveBlock block: SPVBlockEvent)
+    func spvClient(didReceiveTransaction transaction: SPVTransactionEvent)
+    func spvClient(didCompleteSync success: Bool, error: String?)
+    func spvClient(didChangeConnectionStatus connected: Bool, peers: Int)
+    func spvClient(didUpdateBlocksHit count: Int)
+}
+
+private class DummySPVEventHandler: SPVEventHandler {
+    func spvClient(didUpdateSyncProgress progress: SPVSyncProgress) {}
+    func spvClient(didReceiveBlock block: SPVBlockEvent) {}
+    func spvClient(didReceiveTransaction transaction: SPVTransactionEvent) {}
+    func spvClient(didCompleteSync success: Bool, error: String?) {}
+    func spvClient(didChangeConnectionStatus connected: Bool, peers: Int) {}
+    func spvClient(didUpdateBlocksHit count: Int) {}
 }
 
 // MARK: - SPV Sync Progress
 
-public struct SPVSyncProgress {
+public struct SPVSyncProgress: Sendable {
     public let stage: SPVSyncStage
     public let currentHeight: UInt32
     public let targetHeight: UInt32
@@ -136,24 +282,6 @@ public struct SPVSyncProgress {
             rate: 0,
             estimatedTimeRemaining: nil,
             peerCount: 0
-        )
-    }
-
-    public static func from(_ ffiProgress: FFIDetailedSyncProgress) -> SPVSyncProgress {
-        let overview = ffiProgress.overview
-
-        return SPVSyncProgress(
-            stage: SPVSyncStage(ffiStage: ffiProgress.stage),
-            currentHeight: overview.header_height,
-            targetHeight: ffiProgress.total_height,
-            filterHeaderHeight: overview.filter_header_height,
-            filterHeight: overview.last_synced_filter_height,
-            syncStartedAt: TimeInterval(ffiProgress.sync_start_timestamp),
-            rate: ffiProgress.headers_per_second,
-            estimatedTimeRemaining: ffiProgress.estimated_seconds_remaining > 0
-                ? TimeInterval(ffiProgress.estimated_seconds_remaining)
-                : nil,
-            peerCount: overview.peer_count
         )
     }
 
@@ -221,28 +349,16 @@ public struct SPVTransactionEvent {
     public let blockHeight: UInt32?
 }
 
-// MARK: - SPV Client Delegate
-
-@MainActor
-public protocol SPVClientDelegate: AnyObject {
-    func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress)
-    func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent)
-    func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent)
-    func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?)
-    func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int)
-    func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int)
-}
-
 // MARK: - SPV Client
 
 @MainActor
-public class SPVClient {
+public class SPVClient<T: SPVEventHandler> {
     public var isConnected = false
     public var isSyncing = false
     var blocksHit: Int = 0
 
-    // Delegate for callbacks
-    public let delegate: SPVClientDelegate
+    // SPVEventHandler for callbacks
+    private let spvEventHandler: T
 
     // FFI handles
     private let client: UnsafeMutablePointer<FFIDashSpvClient>
@@ -254,11 +370,8 @@ public class SPVClient {
         return client
     }
 
-    // Callback context
-    private var callbackContext: CallbackContext?
-
     // Sync tracking
-    internal var syncCancelled = false
+    
     fileprivate let swiftLoggingEnabled: Bool = {
         if let env = ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"], env.lowercased() == "1" || env.lowercased() == "true" {
             return true
@@ -268,7 +381,7 @@ public class SPVClient {
 
     // Removed: Temporary poller for filter header progress (now event-driven via FFI)
 
-    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, delegate: SPVClientDelegate) throws {
+    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, spvEventHandler: T) throws {
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
@@ -366,13 +479,26 @@ public class SPVClient {
 
         self.isConnected = true
         self.client = client
-        self.delegate = delegate
         self.config = configPtr
-
-        self.delegate.spvClient(self, didUpdateSyncProgress: self.getSyncProgress())
         
-        // Set up event callbacks with stable context
-        setupEventCallbacks()
+        // Set up event callbacks with stable spvEventHandler
+        self.spvEventHandler = spvEventHandler
+        var callbacks = FFIEventCallbacks()
+
+        callbacks.user_data = Unmanaged.passUnretained(self.spvEventHandler).toOpaque()
+        
+        callbacks.on_block = onBlockCallbackC
+        callbacks.on_transaction = onTransactionCallbackC
+        callbacks.on_compact_filter_matched = onCompactFilterMatchedCallbackC
+        callbacks.on_mempool_transaction_added = onMempoolTransactionAddedCallbackC
+        callbacks.on_mempool_transaction_confirmed = onMempoolTransactionConfirmedCallbackC
+        callbacks.on_mempool_transaction_removed = onMempoolTransactionRemovedCallbackC
+        callbacks.on_wallet_transaction = onWalletTransactionCallbackC
+
+        dash_spv_ffi_client_set_event_callbacks(client, callbacks)
+        
+        // Call the event handler to notify about the initial sync progress
+        self.spvEventHandler.spvClient(didUpdateSyncProgress: self.getSyncProgress())
     }
 
     deinit {
@@ -439,7 +565,7 @@ public class SPVClient {
         // IMPROVEMENT
         // Manually calling the event doesn't look like the right approach,
         // if FFISPVClient could send us an event callback automatically...
-        self.delegate.spvClient(self, didUpdateSyncProgress: SPVSyncProgress.default())
+        self.spvEventHandler.spvClient(didUpdateSyncProgress: SPVSyncProgress.default())
     }
 
     // MARK: - Wallet Transaction Queries
@@ -471,8 +597,6 @@ public class SPVClient {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
 
-        callbackContext = nil
-
         self.hasBeenFreed = true
     }
 
@@ -484,29 +608,15 @@ public class SPVClient {
         }
 
         self.isSyncing = true
-        syncCancelled = false
         blocksHit = 0
-
-        // Use a stable callback context; create if needed
-        let context: CallbackContext
-        if let existing = self.callbackContext {
-            context = existing
-        } else {
-            context = CallbackContext(client: self)
-            self.callbackContext = context
-        }
-        let contextPtr = Unmanaged.passUnretained(context).toOpaque()
         
-        let clientAddr = UInt(bitPattern: self.client)
-        let ctxAddr = UInt(bitPattern: contextPtr)
+        let spvEventHandlerPtr = Unmanaged.passUnretained(spvEventHandler).toOpaque()
         
-        guard let client = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
-              let contextPtr = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
         let result = dash_spv_ffi_client_sync_to_tip_with_progress(
-            client,
-            spvProgressCallback,
-            spvCompletionCallback,
-            contextPtr
+            self.client,
+            spvProgressCallbackC,
+            spvCompletionCallbackC,
+            spvEventHandlerPtr
         )
 
         if result != 0 {
@@ -525,149 +635,6 @@ public class SPVClient {
         isSyncing = false
     }
 
-    // MARK: - Event Callbacks
-
-    private func setupEventCallbacks() {
-        let context = CallbackContext(client: self)
-        self.callbackContext = context
-        let contextPtr = Unmanaged.passUnretained(context).toOpaque()
-
-        var callbacks = FFIEventCallbacks()
-
-        // Assign C-compatible top-level functions which match the imported C signatures
-        callbacks.on_block = onBlockCallbackC
-        callbacks.on_transaction = onTransactionCallbackC
-
-        callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
-            guard let userData = userData else { return }
-            let ptrVal = UInt(bitPattern: userData)
-            Task { @MainActor in
-                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
-                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-                guard let client = context.client else { return }
-                client.blocksHit &+= 1
-                client.delegate.spvClient(client, didUpdateBlocksHit: client.blocksHit)
-            }
-        }
-
-        // Mempool: unconfirmed transaction detected for any tracked address
-        callbacks.on_mempool_transaction_added = { txidPtr, amount, addressesPtr, _isInstantSend, userData in
-            guard let userData = userData else { return }
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-
-            var txid = Data()
-            if let txidPtr = txidPtr {
-                txid = Data(bytes: txidPtr, count: 32)
-            }
-
-            var addresses: [String] = []
-            if let addressesPtr = addressesPtr {
-                let addressesStr = String(cString: addressesPtr)
-                addresses = addressesStr.components(separatedBy: ",")
-            }
-
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleTransactionEvent(
-                    txid: txid,
-                    confirmed: false,
-                    amount: amount,
-                    addresses: addresses,
-                    blockHeight: nil
-                )
-            }
-        }
-
-        // Mempool: transaction confirmed
-        callbacks.on_mempool_transaction_confirmed = { txidPtr, blockHeight, _blockHashPtr, userData in
-            guard let userData = userData else { return }
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-
-            var txid = Data()
-            if let txidPtr = txidPtr {
-                txid = Data(bytes: txidPtr, count: 32)
-            }
-
-            // Amount and addresses are not provided here; emit a confirmation-only update
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleTransactionEvent(
-                    txid: txid,
-                    confirmed: true,
-                    amount: 0,
-                    addresses: [],
-                    blockHeight: blockHeight
-                )
-            }
-        }
-
-        // Mempool: transaction removed (expired/replaced/etc). No UI path yet; ignore for now.
-        callbacks.on_mempool_transaction_removed = { _txidPtr, _reason, _userData in
-            // Intentionally no-op; could surface to UI in future if needed
-        }
-
-        // Wallet-specific transaction callback (fires for our wallet, including mempool)
-        callbacks.on_wallet_transaction = { _walletId, _accountIndex, txidPtr, confirmed, amount, addressesPtr, blockHeight, _isOurs, userData in
-            guard let userData = userData else { return }
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-
-            var txid = Data()
-            if let txidPtr = txidPtr {
-                txid = Data(bytes: txidPtr, count: 32)
-            }
-
-            var addresses: [String] = []
-            if let addressesPtr = addressesPtr {
-                let addressesStr = String(cString: addressesPtr)
-                addresses = addressesStr.components(separatedBy: ",")
-            }
-
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleTransactionEvent(
-                    txid: txid,
-                    confirmed: confirmed,
-                    amount: amount,
-                    addresses: addresses,
-                    blockHeight: blockHeight > 0 ? blockHeight : nil
-                )
-            }
-        }
-
-        callbacks.user_data = contextPtr
-
-        dash_spv_ffi_client_set_event_callbacks(client, callbacks)
-    }
-
-    // MARK: - Filter progress event handler
-    // MARK: - Event Handlers
-
-    fileprivate func handleBlockEvent(height: UInt32, hash: Data) {
-        let block = SPVBlockEvent(
-            height: height,
-            hash: hash,
-            timestamp: Date()
-        )
-
-        if swiftLoggingEnabled {
-            print("[SPV][Block] height=\(height) hash=\(hash.map { String(format: "%02x", $0) }.joined().prefix(16))…")
-        }
-
-        delegate.spvClient(self, didReceiveBlock: block)
-    }
-
-    fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
-        let transaction = SPVTransactionEvent(
-            txid: txid,
-            confirmed: confirmed,
-            amount: amount,
-            addresses: addresses,
-            blockHeight: blockHeight
-        )
-
-        delegate.spvClient(self, didReceiveTransaction: transaction)
-    }
-
     // MARK: - Wallet Manager Access
 
     /// Produce a Swift wallet manager that shares the SPV client's underlying wallet state.
@@ -677,50 +644,6 @@ public class SPVClient {
         let ffiWalletManager = dash_spv_ffi_client_get_wallet_manager(self.client)!
         
         return try WalletManager(handle: ffiWalletManager)
-    }
-}
-
-// MARK: - Callback Context
-
-@MainActor
-private class CallbackContext {
-    weak var client: SPVClient?
-
-    init(client: SPVClient) {
-        self.client = client
-    }
-
-    func handleProgressUpdate(_ ffiProgress: FFIDetailedSyncProgress) {
-        guard let client = self.client else { return }
-
-        let spvSyncProgress = SPVSyncProgress.from(ffiProgress)
-        client.delegate.spvClient(client, didUpdateSyncProgress: spvSyncProgress)
-    }
-
-    func handleSyncCompletion(success: Bool, error: String?) {
-
-        if client?.swiftLoggingEnabled == true {
-            if success {
-                print("[SPV][Complete] Sync finished successfully")
-            } else {
-                print("[SPV][Complete] Sync failed: \(error ?? "unknown error")")
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            guard let client = self?.client else { return }
-            if client.swiftLoggingEnabled {
-                if success {
-                    print("[SPV][Complete] Sync finished successfully")
-                } else {
-                    let errMsg = error ?? "unknown error"
-                    print("[SPV][Complete] Sync failed: \(errMsg)")
-                }
-            }
-            client.isSyncing = false
-
-            client.delegate.spvClient(client, didCompleteSync: success, error: error)
-        }
     }
 }
 

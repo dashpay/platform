@@ -139,7 +139,9 @@ public class WalletService: ObservableObject {
     public private(set) var walletManager: CoreWalletManager?
     
     // SPV Client - new wrapper with proper sync support
-    private var spvClient: SPVClient?
+    private var spvClient: SPVClient<SPVEventHandlerImpl>?
+    
+    private var spvEventHandlerImpl: SPVEventHandlerImpl?
 
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
@@ -219,13 +221,14 @@ public class WalletService: ObservableObject {
       let net = currentNetwork
       
       SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(startHeight) on \(net.rawValue) during initialize()", minimumLevel: .high)
+      self.spvEventHandlerImpl = SPVEventHandlerImpl(walletService: self)
       
       do {
           spvClient = try SPVClient(
               network: self.currentNetwork.sdkNetwork,
               dataDir: dataDir,
               startHeight: startHeight,
-              delegate: self
+              spvEventHandler: self.spvEventHandlerImpl!
           )
       } catch {
           SDKLogger.error("Failed to initialize SPV Client: \(error)")
@@ -575,92 +578,105 @@ public class WalletService: ObservableObject {
                     "absorb", "abstract", "absurd", "abuse", "access", "accident"]
         return words.joined(separator: " ")
     }
-}
-
-// MARK: - SPVClientDelegate
-
-extension WalletService: SPVClientDelegate {
-    public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
-        Task { @MainActor in
-            self.syncProgress = progress
-        }
-    }
     
-    public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
-        SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
-
-        // Sync wallet state after processing a block (which may contain relevant transactions)
-        Task { @MainActor in
-            if let wm = walletManager {
-                for wallet in wm.wallets {
-                    await wm.syncWalletStateFromRust(for: wallet)
-                }
+    class SPVEventHandlerImpl: SPVEventHandler {
+        weak var walletService: WalletService?
+        
+        init(walletService: WalletService) {
+            self.walletService = walletService
+        }
+        
+        public func spvClient(didUpdateSyncProgress progress: SPVSyncProgress) {
+            guard let walletService = self.walletService else { return }
+            
+            Task { @MainActor in 
+                walletService.syncProgress = progress
             }
-            updateBalance()
         }
-    }
+        
+        public func spvClient(didReceiveBlock block: SPVBlockEvent) {
+            guard let walletService = self.walletService else { return }
+            
+            SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
     
-    public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
-        // Sync wallet state from Rust to SwiftData, then update UI
-        Task { @MainActor in
+            // Sync wallet state after processing a block (which may contain relevant transactions)
+            Task { @MainActor in 
+                if let wm = walletService.walletManager {
+                    for wallet in wm.wallets {
+                        await wm.syncWalletStateFromRust(for: wallet)
+                    }
+                }
+                walletService.updateBalance()
+            }
+        }
+        
+        public func spvClient(didReceiveTransaction transaction: SPVTransactionEvent) {
+            guard let walletService = self.walletService else { return }
+            
             // Sync ALL wallets from Rust to SwiftData (transaction could belong to any wallet)
-            if let wm = walletManager {
-                for wallet in wm.wallets {
-                    await wm.syncWalletStateFromRust(for: wallet)
-                }
-            }
-
-            // Then update UI from the now-synchronized SwiftData (if viewing a wallet)
-            if currentWallet != nil {
-                await loadTransactions()
-                updateBalance()
-            }
-        }
-    }
-    
-    public func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int) {
-        blocksHit = count
-
-        // Sync wallet state periodically during sync (every 50 blocks processed)
-        if count > 0 && count % 50 == 0 {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                // Sync ALL wallets
-                if let wm = self.walletManager {
+            Task { @MainActor in 
+                if let wm = walletService.walletManager {
                     for wallet in wm.wallets {
                         await wm.syncWalletStateFromRust(for: wallet)
                     }
                 }
-                self.updateBalance()
-            }
-        }
-    }
-    
-    public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
-        Task { @MainActor in
-            isSyncing = false
-
-            if success {
-                SDKLogger.log("✅ Sync completed successfully", minimumLevel: .medium)
-
-                // Final sync from Rust to SwiftData after sync completes
-                if let wm = walletManager {
-                    for wallet in wm.wallets {
-                        await wm.syncWalletStateFromRust(for: wallet)
-                    }
+        
+                // Then update UI from the now-synchronized SwiftData (if viewing a wallet)
+                if walletService.currentWallet != nil {
+                    await walletService.loadTransactions()
+                    walletService.updateBalance()
                 }
-                updateBalance()
-            } else {
-                SDKLogger.error("❌ Sync failed: \(error ?? "Unknown error")")
-                lastSyncError = SPVError.syncFailed(error ?? "Unknown error")
             }
         }
-    }
-    
-    public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
-        SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
+        
+        public func spvClient(didUpdateBlocksHit count: Int) {
+            guard let walletService = self.walletService else { return }
+            
+            Task { @MainActor in 
+                walletService.blocksHit += count
+        
+                // Sync wallet state periodically during sync (every 50 blocks processed)
+                if count > 0 && count % 50 == 0 {
+                    if let wm = walletService.walletManager {
+                        for wallet in wm.wallets {
+                            await wm.syncWalletStateFromRust(for: wallet)
+                        }
+                    }
+                    walletService.updateBalance()
+                }
+            }
+        }
+        
+        public func spvClient(didCompleteSync success: Bool, error: String?) {
+            guard let walletService = self.walletService else { return }
+            
+            Task { @MainActor in 
+                walletService.isSyncing = false
+        
+                if success {
+                    SDKLogger.log("✅ Sync completed successfully", minimumLevel: .medium)
+        
+                    // Final sync from Rust to SwiftData after sync completes
+                    if let wm = walletService.walletManager {
+                        for wallet in wm.wallets {
+                            await wm.syncWalletStateFromRust(for: wallet)
+                        }
+                    }
+                    walletService.updateBalance()
+                } else {
+                    SDKLogger.error("❌ Sync failed: \(error ?? "Unknown error")")
+                    walletService.lastSyncError = SPVError.syncFailed(error ?? "Unknown error")
+                }
+            }
+        }
+        
+        public func spvClient(didChangeConnectionStatus connected: Bool, peers: Int) {
+            SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
+        }
     }
 }
+
+// MARK: - SPVEventHandler
 
 // Extension for Data to hex string
 extension Data {
