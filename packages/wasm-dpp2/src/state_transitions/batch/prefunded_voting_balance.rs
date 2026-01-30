@@ -1,7 +1,33 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use dpp::fee::Credits;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PrefundedVotingBalanceOptions {
+    index_name: String,
+    credits: Credits,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Options for creating a PrefundedVotingBalance instance.
+ */
+export interface PrefundedVotingBalanceOptions {
+    indexName: string;
+    credits: bigint;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PrefundedVotingBalanceOptions")]
+    pub type PrefundedVotingBalanceOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "PrefundedVotingBalance")]
 #[derive(Clone)]
@@ -29,13 +55,15 @@ impl From<PrefundedVotingBalanceWasm> for (String, Credits) {
 impl PrefundedVotingBalanceWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(js_name = "indexName")] index_name: String,
-        credits: Credits,
-    ) -> PrefundedVotingBalanceWasm {
-        PrefundedVotingBalanceWasm {
-            index_name,
-            credits,
-        }
+        options: PrefundedVotingBalanceOptionsJs,
+    ) -> WasmDppResult<PrefundedVotingBalanceWasm> {
+        let opts: PrefundedVotingBalanceOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        Ok(PrefundedVotingBalanceWasm {
+            index_name: opts.index_name,
+            credits: opts.credits,
+        })
     }
 
     #[wasm_bindgen(getter, js_name = "indexName")]

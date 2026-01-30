@@ -1,12 +1,29 @@
 use crate::enums::token::emergency_action::TokenEmergencyActionWasm;
+use crate::error::WasmDppResult;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::utils::{try_from_options, try_from_options_optional_with, try_to_string};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
 use dpp::state_transition::batch_transition::TokenEmergencyActionTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_EMERGENCY_ACTION_OPTIONS_TS: &str = r#"
+export interface TokenEmergencyActionTransitionOptions {
+    base: TokenBaseTransition;
+    emergencyAction: TokenEmergencyActionLike;
+    publicNote?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenEmergencyActionTransitionOptions")]
+    pub type TokenEmergencyActionTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenEmergencyActionTransition")]
@@ -28,16 +45,24 @@ impl From<TokenEmergencyActionTransition> for TokenEmergencyActionTransitionWasm
 impl TokenEmergencyActionTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(js_name = "emergencyAction")] emergency_action: TokenEmergencyActionWasm,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
-    ) -> TokenEmergencyActionTransitionWasm {
-        TokenEmergencyActionTransitionWasm(TokenEmergencyActionTransition::V0(
-            TokenEmergencyActionTransitionV0 {
-                base: base.clone().into(),
+        options: TokenEmergencyActionTransitionOptionsJs,
+    ) -> WasmDppResult<TokenEmergencyActionTransitionWasm> {
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let emergency_action: TokenEmergencyActionWasm =
+            try_from_options(&options, "emergencyAction")?;
+
+        let public_note: Option<String> =
+            try_from_options_optional_with(&options, "publicNote", |v| {
+                try_to_string(v, "publicNote")
+            })?;
+
+        Ok(TokenEmergencyActionTransitionWasm(
+            TokenEmergencyActionTransition::V0(TokenEmergencyActionTransitionV0 {
+                base: base.into(),
                 emergency_action: emergency_action.into(),
                 public_note,
-            },
+            }),
         ))
     }
 

@@ -3,12 +3,27 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
-use dpp::identifier::Identifier;
+use crate::utils::{try_from_options, try_from_options_optional_with, try_to_string};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::TokenUnfreezeTransitionV0;
 use dpp::state_transition::batch_transition::TokenUnfreezeTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_UNFREEZE_OPTIONS_TS: &str = r#"
+export interface TokenUnFreezeTransitionOptions {
+    base: TokenBaseTransition;
+    frozenIdentityId: IdentifierLike;
+    publicNote?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenUnFreezeTransitionOptions")]
+    pub type TokenUnFreezeTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenUnFreezeTransition")]
@@ -30,16 +45,21 @@ impl From<TokenUnFreezeTransitionWasm> for TokenUnfreezeTransition {
 impl TokenUnFreezeTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(js_name = "frozenIdentityId")] frozen_identity_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
+        options: TokenUnFreezeTransitionOptionsJs,
     ) -> WasmDppResult<TokenUnFreezeTransitionWasm> {
-        let frozen_identity_id: Identifier = frozen_identity_id.try_into()?;
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let frozen_identity_id: IdentifierWasm = try_from_options(&options, "frozenIdentityId")?;
+
+        let public_note: Option<String> =
+            try_from_options_optional_with(&options, "publicNote", |v| {
+                try_to_string(v, "publicNote")
+            })?;
 
         Ok(TokenUnFreezeTransitionWasm(TokenUnfreezeTransition::V0(
             TokenUnfreezeTransitionV0 {
-                base: base.clone().into(),
-                frozen_identity_id,
+                base: base.into(),
+                frozen_identity_id: frozen_identity_id.into(),
                 public_note,
             },
         )))

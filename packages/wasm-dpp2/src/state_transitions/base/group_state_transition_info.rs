@@ -1,10 +1,37 @@
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
+use crate::utils::try_from_options;
 use dpp::group::GroupStateTransitionInfo;
-use dpp::prelude::Identifier;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupStateTransitionInfoOptionsSerde {
+    group_contract_position: u16,
+    #[serde(default)]
+    is_action_proposer: bool,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Options for creating a GroupStateTransitionInfo instance.
+ */
+export interface GroupStateTransitionInfoOptions {
+    groupContractPosition: number;
+    actionId: IdentifierLike;
+    isActionProposer?: boolean;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupStateTransitionInfoOptions")]
+    pub type GroupStateTransitionInfoOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "GroupStateTransitionInfo")]
@@ -26,16 +53,20 @@ impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWasm {
 impl GroupStateTransitionInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
-        #[wasm_bindgen(js_name = "actionId")] action_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "isActionProposer")] action_is_proposer: bool,
+        options: GroupStateTransitionInfoOptionsJs,
     ) -> WasmDppResult<GroupStateTransitionInfoWasm> {
-        let action_id: Identifier = action_id.try_into()?;
+        // Extract complex types first (borrows &options)
+        let action_id: IdentifierWasm = try_from_options(&options, "actionId")?;
+
+        // Deserialize primitive fields via serde (consumes options)
+        let opts: GroupStateTransitionInfoOptionsSerde =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(GroupStateTransitionInfoWasm(GroupStateTransitionInfo {
-            group_contract_position,
-            action_id,
-            action_is_proposer,
+            group_contract_position: opts.group_contract_position,
+            action_id: action_id.into(),
+            action_is_proposer: opts.is_action_proposer,
         }))
     }
 

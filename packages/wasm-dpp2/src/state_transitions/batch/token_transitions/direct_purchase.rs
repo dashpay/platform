@@ -1,6 +1,8 @@
+use crate::error::WasmDppResult;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::utils::{try_from_options, try_from_options_with, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -8,6 +10,21 @@ use dpp::state_transition::batch_transition::token_direct_purchase_transition::v
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransitionV0;
 use dpp::state_transition::batch_transition::TokenDirectPurchaseTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_DIRECT_PURCHASE_OPTIONS_TS: &str = r#"
+export interface TokenDirectPurchaseTransitionOptions {
+    base: TokenBaseTransition;
+    tokenCount: bigint;
+    totalAgreedPrice: bigint;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenDirectPurchaseTransitionOptions")]
+    pub type TokenDirectPurchaseTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenDirectPurchaseTransition")]
@@ -29,16 +46,23 @@ impl From<TokenDirectPurchaseTransition> for TokenDirectPurchaseTransitionWasm {
 impl TokenDirectPurchaseTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        base: &TokenBaseTransitionWasm,
-        #[wasm_bindgen(js_name = "tokenCount")] token_count: TokenAmount,
-        #[wasm_bindgen(js_name = "totalAgreedPrice")] total_agreed_price: Credits,
-    ) -> Self {
-        TokenDirectPurchaseTransitionWasm(TokenDirectPurchaseTransition::V0(
-            TokenDirectPurchaseTransitionV0 {
-                base: base.clone().into(),
+        options: TokenDirectPurchaseTransitionOptionsJs,
+    ) -> WasmDppResult<TokenDirectPurchaseTransitionWasm> {
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let token_count: TokenAmount =
+            try_from_options_with(&options, "tokenCount", |v| try_to_u64(v, "tokenCount"))?;
+
+        let total_agreed_price: Credits = try_from_options_with(&options, "totalAgreedPrice", |v| {
+            try_to_u64(v, "totalAgreedPrice")
+        })?;
+
+        Ok(TokenDirectPurchaseTransitionWasm(
+            TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
+                base: base.into(),
                 token_count,
                 total_agreed_price,
-            },
+            }),
         ))
     }
 

@@ -1,4 +1,5 @@
 use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::configuration_convention::TokenConfigurationConventionWasm;
@@ -245,6 +246,10 @@ impl TokenConfigurationChangeItemWasm {
     }
 }
 
+impl_try_from_js_value!(
+    TokenConfigurationChangeItemWasm,
+    "TokenConfigurationChangeItem"
+);
 impl_wasm_type_info!(
     TokenConfigurationChangeItemWasm,
     TokenConfigurationChangeItem

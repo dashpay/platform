@@ -4,7 +4,7 @@ use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use dpp::identifier::Identifier;
+use crate::utils::try_from_options;
 use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -14,10 +14,27 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityTopUpTransitionOptionsSerde {
+    #[serde(default)]
+    user_fee_increase: UserFeeIncrease,
+}
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
+/**
+ * Options for creating an IdentityTopUpTransition instance.
+ */
+export interface IdentityTopUpTransitionOptions {
+    assetLockProof: AssetLockProof;
+    identityId: IdentifierLike;
+    userFeeIncrease?: number;
+}
+
 /**
  * IdentityTopUpTransition serialized as a plain object.
  */
@@ -41,6 +58,9 @@ export interface IdentityTopUpTransitionJSON {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityTopUpTransitionOptions")]
+    pub type IdentityTopUpTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "IdentityTopUpTransitionObject")]
     pub type IdentityTopUpTransitionObjectJs;
 
@@ -56,17 +76,22 @@ pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn constructor(
-        #[wasm_bindgen(js_name = "assetLockProof")] asset_lock_proof: &AssetLockProofWasm,
-        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
-        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: Option<UserFeeIncrease>,
+        options: IdentityTopUpTransitionOptionsJs,
     ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
-        let identity_id: Identifier = identity_id.try_into()?;
+        // Extract complex types first (borrows &options)
+        let asset_lock_proof: AssetLockProofWasm = try_from_options(&options, "assetLockProof")?;
+        let identity_id: IdentifierWasm = try_from_options(&options, "identityId")?;
+
+        // Deserialize primitive fields via serde (consumes options)
+        let opts: IdentityTopUpTransitionOptionsSerde =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityTopUpTransitionWasm(IdentityTopUpTransition::V0(
             IdentityTopUpTransitionV0 {
-                asset_lock_proof: asset_lock_proof.clone().into(),
-                identity_id,
-                user_fee_increase: user_fee_increase.unwrap_or(0),
+                asset_lock_proof: asset_lock_proof.into(),
+                identity_id: identity_id.into(),
+                user_fee_increase: opts.user_fee_increase,
                 signature: Default::default(),
             },
         )))
