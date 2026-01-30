@@ -55,7 +55,9 @@ impl From<DistributionFunction> for DistributionFunctionWasm {
 #[wasm_bindgen(js_class = DistributionFunction)]
 impl DistributionFunctionWasm {
     #[wasm_bindgen(js_name = "FixedAmountDistribution")]
-    pub fn fixed_amount_distribution(opts: DistributionFixedAmountWasm) -> DistributionFunctionWasm {
+    pub fn fixed_amount_distribution(
+        opts: DistributionFixedAmountWasm,
+    ) -> DistributionFunctionWasm {
         DistributionFunctionWasm(DistributionFunction::FixedAmount {
             amount: opts.amount,
         })

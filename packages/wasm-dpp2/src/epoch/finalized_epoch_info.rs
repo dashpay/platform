@@ -2,16 +2,16 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options_with, try_to_map, try_to_u64, JsMapExt};
-use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
-use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use crate::utils::{JsMapExt, try_from_options_with, try_to_map, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
+use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::prelude::Identifier;
 use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

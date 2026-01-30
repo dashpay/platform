@@ -98,5 +98,8 @@ impl TokenConfigUpdateTransitionWasm {
     }
 }
 
-impl_try_from_js_value!(TokenConfigUpdateTransitionWasm, "TokenConfigUpdateTransition");
+impl_try_from_js_value!(
+    TokenConfigUpdateTransitionWasm,
+    "TokenConfigUpdateTransition"
+);
 impl_wasm_type_info!(TokenConfigUpdateTransitionWasm, TokenConfigUpdateTransition);

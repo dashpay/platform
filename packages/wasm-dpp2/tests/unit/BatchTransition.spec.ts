@@ -267,7 +267,11 @@ describe('BatchTransition', () => {
     it('should return allPurchasesAmount', () => {
       const documentInstance = createDocument();
       const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
-      const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+      const purchaseTransition = new wasm.DocumentPurchaseTransition({
+        document: documentInstance,
+        identityContractNonce: BigInt(1),
+        amount: BigInt(100),
+      });
 
       const documentTransition = createTransition.toDocumentTransition();
       const documentTransition2 = purchaseTransition.toDocumentTransition();

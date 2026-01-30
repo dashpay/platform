@@ -119,7 +119,10 @@ fn value_to_localizations(
     Ok(localizations)
 }
 
-impl_try_from_js_value!(TokenConfigurationConventionWasm, "TokenConfigurationConvention");
+impl_try_from_js_value!(
+    TokenConfigurationConventionWasm,
+    "TokenConfigurationConvention"
+);
 impl_wasm_type_info!(
     TokenConfigurationConventionWasm,
     TokenConfigurationConvention

@@ -58,8 +58,7 @@ impl DocumentTransferTransitionWasm {
                 try_to_u64(v, "identityContractNonce")
             })?;
 
-        let recipient_owner_id: IdentifierWasm =
-            try_from_options(&options, "recipientOwnerId")?;
+        let recipient_owner_id: IdentifierWasm = try_from_options(&options, "recipientOwnerId")?;
 
         let token_payment_info: Option<TokenPaymentInfoWasm> =
             try_from_options_optional(&options, "tokenPaymentInfo")?;

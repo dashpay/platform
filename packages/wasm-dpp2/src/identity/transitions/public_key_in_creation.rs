@@ -138,8 +138,9 @@ impl IdentityPublicKeyInCreationWasm {
             try_from_options_optional(&options, "contractBounds")?;
 
         // Extract simple fields via serde
-        let opts: IdentityPublicKeyInCreationOptions = serde_wasm_bindgen::from_value(options.into())
-            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+        let opts: IdentityPublicKeyInCreationOptions =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityPublicKeyInCreationWasm(
             IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
@@ -284,7 +285,10 @@ impl IdentityPublicKeyInCreationWasm {
     }
 }
 
-impl_try_from_js_value!(IdentityPublicKeyInCreationWasm, "IdentityPublicKeyInCreation");
+impl_try_from_js_value!(
+    IdentityPublicKeyInCreationWasm,
+    "IdentityPublicKeyInCreation"
+);
 impl_wasm_conversions!(
     IdentityPublicKeyInCreationWasm,
     IdentityPublicKeyInCreation,

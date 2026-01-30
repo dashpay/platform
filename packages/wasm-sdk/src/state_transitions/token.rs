@@ -7,7 +7,6 @@ use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
-use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::identity::IdentityPublicKey;
@@ -24,6 +23,7 @@ use dash_sdk::platform::tokens::transitions::{
     BurnResult, ClaimResult, DestroyFrozenFundsResult, DirectPurchaseResult, EmergencyActionResult,
     FreezeResult, MintResult, SetPriceResult, TransferResult, UnfreezeResult,
 };
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use js_sys::BigInt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -232,8 +232,10 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
         let recipient_id: Option<Identifier> =
             try_from_options_optional::<IdentifierWasm>(&options, "recipientId")?.map(Into::into);
 
@@ -270,7 +272,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -465,8 +467,10 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_burn_options(options.into())?;
@@ -496,7 +500,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -696,9 +700,12 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let sender_id: Identifier = try_from_options::<IdentifierWasm>(&options, "senderId")?.into();
-        let recipient_id: Identifier = try_from_options::<IdentifierWasm>(&options, "recipientId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let sender_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "senderId")?.into();
+        let recipient_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "recipientId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_transfer_options(options.into())?;
@@ -731,7 +738,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -916,9 +923,12 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
-        let frozen_identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let frozen_identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_freeze_options(options.into())?;
@@ -946,7 +956,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -1126,9 +1136,12 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
-        let frozen_identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let frozen_identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_unfreeze_options(options.into())?;
@@ -1156,7 +1169,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -1322,9 +1335,12 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
-        let frozen_identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let frozen_identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "frozenIdentityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_destroy_frozen_options(options.into())?;
@@ -1352,7 +1368,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -1524,8 +1540,10 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_emergency_action_options(options.into())?;
@@ -1565,7 +1583,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -1717,16 +1735,17 @@ impl WasmSdk {
         use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 
         // Extract complex types first (borrows &options)
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let identity_id: Identifier = try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_claim_options(options.into())?;
@@ -1760,7 +1779,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -1962,8 +1981,10 @@ impl WasmSdk {
             GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
-        let authority_id: Identifier = try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let authority_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_set_price_options(options.into())?;
@@ -1998,7 +2019,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {
@@ -2183,7 +2204,8 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Extract identifier fields (borrows &options)
-        let contract_id: Identifier = try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
         let buyer_id: Identifier = try_from_options::<IdentifierWasm>(&options, "buyerId")?.into();
 
         // Deserialize primitive fields last (consumes options)
@@ -2206,7 +2228,7 @@ impl WasmSdk {
 
         // Add settings and user fee increase
         if let Some(ref settings) = settings {
-            builder = builder.with_settings(settings.clone());
+            builder = builder.with_settings(*settings);
         }
         let user_fee_increase = get_user_fee_increase(settings.as_ref());
         if user_fee_increase > 0 {

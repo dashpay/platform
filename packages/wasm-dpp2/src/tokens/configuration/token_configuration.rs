@@ -97,8 +97,7 @@ impl TokenConfigurationWasm {
             try_from_options(&options, "conventions")?;
         let conventions_change_rules: ChangeControlRulesWasm =
             try_from_options(&options, "conventionsChangeRules")?;
-        let keeps_history: TokenKeepsHistoryRulesWasm =
-            try_from_options(&options, "keepsHistory")?;
+        let keeps_history: TokenKeepsHistoryRulesWasm = try_from_options(&options, "keepsHistory")?;
         let max_supply_change_rules: ChangeControlRulesWasm =
             try_from_options(&options, "maxSupplyChangeRules")?;
         let distribution_rules: TokenDistributionRulesWasm =

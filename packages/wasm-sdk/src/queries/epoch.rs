@@ -196,8 +196,7 @@ fn parse_evonode_range_query(
     let query_js: JsValue = query.into();
 
     // Extract startAfter before serde since it accepts ProTxHashLike (string, Uint8Array, or ProTxHash object)
-    let start_after: Option<ProTxHashWasm> =
-        try_from_options_optional(&query_js, "startAfter")?;
+    let start_after: Option<ProTxHashWasm> = try_from_options_optional(&query_js, "startAfter")?;
 
     let input: EvonodeProposedBlocksRangeQueryInput = deserialize_required_query(
         query_js,

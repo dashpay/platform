@@ -181,7 +181,14 @@ describe('DistributionFunction', () => {
   describe('Polynomial()', () => {
     it('should create Polynomial', () => {
       const distributionFunction = wasm.DistributionFunction.Polynomial(
-        new wasm.DistributionPolynomial({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionPolynomial({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
@@ -189,7 +196,14 @@ describe('DistributionFunction', () => {
 
     it('should return Polynomial for functionName', () => {
       const distributionFunction = wasm.DistributionFunction.Polynomial(
-        new wasm.DistributionPolynomial({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionPolynomial({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionName).to.deep.equal('Polynomial');
@@ -197,7 +211,14 @@ describe('DistributionFunction', () => {
 
     it('should return correct functionValue', () => {
       const distributionFunction = wasm.DistributionFunction.Polynomial(
-        new wasm.DistributionPolynomial({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionPolynomial({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionValue.a).to.deep.equal(111n);
@@ -215,7 +236,14 @@ describe('DistributionFunction', () => {
   describe('Exponential()', () => {
     it('should create Exponential', () => {
       const distributionFunction = wasm.DistributionFunction.Exponential(
-        new wasm.DistributionExponential({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionExponential({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
@@ -223,7 +251,14 @@ describe('DistributionFunction', () => {
 
     it('should return Exponential for functionName', () => {
       const distributionFunction = wasm.DistributionFunction.Exponential(
-        new wasm.DistributionExponential({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionExponential({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionName).to.deep.equal('Exponential');
@@ -231,7 +266,14 @@ describe('DistributionFunction', () => {
 
     it('should return correct functionValue', () => {
       const distributionFunction = wasm.DistributionFunction.Exponential(
-        new wasm.DistributionExponential({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionExponential({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionValue.a).to.deep.equal(111n);
@@ -249,7 +291,14 @@ describe('DistributionFunction', () => {
   describe('Logarithmic()', () => {
     it('should create Logarithmic', () => {
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
-        new wasm.DistributionLogarithmic({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionLogarithmic({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
@@ -257,7 +306,14 @@ describe('DistributionFunction', () => {
 
     it('should return Logarithmic for functionName', () => {
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
-        new wasm.DistributionLogarithmic({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionLogarithmic({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionName).to.deep.equal('Logarithmic');
@@ -265,7 +321,14 @@ describe('DistributionFunction', () => {
 
     it('should return correct functionValue', () => {
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
-        new wasm.DistributionLogarithmic({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionLogarithmic({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionValue.a).to.deep.equal(111n);
@@ -283,7 +346,14 @@ describe('DistributionFunction', () => {
   describe('InvertedLogarithmic()', () => {
     it('should create InvertedLogarithmic', () => {
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
-        new wasm.DistributionInvertedLogarithmic({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionInvertedLogarithmic({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction).to.be.an.instanceof(wasm.DistributionFunction);
@@ -291,7 +361,14 @@ describe('DistributionFunction', () => {
 
     it('should return InvertedLogarithmic for functionName', () => {
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
-        new wasm.DistributionInvertedLogarithmic({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionInvertedLogarithmic({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionName).to.deep.equal('InvertedLogarithmic');
@@ -299,7 +376,14 @@ describe('DistributionFunction', () => {
 
     it('should return correct functionValue', () => {
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
-        new wasm.DistributionInvertedLogarithmic({ a: BigInt(111), d: BigInt(113), m: BigInt(113), n: BigInt(113), o: BigInt(113), b: BigInt(113) }),
+        new wasm.DistributionInvertedLogarithmic({
+          a: BigInt(111),
+d: BigInt(113),
+m: BigInt(113),
+          n: BigInt(113),
+o: BigInt(113),
+b: BigInt(113),
+        }),
       );
 
       expect(distributionFunction.functionValue.a).to.deep.equal(111n);

@@ -53,8 +53,7 @@ impl DocumentUpdatePriceTransitionWasm {
                 try_to_u64(v, "identityContractNonce")
             })?;
 
-        let price: Credits =
-            try_from_options_with(&options, "price", |v| try_to_u64(v, "price"))?;
+        let price: Credits = try_from_options_with(&options, "price", |v| try_to_u64(v, "price"))?;
 
         let token_payment_info: Option<TokenPaymentInfoWasm> =
             try_from_options_optional(&options, "tokenPaymentInfo")?;

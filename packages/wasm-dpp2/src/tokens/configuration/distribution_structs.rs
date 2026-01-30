@@ -127,7 +127,9 @@ impl DistributionFixedAmountWasm {
         }
         let opts: Options = serde_wasm_bindgen::from_value(options.into())
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-        Ok(Self { amount: opts.amount })
+        Ok(Self {
+            amount: opts.amount,
+        })
     }
 
     #[wasm_bindgen(getter)]

@@ -31,7 +31,6 @@ describe('AssetLockProof', () => {
 
     it('should not allow to get chain lock proof via constructor with invalid argument', () => {
       try {
-        // eslint-disable-next-line
         new (wasm.AssetLockProof as any)('chain');
       } catch {
         expect(true).to.be.ok();

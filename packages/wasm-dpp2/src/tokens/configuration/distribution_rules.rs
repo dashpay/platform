@@ -5,9 +5,7 @@ use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
-use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional, try_from_options_with,
-};
+use crate::utils::{IntoWasm, try_from_options, try_from_options_optional, try_from_options_with};
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
@@ -72,11 +70,9 @@ impl TokenDistributionRulesWasm {
         >(&options, "preProgrammedDistribution")?
         .map(Into::into);
 
-        let new_tokens_destination_identity = try_from_options_optional::<IdentifierWasm>(
-            &options,
-            "newTokensDestinationIdentity",
-        )?
-        .map(Into::into);
+        let new_tokens_destination_identity =
+            try_from_options_optional::<IdentifierWasm>(&options, "newTokensDestinationIdentity")?
+                .map(Into::into);
 
         let new_tokens_destination_identity_rules: ChangeControlRulesWasm =
             try_from_options(&options, "newTokensDestinationIdentityRules")?;

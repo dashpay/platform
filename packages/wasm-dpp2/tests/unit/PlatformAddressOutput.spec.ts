@@ -74,7 +74,6 @@ describe('PlatformAddressOutput', () => {
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
       expect(() => {
-        // eslint-disable-next-line no-new
         new wasm.PlatformAddressOutput(platformAddr, BigInt(-1));
       }).to.throw();
     });

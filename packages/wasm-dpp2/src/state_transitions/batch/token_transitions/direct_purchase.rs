@@ -53,9 +53,10 @@ impl TokenDirectPurchaseTransitionWasm {
         let token_count: TokenAmount =
             try_from_options_with(&options, "tokenCount", |v| try_to_u64(v, "tokenCount"))?;
 
-        let total_agreed_price: Credits = try_from_options_with(&options, "totalAgreedPrice", |v| {
-            try_to_u64(v, "totalAgreedPrice")
-        })?;
+        let total_agreed_price: Credits =
+            try_from_options_with(&options, "totalAgreedPrice", |v| {
+                try_to_u64(v, "totalAgreedPrice")
+            })?;
 
         Ok(TokenDirectPurchaseTransitionWasm(
             TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
@@ -103,7 +104,10 @@ impl TokenDirectPurchaseTransitionWasm {
     }
 }
 
-impl_try_from_js_value!(TokenDirectPurchaseTransitionWasm, "TokenDirectPurchaseTransition");
+impl_try_from_js_value!(
+    TokenDirectPurchaseTransitionWasm,
+    "TokenDirectPurchaseTransition"
+);
 impl_wasm_type_info!(
     TokenDirectPurchaseTransitionWasm,
     TokenDirectPurchaseTransition

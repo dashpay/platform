@@ -210,7 +210,7 @@ impl DataContractWasm {
         let definitions_value = Value::from(definitions);
 
         let data_contract_id =
-            DataContract::generate_data_contract_id_v0(owner_id.to_buffer().to_vec(), opts.identity_nonce);
+            DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), opts.identity_nonce);
 
         let data_contract_id_value = Value::Identifier(data_contract_id.to_buffer());
 

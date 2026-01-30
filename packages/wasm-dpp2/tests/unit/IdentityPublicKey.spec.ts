@@ -12,7 +12,6 @@ import {
   keyIdSet,
   purposeSet,
   keyTypeSet,
-  binaryDataSet,
   binaryDataSetHex,
 } from './mocks/PublicKey/index.js';
 import { toHexString } from './utils/hex.ts';

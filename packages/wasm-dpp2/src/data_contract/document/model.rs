@@ -5,7 +5,9 @@ use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
-use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_optional, try_from_options_with};
+use crate::utils::{
+    ToSerdeJSONExt, try_from_options, try_from_options_optional, try_from_options_with,
+};
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,

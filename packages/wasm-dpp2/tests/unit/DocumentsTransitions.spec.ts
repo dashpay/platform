@@ -34,7 +34,10 @@ describe('DocumentsTransitions', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
@@ -44,7 +47,10 @@ describe('DocumentsTransitions', () => {
     describe('toDocumentTransition()', () => {
       it('should create DocumentTransition from CreateTransition', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = createTransition.toDocumentTransition();
 
@@ -55,14 +61,20 @@ describe('DocumentsTransitions', () => {
     describe('data', () => {
       it('should return data', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(createTransition.data).to.deep.equal(document);
       });
 
       it('should set data', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newData = { message: 'bebra' };
 
@@ -75,14 +87,20 @@ describe('DocumentsTransitions', () => {
     describe('base', () => {
       it('should return base', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(createTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
       it('should set base', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newBase = new wasm.DocumentBaseTransition({
           documentId: documentInstance.id,
@@ -101,14 +119,20 @@ describe('DocumentsTransitions', () => {
     describe('entropy', () => {
       it('should return entropy', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(createTransition.entropy).to.deep.equal(documentInstance.entropy);
       });
 
       it('should set entropy', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newEntropy = new Uint8Array(32);
 
@@ -121,14 +145,20 @@ describe('DocumentsTransitions', () => {
     describe('prefundedVotingBalance', () => {
       it('should return prefunded voting balance', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(createTransition.prefundedVotingBalance).to.equal(undefined);
       });
 
       it('should set prefunded voting balance', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newPrefundedVotingBalance = new wasm.PrefundedVotingBalance({ indexName: 'note', credits: BigInt(9999) });
 
@@ -142,7 +172,10 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition.fromBatchedTransitions()', () => {
       it('should create BatchTransition from document transitions', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = createTransition.toDocumentTransition();
 
@@ -159,7 +192,10 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition serialization roundtrip', () => {
       it('should serialize and deserialize through state transition', () => {
         const documentInstance = createDocument();
-        const createTransition = new wasm.DocumentCreateTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = createTransition.toDocumentTransition();
 
@@ -188,7 +224,10 @@ describe('DocumentsTransitions', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
         const documentInstance = createDocument();
-        const deleteTransition = new wasm.DocumentDeleteTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const deleteTransition = new wasm.DocumentDeleteTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(deleteTransition).to.be.an.instanceof(wasm.DocumentDeleteTransition);
@@ -198,7 +237,10 @@ describe('DocumentsTransitions', () => {
     describe('toDocumentTransition()', () => {
       it('should create DocumentTransition from DeleteTransition', () => {
         const documentInstance = createDocument();
-        const deleteTransition = new wasm.DocumentDeleteTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const deleteTransition = new wasm.DocumentDeleteTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
@@ -209,14 +251,20 @@ describe('DocumentsTransitions', () => {
     describe('base', () => {
       it('should return base', () => {
         const documentInstance = createDocument();
-        const deleteTransition = new wasm.DocumentDeleteTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const deleteTransition = new wasm.DocumentDeleteTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(deleteTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
       it('should set base', () => {
         const documentInstance = createDocument();
-        const deleteTransition = new wasm.DocumentDeleteTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const deleteTransition = new wasm.DocumentDeleteTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newBase = new wasm.DocumentBaseTransition({
           documentId: documentInstance.id,
@@ -235,7 +283,10 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition serialization roundtrip', () => {
       it('should serialize and deserialize through state transition', () => {
         const documentInstance = createDocument();
-        const deleteTransition = new wasm.DocumentDeleteTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const deleteTransition = new wasm.DocumentDeleteTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
@@ -264,7 +315,10 @@ describe('DocumentsTransitions', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(replaceTransition).to.be.an.instanceof(wasm.DocumentReplaceTransition);
@@ -274,7 +328,10 @@ describe('DocumentsTransitions', () => {
     describe('toDocumentTransition()', () => {
       it('should create DocumentTransition from ReplaceTransition', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
@@ -285,14 +342,20 @@ describe('DocumentsTransitions', () => {
     describe('data', () => {
       it('should return data', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(replaceTransition.data).to.deep.equal(document);
       });
 
       it('should set data', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newData = { message: 'bebra' };
 
@@ -305,14 +368,20 @@ describe('DocumentsTransitions', () => {
     describe('base', () => {
       it('should return base', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(replaceTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
       it('should set base', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const newBase = new wasm.DocumentBaseTransition({
           documentId: documentInstance.id,
@@ -331,14 +400,20 @@ describe('DocumentsTransitions', () => {
     describe('revision', () => {
       it('should return revision', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         expect(replaceTransition.revision).to.equal(BigInt(2));
       });
 
       it('should set revision', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         replaceTransition.revision = BigInt(11);
 
@@ -349,7 +424,10 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition serialization roundtrip', () => {
       it('should serialize and deserialize through state transition', () => {
         const documentInstance = createDocument();
-        const replaceTransition = new wasm.DocumentReplaceTransition({ document: documentInstance, identityContractNonce: BigInt(1) });
+        const replaceTransition = new wasm.DocumentReplaceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
@@ -378,7 +456,11 @@ describe('DocumentsTransitions', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(transferTransition).to.be.an.instanceof(wasm.DocumentTransferTransition);
@@ -388,7 +470,11 @@ describe('DocumentsTransitions', () => {
     describe('toDocumentTransition()', () => {
       it('should create DocumentTransition from TransferTransition', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         const documentTransition = transferTransition.toDocumentTransition();
 
@@ -399,14 +485,22 @@ describe('DocumentsTransitions', () => {
     describe('base', () => {
       it('should return base', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         expect(transferTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
       it('should set base', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         const newBase = new wasm.DocumentBaseTransition({
           documentId: documentInstance.id,
@@ -425,14 +519,22 @@ describe('DocumentsTransitions', () => {
     describe('recipientOwnerId', () => {
       it('should return recipient', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         expect(transferTransition.recipientOwnerId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
       });
 
       it('should set recipient', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         const newRecipient = new Uint8Array(32);
 
@@ -445,7 +547,11 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition serialization roundtrip', () => {
       it('should serialize and deserialize through state transition', () => {
         const documentInstance = createDocument();
-        const transferTransition = new wasm.DocumentTransferTransition({ document: documentInstance, identityContractNonce: BigInt(1), recipientOwnerId: documentInstance.ownerId });
+        const transferTransition = new wasm.DocumentTransferTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          recipientOwnerId: documentInstance.ownerId,
+        });
 
         const documentTransition = transferTransition.toDocumentTransition();
 
@@ -474,7 +580,11 @@ describe('DocumentsTransitions', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(updatePriceTransition).to.be.an.instanceof(wasm.DocumentUpdatePriceTransition);
@@ -484,7 +594,11 @@ describe('DocumentsTransitions', () => {
     describe('toDocumentTransition()', () => {
       it('should create DocumentTransition from UpdatePriceTransition', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
@@ -495,14 +609,22 @@ describe('DocumentsTransitions', () => {
     describe('base', () => {
       it('should return base', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         expect(updatePriceTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
       it('should set base', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         const newBase = new wasm.DocumentBaseTransition({
           documentId: documentInstance.id,
@@ -521,14 +643,22 @@ describe('DocumentsTransitions', () => {
     describe('price', () => {
       it('should return price', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         expect(updatePriceTransition.price).to.deep.equal(BigInt(100));
       });
 
       it('should set price', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         updatePriceTransition.price = BigInt(1111);
 
@@ -539,7 +669,11 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition serialization roundtrip', () => {
       it('should serialize and deserialize through state transition', () => {
         const documentInstance = createDocument();
-        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({ document: documentInstance, identityContractNonce: BigInt(1), price: BigInt(100) });
+        const updatePriceTransition = new wasm.DocumentUpdatePriceTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          price: BigInt(100),
+        });
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
@@ -568,7 +702,11 @@ describe('DocumentsTransitions', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(purchaseTransition).to.be.an.instanceof(wasm.DocumentPurchaseTransition);
@@ -578,7 +716,11 @@ describe('DocumentsTransitions', () => {
     describe('toDocumentTransition()', () => {
       it('should create DocumentTransition from PurchaseTransition', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 
@@ -589,14 +731,22 @@ describe('DocumentsTransitions', () => {
     describe('base', () => {
       it('should return base', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         expect(purchaseTransition.base.constructor.name).to.equal('DocumentBaseTransition');
       });
 
       it('should set base', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         const newBase = new wasm.DocumentBaseTransition({
           documentId: documentInstance.id,
@@ -615,14 +765,22 @@ describe('DocumentsTransitions', () => {
     describe('price', () => {
       it('should return price', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         expect(purchaseTransition.price).to.deep.equal(BigInt(100));
       });
 
       it('should set price', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         purchaseTransition.price = BigInt(1111);
 
@@ -633,7 +791,11 @@ describe('DocumentsTransitions', () => {
     describe('revision', () => {
       it('should set revision', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         purchaseTransition.revision = BigInt(1111);
 
@@ -644,7 +806,11 @@ describe('DocumentsTransitions', () => {
     describe('BatchTransition serialization roundtrip', () => {
       it('should serialize and deserialize through state transition', () => {
         const documentInstance = createDocument();
-        const purchaseTransition = new wasm.DocumentPurchaseTransition({ document: documentInstance, identityContractNonce: BigInt(1), amount: BigInt(100) });
+        const purchaseTransition = new wasm.DocumentPurchaseTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          amount: BigInt(100),
+        });
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 

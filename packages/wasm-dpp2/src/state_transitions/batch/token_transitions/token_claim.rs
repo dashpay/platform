@@ -51,8 +51,7 @@ impl TokenClaimTransitionWasm {
         let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
 
         let distribution_type: TokenDistributionTypeWasm =
-            try_from_options_optional(&options, "distributionType")?
-                .unwrap_or_default();
+            try_from_options_optional(&options, "distributionType")?.unwrap_or_default();
 
         let public_note: Option<String> =
             try_from_options_optional_with(&options, "publicNote", |v| {

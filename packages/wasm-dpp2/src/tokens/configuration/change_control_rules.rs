@@ -223,7 +223,8 @@ impl ChangeControlRulesWasm {
 
         let action_taker: ActionTakerWasm = try_from_options(&options, "actionTaker")?;
 
-        let goal = try_from_options_with(&options, "goal", |v| ActionGoalWasm::try_from(v.clone()))?;
+        let goal =
+            try_from_options_with(&options, "goal", |v| ActionGoalWasm::try_from(v.clone()))?;
 
         // Extract groups - need Object for Object::keys
         let groups_value: JsValue =

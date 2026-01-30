@@ -86,9 +86,7 @@ impl PartialIdentityWasm {
             try_from_options_optional_with(&options, "balance", |v| try_to_u64(v, "balance"))?;
 
         let revision: Option<Revision> =
-            try_from_options_optional_with(&options, "revision", |v| {
-                try_to_u64(v, "revision")
-            })?;
+            try_from_options_optional_with(&options, "revision", |v| try_to_u64(v, "revision"))?;
 
         let not_found_public_keys: Option<Array> =
             try_from_options_optional_with(&options, "notFoundPublicKeys", |v| {
@@ -225,9 +223,7 @@ impl PartialIdentityWasm {
 
         // revision - can be BigInt, number, or undefined
         let revision: Option<Revision> =
-            try_from_options_optional_with(&obj, "revision", |v| {
-                try_to_u64(v, "revision")
-            })?;
+            try_from_options_optional_with(&obj, "revision", |v| try_to_u64(v, "revision"))?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =
@@ -263,9 +259,7 @@ impl PartialIdentityWasm {
 
         // revision - can be BigInt, number, or string (JSON doesn't support BigInt natively)
         let revision: Option<Revision> =
-            try_from_options_optional_with(&json, "revision", |v| {
-                try_to_u64(v, "revision")
-            })?;
+            try_from_options_optional_with(&json, "revision", |v| try_to_u64(v, "revision"))?;
 
         // notFoundPublicKeys
         let not_found_public_keys: Option<Array> =

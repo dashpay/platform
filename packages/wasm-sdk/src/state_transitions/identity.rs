@@ -109,8 +109,8 @@ impl WasmSdk {
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Put identity to platform and wait
         identity
@@ -198,8 +198,8 @@ impl WasmSdk {
             PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Top up the identity
         let new_balance = identity
@@ -328,8 +328,8 @@ impl WasmSdk {
                 .map(|k| k.into());
 
         // Extract settings from options
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Transfer credits using rs-sdk method
         let (sender_balance, recipient_balance) = identity
@@ -457,8 +457,8 @@ impl WasmSdk {
         let signing_key: Option<IdentityPublicKey> =
             IdentityPublicKeyWasm::try_from_optional_options(&options, "signingKey")?
                 .map(|k| k.into());
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_withdrawal_options(options.into())?;
@@ -616,8 +616,8 @@ impl WasmSdk {
         } else {
             Vec::new()
         };
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_identity_update_options(options.into())?;
@@ -795,8 +795,8 @@ impl WasmSdk {
         let voting_public_key: IdentityPublicKey =
             IdentityPublicKeyWasm::try_from_options(&options, "votingKey")?.into();
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_masternode_vote_options(options.into())?;

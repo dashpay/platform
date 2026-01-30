@@ -645,7 +645,11 @@ describe('TokenTransitions', () => {
   describe('TokenDirectPurchaseTransition', () => {
     describe('constructor', () => {
       it('should create instance from values', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({
+          base: baseTransition,
+          tokenCount: BigInt(111),
+          totalAgreedPrice: BigInt(111),
+        });
 
         expect(directPurchaseTransition.constructor.name).to.equal('TokenDirectPurchaseTransition');
         expect(directPurchaseTransition).to.be.an.instanceof(wasm.TokenDirectPurchaseTransition);
@@ -655,7 +659,11 @@ describe('TokenTransitions', () => {
 
     describe('base', () => {
       it('should return base', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({
+          base: baseTransition,
+          tokenCount: BigInt(111),
+          totalAgreedPrice: BigInt(111),
+        });
 
         expect(directPurchaseTransition.base.constructor.name).to.equal('TokenBaseTransition');
       });
@@ -663,13 +671,21 @@ describe('TokenTransitions', () => {
 
     describe('tokenCount', () => {
       it('should return tokenCount', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({
+          base: baseTransition,
+          tokenCount: BigInt(111),
+          totalAgreedPrice: BigInt(111),
+        });
 
         expect(directPurchaseTransition.tokenCount).to.equal(BigInt(111));
       });
 
       it('should set tokenCount', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({
+          base: baseTransition,
+          tokenCount: BigInt(111),
+          totalAgreedPrice: BigInt(111),
+        });
 
         directPurchaseTransition.tokenCount = BigInt(222);
 
@@ -679,13 +695,21 @@ describe('TokenTransitions', () => {
 
     describe('totalAgreedPrice', () => {
       it('should return totalAgreedPrice', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({
+          base: baseTransition,
+          tokenCount: BigInt(111),
+          totalAgreedPrice: BigInt(111),
+        });
 
         expect(directPurchaseTransition.totalAgreedPrice).to.equal(BigInt(111));
       });
 
       it('should set totalAgreedPrice', () => {
-        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({ base: baseTransition, tokenCount: BigInt(111), totalAgreedPrice: BigInt(111) });
+        const directPurchaseTransition = new wasm.TokenDirectPurchaseTransition({
+          base: baseTransition,
+          tokenCount: BigInt(111),
+          totalAgreedPrice: BigInt(111),
+        });
 
         directPurchaseTransition.totalAgreedPrice = BigInt(222);
 

@@ -157,8 +157,8 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         // Extract complex types first (borrows &options)
         let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_transfer_options(options.into())?;
@@ -285,8 +285,8 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
         let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_identity_top_up_options(options.into())?;
@@ -429,8 +429,8 @@ impl WasmSdk {
         let output_script: CoreScript =
             CoreScriptWasm::try_from_options(&options, "outputScript")?.into();
         let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_withdraw_options(options.into())?;
@@ -483,8 +483,8 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_identity_transfer_options(options.into())?;
@@ -729,8 +729,8 @@ impl WasmSdk {
         let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
             PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
         let signer = PlatformAddressSignerWasm::try_from_options(&options, "signer")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_address_funding_options(options.into())?;
@@ -891,12 +891,11 @@ impl WasmSdk {
         // Extract complex types first (borrows &options)
         let identity: Identity =
             wasm_dpp2::IdentityWasm::try_from_options(&options, "identity")?.into();
-        let identity_signer =
-            IdentitySignerWasm::try_from_options(&options, "identitySigner")?;
+        let identity_signer = IdentitySignerWasm::try_from_options(&options, "identitySigner")?;
         let address_signer =
             PlatformAddressSignerWasm::try_from_options(&options, "addressSigner")?;
-        let settings = try_from_options_optional::<PutSettingsInput>(&options, "settings")?
-            .map(Into::into);
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Deserialize simple fields last (consumes options)
         let parsed = deserialize_identity_create_options(options.into())?;
