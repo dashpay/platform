@@ -57,13 +57,6 @@ impl DataContractUpdateTransitionActionV1 {
                 data_contract: new_data_contract,
                 identity_contract_nonce: value.identity_contract_nonce,
                 user_fee_increase: value.user_fee_increase,
-                updated_document_schemas: value.updated_document_schemas.clone(),
-                new_document_schemas: value.new_document_schemas.clone(),
-                new_groups: value.new_groups.clone(),
-                new_tokens: value.new_tokens.clone(),
-                remove_keywords: value.remove_keywords.clone(),
-                add_keywords: value.add_keywords.clone(),
-                update_description: value.update_description.clone(),
             }),
         )
     }

@@ -23,18 +23,30 @@ impl DriveHighLevelOperationConverter for DataContractUpdateTransitionAction {
             .data_contract_update_transition
         {
             0 => {
-                Ok(vec![
-                    // We must create the contract
+                let nonce_op =
                     IdentityOperation(IdentityOperationType::UpdateIdentityContractNonce {
                         identity_id: self.data_contract_ref().owner_id().into_buffer(),
                         contract_id: self.data_contract_ref().id().into_buffer(),
                         nonce: self.identity_contract_nonce(),
-                    }),
-                    DataContractOperation(DataContractOperationType::ApplyContract {
-                        contract: Cow::Owned(self.data_contract()),
-                        storage_flags: None,
-                    }),
-                ])
+                    });
+
+                let contract_op = match self {
+                    DataContractUpdateTransitionAction::V0(v0) => {
+                        DataContractOperation(DataContractOperationType::ApplyContract {
+                            contract: Cow::Owned(v0.data_contract),
+                            storage_flags: None,
+                        })
+                    }
+                    DataContractUpdateTransitionAction::V1(v1) => DataContractOperation(
+                        DataContractOperationType::UpdateContractWithKnownDiff {
+                            old_contract: Cow::Owned(v1.old_data_contract),
+                            new_contract: Cow::Owned(v1.data_contract),
+                            storage_flags: None,
+                        },
+                    ),
+                };
+
+                Ok(vec![nonce_op, contract_op])
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DataContractUpdateTransitionAction::into_high_level_drive_operations"

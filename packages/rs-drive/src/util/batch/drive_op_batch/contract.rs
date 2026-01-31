@@ -44,6 +44,17 @@ pub enum DataContractOperationType<'a> {
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
+    /// Updates a contract when the old contract is already known.
+    /// This avoids a redundant fetch from state since the old contract
+    /// was already retrieved during validation.
+    UpdateContractWithKnownDiff {
+        /// The old contract before the update.
+        old_contract: Cow<'a, DataContract>,
+        /// The new contract after the update.
+        new_contract: Cow<'a, DataContract>,
+        /// Storage flags for the contract.
+        storage_flags: Option<Cow<'a, StorageFlags>>,
+    },
 }
 
 impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
@@ -76,6 +87,18 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                 storage_flags,
             } => drive.apply_contract_operations(
                 contract.borrow(),
+                block_info,
+                estimated_costs_only_with_layer_info,
+                storage_flags,
+                transaction,
+                platform_version,
+            ),
+            DataContractOperationType::UpdateContractWithKnownDiff {
+                new_contract,
+                storage_flags,
+                ..
+            } => drive.apply_contract_operations(
+                new_contract.borrow(),
                 block_info,
                 estimated_costs_only_with_layer_info,
                 storage_flags,
@@ -116,6 +139,11 @@ impl DataContractOperationType<'_> {
             | Self::ApplyContract { contract, .. } => {
                 vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
                     contract_id: contract.id(),
+                }]
+            }
+            Self::UpdateContractWithKnownDiff { new_contract, .. } => {
+                vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
+                    contract_id: new_contract.id(),
                 }]
             }
         };
