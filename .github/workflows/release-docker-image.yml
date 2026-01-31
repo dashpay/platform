@@ -25,6 +25,10 @@ on:
         type: string
         description: Cargo profile. i.e. release, dev
         default: release
+      additional_features:
+        type: string
+        description: Extra Cargo features to enable for Drive builds (comma-separated)
+        default: ""
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ inputs.tag }}-${{ inputs.cargo_profile }}-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests
@@ -66,6 +70,7 @@ jobs:
           cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
           # On release, we generate a new "base" image, so we need to save cache to name manifest, like '.../drive'
           cache_to_name: ${{ github.event_name == 'release' && 'true' || 'false' }}
+          additional_features: ${{ inputs.additional_features }}
 
       - name: Export digest
         run: |

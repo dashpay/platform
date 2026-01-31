@@ -16,12 +16,14 @@ import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
  * @param {saveCertificateTask} saveCertificateTask
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
+ * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
  * @returns {configureSSLCertificateTask}
  */
 export default function configureSSLCertificateTaskFactory(
   saveCertificateTask,
   obtainZeroSSLCertificateTask,
   obtainSelfSignedCertificateTask,
+  obtainLetsEncryptCertificateTask,
 ) {
   /**
    * @typedef configureSSLCertificateTask
@@ -113,6 +115,23 @@ export default function configureSSLCertificateTaskFactory(
         title: 'Generate self-signed certificate',
         task: async (ctx) => obtainSelfSignedCertificateTask(ctx.config),
       },
+      [SSL_PROVIDERS.LETSENCRYPT]: {
+        title: 'Obtain Let\'s Encrypt certificate',
+        task: async (ctx, task) => {
+          const email = await task.prompt({
+            type: 'input',
+            message: 'Enter email address for Let\'s Encrypt notifications',
+            validate: (input) => {
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              return emailRegex.test(input) || 'Please enter a valid email address';
+            },
+          });
+
+          ctx.config.set('platform.gateway.ssl.providerConfigs.letsencrypt.email', email);
+
+          return obtainLetsEncryptCertificateTask(ctx.config);
+        },
+      },
     };
 
     return new Listr([
@@ -121,6 +140,7 @@ export default function configureSSLCertificateTaskFactory(
         task: async (ctx, task) => {
           const choices = [
             { name: SSL_PROVIDERS.ZEROSSL, message: 'ZeroSSL' },
+            { name: SSL_PROVIDERS.LETSENCRYPT, message: "Let's Encrypt" },
             { name: SSL_PROVIDERS.FILE, message: 'File on disk' },
           ];
 
@@ -132,14 +152,15 @@ export default function configureSSLCertificateTaskFactory(
   by loading an SSL certificate signed against the IP address specified in the
   registration transaction. The certificate should be recognized by common web
   browsers, and must therefore be issued by a well-known Certificate Authority
-  (CA). Dashmate offers three options to configure this certificate:
+  (CA). Dashmate offers several options to configure this certificate:
 
-    ZeroSSL      - Provide a ZeroSSL API key and let dashmate configure the certificate
-                   https://zerossl.com/documentation/api/ ("Access key" section)
-    File on disk - Provide your own certificate to dashmate\n`;
+    ZeroSSL        - Provide a ZeroSSL API key and let dashmate configure the certificate
+                     https://zerossl.com/documentation/api/ ("Access key" section)
+    Let's Encrypt  - Free certificates using Let's Encrypt (requires email)
+    File on disk   - Provide your own certificate to dashmate\n`;
 
           if (isSelfSignedEnabled) {
-            header += '    Self-signed  - Generate your own self-signed certificate\n';
+            header += '    Self-signed    - Generate your own self-signed certificate\n';
 
             choices.push({ name: SSL_PROVIDERS.SELF_SIGNED, message: 'Self-signed' });
           }

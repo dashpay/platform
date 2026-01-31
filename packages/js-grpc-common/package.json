@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/grpc-common",
-  "version": "3.0.0-rc.2",
+  "version": "3.0.0",
   "description": "Common GRPC library",
   "main": "index.js",
   "scripts": {
@@ -27,10 +27,10 @@
   },
   "dependencies": {
     "@dashevo/protobufjs": "6.10.5",
-    "@grpc/grpc-js": "1.4.4",
+    "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.5.2",
     "cbor": "^8.0.0",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "long": "^5.2.0",
     "semver": "^7.5.3"
   }

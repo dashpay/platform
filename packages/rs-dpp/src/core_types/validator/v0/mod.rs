@@ -81,8 +81,8 @@ impl Encode for ValidatorV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl Decode for ValidatorV0 {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl<C> Decode<C> for ValidatorV0 {
+    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
         // Decode each field in the same order as they were encoded
 
         // Decode ProTxHash

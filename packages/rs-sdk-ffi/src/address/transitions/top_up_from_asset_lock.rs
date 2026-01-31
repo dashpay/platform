@@ -2,9 +2,11 @@
 //!
 //! This module provides FFI functions to top up Platform addresses using asset lock proofs.
 
-use dash_sdk::dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
-use dash_sdk::dpp::dashcore::Network;
+use dash_sdk::dpp::address_funds::{
+    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
+};
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::signer::Signer;
@@ -243,8 +245,9 @@ unsafe fn dash_sdk_address_top_up_from_asset_lock_inner(
 
     // Create fee strategy: deduct from input (index 0, since we have no inputs)
     // For asset lock top-up, fees are typically deducted from the asset lock output
-    let fee_strategy: AddressFundsFeeStrategy =
-        vec![AddressFundsFeeStrategyStep::DeductFromInput(fee_from_input_index)];
+    let fee_strategy: AddressFundsFeeStrategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
+        fee_from_input_index,
+    )];
 
     // Create signer (empty since we don't have address inputs for asset lock top-up)
     let signer = AddressSigner::new();

@@ -21,13 +21,13 @@ pub fn create_channel(
     let host = uri.host().expect("Failed to get host from URI").to_string();
 
     let mut builder = Channel::builder(uri);
-    
+
     // Start with webpki roots (bundled Mozilla certificates) which work on all platforms
     // Try to add native roots only on platforms where they're available (not iOS)
     let mut tls_config = ClientTlsConfig::new()
         .with_webpki_roots()
         .assume_http2(true);
-    
+
     // Try to add native roots - this may fail on iOS, which is fine since we have webpki roots
     #[cfg(not(any(target_os = "ios", target_os = "tvos", target_os = "watchos")))]
     {

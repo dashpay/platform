@@ -96,9 +96,7 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
                 std::mem::forget(address_bytes);
 
                 let (op_type, credits) = match operation {
-                    CreditOperation::SetCredits(c) => {
-                        (DashSDKCreditOperationType::SetCredits, *c)
-                    }
+                    CreditOperation::SetCredits(c) => (DashSDKCreditOperationType::SetCredits, *c),
                     CreditOperation::AddToCredits(c) => {
                         (DashSDKCreditOperationType::AddToCredits, *c)
                     }

@@ -1155,5 +1155,45 @@
              responseClass:[GetAddressesBranchStateResponse class]];
 }
 
+#pragma mark getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest) returns (GetRecentAddressBalanceChangesResponse)
+
+- (void)getRecentAddressBalanceChangesWithRequest:(GetRecentAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentAddressBalanceChangesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetRecentAddressBalanceChangesWithRequest:(GetRecentAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentAddressBalanceChanges"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentAddressBalanceChangesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getRecentAddressBalanceChangesWithMessage:(GetRecentAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentAddressBalanceChanges"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentAddressBalanceChangesResponse class]];
+}
+
+#pragma mark getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse)
+
+- (void)getRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentCompactedAddressBalanceChangesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentCompactedAddressBalanceChanges"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentCompactedAddressBalanceChangesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getRecentCompactedAddressBalanceChangesWithMessage:(GetRecentCompactedAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentCompactedAddressBalanceChanges"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentCompactedAddressBalanceChangesResponse class]];
+}
+
 @end
 #endif

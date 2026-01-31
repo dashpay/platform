@@ -60,6 +60,7 @@ struct RequestSettingsInput {
     timeout_ms: Option<u64>,
     connect_timeout_ms: Option<u64>,
     ban_failed_address: Option<bool>,
+    max_decoding_message_size: Option<u64>,
 }
 
 impl From<RequestSettingsInput> for RequestSettings {
@@ -69,6 +70,7 @@ impl From<RequestSettingsInput> for RequestSettings {
             timeout: input.timeout_ms.map(Duration::from_millis),
             connect_timeout: input.connect_timeout_ms.map(Duration::from_millis),
             ban_failed_address: input.ban_failed_address,
+            max_decoding_message_size: input.max_decoding_message_size.map(|v| v as usize),
         }
     }
 }

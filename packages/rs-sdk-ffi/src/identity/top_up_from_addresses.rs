@@ -1,8 +1,8 @@
 //! Identity top-up from addresses operations
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
+use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::prelude::Identity;
@@ -75,7 +75,10 @@ pub unsafe extern "C" fn dash_sdk_identity_top_up_from_addresses(
             };
             DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
-                format!("Panic during identity top-up from addresses: {}", panic_message),
+                format!(
+                    "Panic during identity top-up from addresses: {}",
+                    panic_message
+                ),
             ))
         }
     }

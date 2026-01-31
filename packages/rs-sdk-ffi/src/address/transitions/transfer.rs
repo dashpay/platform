@@ -2,9 +2,11 @@
 //!
 //! This module provides FFI functions to transfer funds between Platform addresses.
 
-use dash_sdk::dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress, AddressWitness};
+use dash_sdk::dpp::address_funds::{
+    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
+};
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
-use dash_sdk::dpp::dashcore::{PrivateKey, Network};
+use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::BinaryData;
@@ -243,7 +245,7 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
 
         // Create PrivateKey (network doesn't matter for signing)
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        
+
         signer.add_key(&address, private_key);
         input_map.insert(address, input.amount);
     }
@@ -274,8 +276,9 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
     }
 
     // Create fee strategy: deduct from specified input
-    let fee_strategy: AddressFundsFeeStrategy =
-        vec![AddressFundsFeeStrategyStep::DeductFromInput(fee_from_input_index)];
+    let fee_strategy: AddressFundsFeeStrategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
+        fee_from_input_index,
+    )];
 
     // Execute the transfer
     let result: Result<DashSDKAddressInfoMap, FFIError> = wrapper.runtime.block_on(async {

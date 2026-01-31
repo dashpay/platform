@@ -36,7 +36,7 @@ clap = { version = "4.4.10", features = ["derive"] }
 dotenvy = { version = "0.15.7" }
 # Logging
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 
 # Error handling
 thiserror = "2.0.12"

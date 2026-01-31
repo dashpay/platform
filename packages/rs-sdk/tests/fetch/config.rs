@@ -6,6 +6,7 @@
 use crate::fetch::generated_data::*;
 use dpp::{
     dashcore::{hashes::Hash, ProTxHash},
+    data_contracts::dpns_contract,
     prelude::Identifier,
 };
 use rs_dapi_client::{Address, AddressList};
@@ -232,12 +233,9 @@ impl Config {
         IDENTITY_ID_1
     }
 
+    /// ID of existing data contract. We return DPNS data contract ID here.
     fn default_data_contract_id() -> Identifier {
-        [
-            230, 104, 198, 89, 175, 102, 174, 225, 231, 44, 24, 109, 222, 123, 91, 126, 10, 29,
-            113, 42, 9, 196, 13, 87, 33, 246, 34, 191, 83, 197, 49, 85,
-        ]
-        .into()
+        dpns_contract::ID
     }
 
     fn default_document_type_name() -> String {

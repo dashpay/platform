@@ -131,6 +131,7 @@ pub mod prelude {
 }
 
 pub use bincode;
+pub use bincode::enc::Encode;
 #[cfg(feature = "bls-signatures")]
 pub use dashcore::blsful as bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
@@ -140,4 +141,5 @@ pub use data_contracts;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;
+pub use platform_serialization::de::{BorrowDecode, Decode, DefaultBorrowDecode, DefaultDecode};
 pub use platform_value;

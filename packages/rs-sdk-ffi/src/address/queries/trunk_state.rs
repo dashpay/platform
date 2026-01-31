@@ -50,9 +50,7 @@ pub unsafe extern "C" fn dash_sdk_address_fetch_trunk_state(
     }
 }
 
-unsafe fn dash_sdk_address_fetch_trunk_state_inner(
-    sdk_handle: *const SDKHandle,
-) -> DashSDKResult {
+unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle) -> DashSDKResult {
     if sdk_handle.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
@@ -69,9 +67,8 @@ unsafe fn dash_sdk_address_fetch_trunk_state_inner(
                 .await
                 .map_err(FFIError::from)?;
 
-        let trunk_state = trunk_state_opt.ok_or_else(|| {
-            FFIError::NotFound("Trunk state not available".to_string())
-        })?;
+        let trunk_state = trunk_state_opt
+            .ok_or_else(|| FFIError::NotFound("Trunk state not available".to_string()))?;
 
         let grove_result = trunk_state.into_inner();
         let checkpoint_height = metadata.height;

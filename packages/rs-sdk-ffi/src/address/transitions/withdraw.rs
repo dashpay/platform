@@ -2,11 +2,13 @@
 //!
 //! This module provides FFI functions to withdraw credits from Platform addresses to Core (L1) addresses.
 
-use dash_sdk::dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
+use dash_sdk::dpp::address_funds::{
+    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
+};
 use dash_sdk::dpp::dashcore::address::NetworkUnchecked;
-use dash_sdk::dpp::dashcore::{Address, Network};
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::PrivateKey;
+use dash_sdk::dpp::dashcore::{Address, Network};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::core_script::CoreScript;
 use dash_sdk::dpp::withdrawal::Pooling;
@@ -221,30 +223,30 @@ unsafe fn dash_sdk_address_withdraw_funds_inner(
     }
 
     // Parse optional change address
-    let change_output: Option<(PlatformAddress, Credits)> = if !change_address.is_null()
-        && change_address_len > 0
-    {
-        let change_bytes = std::slice::from_raw_parts(change_address, change_address_len);
-        match PlatformAddress::from_bytes(change_bytes) {
-            Ok(addr) => {
-                // For change output, we don't know the amount upfront (it's calculated by the SDK)
-                // So we pass 0 and let the SDK calculate it
-                Some((addr, 0))
+    let change_output: Option<(PlatformAddress, Credits)> =
+        if !change_address.is_null() && change_address_len > 0 {
+            let change_bytes = std::slice::from_raw_parts(change_address, change_address_len);
+            match PlatformAddress::from_bytes(change_bytes) {
+                Ok(addr) => {
+                    // For change output, we don't know the amount upfront (it's calculated by the SDK)
+                    // So we pass 0 and let the SDK calculate it
+                    Some((addr, 0))
+                }
+                Err(e) => {
+                    return DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("Failed to parse change address: {}", e),
+                    ))
+                }
             }
-            Err(e) => {
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("Failed to parse change address: {}", e),
-                ))
-            }
-        }
-    } else {
-        None
-    };
+        } else {
+            None
+        };
 
     // Create fee strategy: deduct from specified input
-    let fee_strategy: AddressFundsFeeStrategy =
-        vec![AddressFundsFeeStrategyStep::DeductFromInput(fee_from_input_index)];
+    let fee_strategy: AddressFundsFeeStrategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
+        fee_from_input_index,
+    )];
 
     // Use default core fee if 0
     let core_fee = if core_fee_per_byte > 0 {

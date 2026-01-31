@@ -1422,7 +1422,7 @@ __metadata:
     eslint: "npm:^8.53.0"
     eslint-config-airbnb-base: "npm:^15.0.0"
     eslint-plugin-import: "npm:^2.29.0"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     mathjs: "npm:^10.4.3"
     mocha: "npm:^11.1.0"
   languageName: unknown
@@ -1472,7 +1472,7 @@ __metadata:
     karma-mocha: "npm:^2.0.1"
     karma-mocha-reporter: "npm:^2.2.5"
     karma-webpack: "npm:^5.0.0"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     mocha: "npm:^11.1.0"
     node-fetch: "npm:^2.6.7"
     node-inspect-extracted: "npm:^1.0.8"
@@ -1500,7 +1500,7 @@ __metadata:
   dependencies:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/protobufjs": "npm:6.10.5"
-    "@grpc/grpc-js": "npm:1.4.4"
+    "@grpc/grpc-js": "npm:^1.14.3"
     "@improbable-eng/grpc-web": "npm:^0.15.0"
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
@@ -1531,7 +1531,7 @@ __metadata:
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
-    "@grpc/grpc-js": "npm:1.4.4"
+    "@grpc/grpc-js": "npm:^1.14.3"
     "@pshenmic/zeromq": "npm:6.0.0-beta.22"
     ajv: "npm:^8.6.0"
     bs58: "npm:^4.0.1"
@@ -1547,7 +1547,7 @@ __metadata:
     eslint-plugin-import: "npm:^2.29.0"
     google-protobuf: "npm:^3.12.2"
     jayson: "npm:^4.1.0"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     lru-cache: "npm:^5.1.1"
     mocha: "npm:^11.1.0"
     mocha-sinon: "npm:^2.1.2"
@@ -1755,7 +1755,7 @@ __metadata:
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
   dependencies:
     "@dashevo/protobufjs": "npm:6.10.5"
-    "@grpc/grpc-js": "npm:1.4.4"
+    "@grpc/grpc-js": "npm:^1.14.3"
     "@grpc/proto-loader": "npm:^0.5.2"
     cbor: "npm:^8.0.0"
     chai: "npm:^4.3.10"
@@ -1764,7 +1764,7 @@ __metadata:
     eslint: "npm:^8.53.0"
     eslint-config-airbnb-base: "npm:^15.0.0"
     eslint-plugin-import: "npm:^2.29.0"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     long: "npm:^5.2.0"
     mocha: "npm:^11.1.0"
     mocha-sinon: "npm:^2.1.2"
@@ -1960,7 +1960,7 @@ __metadata:
     karma-mocha-reporter: "npm:^2.2.5"
     karma-sourcemap-loader: "npm:^0.3.7"
     karma-webpack: "npm:^5.0.0"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     mocha: "npm:^11.1.0"
     node-inspect-extracted: "npm:^1.0.8"
     nyc: "npm:^15.1.0"
@@ -2071,7 +2071,7 @@ __metadata:
     karma-mocha: "npm:^2.0.1"
     karma-mocha-reporter: "npm:^2.2.5"
     karma-webpack: "npm:^5.0.0"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     long: "npm:^5.2.0"
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
@@ -2207,16 +2207,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@grpc/grpc-js@npm:1.4.4":
-  version: 1.4.4
-  resolution: "@grpc/grpc-js@npm:1.4.4"
-  dependencies:
-    "@grpc/proto-loader": "npm:^0.6.4"
-    "@types/node": "npm:>=12.12.47"
-  checksum: 10/9d9c1aad2257f1d1cc39b72ed3834e7c4c687f47c59912fbbe3629b9430e2f284f0eb1b1f0ee39628bf0b1359bfc3bba10313070c4d961d02f85ebeca76be20e
-  languageName: node
-  linkType: hard
-
 "@grpc/grpc-js@npm:^1.11.1":
   version: 1.13.2
   resolution: "@grpc/grpc-js@npm:1.13.2"
@@ -2227,6 +2217,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@grpc/grpc-js@npm:^1.14.3":
+  version: 1.14.3
+  resolution: "@grpc/grpc-js@npm:1.14.3"
+  dependencies:
+    "@grpc/proto-loader": "npm:^0.8.0"
+    "@js-sdsl/ordered-map": "npm:^4.4.2"
+  checksum: 10/bb9bfe2f749179ae5ac7774d30486dfa2e0b004518c28de158b248e0f6f65f40138f01635c48266fa540670220f850216726e3724e1eb29d078817581c96e4db
+  languageName: node
+  linkType: hard
+
 "@grpc/proto-loader@npm:^0.5.2":
   version: 0.5.6
   resolution: "@grpc/proto-loader@npm:0.5.6"
@@ -2234,21 +2234,6 @@ __metadata:
     lodash.camelcase: "npm:^4.3.0"
     protobufjs: "npm:^6.8.6"
   checksum: 10/f4021883c9243d76c2df407ef7916e33ea8ddb44b8a95d4db927f83f5b0c5b6e6b48500cade38540a169e45bb669b85093f29e325b78a3b8594fa039f89a8ef0
-  languageName: node
-  linkType: hard
-
-"@grpc/proto-loader@npm:^0.6.4":
-  version: 0.6.13
-  resolution: "@grpc/proto-loader@npm:0.6.13"
-  dependencies:
-    "@types/long": "npm:^4.0.1"
-    lodash.camelcase: "npm:^4.3.0"
-    long: "npm:^4.0.0"
-    protobufjs: "npm:^6.11.3"
-    yargs: "npm:^16.2.0"
-  bin:
-    proto-loader-gen-types: build/bin/proto-loader-gen-types.js
-  checksum: 10/a881bea00a1ab1c8d50e4bdf106c7e74f905121116fbcda91b9688548da1267edf1302bb754164a6f60ece82a949a28cefc503bfe058ffc1531dc26fa5188df3
   languageName: node
   linkType: hard
 
@@ -2263,6 +2248,20 @@ __metadata:
   bin:
     proto-loader-gen-types: build/bin/proto-loader-gen-types.js
   checksum: 10/7e2d842c2061cbaf6450c71da0077263be3bab165454d5c8a3e1ae4d3c6d2915f02fd27da63ff01f05e127b1221acd40705273f5d29303901e60514e852992f4
+  languageName: node
+  linkType: hard
+
+"@grpc/proto-loader@npm:^0.8.0":
+  version: 0.8.0
+  resolution: "@grpc/proto-loader@npm:0.8.0"
+  dependencies:
+    lodash.camelcase: "npm:^4.3.0"
+    long: "npm:^5.0.0"
+    protobufjs: "npm:^7.5.3"
+    yargs: "npm:^17.7.2"
+  bin:
+    proto-loader-gen-types: build/bin/proto-loader-gen-types.js
+  checksum: 10/216813bdca52cd3a84ac355ad93c2c3f54252be47327692fe666fd85baa5b1d50aa681ebc5626ab08926564fb2deae3b2ea435aa5bd883197650bbe56f2ae108
   languageName: node
   linkType: hard
 
@@ -3535,7 +3534,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:*, @types/node@npm:>=10.0.0, @types/node@npm:>=12.12.47, @types/node@npm:>=13.7.0, @types/node@npm:^18.11.11":
+"@types/node@npm:*, @types/node@npm:>=10.0.0, @types/node@npm:>=13.7.0, @types/node@npm:^18.11.11":
   version: 18.16.1
   resolution: "@types/node@npm:18.16.1"
   checksum: 10/d77a82fa404153804b916b31ea652507428a8076b447d4cbfe5da057fc3dd9abe26c2ac4b41d758d7287adaacc2d16a877e474105024b880aaaa2e193bebb356
@@ -6756,7 +6755,7 @@ __metadata:
     jayson: "npm:^4.1.0"
     js-yaml: "npm:^4.1.1"
     listr2: "npm:5.0.7"
-    lodash: "npm:^4.17.21"
+    lodash: "npm:^4.17.23"
     memory-streams: "npm:^0.1.3"
     mocha: "npm:^11.1.0"
     mocha-sinon: "npm:^2.1.2"
@@ -6773,7 +6772,7 @@ __metadata:
     sinon-chai: "npm:^3.7.0"
     systeminformation: "npm:^5.27.14"
     table: "npm:^6.8.1"
-    tar: "npm:7.4.3"
+    tar: "npm:7.5.4"
     wrap-ansi: "npm:^7.0.0"
   bin:
     dashmate: ./bin/run.js
@@ -7069,24 +7068,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"diff@npm:^4.0.1":
-  version: 4.0.2
-  resolution: "diff@npm:4.0.2"
-  checksum: 10/ec09ec2101934ca5966355a229d77afcad5911c92e2a77413efda5455636c4cf2ce84057e2d7715227a2eeeda04255b849bd3ae3a4dd22eb22e86e76456df069
+"diff@npm:4.0.4":
+  version: 4.0.4
+  resolution: "diff@npm:4.0.4"
+  checksum: 10/5019b3f5ae124ea9e95137119e1a83a59c252c75ddac873cc967832fd7a834570a58a4d58b941bdbd07832ebf98dcb232b27c561b7f5584357da6dae59bcac62
   languageName: node
   linkType: hard
 
-"diff@npm:^5.0.0, diff@npm:^5.1.0":
-  version: 5.1.0
-  resolution: "diff@npm:5.1.0"
-  checksum: 10/f4557032a98b2967fe27b1a91dfcf8ebb6b9a24b1afe616b5c2312465100b861e9b8d4da374be535f2d6b967ce2f53826d7f6edc2a0d32b2ab55abc96acc2f9d
-  languageName: node
-  linkType: hard
-
-"diff@npm:^5.2.0":
-  version: 5.2.0
-  resolution: "diff@npm:5.2.0"
-  checksum: 10/01b7b440f83a997350a988e9d2f558366c0f90f15be19f4aa7f1bb3109a4e153dfc3b9fbf78e14ea725717017407eeaa2271e3896374a0181e8f52445740846d
+"diff@npm:5.2.2, diff@npm:^5.0.0":
+  version: 5.2.2
+  resolution: "diff@npm:5.2.2"
+  checksum: 10/8a885b38113d96138d87f6cb474ee959b7e9ab33c0c4cb1b07dcf019ec544945a2309d53d721532af020de4b3a58fb89f1026f64f42f9421aa9c3ae48a36998b
   languageName: node
   linkType: hard
 
@@ -8482,7 +8474,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fs-minipass@npm:^2.0.0, fs-minipass@npm:^2.1.0":
+"fs-minipass@npm:^2.1.0":
   version: 2.1.0
   resolution: "fs-minipass@npm:2.1.0"
   dependencies:
@@ -8842,7 +8834,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"glob@npm:^10.3.7, glob@npm:^10.4.5":
+"glob@npm:^10.4.5":
   version: 10.4.5
   resolution: "glob@npm:10.4.5"
   dependencies:
@@ -10917,10 +10909,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash@npm:^4.17.10, lodash@npm:^4.17.11, lodash@npm:^4.17.15, lodash@npm:^4.17.19, lodash@npm:^4.17.20, lodash@npm:^4.17.21":
-  version: 4.17.21
-  resolution: "lodash@npm:4.17.21"
-  checksum: 10/c08619c038846ea6ac754abd6dd29d2568aa705feb69339e836dfa8d8b09abbb2f859371e86863eda41848221f9af43714491467b5b0299122431e202bb0c532
+"lodash@npm:^4.17.23":
+  version: 4.17.23
+  resolution: "lodash@npm:4.17.23"
+  checksum: 10/82504c88250f58da7a5a4289f57a4f759c44946c005dd232821c7688b5fcfbf4a6268f6a6cdde4b792c91edd2f3b5398c1d2a0998274432cff76def48735e233
   languageName: node
   linkType: hard
 
@@ -11364,13 +11356,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"micromatch@npm:^4.0.0, micromatch@npm:^4.0.2, micromatch@npm:^4.0.4":
-  version: 4.0.7
-  resolution: "micromatch@npm:4.0.7"
+"micromatch@npm:^4.0.8":
+  version: 4.0.8
+  resolution: "micromatch@npm:4.0.8"
   dependencies:
     braces: "npm:^3.0.3"
     picomatch: "npm:^2.3.1"
-  checksum: 10/a11ed1cb67dcbbe9a5fc02c4062cf8bb0157d73bf86956003af8dcfdf9b287f9e15ec0f6d6925ff6b8b5b496202335e497b01de4d95ef6cf06411bc5e5c474a0
+  checksum: 10/6bf2a01672e7965eb9941d1f02044fad2bd12486b5553dc1116ff24c09a8723157601dc992e74c911d896175918448762df3b3fd0a6b61037dd1a9766ddfbf58
   languageName: node
   linkType: hard
 
@@ -11620,7 +11612,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"minizlib@npm:^2.0.0, minizlib@npm:^2.1.1, minizlib@npm:^2.1.2":
+"minizlib@npm:^2.0.0, minizlib@npm:^2.1.2":
   version: 2.1.2
   resolution: "minizlib@npm:2.1.2"
   dependencies:
@@ -11630,13 +11622,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"minizlib@npm:^3.0.1":
-  version: 3.0.1
-  resolution: "minizlib@npm:3.0.1"
+"minizlib@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "minizlib@npm:3.1.0"
   dependencies:
-    minipass: "npm:^7.0.4"
-    rimraf: "npm:^5.0.5"
-  checksum: 10/622cb85f51e5c206a080a62d20db0d7b4066f308cb6ce82a9644da112367c3416ae7062017e631eb7ac8588191cfa4a9a279b8651c399265202b298e98c4acef
+    minipass: "npm:^7.1.2"
+  checksum: 10/f47365cc2cb7f078cbe7e046eb52655e2e7e97f8c0a9a674f4da60d94fb0624edfcec9b5db32e8ba5a99a5f036f595680ae6fe02a262beaa73026e505cc52f99
   languageName: node
   linkType: hard
 
@@ -11668,15 +11659,6 @@ __metadata:
   bin:
     mkdirp: bin/cmd.js
   checksum: 10/d71b8dcd4b5af2fe13ecf3bd24070263489404fe216488c5ba7e38ece1f54daf219e72a833a3a2dc404331e870e9f44963a33399589490956bff003a3404d3b2
-  languageName: node
-  linkType: hard
-
-"mkdirp@npm:^3.0.1":
-  version: 3.0.1
-  resolution: "mkdirp@npm:3.0.1"
-  bin:
-    mkdirp: dist/cjs/src/bin.js
-  checksum: 10/16fd79c28645759505914561e249b9a1f5fe3362279ad95487a4501e4467abeb714fd35b95307326b8fd03f3c7719065ef11a6f97b7285d7888306d1bd2232ba
   languageName: node
   linkType: hard
 
@@ -14071,17 +14053,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"rimraf@npm:^5.0.5":
-  version: 5.0.10
-  resolution: "rimraf@npm:5.0.10"
-  dependencies:
-    glob: "npm:^10.3.7"
-  bin:
-    rimraf: dist/esm/bin.mjs
-  checksum: 10/f3b8ce81eecbde4628b07bdf9e2fa8b684e0caea4999acb1e3b0402c695cd41f28cd075609a808e61ce2672f528ca079f675ab1d8e8d5f86d56643a03e0b8d2e
-  languageName: node
-  linkType: hard
-
 "ripemd160@npm:=2.0.1":
   version: 2.0.1
   resolution: "ripemd160@npm:2.0.1"
@@ -15380,31 +15351,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tar@npm:7.4.3":
-  version: 7.4.3
-  resolution: "tar@npm:7.4.3"
+"tar@npm:^7.5.4":
+  version: 7.5.6
+  resolution: "tar@npm:7.5.6"
   dependencies:
     "@isaacs/fs-minipass": "npm:^4.0.0"
     chownr: "npm:^3.0.0"
     minipass: "npm:^7.1.2"
-    minizlib: "npm:^3.0.1"
-    mkdirp: "npm:^3.0.1"
+    minizlib: "npm:^3.1.0"
     yallist: "npm:^5.0.0"
-  checksum: 10/12a2a4fc6dee23e07cc47f1aeb3a14a1afd3f16397e1350036a8f4cdfee8dcac7ef5978337a4e7b2ac2c27a9a6d46388fc2088ea7c80cb6878c814b1425f8ecf
-  languageName: node
-  linkType: hard
-
-"tar@npm:^6.0.5, tar@npm:^6.1.0, tar@npm:^6.1.11, tar@npm:^6.1.2":
-  version: 6.2.1
-  resolution: "tar@npm:6.2.1"
-  dependencies:
-    chownr: "npm:^2.0.0"
-    fs-minipass: "npm:^2.0.0"
-    minipass: "npm:^5.0.0"
-    minizlib: "npm:^2.1.1"
-    mkdirp: "npm:^1.0.3"
-    yallist: "npm:^4.0.0"
-  checksum: 10/bfbfbb2861888077fc1130b84029cdc2721efb93d1d1fb80f22a7ac3a98ec6f8972f29e564103bbebf5e97be67ebc356d37fa48dbc4960600a1eb7230fbd1ea0
+  checksum: 10/cf4a84d79b9327fcf765f2ea16de4702b9b8dd7dc6b1840b16e0f999628d96b81b2c7efbf83d4eb42b0164856f1db887a5a61ffef97d36cdb77cac742219f9ee
   languageName: node
   linkType: hard
 
