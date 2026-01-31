@@ -1,5 +1,5 @@
-import SwiftUI
 import SwiftDashSDK
+import SwiftUI
 
 struct KeysListView: View {
   struct IdentifiableInt: Identifiable { let id: Int }
@@ -419,6 +419,5 @@ struct CopiedToast: View {
       .padding(.bottom, 50)
   }
 }
-
 
 // Int Identifiable workaround removed; using wrapper type instead
