@@ -98,57 +98,62 @@ struct GlobalSyncIndicator: View {
     
     // Helpers
     private var phaseTitle: String {
-        let h = min(max(walletService.headerProgress, 0.0), 1.0)
-        let fh = min(max(walletService.filterHeaderProgress, 0.0), 1.0)
-        let f = min(max(walletService.transactionProgress, 0.0), 1.0)
-        if f > 0.0 && f < 1.0 { return "Filters (\(Int(f * 100))%)" }
-        if fh > 0.0 && fh < 1.0 { return "Filter Headers (\(Int(fh * 100))%)" }
-        if h < 1.0 { return "Headers (\(Int(h * 100))%)" }
-        return "Complete"
+        switch walletService.syncProgress.stage {
+        case .idle:
+            return "Idle"
+        case .downloading:
+            let h = Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight)
+            return "Block Headers (\(Int(h * 100))%)"
+        case .downloadingFilterHeaders:
+            let fh = Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight)
+            return "Filter Headers (\(Int(fh * 100))%)"
+        case .downloadingFilters:
+            let f = Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight)
+            return "Filters (\(Int(f * 100))%)"
+        case .complete:
+            return "Complete"
+        default:
+            return "Unexpected stage (\(walletService.syncProgress.stage))"
+        }
     }
 
     private var fillProgress: Double {
-        let h = min(max(walletService.headerProgress, 0.0), 1.0)
-        let fh = min(max(walletService.filterHeaderProgress, 0.0), 1.0)
-        let f = min(max(walletService.transactionProgress, 0.0), 1.0)
-
-        if f > 0.0 && f < 1.0 { return f }
-        if fh > 0.0 && fh < 1.0 { return fh }
-        if h < 1.0 { return h }
-        return 1.0
+        let h = Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight)
+        let fh = Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight)
+        let f = Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight)
+        
+        return (h + fh + f) / 3.0
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if walletService.detailedSyncProgress != nil {
-                if showDetails {
-                    HStack {
-                        Image(systemName: "arrow.triangle.2.circlepath")
+            if showDetails {
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                        .symbolEffect(.pulse)
+                    Text("Syncing: \(phaseTitle)")
+                        .font(.caption)
+                    Spacer()
+                    // No right-side numbers in the top bar per design
+                    Button(action: { walletService.stopSync() }) {
+                        Image(systemName: "xmark.circle.fill")
                             .font(.caption)
-                            .symbolEffect(.pulse)
-                        Text("Syncing: \(phaseTitle)")
-                            .font(.caption)
-                        Spacer()
-                        // No right-side numbers in the top bar per design
-                        Button(action: { walletService.stopSync() }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                            .foregroundColor(.secondary)
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                    .background(Material.thin)
                 }
-                // Thin progress bar always shown
-                GeometryReader { geometry in
-                    // Use current phase progress for the thin bar (filters → filter headers → headers)
-                    Rectangle()
-                        .fill(Color.blue)
-                        .frame(width: geometry.size.width * fillProgress)
-                }
-                .frame(height: 2)
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Material.thin)
             }
+            // Thin progress bar always shown
+            GeometryReader { geometry in
+                // Use current phase progress for the thin bar (filters → filter headers → headers)
+                Rectangle()
+                    .fill(Color.blue)
+                    .frame(width: geometry.size.width * fillProgress)
+            }
+            .frame(height: 2)
         }
         // When not showing details, don't intercept touches (so back buttons work)
         .allowsHitTesting(showDetails)

@@ -8,7 +8,7 @@ public class WalletManager {
     private let ownsHandle: Bool
     
     /// Create a new standalone wallet manager
-    /// Note: Consider using init(fromSPVClient:) instead if you have an SPV client
+    /// Note: Consider using SPVClient.getWalletManager() instead if you have an SPV client
     public init(network: KeyWalletNetwork = .mainnet,) throws {
         var error = FFIError()
       guard let managerHandle = wallet_manager_create(network.ffiValue, &error) else {
@@ -25,36 +25,9 @@ public class WalletManager {
         self.ownsHandle = true
     }
     
-    /// Create a wallet manager from an SPV client
-    /// - Parameter spvClient: The FFI SPV client handle to get the wallet manager from
-    public init(fromSPVClient spvClient: UnsafeMutablePointer<FFIDashSpvClient>) throws {
-        guard let managerHandle = dash_spv_ffi_client_get_wallet_manager(spvClient) else {
-            throw KeyWalletError.walletError("Failed to get wallet manager from SPV client")
-        }
-        
-        var error = FFIError()
-        let network = wallet_manager_network(managerHandle, &error)
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        // Check if there was an error
-        if error.code != FFIErrorCode(rawValue: 0) {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        self.handle = managerHandle
-        self.network = KeyWalletNetwork(ffiNetwork: network)
-        self.ownsHandle = true
-    }
-    
     /// Create a wallet manager wrapper from an existing handle (does not own the handle)
     /// - Parameter handle: The FFI wallet manager handle
     internal init(handle: UnsafeMutablePointer<FFIWalletManager>) throws {
-        
         var error = FFIError()
         let network = wallet_manager_network(handle, &error)
 

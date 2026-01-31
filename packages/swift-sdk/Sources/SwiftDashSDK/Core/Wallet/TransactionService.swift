@@ -13,12 +13,12 @@ class TransactionService: ObservableObject {
     
     private let walletManager: CoreWalletManager
     private let modelContainer: ModelContainer
-    private let spvClient: SPVClient?
+    private let spvClient: SPVClient<WalletService.SPVEventHandlerImpl>
 
     init(
         walletManager: CoreWalletManager,
         modelContainer: ModelContainer,
-        spvClient: SPVClient? = nil
+        spvClient: SPVClient<WalletService.SPVEventHandlerImpl>
     ) {
         self.walletManager = walletManager
         self.modelContainer = modelContainer
@@ -48,10 +48,6 @@ class TransactionService: ObservableObject {
     // MARK: - Transaction Broadcasting
     
     func broadcastTransaction(_ transaction: BuiltTransaction) async throws {
-        guard let _ = spvClient else {
-            throw TransactionError.invalidState
-        }
-        
         isBroadcasting = true
         defer { isBroadcasting = false }
         
@@ -120,8 +116,7 @@ class TransactionService: ObservableObject {
     // MARK: - SPV Integration
     
     public func syncWithSPV() async throws {
-        guard let spvClient = spvClient,
-              let wallet = walletManager.currentWallet else {
+        guard let wallet = walletManager.currentWallet else {
             return
         }
         

@@ -317,39 +317,6 @@ struct WalletInfoView: View {
                         }
                     }
                 }
-
-                // Sync From (per-network) Section
-                Section("Sync From (Block Height)") {
-                    // Show only enabled networks for clarity
-                    if mainnetEnabled {
-                        HStack {
-                            Text("Mainnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncBaseHeight))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if testnetEnabled {
-                        HStack {
-                            Text("Testnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncBaseHeight))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if devnetEnabled {
-                        HStack {
-                            Text("Devnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncBaseHeight))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if !mainnetEnabled && !testnetEnabled && !devnetEnabled {
-                        Text("No networks enabled")
-                            .foregroundColor(.secondary)
-                    }
-                }
                 
                 // Delete Wallet Section
                 Section {
