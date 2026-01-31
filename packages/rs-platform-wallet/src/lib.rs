@@ -3,6 +3,7 @@
 //! This crate provides a wallet implementation that combines traditional
 //! wallet functionality with Dash Platform identity management.
 
+use dashcore::prelude::CoreBlockHeight;
 use dashcore::Address as DashAddress;
 use dashcore::Transaction;
 use dpp::async_trait::async_trait;
@@ -14,9 +15,7 @@ use key_wallet::account::ManagedAccountCollection;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
-use key_wallet::wallet::immature_transaction::{
-    ImmatureTransaction, ImmatureTransactionCollection,
-};
+use key_wallet::wallet::immature_transaction::ImmatureTransactionCollection;
 use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::transaction_building::{
@@ -241,11 +240,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.set_description(description)
     }
 
-    fn birth_height(&self) -> u32 {
+    fn birth_height(&self) -> CoreBlockHeight {
         self.wallet_info.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: u32) {
+    fn set_birth_height(&mut self, height: CoreBlockHeight) {
         self.wallet_info.set_birth_height(height)
     }
 
@@ -270,11 +269,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
-        // Use the default trait implementation which filters utxos
-        self.utxos()
-            .into_iter()
-            .filter(|utxo| !utxo.is_locked && (utxo.is_confirmed || utxo.is_instantlocked))
-            .collect()
+        WalletInfoInterface::get_spendable_utxos(&self.wallet_info)
     }
 
     fn balance(&self) -> WalletBalance {
@@ -297,21 +292,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.accounts()
     }
 
-    fn process_matured_transactions(&mut self, current_height: u32) -> Vec<ImmatureTransaction> {
-        self.wallet_info
-            .process_matured_transactions(current_height)
-    }
-
-    fn add_immature_transaction(&mut self, tx: ImmatureTransaction) {
-        self.wallet_info.add_immature_transaction(tx)
-    }
-
     fn immature_transactions(&self) -> &ImmatureTransactionCollection {
         self.wallet_info.immature_transactions()
-    }
-
-    fn immature_balance(&self) -> u64 {
-        self.wallet_info.immature_balance()
     }
 
     fn create_unsigned_payment_transaction(
@@ -332,12 +314,31 @@ impl WalletInfoInterface for PlatformWalletInfo {
             current_block_height,
         )
     }
+
     fn update_chain_height(&mut self, current_height: u32) {
         self.wallet_info.update_chain_height(current_height)
     }
 
     fn network(&self) -> Network {
         self.wallet_info.network()
+    }
+
+    fn add_immature_transaction(
+        &mut self,
+        tx: key_wallet::wallet::immature_transaction::ImmatureTransaction,
+    ) {
+        self.wallet_info.add_immature_transaction(tx)
+    }
+
+    fn immature_balance(&self) -> u64 {
+        self.wallet_info.immature_balance()
+    }
+    fn process_matured_transactions(
+        &mut self,
+        current_height: u32,
+    ) -> Vec<key_wallet::wallet::immature_transaction::ImmatureTransaction> {
+        self.wallet_info
+            .process_matured_transactions(current_height)
     }
 }
 

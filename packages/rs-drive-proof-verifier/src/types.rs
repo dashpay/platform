@@ -333,7 +333,7 @@ impl PlatformVersionEncode for ContestedResources {
 
 #[cfg(feature = "mocks")]
 impl PlatformVersionedDecode for ContestedResources {
-    fn platform_versioned_decode<D: bincode::de::Decoder>(
+    fn platform_versioned_decode<D: bincode::de::Decoder<Context = ()>>(
         decoder: &mut D,
         platform_version: &platform_version::PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {
@@ -587,7 +587,7 @@ impl PlatformVersionEncode for MasternodeProtocolVote {
 
 #[cfg(feature = "mocks")]
 impl PlatformVersionedDecode for MasternodeProtocolVote {
-    fn platform_versioned_decode<D: bincode::de::Decoder>(
+    fn platform_versioned_decode<D: bincode::de::Decoder<Context = ()>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {

@@ -92,16 +92,18 @@ impl Encode for CoreScript {
 }
 
 // Implement the bincode::Decode trait for CoreScript
-impl Decode for CoreScript {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl<C> Decode<C> for CoreScript {
+    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let bytes = Vec::<u8>::decode(decoder)?;
         // Create a CoreScript instance using the decoded DashCoreScript
         Ok(CoreScript(ScriptBuf(bytes)))
     }
 }
 
-impl<'de> BorrowDecode<'de> for CoreScript {
-    fn borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl<'de, C> BorrowDecode<'de, C> for CoreScript {
+    fn borrow_decode<D: BorrowDecoder<'de, Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, DecodeError> {
         // Read the serialized bytes from the decoder into a Vec<u8>
         let mut bytes = Vec::new();
         loop {
