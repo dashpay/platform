@@ -72,7 +72,7 @@ impl<T> PlatformVersionedDecode for BinaryHeap<T>
 where
     T: PlatformVersionedDecode + Ord,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -94,7 +94,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for BinaryHeap<T>
 where
     T: PlatformVersionedBorrowDecode<'de> + Ord,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -135,7 +135,7 @@ where
     K: PlatformVersionedDecode + Ord,
     V: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -159,7 +159,7 @@ where
     K: PlatformVersionedBorrowDecode<'de> + Ord,
     V: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -202,7 +202,7 @@ impl<T> PlatformVersionedDecode for BTreeSet<T>
 where
     T: PlatformVersionedDecode + Ord,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -224,7 +224,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for BTreeSet<T>
 where
     T: PlatformVersionedBorrowDecode<'de> + Ord,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -264,7 +264,7 @@ impl<T> PlatformVersionedDecode for VecDeque<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -286,7 +286,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for VecDeque<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -326,7 +326,7 @@ impl<T> PlatformVersionedDecode for Vec<T>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -357,7 +357,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Vec<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -401,7 +401,7 @@ where
 }
 
 impl PlatformVersionedDecode for String {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -411,7 +411,7 @@ impl PlatformVersionedDecode for String {
 impl_platform_versioned_borrow_decode!(String);
 
 impl PlatformVersionedDecode for Box<str> {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -434,7 +434,7 @@ impl<T> PlatformVersionedDecode for Box<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -446,7 +446,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Box<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -472,7 +472,7 @@ impl<T> PlatformVersionedDecode for Box<[T]>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -485,7 +485,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Box<[T]>
 where
     T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -499,7 +499,7 @@ where
     T: ToOwned + ?Sized,
     <T as ToOwned>::Owned: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -512,7 +512,7 @@ where
     T: ToOwned + ?Sized,
     &'cow T: PlatformVersionedBorrowDecode<'cow>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'cow>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'cow, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -564,7 +564,7 @@ impl<T> PlatformVersionedDecode for Rc<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -577,7 +577,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -603,7 +603,7 @@ impl<T> PlatformVersionedDecode for Rc<[T]>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -616,7 +616,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<[T]>
 where
     T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -630,7 +630,7 @@ impl<T> PlatformVersionedDecode for Arc<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -641,7 +641,7 @@ where
 
 #[cfg(target_has_atomic = "ptr")]
 impl PlatformVersionedDecode for Arc<str> {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -654,7 +654,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -665,7 +665,7 @@ where
 
 #[cfg(target_has_atomic = "ptr")]
 impl<'de> PlatformVersionedBorrowDecode<'de> for Arc<str> {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -692,7 +692,7 @@ impl<T> PlatformVersionedDecode for Arc<[T]>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -706,7 +706,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<[T]>
 where
     T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {

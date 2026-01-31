@@ -68,7 +68,7 @@ unsafe fn dash_sdk_address_fetch_info_inner(
 
     // Convert address bytes to PlatformAddress
     let address_slice = std::slice::from_raw_parts(address_bytes, address_len);
-    
+
     // Log the address bytes for debugging
     let address_hex: String = address_slice.iter().map(|b| format!("{:02x}", b)).collect();
     tracing::debug!(address_hex = %address_hex, address_len = address_len, "Attempting to fetch address info");
@@ -80,7 +80,7 @@ unsafe fn dash_sdk_address_fetch_info_inner(
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 format!("Invalid address bytes (len={}): {}", address_len, e),
-            ))
+            ));
         }
     };
 

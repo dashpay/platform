@@ -295,6 +295,7 @@ pub struct NetworkStrategy {
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
     pub max_tx_bytes_per_block: u64,
+    pub max_addresses_to_choose_from_in_cache: Option<u32>,
     pub independent_process_proposal_verification: bool,
     pub sign_chain_locks: bool,
     pub sign_instant_locks: bool,
@@ -318,6 +319,7 @@ impl Default for NetworkStrategy {
             query_testing: None,
             verify_state_transition_results: false,
             max_tx_bytes_per_block: 44800,
+            max_addresses_to_choose_from_in_cache: Some(50),
             independent_process_proposal_verification: false,
             sign_chain_locks: false,
             sign_instant_locks: false,
@@ -1284,6 +1286,17 @@ impl NetworkStrategy {
                                 rng,
                                 platform_version,
                             ) else {
+                                tracing::debug!(
+                                    block_height = block_info.height,
+                                    ?amount_range,
+                                    available_to_spend = current_addresses_with_balance
+                                        .available_for_spending_count(),
+                                    max_available_balance =
+                                        current_addresses_with_balance.max_available_balance(),
+                                    committed = current_addresses_with_balance.committed_count(),
+                                    staged = current_addresses_with_balance.staged_count(),
+                                    "no funds for transfer"
+                                );
                                 // no funds left
                                 break;
                             };
@@ -2212,8 +2225,11 @@ impl NetworkStrategy {
             let output_amount = rng.gen_range(output_range.clone());
             let output_address = signer.add_random_address_key(rng);
             // Register the output address with balance
-            current_addresses_with_balance
-                .register_new_address(output_address.clone(), output_amount);
+            current_addresses_with_balance.register_new_address_keep_only_highest(
+                output_address.clone(),
+                output_amount,
+                self.max_addresses_to_choose_from_in_cache,
+            );
             (output_address, output_amount)
         });
 
@@ -2251,9 +2267,6 @@ impl NetworkStrategy {
         let inputs =
             current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
 
-        let fee_strategy = fee_strategy
-            .clone()
-            .unwrap_or(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
         tracing::debug!(?inputs, "Preparing address funds transfer transition");
 
         // Calculate total input amount (we'll distribute this among outputs)
@@ -2261,6 +2274,15 @@ impl NetworkStrategy {
 
         // Generate random number of outputs within the specified range
         let output_count = rng.gen_range(output_count_range.clone()).max(1) as usize;
+
+        // Generate fee strategy: if not provided, reduce from outputs sequentially
+        // Limited to 4 steps due to max_address_fee_strategies platform constraint
+        let fee_strategy = fee_strategy.clone().unwrap_or_else(|| {
+            let max_steps = output_count.min(4);
+            (0..max_steps as u16)
+                .map(AddressFundsFeeStrategyStep::ReduceOutput)
+                .collect()
+        });
 
         // Create output addresses and distribute funds evenly
         let amount_per_output = total_input / output_count as Credits;
@@ -2406,9 +2428,11 @@ impl NetworkStrategy {
             );
 
         let address = signer.add_random_address_key(rng);
-        current_addresses_with_balance
-            .addresses_in_block_with_new_balance
-            .insert(address, (0, funded_amount));
+        current_addresses_with_balance.register_new_address_keep_only_highest(
+            address,
+            funded_amount,
+            self.max_addresses_to_choose_from_in_cache,
+        );
         let mut outputs = BTreeMap::new();
         outputs.insert(address.clone(), None);
 

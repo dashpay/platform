@@ -81,7 +81,10 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits_to_addresses(
             };
             DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
-                format!("Panic during identity transfer to addresses: {}", panic_message),
+                format!(
+                    "Panic during identity transfer to addresses: {}",
+                    panic_message
+                ),
             ))
         }
     }

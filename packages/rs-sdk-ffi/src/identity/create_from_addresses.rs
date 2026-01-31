@@ -1,6 +1,8 @@
 //! Identity creation from addresses operations
 
-use dash_sdk::dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
+use dash_sdk::dpp::address_funds::{
+    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
+};
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::fee::Credits;
@@ -83,7 +85,10 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_addresses(
             };
             DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
-                format!("Panic during identity creation from addresses: {}", panic_message),
+                format!(
+                    "Panic during identity creation from addresses: {}",
+                    panic_message
+                ),
             ))
         }
     }
@@ -184,7 +189,10 @@ unsafe fn dash_sdk_identity_create_from_addresses_inner(
             // In a full implementation, we'd fetch it here
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
-                format!("Input {} requires non-zero nonce (auto-fetch not yet implemented)", i),
+                format!(
+                    "Input {} requires non-zero nonce (auto-fetch not yet implemented)",
+                    i
+                ),
             ));
         } else {
             AddressNonce::from(input.nonce)

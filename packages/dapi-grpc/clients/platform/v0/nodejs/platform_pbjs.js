@@ -1769,6 +1769,72 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getRecentAddressBalanceChanges}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getRecentAddressBalanceChangesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse} [response] GetRecentAddressBalanceChangesResponse
+                         */
+
+                        /**
+                         * Calls getRecentAddressBalanceChanges.
+                         * @function getRecentAddressBalanceChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesRequest} request GetRecentAddressBalanceChangesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getRecentAddressBalanceChangesCallback} callback Node-style callback called with the error, if any, and GetRecentAddressBalanceChangesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getRecentAddressBalanceChanges = function getRecentAddressBalanceChanges(request, callback) {
+                            return this.rpcCall(getRecentAddressBalanceChanges, $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest, $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse, request, callback);
+                        }, "name", { value: "getRecentAddressBalanceChanges" });
+
+                        /**
+                         * Calls getRecentAddressBalanceChanges.
+                         * @function getRecentAddressBalanceChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesRequest} request GetRecentAddressBalanceChangesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getRecentCompactedAddressBalanceChanges}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getRecentCompactedAddressBalanceChangesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse} [response] GetRecentCompactedAddressBalanceChangesResponse
+                         */
+
+                        /**
+                         * Calls getRecentCompactedAddressBalanceChanges.
+                         * @function getRecentCompactedAddressBalanceChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesRequest} request GetRecentCompactedAddressBalanceChangesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getRecentCompactedAddressBalanceChangesCallback} callback Node-style callback called with the error, if any, and GetRecentCompactedAddressBalanceChangesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getRecentCompactedAddressBalanceChanges = function getRecentCompactedAddressBalanceChanges(request, callback) {
+                            return this.rpcCall(getRecentCompactedAddressBalanceChanges, $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest, $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse, request, callback);
+                        }, "name", { value: "getRecentCompactedAddressBalanceChanges" });
+
+                        /**
+                         * Calls getRecentCompactedAddressBalanceChanges.
+                         * @function getRecentCompactedAddressBalanceChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesRequest} request GetRecentCompactedAddressBalanceChangesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -75192,6 +75258,744 @@ $root.org = (function() {
                         return AddressInfoEntries;
                     })();
 
+                    v0.AddressBalanceChange = (function() {
+
+                        /**
+                         * Properties of an AddressBalanceChange.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IAddressBalanceChange
+                         * @property {Uint8Array|null} [address] AddressBalanceChange address
+                         * @property {number|Long|null} [setBalance] AddressBalanceChange setBalance
+                         * @property {number|Long|null} [addToBalance] AddressBalanceChange addToBalance
+                         */
+
+                        /**
+                         * Constructs a new AddressBalanceChange.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents an AddressBalanceChange.
+                         * @implements IAddressBalanceChange
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceChange=} [properties] Properties to set
+                         */
+                        function AddressBalanceChange(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * AddressBalanceChange address.
+                         * @member {Uint8Array} address
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @instance
+                         */
+                        AddressBalanceChange.prototype.address = $util.newBuffer([]);
+
+                        /**
+                         * AddressBalanceChange setBalance.
+                         * @member {number|Long} setBalance
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @instance
+                         */
+                        AddressBalanceChange.prototype.setBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * AddressBalanceChange addToBalance.
+                         * @member {number|Long} addToBalance
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @instance
+                         */
+                        AddressBalanceChange.prototype.addToBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * AddressBalanceChange operation.
+                         * @member {"setBalance"|"addToBalance"|undefined} operation
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @instance
+                         */
+                        Object.defineProperty(AddressBalanceChange.prototype, "operation", {
+                            get: $util.oneOfGetter($oneOfFields = ["setBalance", "addToBalance"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new AddressBalanceChange instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceChange=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceChange} AddressBalanceChange instance
+                         */
+                        AddressBalanceChange.create = function create(properties) {
+                            return new AddressBalanceChange(properties);
+                        };
+
+                        /**
+                         * Encodes the specified AddressBalanceChange message. Does not implicitly {@link org.dash.platform.dapi.v0.AddressBalanceChange.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceChange} message AddressBalanceChange message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressBalanceChange.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.address != null && Object.hasOwnProperty.call(message, "address"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.address);
+                            if (message.setBalance != null && Object.hasOwnProperty.call(message, "setBalance"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.setBalance);
+                            if (message.addToBalance != null && Object.hasOwnProperty.call(message, "addToBalance"))
+                                writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.addToBalance);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified AddressBalanceChange message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.AddressBalanceChange.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceChange} message AddressBalanceChange message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressBalanceChange.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an AddressBalanceChange message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceChange} AddressBalanceChange
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressBalanceChange.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.AddressBalanceChange();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.address = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.setBalance = reader.uint64();
+                                    break;
+                                case 3:
+                                    message.addToBalance = reader.uint64();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an AddressBalanceChange message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceChange} AddressBalanceChange
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressBalanceChange.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an AddressBalanceChange message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        AddressBalanceChange.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                if (!(message.address && typeof message.address.length === "number" || $util.isString(message.address)))
+                                    return "address: buffer expected";
+                            if (message.setBalance != null && message.hasOwnProperty("setBalance")) {
+                                properties.operation = 1;
+                                if (!$util.isInteger(message.setBalance) && !(message.setBalance && $util.isInteger(message.setBalance.low) && $util.isInteger(message.setBalance.high)))
+                                    return "setBalance: integer|Long expected";
+                            }
+                            if (message.addToBalance != null && message.hasOwnProperty("addToBalance")) {
+                                if (properties.operation === 1)
+                                    return "operation: multiple values";
+                                properties.operation = 1;
+                                if (!$util.isInteger(message.addToBalance) && !(message.addToBalance && $util.isInteger(message.addToBalance.low) && $util.isInteger(message.addToBalance.high)))
+                                    return "addToBalance: integer|Long expected";
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates an AddressBalanceChange message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceChange} AddressBalanceChange
+                         */
+                        AddressBalanceChange.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.AddressBalanceChange)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.AddressBalanceChange();
+                            if (object.address != null)
+                                if (typeof object.address === "string")
+                                    $util.base64.decode(object.address, message.address = $util.newBuffer($util.base64.length(object.address)), 0);
+                                else if (object.address.length >= 0)
+                                    message.address = object.address;
+                            if (object.setBalance != null)
+                                if ($util.Long)
+                                    (message.setBalance = $util.Long.fromValue(object.setBalance)).unsigned = true;
+                                else if (typeof object.setBalance === "string")
+                                    message.setBalance = parseInt(object.setBalance, 10);
+                                else if (typeof object.setBalance === "number")
+                                    message.setBalance = object.setBalance;
+                                else if (typeof object.setBalance === "object")
+                                    message.setBalance = new $util.LongBits(object.setBalance.low >>> 0, object.setBalance.high >>> 0).toNumber(true);
+                            if (object.addToBalance != null)
+                                if ($util.Long)
+                                    (message.addToBalance = $util.Long.fromValue(object.addToBalance)).unsigned = true;
+                                else if (typeof object.addToBalance === "string")
+                                    message.addToBalance = parseInt(object.addToBalance, 10);
+                                else if (typeof object.addToBalance === "number")
+                                    message.addToBalance = object.addToBalance;
+                                else if (typeof object.addToBalance === "object")
+                                    message.addToBalance = new $util.LongBits(object.addToBalance.low >>> 0, object.addToBalance.high >>> 0).toNumber(true);
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an AddressBalanceChange message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.AddressBalanceChange} message AddressBalanceChange
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        AddressBalanceChange.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.address = "";
+                                else {
+                                    object.address = [];
+                                    if (options.bytes !== Array)
+                                        object.address = $util.newBuffer(object.address);
+                                }
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                object.address = options.bytes === String ? $util.base64.encode(message.address, 0, message.address.length) : options.bytes === Array ? Array.prototype.slice.call(message.address) : message.address;
+                            if (message.setBalance != null && message.hasOwnProperty("setBalance")) {
+                                if (typeof message.setBalance === "number")
+                                    object.setBalance = options.longs === String ? String(message.setBalance) : message.setBalance;
+                                else
+                                    object.setBalance = options.longs === String ? $util.Long.prototype.toString.call(message.setBalance) : options.longs === Number ? new $util.LongBits(message.setBalance.low >>> 0, message.setBalance.high >>> 0).toNumber(true) : message.setBalance;
+                                if (options.oneofs)
+                                    object.operation = "setBalance";
+                            }
+                            if (message.addToBalance != null && message.hasOwnProperty("addToBalance")) {
+                                if (typeof message.addToBalance === "number")
+                                    object.addToBalance = options.longs === String ? String(message.addToBalance) : message.addToBalance;
+                                else
+                                    object.addToBalance = options.longs === String ? $util.Long.prototype.toString.call(message.addToBalance) : options.longs === Number ? new $util.LongBits(message.addToBalance.low >>> 0, message.addToBalance.high >>> 0).toNumber(true) : message.addToBalance;
+                                if (options.oneofs)
+                                    object.operation = "addToBalance";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this AddressBalanceChange to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceChange
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        AddressBalanceChange.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return AddressBalanceChange;
+                    })();
+
+                    v0.BlockAddressBalanceChanges = (function() {
+
+                        /**
+                         * Properties of a BlockAddressBalanceChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IBlockAddressBalanceChanges
+                         * @property {number|Long|null} [blockHeight] BlockAddressBalanceChanges blockHeight
+                         * @property {Array.<org.dash.platform.dapi.v0.IAddressBalanceChange>|null} [changes] BlockAddressBalanceChanges changes
+                         */
+
+                        /**
+                         * Constructs a new BlockAddressBalanceChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a BlockAddressBalanceChanges.
+                         * @implements IBlockAddressBalanceChanges
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IBlockAddressBalanceChanges=} [properties] Properties to set
+                         */
+                        function BlockAddressBalanceChanges(properties) {
+                            this.changes = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * BlockAddressBalanceChanges blockHeight.
+                         * @member {number|Long} blockHeight
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @instance
+                         */
+                        BlockAddressBalanceChanges.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * BlockAddressBalanceChanges changes.
+                         * @member {Array.<org.dash.platform.dapi.v0.IAddressBalanceChange>} changes
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @instance
+                         */
+                        BlockAddressBalanceChanges.prototype.changes = $util.emptyArray;
+
+                        /**
+                         * Creates a new BlockAddressBalanceChanges instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockAddressBalanceChanges=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.BlockAddressBalanceChanges} BlockAddressBalanceChanges instance
+                         */
+                        BlockAddressBalanceChanges.create = function create(properties) {
+                            return new BlockAddressBalanceChanges(properties);
+                        };
+
+                        /**
+                         * Encodes the specified BlockAddressBalanceChanges message. Does not implicitly {@link org.dash.platform.dapi.v0.BlockAddressBalanceChanges.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockAddressBalanceChanges} message BlockAddressBalanceChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockAddressBalanceChanges.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.blockHeight);
+                            if (message.changes != null && message.changes.length)
+                                for (var i = 0; i < message.changes.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.AddressBalanceChange.encode(message.changes[i], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified BlockAddressBalanceChanges message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BlockAddressBalanceChanges.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockAddressBalanceChanges} message BlockAddressBalanceChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockAddressBalanceChanges.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a BlockAddressBalanceChanges message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.BlockAddressBalanceChanges} BlockAddressBalanceChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockAddressBalanceChanges.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.blockHeight = reader.uint64();
+                                    break;
+                                case 2:
+                                    if (!(message.changes && message.changes.length))
+                                        message.changes = [];
+                                    message.changes.push($root.org.dash.platform.dapi.v0.AddressBalanceChange.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a BlockAddressBalanceChanges message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.BlockAddressBalanceChanges} BlockAddressBalanceChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockAddressBalanceChanges.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a BlockAddressBalanceChanges message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        BlockAddressBalanceChanges.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                    return "blockHeight: integer|Long expected";
+                            if (message.changes != null && message.hasOwnProperty("changes")) {
+                                if (!Array.isArray(message.changes))
+                                    return "changes: array expected";
+                                for (var i = 0; i < message.changes.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.AddressBalanceChange.verify(message.changes[i]);
+                                    if (error)
+                                        return "changes." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a BlockAddressBalanceChanges message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.BlockAddressBalanceChanges} BlockAddressBalanceChanges
+                         */
+                        BlockAddressBalanceChanges.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges();
+                            if (object.blockHeight != null)
+                                if ($util.Long)
+                                    (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                else if (typeof object.blockHeight === "string")
+                                    message.blockHeight = parseInt(object.blockHeight, 10);
+                                else if (typeof object.blockHeight === "number")
+                                    message.blockHeight = object.blockHeight;
+                                else if (typeof object.blockHeight === "object")
+                                    message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                            if (object.changes) {
+                                if (!Array.isArray(object.changes))
+                                    throw TypeError(".org.dash.platform.dapi.v0.BlockAddressBalanceChanges.changes: array expected");
+                                message.changes = [];
+                                for (var i = 0; i < object.changes.length; ++i) {
+                                    if (typeof object.changes[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.BlockAddressBalanceChanges.changes: object expected");
+                                    message.changes[i] = $root.org.dash.platform.dapi.v0.AddressBalanceChange.fromObject(object.changes[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a BlockAddressBalanceChanges message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.BlockAddressBalanceChanges} message BlockAddressBalanceChanges
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        BlockAddressBalanceChanges.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.changes = [];
+                            if (options.defaults)
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.blockHeight = options.longs === String ? "0" : 0;
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (typeof message.blockHeight === "number")
+                                    object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                else
+                                    object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                            if (message.changes && message.changes.length) {
+                                object.changes = [];
+                                for (var j = 0; j < message.changes.length; ++j)
+                                    object.changes[j] = $root.org.dash.platform.dapi.v0.AddressBalanceChange.toObject(message.changes[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this BlockAddressBalanceChanges to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.BlockAddressBalanceChanges
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        BlockAddressBalanceChanges.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return BlockAddressBalanceChanges;
+                    })();
+
+                    v0.AddressBalanceUpdateEntries = (function() {
+
+                        /**
+                         * Properties of an AddressBalanceUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IAddressBalanceUpdateEntries
+                         * @property {Array.<org.dash.platform.dapi.v0.IBlockAddressBalanceChanges>|null} [blockChanges] AddressBalanceUpdateEntries blockChanges
+                         */
+
+                        /**
+                         * Constructs a new AddressBalanceUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents an AddressBalanceUpdateEntries.
+                         * @implements IAddressBalanceUpdateEntries
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceUpdateEntries=} [properties] Properties to set
+                         */
+                        function AddressBalanceUpdateEntries(properties) {
+                            this.blockChanges = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * AddressBalanceUpdateEntries blockChanges.
+                         * @member {Array.<org.dash.platform.dapi.v0.IBlockAddressBalanceChanges>} blockChanges
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @instance
+                         */
+                        AddressBalanceUpdateEntries.prototype.blockChanges = $util.emptyArray;
+
+                        /**
+                         * Creates a new AddressBalanceUpdateEntries instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceUpdateEntries=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceUpdateEntries} AddressBalanceUpdateEntries instance
+                         */
+                        AddressBalanceUpdateEntries.create = function create(properties) {
+                            return new AddressBalanceUpdateEntries(properties);
+                        };
+
+                        /**
+                         * Encodes the specified AddressBalanceUpdateEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceUpdateEntries} message AddressBalanceUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressBalanceUpdateEntries.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.blockChanges != null && message.blockChanges.length)
+                                for (var i = 0; i < message.blockChanges.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges.encode(message.blockChanges[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified AddressBalanceUpdateEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddressBalanceUpdateEntries} message AddressBalanceUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddressBalanceUpdateEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an AddressBalanceUpdateEntries message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceUpdateEntries} AddressBalanceUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressBalanceUpdateEntries.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.blockChanges && message.blockChanges.length))
+                                        message.blockChanges = [];
+                                    message.blockChanges.push($root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an AddressBalanceUpdateEntries message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceUpdateEntries} AddressBalanceUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddressBalanceUpdateEntries.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an AddressBalanceUpdateEntries message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        AddressBalanceUpdateEntries.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.blockChanges != null && message.hasOwnProperty("blockChanges")) {
+                                if (!Array.isArray(message.blockChanges))
+                                    return "blockChanges: array expected";
+                                for (var i = 0; i < message.blockChanges.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges.verify(message.blockChanges[i]);
+                                    if (error)
+                                        return "blockChanges." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates an AddressBalanceUpdateEntries message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.AddressBalanceUpdateEntries} AddressBalanceUpdateEntries
+                         */
+                        AddressBalanceUpdateEntries.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries();
+                            if (object.blockChanges) {
+                                if (!Array.isArray(object.blockChanges))
+                                    throw TypeError(".org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.blockChanges: array expected");
+                                message.blockChanges = [];
+                                for (var i = 0; i < object.blockChanges.length; ++i) {
+                                    if (typeof object.blockChanges[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.blockChanges: object expected");
+                                    message.blockChanges[i] = $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges.fromObject(object.blockChanges[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an AddressBalanceUpdateEntries message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.AddressBalanceUpdateEntries} message AddressBalanceUpdateEntries
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        AddressBalanceUpdateEntries.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.blockChanges = [];
+                            if (message.blockChanges && message.blockChanges.length) {
+                                object.blockChanges = [];
+                                for (var j = 0; j < message.blockChanges.length; ++j)
+                                    object.blockChanges[j] = $root.org.dash.platform.dapi.v0.BlockAddressBalanceChanges.toObject(message.blockChanges[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this AddressBalanceUpdateEntries to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.AddressBalanceUpdateEntries
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        AddressBalanceUpdateEntries.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return AddressBalanceUpdateEntries;
+                    })();
+
                     v0.GetAddressInfoResponse = (function() {
 
                         /**
@@ -77618,6 +78422,7 @@ $root.org = (function() {
                              * @interface IGetAddressesBranchStateRequestV0
                              * @property {Uint8Array|null} [key] GetAddressesBranchStateRequestV0 key
                              * @property {number|null} [depth] GetAddressesBranchStateRequestV0 depth
+                             * @property {number|Long|null} [checkpointHeight] GetAddressesBranchStateRequestV0 checkpointHeight
                              */
 
                             /**
@@ -77652,6 +78457,14 @@ $root.org = (function() {
                             GetAddressesBranchStateRequestV0.prototype.depth = 0;
 
                             /**
+                             * GetAddressesBranchStateRequestV0 checkpointHeight.
+                             * @member {number|Long} checkpointHeight
+                             * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
+                             * @instance
+                             */
+                            GetAddressesBranchStateRequestV0.prototype.checkpointHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
                              * Creates a new GetAddressesBranchStateRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0
@@ -77679,6 +78492,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.key);
                                 if (message.depth != null && Object.hasOwnProperty.call(message, "depth"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.depth);
+                                if (message.checkpointHeight != null && Object.hasOwnProperty.call(message, "checkpointHeight"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.checkpointHeight);
                                 return writer;
                             };
 
@@ -77718,6 +78533,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.depth = reader.uint32();
+                                        break;
+                                    case 3:
+                                        message.checkpointHeight = reader.uint64();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -77760,6 +78578,9 @@ $root.org = (function() {
                                 if (message.depth != null && message.hasOwnProperty("depth"))
                                     if (!$util.isInteger(message.depth))
                                         return "depth: integer expected";
+                                if (message.checkpointHeight != null && message.hasOwnProperty("checkpointHeight"))
+                                    if (!$util.isInteger(message.checkpointHeight) && !(message.checkpointHeight && $util.isInteger(message.checkpointHeight.low) && $util.isInteger(message.checkpointHeight.high)))
+                                        return "checkpointHeight: integer|Long expected";
                                 return null;
                             };
 
@@ -77782,6 +78603,15 @@ $root.org = (function() {
                                         message.key = object.key;
                                 if (object.depth != null)
                                     message.depth = object.depth >>> 0;
+                                if (object.checkpointHeight != null)
+                                    if ($util.Long)
+                                        (message.checkpointHeight = $util.Long.fromValue(object.checkpointHeight)).unsigned = true;
+                                    else if (typeof object.checkpointHeight === "string")
+                                        message.checkpointHeight = parseInt(object.checkpointHeight, 10);
+                                    else if (typeof object.checkpointHeight === "number")
+                                        message.checkpointHeight = object.checkpointHeight;
+                                    else if (typeof object.checkpointHeight === "object")
+                                        message.checkpointHeight = new $util.LongBits(object.checkpointHeight.low >>> 0, object.checkpointHeight.high >>> 0).toNumber(true);
                                 return message;
                             };
 
@@ -77807,11 +78637,21 @@ $root.org = (function() {
                                             object.key = $util.newBuffer(object.key);
                                     }
                                     object.depth = 0;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.checkpointHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.checkpointHeight = options.longs === String ? "0" : 0;
                                 }
                                 if (message.key != null && message.hasOwnProperty("key"))
                                     object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
                                 if (message.depth != null && message.hasOwnProperty("depth"))
                                     object.depth = message.depth;
+                                if (message.checkpointHeight != null && message.hasOwnProperty("checkpointHeight"))
+                                    if (typeof message.checkpointHeight === "number")
+                                        object.checkpointHeight = options.longs === String ? String(message.checkpointHeight) : message.checkpointHeight;
+                                    else
+                                        object.checkpointHeight = options.longs === String ? $util.Long.prototype.toString.call(message.checkpointHeight) : options.longs === Number ? new $util.LongBits(message.checkpointHeight.low >>> 0, message.checkpointHeight.high >>> 0).toNumber(true) : message.checkpointHeight;
                                 return object;
                             };
 
@@ -78237,6 +79077,3061 @@ $root.org = (function() {
                         })();
 
                         return GetAddressesBranchStateResponse;
+                    })();
+
+                    v0.GetRecentAddressBalanceChangesRequest = (function() {
+
+                        /**
+                         * Properties of a GetRecentAddressBalanceChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentAddressBalanceChangesRequest
+                         * @property {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.IGetRecentAddressBalanceChangesRequestV0|null} [v0] GetRecentAddressBalanceChangesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentAddressBalanceChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentAddressBalanceChangesRequest.
+                         * @implements IGetRecentAddressBalanceChangesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesRequest=} [properties] Properties to set
+                         */
+                        function GetRecentAddressBalanceChangesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentAddressBalanceChangesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.IGetRecentAddressBalanceChangesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @instance
+                         */
+                        GetRecentAddressBalanceChangesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentAddressBalanceChangesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentAddressBalanceChangesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentAddressBalanceChangesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest} GetRecentAddressBalanceChangesRequest instance
+                         */
+                        GetRecentAddressBalanceChangesRequest.create = function create(properties) {
+                            return new GetRecentAddressBalanceChangesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentAddressBalanceChangesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesRequest} message GetRecentAddressBalanceChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentAddressBalanceChangesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentAddressBalanceChangesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesRequest} message GetRecentAddressBalanceChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentAddressBalanceChangesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentAddressBalanceChangesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest} GetRecentAddressBalanceChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentAddressBalanceChangesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentAddressBalanceChangesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest} GetRecentAddressBalanceChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentAddressBalanceChangesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentAddressBalanceChangesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentAddressBalanceChangesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentAddressBalanceChangesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest} GetRecentAddressBalanceChangesRequest
+                         */
+                        GetRecentAddressBalanceChangesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentAddressBalanceChangesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest} message GetRecentAddressBalanceChangesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentAddressBalanceChangesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentAddressBalanceChangesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentAddressBalanceChangesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentAddressBalanceChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                             * @interface IGetRecentAddressBalanceChangesRequestV0
+                             * @property {number|Long|null} [startHeight] GetRecentAddressBalanceChangesRequestV0 startHeight
+                             * @property {boolean|null} [prove] GetRecentAddressBalanceChangesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetRecentAddressBalanceChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest
+                             * @classdesc Represents a GetRecentAddressBalanceChangesRequestV0.
+                             * @implements IGetRecentAddressBalanceChangesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.IGetRecentAddressBalanceChangesRequestV0=} [properties] Properties to set
+                             */
+                            function GetRecentAddressBalanceChangesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentAddressBalanceChangesRequestV0 startHeight.
+                             * @member {number|Long} startHeight
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.prototype.startHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetRecentAddressBalanceChangesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetRecentAddressBalanceChangesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.IGetRecentAddressBalanceChangesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0} GetRecentAddressBalanceChangesRequestV0 instance
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.create = function create(properties) {
+                                return new GetRecentAddressBalanceChangesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentAddressBalanceChangesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.IGetRecentAddressBalanceChangesRequestV0} message GetRecentAddressBalanceChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startHeight != null && Object.hasOwnProperty.call(message, "startHeight"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startHeight);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentAddressBalanceChangesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.IGetRecentAddressBalanceChangesRequestV0} message GetRecentAddressBalanceChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentAddressBalanceChangesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0} GetRecentAddressBalanceChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startHeight = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentAddressBalanceChangesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0} GetRecentAddressBalanceChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentAddressBalanceChangesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startHeight != null && message.hasOwnProperty("startHeight"))
+                                    if (!$util.isInteger(message.startHeight) && !(message.startHeight && $util.isInteger(message.startHeight.low) && $util.isInteger(message.startHeight.high)))
+                                        return "startHeight: integer|Long expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentAddressBalanceChangesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0} GetRecentAddressBalanceChangesRequestV0
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0();
+                                if (object.startHeight != null)
+                                    if ($util.Long)
+                                        (message.startHeight = $util.Long.fromValue(object.startHeight)).unsigned = true;
+                                    else if (typeof object.startHeight === "string")
+                                        message.startHeight = parseInt(object.startHeight, 10);
+                                    else if (typeof object.startHeight === "number")
+                                        message.startHeight = object.startHeight;
+                                    else if (typeof object.startHeight === "object")
+                                        message.startHeight = new $util.LongBits(object.startHeight.low >>> 0, object.startHeight.high >>> 0).toNumber(true);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentAddressBalanceChangesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0} message GetRecentAddressBalanceChangesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startHeight = options.longs === String ? "0" : 0;
+                                    object.prove = false;
+                                }
+                                if (message.startHeight != null && message.hasOwnProperty("startHeight"))
+                                    if (typeof message.startHeight === "number")
+                                        object.startHeight = options.longs === String ? String(message.startHeight) : message.startHeight;
+                                    else
+                                        object.startHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startHeight) : options.longs === Number ? new $util.LongBits(message.startHeight.low >>> 0, message.startHeight.high >>> 0).toNumber(true) : message.startHeight;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentAddressBalanceChangesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentAddressBalanceChangesRequestV0;
+                        })();
+
+                        return GetRecentAddressBalanceChangesRequest;
+                    })();
+
+                    v0.GetRecentAddressBalanceChangesResponse = (function() {
+
+                        /**
+                         * Properties of a GetRecentAddressBalanceChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentAddressBalanceChangesResponse
+                         * @property {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.IGetRecentAddressBalanceChangesResponseV0|null} [v0] GetRecentAddressBalanceChangesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentAddressBalanceChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentAddressBalanceChangesResponse.
+                         * @implements IGetRecentAddressBalanceChangesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesResponse=} [properties] Properties to set
+                         */
+                        function GetRecentAddressBalanceChangesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentAddressBalanceChangesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.IGetRecentAddressBalanceChangesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @instance
+                         */
+                        GetRecentAddressBalanceChangesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentAddressBalanceChangesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentAddressBalanceChangesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentAddressBalanceChangesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse} GetRecentAddressBalanceChangesResponse instance
+                         */
+                        GetRecentAddressBalanceChangesResponse.create = function create(properties) {
+                            return new GetRecentAddressBalanceChangesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentAddressBalanceChangesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesResponse} message GetRecentAddressBalanceChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentAddressBalanceChangesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentAddressBalanceChangesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentAddressBalanceChangesResponse} message GetRecentAddressBalanceChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentAddressBalanceChangesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentAddressBalanceChangesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse} GetRecentAddressBalanceChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentAddressBalanceChangesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentAddressBalanceChangesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse} GetRecentAddressBalanceChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentAddressBalanceChangesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentAddressBalanceChangesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentAddressBalanceChangesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentAddressBalanceChangesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse} GetRecentAddressBalanceChangesResponse
+                         */
+                        GetRecentAddressBalanceChangesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentAddressBalanceChangesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse} message GetRecentAddressBalanceChangesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentAddressBalanceChangesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentAddressBalanceChangesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentAddressBalanceChangesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentAddressBalanceChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                             * @interface IGetRecentAddressBalanceChangesResponseV0
+                             * @property {org.dash.platform.dapi.v0.IAddressBalanceUpdateEntries|null} [addressBalanceUpdateEntries] GetRecentAddressBalanceChangesResponseV0 addressBalanceUpdateEntries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetRecentAddressBalanceChangesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetRecentAddressBalanceChangesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetRecentAddressBalanceChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse
+                             * @classdesc Represents a GetRecentAddressBalanceChangesResponseV0.
+                             * @implements IGetRecentAddressBalanceChangesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.IGetRecentAddressBalanceChangesResponseV0=} [properties] Properties to set
+                             */
+                            function GetRecentAddressBalanceChangesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentAddressBalanceChangesResponseV0 addressBalanceUpdateEntries.
+                             * @member {org.dash.platform.dapi.v0.IAddressBalanceUpdateEntries|null|undefined} addressBalanceUpdateEntries
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.prototype.addressBalanceUpdateEntries = null;
+
+                            /**
+                             * GetRecentAddressBalanceChangesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetRecentAddressBalanceChangesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetRecentAddressBalanceChangesResponseV0 result.
+                             * @member {"addressBalanceUpdateEntries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetRecentAddressBalanceChangesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["addressBalanceUpdateEntries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetRecentAddressBalanceChangesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.IGetRecentAddressBalanceChangesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0} GetRecentAddressBalanceChangesResponseV0 instance
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.create = function create(properties) {
+                                return new GetRecentAddressBalanceChangesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentAddressBalanceChangesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.IGetRecentAddressBalanceChangesResponseV0} message GetRecentAddressBalanceChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.addressBalanceUpdateEntries != null && Object.hasOwnProperty.call(message, "addressBalanceUpdateEntries"))
+                                    $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.encode(message.addressBalanceUpdateEntries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentAddressBalanceChangesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.IGetRecentAddressBalanceChangesResponseV0} message GetRecentAddressBalanceChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentAddressBalanceChangesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0} GetRecentAddressBalanceChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.addressBalanceUpdateEntries = $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentAddressBalanceChangesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0} GetRecentAddressBalanceChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentAddressBalanceChangesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.addressBalanceUpdateEntries != null && message.hasOwnProperty("addressBalanceUpdateEntries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.verify(message.addressBalanceUpdateEntries);
+                                        if (error)
+                                            return "addressBalanceUpdateEntries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentAddressBalanceChangesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0} GetRecentAddressBalanceChangesResponseV0
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0();
+                                if (object.addressBalanceUpdateEntries != null) {
+                                    if (typeof object.addressBalanceUpdateEntries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.addressBalanceUpdateEntries: object expected");
+                                    message.addressBalanceUpdateEntries = $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.fromObject(object.addressBalanceUpdateEntries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentAddressBalanceChangesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0} message GetRecentAddressBalanceChangesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.addressBalanceUpdateEntries != null && message.hasOwnProperty("addressBalanceUpdateEntries")) {
+                                    object.addressBalanceUpdateEntries = $root.org.dash.platform.dapi.v0.AddressBalanceUpdateEntries.toObject(message.addressBalanceUpdateEntries, options);
+                                    if (options.oneofs)
+                                        object.result = "addressBalanceUpdateEntries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentAddressBalanceChangesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentAddressBalanceChangesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentAddressBalanceChangesResponseV0;
+                        })();
+
+                        return GetRecentAddressBalanceChangesResponse;
+                    })();
+
+                    v0.BlockHeightCreditEntry = (function() {
+
+                        /**
+                         * Properties of a BlockHeightCreditEntry.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IBlockHeightCreditEntry
+                         * @property {number|Long|null} [blockHeight] BlockHeightCreditEntry blockHeight
+                         * @property {number|Long|null} [credits] BlockHeightCreditEntry credits
+                         */
+
+                        /**
+                         * Constructs a new BlockHeightCreditEntry.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a BlockHeightCreditEntry.
+                         * @implements IBlockHeightCreditEntry
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry=} [properties] Properties to set
+                         */
+                        function BlockHeightCreditEntry(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * BlockHeightCreditEntry blockHeight.
+                         * @member {number|Long} blockHeight
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @instance
+                         */
+                        BlockHeightCreditEntry.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * BlockHeightCreditEntry credits.
+                         * @member {number|Long} credits
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @instance
+                         */
+                        BlockHeightCreditEntry.prototype.credits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * Creates a new BlockHeightCreditEntry instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry instance
+                         */
+                        BlockHeightCreditEntry.create = function create(properties) {
+                            return new BlockHeightCreditEntry(properties);
+                        };
+
+                        /**
+                         * Encodes the specified BlockHeightCreditEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.BlockHeightCreditEntry.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry} message BlockHeightCreditEntry message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockHeightCreditEntry.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.blockHeight);
+                            if (message.credits != null && Object.hasOwnProperty.call(message, "credits"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.credits);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified BlockHeightCreditEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BlockHeightCreditEntry.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockHeightCreditEntry} message BlockHeightCreditEntry message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockHeightCreditEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a BlockHeightCreditEntry message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockHeightCreditEntry.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.blockHeight = reader.uint64();
+                                    break;
+                                case 2:
+                                    message.credits = reader.uint64();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a BlockHeightCreditEntry message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockHeightCreditEntry.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a BlockHeightCreditEntry message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        BlockHeightCreditEntry.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                    return "blockHeight: integer|Long expected";
+                            if (message.credits != null && message.hasOwnProperty("credits"))
+                                if (!$util.isInteger(message.credits) && !(message.credits && $util.isInteger(message.credits.low) && $util.isInteger(message.credits.high)))
+                                    return "credits: integer|Long expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a BlockHeightCreditEntry message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.BlockHeightCreditEntry} BlockHeightCreditEntry
+                         */
+                        BlockHeightCreditEntry.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry();
+                            if (object.blockHeight != null)
+                                if ($util.Long)
+                                    (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                else if (typeof object.blockHeight === "string")
+                                    message.blockHeight = parseInt(object.blockHeight, 10);
+                                else if (typeof object.blockHeight === "number")
+                                    message.blockHeight = object.blockHeight;
+                                else if (typeof object.blockHeight === "object")
+                                    message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                            if (object.credits != null)
+                                if ($util.Long)
+                                    (message.credits = $util.Long.fromValue(object.credits)).unsigned = true;
+                                else if (typeof object.credits === "string")
+                                    message.credits = parseInt(object.credits, 10);
+                                else if (typeof object.credits === "number")
+                                    message.credits = object.credits;
+                                else if (typeof object.credits === "object")
+                                    message.credits = new $util.LongBits(object.credits.low >>> 0, object.credits.high >>> 0).toNumber(true);
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a BlockHeightCreditEntry message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.BlockHeightCreditEntry} message BlockHeightCreditEntry
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        BlockHeightCreditEntry.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.blockHeight = options.longs === String ? "0" : 0;
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.credits = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.credits = options.longs === String ? "0" : 0;
+                            }
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (typeof message.blockHeight === "number")
+                                    object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                else
+                                    object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                            if (message.credits != null && message.hasOwnProperty("credits"))
+                                if (typeof message.credits === "number")
+                                    object.credits = options.longs === String ? String(message.credits) : message.credits;
+                                else
+                                    object.credits = options.longs === String ? $util.Long.prototype.toString.call(message.credits) : options.longs === Number ? new $util.LongBits(message.credits.low >>> 0, message.credits.high >>> 0).toNumber(true) : message.credits;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this BlockHeightCreditEntry to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.BlockHeightCreditEntry
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        BlockHeightCreditEntry.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return BlockHeightCreditEntry;
+                    })();
+
+                    v0.CompactedAddressBalanceChange = (function() {
+
+                        /**
+                         * Properties of a CompactedAddressBalanceChange.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ICompactedAddressBalanceChange
+                         * @property {Uint8Array|null} [address] CompactedAddressBalanceChange address
+                         * @property {number|Long|null} [setCredits] CompactedAddressBalanceChange setCredits
+                         * @property {org.dash.platform.dapi.v0.IAddToCreditsOperations|null} [addToCreditsOperations] CompactedAddressBalanceChange addToCreditsOperations
+                         */
+
+                        /**
+                         * Constructs a new CompactedAddressBalanceChange.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a CompactedAddressBalanceChange.
+                         * @implements ICompactedAddressBalanceChange
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange=} [properties] Properties to set
+                         */
+                        function CompactedAddressBalanceChange(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * CompactedAddressBalanceChange address.
+                         * @member {Uint8Array} address
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        CompactedAddressBalanceChange.prototype.address = $util.newBuffer([]);
+
+                        /**
+                         * CompactedAddressBalanceChange setCredits.
+                         * @member {number|Long} setCredits
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        CompactedAddressBalanceChange.prototype.setCredits = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * CompactedAddressBalanceChange addToCreditsOperations.
+                         * @member {org.dash.platform.dapi.v0.IAddToCreditsOperations|null|undefined} addToCreditsOperations
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        CompactedAddressBalanceChange.prototype.addToCreditsOperations = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * CompactedAddressBalanceChange operation.
+                         * @member {"setCredits"|"addToCreditsOperations"|undefined} operation
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         */
+                        Object.defineProperty(CompactedAddressBalanceChange.prototype, "operation", {
+                            get: $util.oneOfGetter($oneOfFields = ["setCredits", "addToCreditsOperations"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new CompactedAddressBalanceChange instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange instance
+                         */
+                        CompactedAddressBalanceChange.create = function create(properties) {
+                            return new CompactedAddressBalanceChange(properties);
+                        };
+
+                        /**
+                         * Encodes the specified CompactedAddressBalanceChange message. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedAddressBalanceChange.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange} message CompactedAddressBalanceChange message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedAddressBalanceChange.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.address != null && Object.hasOwnProperty.call(message, "address"))
+                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.address);
+                            if (message.setCredits != null && Object.hasOwnProperty.call(message, "setCredits"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.setCredits);
+                            if (message.addToCreditsOperations != null && Object.hasOwnProperty.call(message, "addToCreditsOperations"))
+                                $root.org.dash.platform.dapi.v0.AddToCreditsOperations.encode(message.addToCreditsOperations, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified CompactedAddressBalanceChange message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedAddressBalanceChange.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceChange} message CompactedAddressBalanceChange message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedAddressBalanceChange.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a CompactedAddressBalanceChange message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedAddressBalanceChange.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.address = reader.bytes();
+                                    break;
+                                case 2:
+                                    message.setCredits = reader.uint64();
+                                    break;
+                                case 3:
+                                    message.addToCreditsOperations = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a CompactedAddressBalanceChange message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedAddressBalanceChange.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a CompactedAddressBalanceChange message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        CompactedAddressBalanceChange.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                if (!(message.address && typeof message.address.length === "number" || $util.isString(message.address)))
+                                    return "address: buffer expected";
+                            if (message.setCredits != null && message.hasOwnProperty("setCredits")) {
+                                properties.operation = 1;
+                                if (!$util.isInteger(message.setCredits) && !(message.setCredits && $util.isInteger(message.setCredits.low) && $util.isInteger(message.setCredits.high)))
+                                    return "setCredits: integer|Long expected";
+                            }
+                            if (message.addToCreditsOperations != null && message.hasOwnProperty("addToCreditsOperations")) {
+                                if (properties.operation === 1)
+                                    return "operation: multiple values";
+                                properties.operation = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.verify(message.addToCreditsOperations);
+                                    if (error)
+                                        return "addToCreditsOperations." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a CompactedAddressBalanceChange message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} CompactedAddressBalanceChange
+                         */
+                        CompactedAddressBalanceChange.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange();
+                            if (object.address != null)
+                                if (typeof object.address === "string")
+                                    $util.base64.decode(object.address, message.address = $util.newBuffer($util.base64.length(object.address)), 0);
+                                else if (object.address.length >= 0)
+                                    message.address = object.address;
+                            if (object.setCredits != null)
+                                if ($util.Long)
+                                    (message.setCredits = $util.Long.fromValue(object.setCredits)).unsigned = true;
+                                else if (typeof object.setCredits === "string")
+                                    message.setCredits = parseInt(object.setCredits, 10);
+                                else if (typeof object.setCredits === "number")
+                                    message.setCredits = object.setCredits;
+                                else if (typeof object.setCredits === "object")
+                                    message.setCredits = new $util.LongBits(object.setCredits.low >>> 0, object.setCredits.high >>> 0).toNumber(true);
+                            if (object.addToCreditsOperations != null) {
+                                if (typeof object.addToCreditsOperations !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.CompactedAddressBalanceChange.addToCreditsOperations: object expected");
+                                message.addToCreditsOperations = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.fromObject(object.addToCreditsOperations);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a CompactedAddressBalanceChange message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.CompactedAddressBalanceChange} message CompactedAddressBalanceChange
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        CompactedAddressBalanceChange.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                if (options.bytes === String)
+                                    object.address = "";
+                                else {
+                                    object.address = [];
+                                    if (options.bytes !== Array)
+                                        object.address = $util.newBuffer(object.address);
+                                }
+                            if (message.address != null && message.hasOwnProperty("address"))
+                                object.address = options.bytes === String ? $util.base64.encode(message.address, 0, message.address.length) : options.bytes === Array ? Array.prototype.slice.call(message.address) : message.address;
+                            if (message.setCredits != null && message.hasOwnProperty("setCredits")) {
+                                if (typeof message.setCredits === "number")
+                                    object.setCredits = options.longs === String ? String(message.setCredits) : message.setCredits;
+                                else
+                                    object.setCredits = options.longs === String ? $util.Long.prototype.toString.call(message.setCredits) : options.longs === Number ? new $util.LongBits(message.setCredits.low >>> 0, message.setCredits.high >>> 0).toNumber(true) : message.setCredits;
+                                if (options.oneofs)
+                                    object.operation = "setCredits";
+                            }
+                            if (message.addToCreditsOperations != null && message.hasOwnProperty("addToCreditsOperations")) {
+                                object.addToCreditsOperations = $root.org.dash.platform.dapi.v0.AddToCreditsOperations.toObject(message.addToCreditsOperations, options);
+                                if (options.oneofs)
+                                    object.operation = "addToCreditsOperations";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this CompactedAddressBalanceChange to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceChange
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        CompactedAddressBalanceChange.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return CompactedAddressBalanceChange;
+                    })();
+
+                    v0.AddToCreditsOperations = (function() {
+
+                        /**
+                         * Properties of an AddToCreditsOperations.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IAddToCreditsOperations
+                         * @property {Array.<org.dash.platform.dapi.v0.IBlockHeightCreditEntry>|null} [entries] AddToCreditsOperations entries
+                         */
+
+                        /**
+                         * Constructs a new AddToCreditsOperations.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents an AddToCreditsOperations.
+                         * @implements IAddToCreditsOperations
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations=} [properties] Properties to set
+                         */
+                        function AddToCreditsOperations(properties) {
+                            this.entries = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * AddToCreditsOperations entries.
+                         * @member {Array.<org.dash.platform.dapi.v0.IBlockHeightCreditEntry>} entries
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @instance
+                         */
+                        AddToCreditsOperations.prototype.entries = $util.emptyArray;
+
+                        /**
+                         * Creates a new AddToCreditsOperations instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations instance
+                         */
+                        AddToCreditsOperations.create = function create(properties) {
+                            return new AddToCreditsOperations(properties);
+                        };
+
+                        /**
+                         * Encodes the specified AddToCreditsOperations message. Does not implicitly {@link org.dash.platform.dapi.v0.AddToCreditsOperations.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations} message AddToCreditsOperations message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddToCreditsOperations.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.entries != null && message.entries.length)
+                                for (var i = 0; i < message.entries.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified AddToCreditsOperations message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.AddToCreditsOperations.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IAddToCreditsOperations} message AddToCreditsOperations message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        AddToCreditsOperations.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes an AddToCreditsOperations message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddToCreditsOperations.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.AddToCreditsOperations();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.entries && message.entries.length))
+                                        message.entries = [];
+                                    message.entries.push($root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes an AddToCreditsOperations message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        AddToCreditsOperations.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies an AddToCreditsOperations message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        AddToCreditsOperations.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.entries != null && message.hasOwnProperty("entries")) {
+                                if (!Array.isArray(message.entries))
+                                    return "entries: array expected";
+                                for (var i = 0; i < message.entries.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.verify(message.entries[i]);
+                                    if (error)
+                                        return "entries." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates an AddToCreditsOperations message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.AddToCreditsOperations} AddToCreditsOperations
+                         */
+                        AddToCreditsOperations.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.AddToCreditsOperations)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.AddToCreditsOperations();
+                            if (object.entries) {
+                                if (!Array.isArray(object.entries))
+                                    throw TypeError(".org.dash.platform.dapi.v0.AddToCreditsOperations.entries: array expected");
+                                message.entries = [];
+                                for (var i = 0; i < object.entries.length; ++i) {
+                                    if (typeof object.entries[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.AddToCreditsOperations.entries: object expected");
+                                    message.entries[i] = $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.fromObject(object.entries[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from an AddToCreditsOperations message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.AddToCreditsOperations} message AddToCreditsOperations
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        AddToCreditsOperations.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.entries = [];
+                            if (message.entries && message.entries.length) {
+                                object.entries = [];
+                                for (var j = 0; j < message.entries.length; ++j)
+                                    object.entries[j] = $root.org.dash.platform.dapi.v0.BlockHeightCreditEntry.toObject(message.entries[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this AddToCreditsOperations to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.AddToCreditsOperations
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        AddToCreditsOperations.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return AddToCreditsOperations;
+                    })();
+
+                    v0.CompactedBlockAddressBalanceChanges = (function() {
+
+                        /**
+                         * Properties of a CompactedBlockAddressBalanceChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ICompactedBlockAddressBalanceChanges
+                         * @property {number|Long|null} [startBlockHeight] CompactedBlockAddressBalanceChanges startBlockHeight
+                         * @property {number|Long|null} [endBlockHeight] CompactedBlockAddressBalanceChanges endBlockHeight
+                         * @property {Array.<org.dash.platform.dapi.v0.ICompactedAddressBalanceChange>|null} [changes] CompactedBlockAddressBalanceChanges changes
+                         */
+
+                        /**
+                         * Constructs a new CompactedBlockAddressBalanceChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a CompactedBlockAddressBalanceChanges.
+                         * @implements ICompactedBlockAddressBalanceChanges
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockAddressBalanceChanges=} [properties] Properties to set
+                         */
+                        function CompactedBlockAddressBalanceChanges(properties) {
+                            this.changes = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * CompactedBlockAddressBalanceChanges startBlockHeight.
+                         * @member {number|Long} startBlockHeight
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @instance
+                         */
+                        CompactedBlockAddressBalanceChanges.prototype.startBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * CompactedBlockAddressBalanceChanges endBlockHeight.
+                         * @member {number|Long} endBlockHeight
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @instance
+                         */
+                        CompactedBlockAddressBalanceChanges.prototype.endBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * CompactedBlockAddressBalanceChanges changes.
+                         * @member {Array.<org.dash.platform.dapi.v0.ICompactedAddressBalanceChange>} changes
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @instance
+                         */
+                        CompactedBlockAddressBalanceChanges.prototype.changes = $util.emptyArray;
+
+                        /**
+                         * Creates a new CompactedBlockAddressBalanceChanges instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockAddressBalanceChanges=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges} CompactedBlockAddressBalanceChanges instance
+                         */
+                        CompactedBlockAddressBalanceChanges.create = function create(properties) {
+                            return new CompactedBlockAddressBalanceChanges(properties);
+                        };
+
+                        /**
+                         * Encodes the specified CompactedBlockAddressBalanceChanges message. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockAddressBalanceChanges} message CompactedBlockAddressBalanceChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedBlockAddressBalanceChanges.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.startBlockHeight != null && Object.hasOwnProperty.call(message, "startBlockHeight"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startBlockHeight);
+                            if (message.endBlockHeight != null && Object.hasOwnProperty.call(message, "endBlockHeight"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.endBlockHeight);
+                            if (message.changes != null && message.changes.length)
+                                for (var i = 0; i < message.changes.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.encode(message.changes[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified CompactedBlockAddressBalanceChanges message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockAddressBalanceChanges} message CompactedBlockAddressBalanceChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedBlockAddressBalanceChanges.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a CompactedBlockAddressBalanceChanges message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges} CompactedBlockAddressBalanceChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedBlockAddressBalanceChanges.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.startBlockHeight = reader.uint64();
+                                    break;
+                                case 2:
+                                    message.endBlockHeight = reader.uint64();
+                                    break;
+                                case 3:
+                                    if (!(message.changes && message.changes.length))
+                                        message.changes = [];
+                                    message.changes.push($root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a CompactedBlockAddressBalanceChanges message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges} CompactedBlockAddressBalanceChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedBlockAddressBalanceChanges.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a CompactedBlockAddressBalanceChanges message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        CompactedBlockAddressBalanceChanges.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                if (!$util.isInteger(message.startBlockHeight) && !(message.startBlockHeight && $util.isInteger(message.startBlockHeight.low) && $util.isInteger(message.startBlockHeight.high)))
+                                    return "startBlockHeight: integer|Long expected";
+                            if (message.endBlockHeight != null && message.hasOwnProperty("endBlockHeight"))
+                                if (!$util.isInteger(message.endBlockHeight) && !(message.endBlockHeight && $util.isInteger(message.endBlockHeight.low) && $util.isInteger(message.endBlockHeight.high)))
+                                    return "endBlockHeight: integer|Long expected";
+                            if (message.changes != null && message.hasOwnProperty("changes")) {
+                                if (!Array.isArray(message.changes))
+                                    return "changes: array expected";
+                                for (var i = 0; i < message.changes.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.verify(message.changes[i]);
+                                    if (error)
+                                        return "changes." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a CompactedBlockAddressBalanceChanges message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges} CompactedBlockAddressBalanceChanges
+                         */
+                        CompactedBlockAddressBalanceChanges.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges();
+                            if (object.startBlockHeight != null)
+                                if ($util.Long)
+                                    (message.startBlockHeight = $util.Long.fromValue(object.startBlockHeight)).unsigned = true;
+                                else if (typeof object.startBlockHeight === "string")
+                                    message.startBlockHeight = parseInt(object.startBlockHeight, 10);
+                                else if (typeof object.startBlockHeight === "number")
+                                    message.startBlockHeight = object.startBlockHeight;
+                                else if (typeof object.startBlockHeight === "object")
+                                    message.startBlockHeight = new $util.LongBits(object.startBlockHeight.low >>> 0, object.startBlockHeight.high >>> 0).toNumber(true);
+                            if (object.endBlockHeight != null)
+                                if ($util.Long)
+                                    (message.endBlockHeight = $util.Long.fromValue(object.endBlockHeight)).unsigned = true;
+                                else if (typeof object.endBlockHeight === "string")
+                                    message.endBlockHeight = parseInt(object.endBlockHeight, 10);
+                                else if (typeof object.endBlockHeight === "number")
+                                    message.endBlockHeight = object.endBlockHeight;
+                                else if (typeof object.endBlockHeight === "object")
+                                    message.endBlockHeight = new $util.LongBits(object.endBlockHeight.low >>> 0, object.endBlockHeight.high >>> 0).toNumber(true);
+                            if (object.changes) {
+                                if (!Array.isArray(object.changes))
+                                    throw TypeError(".org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.changes: array expected");
+                                message.changes = [];
+                                for (var i = 0; i < object.changes.length; ++i) {
+                                    if (typeof object.changes[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.changes: object expected");
+                                    message.changes[i] = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.fromObject(object.changes[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a CompactedBlockAddressBalanceChanges message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges} message CompactedBlockAddressBalanceChanges
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        CompactedBlockAddressBalanceChanges.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.changes = [];
+                            if (options.defaults) {
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.startBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.startBlockHeight = options.longs === String ? "0" : 0;
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.endBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.endBlockHeight = options.longs === String ? "0" : 0;
+                            }
+                            if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                if (typeof message.startBlockHeight === "number")
+                                    object.startBlockHeight = options.longs === String ? String(message.startBlockHeight) : message.startBlockHeight;
+                                else
+                                    object.startBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startBlockHeight) : options.longs === Number ? new $util.LongBits(message.startBlockHeight.low >>> 0, message.startBlockHeight.high >>> 0).toNumber(true) : message.startBlockHeight;
+                            if (message.endBlockHeight != null && message.hasOwnProperty("endBlockHeight"))
+                                if (typeof message.endBlockHeight === "number")
+                                    object.endBlockHeight = options.longs === String ? String(message.endBlockHeight) : message.endBlockHeight;
+                                else
+                                    object.endBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.endBlockHeight) : options.longs === Number ? new $util.LongBits(message.endBlockHeight.low >>> 0, message.endBlockHeight.high >>> 0).toNumber(true) : message.endBlockHeight;
+                            if (message.changes && message.changes.length) {
+                                object.changes = [];
+                                for (var j = 0; j < message.changes.length; ++j)
+                                    object.changes[j] = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.toObject(message.changes[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this CompactedBlockAddressBalanceChanges to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        CompactedBlockAddressBalanceChanges.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return CompactedBlockAddressBalanceChanges;
+                    })();
+
+                    v0.CompactedAddressBalanceUpdateEntries = (function() {
+
+                        /**
+                         * Properties of a CompactedAddressBalanceUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ICompactedAddressBalanceUpdateEntries
+                         * @property {Array.<org.dash.platform.dapi.v0.ICompactedBlockAddressBalanceChanges>|null} [compactedBlockChanges] CompactedAddressBalanceUpdateEntries compactedBlockChanges
+                         */
+
+                        /**
+                         * Constructs a new CompactedAddressBalanceUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a CompactedAddressBalanceUpdateEntries.
+                         * @implements ICompactedAddressBalanceUpdateEntries
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceUpdateEntries=} [properties] Properties to set
+                         */
+                        function CompactedAddressBalanceUpdateEntries(properties) {
+                            this.compactedBlockChanges = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * CompactedAddressBalanceUpdateEntries compactedBlockChanges.
+                         * @member {Array.<org.dash.platform.dapi.v0.ICompactedBlockAddressBalanceChanges>} compactedBlockChanges
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @instance
+                         */
+                        CompactedAddressBalanceUpdateEntries.prototype.compactedBlockChanges = $util.emptyArray;
+
+                        /**
+                         * Creates a new CompactedAddressBalanceUpdateEntries instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceUpdateEntries=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries} CompactedAddressBalanceUpdateEntries instance
+                         */
+                        CompactedAddressBalanceUpdateEntries.create = function create(properties) {
+                            return new CompactedAddressBalanceUpdateEntries(properties);
+                        };
+
+                        /**
+                         * Encodes the specified CompactedAddressBalanceUpdateEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceUpdateEntries} message CompactedAddressBalanceUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedAddressBalanceUpdateEntries.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.compactedBlockChanges != null && message.compactedBlockChanges.length)
+                                for (var i = 0; i < message.compactedBlockChanges.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.encode(message.compactedBlockChanges[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified CompactedAddressBalanceUpdateEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedAddressBalanceUpdateEntries} message CompactedAddressBalanceUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedAddressBalanceUpdateEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a CompactedAddressBalanceUpdateEntries message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries} CompactedAddressBalanceUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedAddressBalanceUpdateEntries.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.compactedBlockChanges && message.compactedBlockChanges.length))
+                                        message.compactedBlockChanges = [];
+                                    message.compactedBlockChanges.push($root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a CompactedAddressBalanceUpdateEntries message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries} CompactedAddressBalanceUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedAddressBalanceUpdateEntries.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a CompactedAddressBalanceUpdateEntries message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        CompactedAddressBalanceUpdateEntries.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.compactedBlockChanges != null && message.hasOwnProperty("compactedBlockChanges")) {
+                                if (!Array.isArray(message.compactedBlockChanges))
+                                    return "compactedBlockChanges: array expected";
+                                for (var i = 0; i < message.compactedBlockChanges.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.verify(message.compactedBlockChanges[i]);
+                                    if (error)
+                                        return "compactedBlockChanges." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a CompactedAddressBalanceUpdateEntries message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries} CompactedAddressBalanceUpdateEntries
+                         */
+                        CompactedAddressBalanceUpdateEntries.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries();
+                            if (object.compactedBlockChanges) {
+                                if (!Array.isArray(object.compactedBlockChanges))
+                                    throw TypeError(".org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.compactedBlockChanges: array expected");
+                                message.compactedBlockChanges = [];
+                                for (var i = 0; i < object.compactedBlockChanges.length; ++i) {
+                                    if (typeof object.compactedBlockChanges[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.compactedBlockChanges: object expected");
+                                    message.compactedBlockChanges[i] = $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.fromObject(object.compactedBlockChanges[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a CompactedAddressBalanceUpdateEntries message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries} message CompactedAddressBalanceUpdateEntries
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        CompactedAddressBalanceUpdateEntries.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.compactedBlockChanges = [];
+                            if (message.compactedBlockChanges && message.compactedBlockChanges.length) {
+                                object.compactedBlockChanges = [];
+                                for (var j = 0; j < message.compactedBlockChanges.length; ++j)
+                                    object.compactedBlockChanges[j] = $root.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges.toObject(message.compactedBlockChanges[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this CompactedAddressBalanceUpdateEntries to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        CompactedAddressBalanceUpdateEntries.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return CompactedAddressBalanceUpdateEntries;
+                    })();
+
+                    v0.GetRecentCompactedAddressBalanceChangesRequest = (function() {
+
+                        /**
+                         * Properties of a GetRecentCompactedAddressBalanceChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentCompactedAddressBalanceChangesRequest
+                         * @property {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.IGetRecentCompactedAddressBalanceChangesRequestV0|null} [v0] GetRecentCompactedAddressBalanceChangesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentCompactedAddressBalanceChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentCompactedAddressBalanceChangesRequest.
+                         * @implements IGetRecentCompactedAddressBalanceChangesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesRequest=} [properties] Properties to set
+                         */
+                        function GetRecentCompactedAddressBalanceChangesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentCompactedAddressBalanceChangesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.IGetRecentCompactedAddressBalanceChangesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @instance
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentCompactedAddressBalanceChangesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentCompactedAddressBalanceChangesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentCompactedAddressBalanceChangesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest} GetRecentCompactedAddressBalanceChangesRequest instance
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.create = function create(properties) {
+                            return new GetRecentCompactedAddressBalanceChangesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedAddressBalanceChangesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesRequest} message GetRecentCompactedAddressBalanceChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedAddressBalanceChangesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesRequest} message GetRecentCompactedAddressBalanceChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedAddressBalanceChangesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest} GetRecentCompactedAddressBalanceChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedAddressBalanceChangesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest} GetRecentCompactedAddressBalanceChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentCompactedAddressBalanceChangesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentCompactedAddressBalanceChangesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest} GetRecentCompactedAddressBalanceChangesRequest
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentCompactedAddressBalanceChangesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest} message GetRecentCompactedAddressBalanceChangesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentCompactedAddressBalanceChangesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentCompactedAddressBalanceChangesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentCompactedAddressBalanceChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                             * @interface IGetRecentCompactedAddressBalanceChangesRequestV0
+                             * @property {number|Long|null} [startBlockHeight] GetRecentCompactedAddressBalanceChangesRequestV0 startBlockHeight
+                             * @property {boolean|null} [prove] GetRecentCompactedAddressBalanceChangesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetRecentCompactedAddressBalanceChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest
+                             * @classdesc Represents a GetRecentCompactedAddressBalanceChangesRequestV0.
+                             * @implements IGetRecentCompactedAddressBalanceChangesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.IGetRecentCompactedAddressBalanceChangesRequestV0=} [properties] Properties to set
+                             */
+                            function GetRecentCompactedAddressBalanceChangesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentCompactedAddressBalanceChangesRequestV0 startBlockHeight.
+                             * @member {number|Long} startBlockHeight
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.prototype.startBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetRecentCompactedAddressBalanceChangesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetRecentCompactedAddressBalanceChangesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.IGetRecentCompactedAddressBalanceChangesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0} GetRecentCompactedAddressBalanceChangesRequestV0 instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.create = function create(properties) {
+                                return new GetRecentCompactedAddressBalanceChangesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedAddressBalanceChangesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.IGetRecentCompactedAddressBalanceChangesRequestV0} message GetRecentCompactedAddressBalanceChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startBlockHeight != null && Object.hasOwnProperty.call(message, "startBlockHeight"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startBlockHeight);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedAddressBalanceChangesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.IGetRecentCompactedAddressBalanceChangesRequestV0} message GetRecentCompactedAddressBalanceChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedAddressBalanceChangesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0} GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startBlockHeight = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedAddressBalanceChangesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0} GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentCompactedAddressBalanceChangesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                    if (!$util.isInteger(message.startBlockHeight) && !(message.startBlockHeight && $util.isInteger(message.startBlockHeight.low) && $util.isInteger(message.startBlockHeight.high)))
+                                        return "startBlockHeight: integer|Long expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentCompactedAddressBalanceChangesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0} GetRecentCompactedAddressBalanceChangesRequestV0
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0();
+                                if (object.startBlockHeight != null)
+                                    if ($util.Long)
+                                        (message.startBlockHeight = $util.Long.fromValue(object.startBlockHeight)).unsigned = true;
+                                    else if (typeof object.startBlockHeight === "string")
+                                        message.startBlockHeight = parseInt(object.startBlockHeight, 10);
+                                    else if (typeof object.startBlockHeight === "number")
+                                        message.startBlockHeight = object.startBlockHeight;
+                                    else if (typeof object.startBlockHeight === "object")
+                                        message.startBlockHeight = new $util.LongBits(object.startBlockHeight.low >>> 0, object.startBlockHeight.high >>> 0).toNumber(true);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentCompactedAddressBalanceChangesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0} message GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startBlockHeight = options.longs === String ? "0" : 0;
+                                    object.prove = false;
+                                }
+                                if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                    if (typeof message.startBlockHeight === "number")
+                                        object.startBlockHeight = options.longs === String ? String(message.startBlockHeight) : message.startBlockHeight;
+                                    else
+                                        object.startBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startBlockHeight) : options.longs === Number ? new $util.LongBits(message.startBlockHeight.low >>> 0, message.startBlockHeight.high >>> 0).toNumber(true) : message.startBlockHeight;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentCompactedAddressBalanceChangesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentCompactedAddressBalanceChangesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentCompactedAddressBalanceChangesRequestV0;
+                        })();
+
+                        return GetRecentCompactedAddressBalanceChangesRequest;
+                    })();
+
+                    v0.GetRecentCompactedAddressBalanceChangesResponse = (function() {
+
+                        /**
+                         * Properties of a GetRecentCompactedAddressBalanceChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentCompactedAddressBalanceChangesResponse
+                         * @property {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.IGetRecentCompactedAddressBalanceChangesResponseV0|null} [v0] GetRecentCompactedAddressBalanceChangesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentCompactedAddressBalanceChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentCompactedAddressBalanceChangesResponse.
+                         * @implements IGetRecentCompactedAddressBalanceChangesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesResponse=} [properties] Properties to set
+                         */
+                        function GetRecentCompactedAddressBalanceChangesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentCompactedAddressBalanceChangesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.IGetRecentCompactedAddressBalanceChangesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @instance
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentCompactedAddressBalanceChangesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentCompactedAddressBalanceChangesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentCompactedAddressBalanceChangesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse} GetRecentCompactedAddressBalanceChangesResponse instance
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.create = function create(properties) {
+                            return new GetRecentCompactedAddressBalanceChangesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedAddressBalanceChangesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesResponse} message GetRecentCompactedAddressBalanceChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedAddressBalanceChangesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedAddressBalanceChangesResponse} message GetRecentCompactedAddressBalanceChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedAddressBalanceChangesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse} GetRecentCompactedAddressBalanceChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedAddressBalanceChangesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse} GetRecentCompactedAddressBalanceChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentCompactedAddressBalanceChangesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentCompactedAddressBalanceChangesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse} GetRecentCompactedAddressBalanceChangesResponse
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentCompactedAddressBalanceChangesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse} message GetRecentCompactedAddressBalanceChangesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentCompactedAddressBalanceChangesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentCompactedAddressBalanceChangesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentCompactedAddressBalanceChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                             * @interface IGetRecentCompactedAddressBalanceChangesResponseV0
+                             * @property {org.dash.platform.dapi.v0.ICompactedAddressBalanceUpdateEntries|null} [compactedAddressBalanceUpdateEntries] GetRecentCompactedAddressBalanceChangesResponseV0 compactedAddressBalanceUpdateEntries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetRecentCompactedAddressBalanceChangesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetRecentCompactedAddressBalanceChangesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetRecentCompactedAddressBalanceChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse
+                             * @classdesc Represents a GetRecentCompactedAddressBalanceChangesResponseV0.
+                             * @implements IGetRecentCompactedAddressBalanceChangesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.IGetRecentCompactedAddressBalanceChangesResponseV0=} [properties] Properties to set
+                             */
+                            function GetRecentCompactedAddressBalanceChangesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentCompactedAddressBalanceChangesResponseV0 compactedAddressBalanceUpdateEntries.
+                             * @member {org.dash.platform.dapi.v0.ICompactedAddressBalanceUpdateEntries|null|undefined} compactedAddressBalanceUpdateEntries
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.prototype.compactedAddressBalanceUpdateEntries = null;
+
+                            /**
+                             * GetRecentCompactedAddressBalanceChangesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetRecentCompactedAddressBalanceChangesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetRecentCompactedAddressBalanceChangesResponseV0 result.
+                             * @member {"compactedAddressBalanceUpdateEntries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetRecentCompactedAddressBalanceChangesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["compactedAddressBalanceUpdateEntries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetRecentCompactedAddressBalanceChangesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.IGetRecentCompactedAddressBalanceChangesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0} GetRecentCompactedAddressBalanceChangesResponseV0 instance
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.create = function create(properties) {
+                                return new GetRecentCompactedAddressBalanceChangesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedAddressBalanceChangesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.IGetRecentCompactedAddressBalanceChangesResponseV0} message GetRecentCompactedAddressBalanceChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.compactedAddressBalanceUpdateEntries != null && Object.hasOwnProperty.call(message, "compactedAddressBalanceUpdateEntries"))
+                                    $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.encode(message.compactedAddressBalanceUpdateEntries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedAddressBalanceChangesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.IGetRecentCompactedAddressBalanceChangesResponseV0} message GetRecentCompactedAddressBalanceChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedAddressBalanceChangesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0} GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.compactedAddressBalanceUpdateEntries = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedAddressBalanceChangesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0} GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentCompactedAddressBalanceChangesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.compactedAddressBalanceUpdateEntries != null && message.hasOwnProperty("compactedAddressBalanceUpdateEntries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.verify(message.compactedAddressBalanceUpdateEntries);
+                                        if (error)
+                                            return "compactedAddressBalanceUpdateEntries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentCompactedAddressBalanceChangesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0} GetRecentCompactedAddressBalanceChangesResponseV0
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0();
+                                if (object.compactedAddressBalanceUpdateEntries != null) {
+                                    if (typeof object.compactedAddressBalanceUpdateEntries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.compactedAddressBalanceUpdateEntries: object expected");
+                                    message.compactedAddressBalanceUpdateEntries = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.fromObject(object.compactedAddressBalanceUpdateEntries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentCompactedAddressBalanceChangesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0} message GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.compactedAddressBalanceUpdateEntries != null && message.hasOwnProperty("compactedAddressBalanceUpdateEntries")) {
+                                    object.compactedAddressBalanceUpdateEntries = $root.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries.toObject(message.compactedAddressBalanceUpdateEntries, options);
+                                    if (options.oneofs)
+                                        object.result = "compactedAddressBalanceUpdateEntries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentCompactedAddressBalanceChangesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentCompactedAddressBalanceChangesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentCompactedAddressBalanceChangesResponseV0;
+                        })();
+
+                        return GetRecentCompactedAddressBalanceChangesResponse;
                     })();
 
                     return v0;

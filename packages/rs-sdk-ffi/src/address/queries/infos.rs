@@ -37,7 +37,12 @@ pub unsafe extern "C" fn dash_sdk_addresses_fetch_infos(
 ) -> DashSDKResult {
     // Wrap the entire function in catch_unwind to prevent panics from crashing the app
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_addresses_fetch_infos_inner(sdk_handle, addresses, address_lengths, addresses_count)
+        dash_sdk_addresses_fetch_infos_inner(
+            sdk_handle,
+            addresses,
+            address_lengths,
+            addresses_count,
+        )
     }));
 
     match result {
@@ -85,7 +90,10 @@ unsafe fn dash_sdk_addresses_fetch_infos_inner(
 
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
-    tracing::debug!(addresses_count = addresses_count, "Attempting to fetch multiple addresses info");
+    tracing::debug!(
+        addresses_count = addresses_count,
+        "Attempting to fetch multiple addresses info"
+    );
 
     // Convert raw pointers to PlatformAddress set
     let addresses_slice = std::slice::from_raw_parts(addresses, addresses_count);
@@ -159,18 +167,18 @@ unsafe fn dash_sdk_addresses_fetch_infos_inner(
 
     let result: Result<DashSDKAddressInfoMap, FFIError> = wrapper.runtime.block_on(async {
         // Fetch addresses infos
-        let address_infos: AddressInfos =
-            AddressInfo::fetch_many(&wrapper.sdk, platform_addresses)
-                .await
-                .map_err(FFIError::from)?;
+        let address_infos: AddressInfos = AddressInfo::fetch_many(&wrapper.sdk, platform_addresses)
+            .await
+            .map_err(FFIError::from)?;
 
         // Convert to entries array
-        let mut entries: Vec<DashSDKAddressInfoEntry> =
-            Vec::with_capacity(addresses_count);
+        let mut entries: Vec<DashSDKAddressInfoEntry> = Vec::with_capacity(addresses_count);
 
         // Process results in the same order as input
         for (address_bytes, platform_address) in original_addresses_with_platform.iter() {
-            let address_info = address_infos.get(platform_address).and_then(|opt| opt.as_ref());
+            let address_info = address_infos
+                .get(platform_address)
+                .and_then(|opt| opt.as_ref());
 
             let (nonce, balance) = match address_info {
                 Some(info) => (info.nonce, info.balance),

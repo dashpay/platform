@@ -1,8 +1,8 @@
 //! Address state transition operations
 
+mod top_up_from_asset_lock;
 mod transfer;
 mod withdraw;
-mod top_up_from_asset_lock;
 
 // Re-export transfer function
 pub use transfer::dash_sdk_address_transfer_funds;

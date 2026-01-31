@@ -28,8 +28,9 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetRecentCompactedAddressBalanceChangesResponseV0>, Error>
     {
-        // Limit the number of compacted entries we return
-        let limit = Some(100u16);
+        // Limit the number of compacted entries we return (max 25 to stay within proof size limits)
+        // Ensure it matches limit set in rs-drive-proof-verifier/src/proof.rs for RecentCompactedAddressBalanceChanges
+        let limit = Some(25u16);
 
         let response = if prove {
             let proof = self.drive.prove_compacted_address_balance_changes(

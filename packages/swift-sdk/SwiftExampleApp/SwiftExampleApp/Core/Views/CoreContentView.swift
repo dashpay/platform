@@ -14,67 +14,45 @@ struct CoreContentView: View {
         return wallets
     }
     // Progress values come from WalletService (kept in sync with SPV callbacks)
-    
-    // Computed properties to ensure progress values are always valid
-    private var safeHeaderProgress: Double { min(max(walletService.headerProgress, 0.0), 1.0) }
-    private var safeFilterHeaderProgress: Double { min(max(walletService.filterHeaderProgress, 0.0), 1.0) }
-    private var safeTransactionProgress: Double {
-        // Use only the event-driven value to avoid misleading jumps
-        min(max(walletService.transactionProgress, 0.0), 1.0)
-    }
 
     // Display helpers
     private var headerHeightsDisplay: String? {
-        let cur = max(walletService.headerCurrentHeight, 0)
-        let tot = walletService.headerTargetHeight
+        let cur = walletService.syncProgress.currentHeight
+        let tot = walletService.syncProgress.targetHeight
 
-        // Format current height allowing zero to render as "0" rather than "—"
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-        let curStr = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
-
-        // When the chain tip is unknown (tot <= 0) fall back to the current baseline only.
-        guard tot > 0 else { return curStr }
-
-        let totStr = formattedHeight(tot)
-        return "\(curStr)/\(totStr)"
+        return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var filterHeaderHeightsDisplay: String? {
-        let cur = max(walletService.latestFilterHeaderHeight, 0)
-        let tot = walletService.headerTargetHeight
+        let cur = walletService.syncProgress.filterHeaderHeight
+        let tot = walletService.syncProgress.targetHeight
 
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-
-        let numerator = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
-
-        guard tot > 0 else { return numerator }
-
-        let denominator = formattedHeight(tot)
-        return "\(numerator)/\(denominator)"
+        return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var filterHeightsDisplay: String? {
-        let cur = max(walletService.latestFilterHeight, 0)
-        let tot = walletService.headerTargetHeight
+        let cur = walletService.syncProgress.filterHeight
+        let tot = walletService.syncProgress.targetHeight
 
+        return heightDisplay(numerator: cur, denominator: tot)
+    }
+    
+    private var masternodeHeightsDisplay: String? {
+        let cur = walletService.syncProgress.masternodeHeight
+        let tot = walletService.syncProgress.targetHeight
+
+        return heightDisplay(numerator: cur, denominator: tot)
+    }
+    
+    private func heightDisplay(numerator: UInt32, denominator: UInt32) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
 
-        let numerator = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
-
-        // When the chain tip is unknown (tot <= 0) show only the baseline.
-        guard tot > 0 else { return numerator }
-
-        let denominator = formattedHeight(tot)
-        return "\(numerator)/\(denominator)"
+        let numeratorStr = formatter.string(from: NSNumber(value: numerator)) ?? String(numerator)
+        let denominatorStr = formattedHeight(denominator)
+        return "\(numeratorStr)/\(denominatorStr)"
     }
     
 var body: some View {
@@ -85,27 +63,27 @@ var body: some View {
                     // Compact progress rows
                     CompactSyncRow(
                         title: "Headers",
-                        progress: safeHeaderProgress,
+                        progress: Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight),
                         value: headerHeightsDisplay
                     )
 
                     CompactSyncRow(
                         title: "Filter Headers",
-                        progress: safeFilterHeaderProgress,
+                        progress: Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight),
                         value: filterHeaderHeightsDisplay
                     )
 
-                    if walletService.shouldSyncMasternodes {
+                    if walletService.masternodesEnabled {
                         CompactSyncRow(
                             title: "Masternodes",
-                            progress: walletService.masternodeProgress,
-                            value: formattedHeight(walletService.latestMasternodeListHeight)
+                            progress: Double(walletService.syncProgress.masternodeHeight) / Double(walletService.syncProgress.targetHeight),
+                            value: masternodeHeightsDisplay
                         )
                     }
 
                     CompactSyncRow(
                         title: "Filters",
-                        progress: safeTransactionProgress,
+                        progress: Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight),
                         value: filterHeightsDisplay
                     )
 
@@ -134,8 +112,8 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
-                        .disabled(walletService.isSyncing || walletService.isInitializing)
-                        .opacity((walletService.isSyncing || walletService.isInitializing) ? 0.5 : 1.0)
+                        .disabled(walletService.isSyncing)
+                        .opacity((walletService.isSyncing) ? 0.5 : 1.0)
                     }
                 }
                 .padding(.vertical, 4)
@@ -300,13 +278,13 @@ var body: some View {
     }
 
     private func clearSyncData() {
-        // Button is disabled during sync and initialization
-        guard !walletService.isSyncing && !walletService.isInitializing else {
-            print("⚠️ Clear button should be disabled during sync/initialization")
+        // Button is disabled during sync
+        guard !walletService.isSyncing else {
+            print("⚠️ Clear button should be disabled during sync")
             return
         }
 
-        walletService.clearSpvStorage(fullReset: true)
+        walletService.clearSpvStorage()
     }
 }
 
@@ -550,7 +528,7 @@ struct WalletRowView: View {
 
 // MARK: - Formatting Helpers
 extension CoreContentView {
-    func formattedHeight(_ height: Int) -> String {
+    func formattedHeight(_ height: UInt32) -> String {
         guard height > 0 else { return "—" }
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal

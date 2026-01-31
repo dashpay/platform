@@ -143,38 +143,10 @@ public class CoreWalletManager: ObservableObject {
         
         // Sync complete wallet state from Rust managed info
         try await syncWalletFromManagedInfo(for: wallet)
-        
-        // Set per-network sync-from heights
-        // These are used by WalletService.computeNetworkBaselineSyncFromHeight()
-        // to determine the SPV sync starting point across all wallets
-        if isImport {
-            // Imported wallet: use fixed per-network baselines
-            wallet.syncBaseHeight = sdkWalletManager.network == .mainnet ? 730_000 : 1;
-        } else {
-            // New wallet: use the latest checkpoint height
-            switch sdkWalletManager.network {
-            case .mainnet:
-                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) {
-                    wallet.syncBaseHeight = Int(cp)
-                }
-            case .testnet:
-                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) {
-                    wallet.syncBaseHeight = Int(cp)
-                }
-            case .devnet:
-                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) {
-                    wallet.syncBaseHeight = Int(cp)
-                }
-            case .regtest:
-                if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 3)) {
-                    wallet.syncBaseHeight = Int(cp)
-                }
-            }
-        }
 
         // Save to database
         try modelContainer.mainContext.save()
-        
+
         await loadWallets()
         currentWallet = wallet
         

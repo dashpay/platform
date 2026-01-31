@@ -186,65 +186,49 @@ async fn test_identity_public_keys_specific_read() {
     );
 }
 
-/// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key.
+/// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_fetch_identity_by_non_unique_public_keys() {
+    /// Unique key hash, generated when creating test data
+    const UNIQUE_KEY_HASH: [u8; 20] = [
+        26, 42, 184, 155, 158, 2, 137, 145, 219, 176, 130, 54, 208, 131, 144, 167, 61, 81, 214, 110,
+    ];
+
     setup_logs();
-
     let cfg = Config::new();
-    let id: dpp::prelude::Identifier = cfg.existing_identity_id;
-
     let sdk = cfg
         .setup_api("test_fetch_identity_by_non_unique_public_keys")
         .await;
 
-    // First, fetch an identity to get a non-unique public key
-    let identity = Identity::fetch(&sdk, id)
+    let mut query = NonUniquePublicKeyHashQuery {
+        key_hash: UNIQUE_KEY_HASH,
+        after: None,
+    };
+
+    // Now fetch identities by this non-unique public key hash
+    let mut count = 0;
+    while let Some(found) = Identity::fetch(&sdk, query)
         .await
-        .expect("fetch identity")
-        .expect("found identity");
-
-    let pubkeys: Vec<_> = identity
-        .public_keys()
-        .iter()
-        .filter(|public_key| !public_key.1.key_type().is_unique_key_type())
-        .collect();
-
-    assert_ne!(
-        pubkeys.len(),
-        0,
-        "identity must have at least one non-unique public key"
-    );
-
-    for non_unique_key in pubkeys.iter() {
-        let key_hash = non_unique_key.1.public_key_hash().expect("public key hash");
-        let mut query = NonUniquePublicKeyHashQuery {
-            key_hash,
-            after: None,
-        };
-
-        // Now fetch identities by this non-unique public key hash
-        let mut count = 0;
-        while let Some(found) = Identity::fetch(&sdk, query)
-            .await
-            .expect("fetch identities by non-unique key hash")
-        {
-            count += 1;
-            tracing::debug!(
-                ?found,
-                ?key_hash,
-                ?count,
-                "fetched identities by non-unique public key hash"
-            );
-
-            query = NonUniquePublicKeyHashQuery {
-                key_hash,
-                after: Some(*found.id().as_bytes()),
-            };
-        }
-        assert_eq!(
-            count, 3,
-            "expected exactly 3 identities with this non-unique public key"
+        .expect("fetch identities by non-unique key hash")
+    {
+        count += 1;
+        tracing::debug!(
+            ?found,
+            ?UNIQUE_KEY_HASH,
+            ?count,
+            "fetched identities by non-unique public key hash"
         );
+
+        query = NonUniquePublicKeyHashQuery {
+            key_hash: UNIQUE_KEY_HASH,
+            after: Some(*found.id().as_bytes()),
+        };
     }
+
+    assert_eq!(
+        count,
+        3,
+        "expected exactly 3 identities with this unique public key {}",
+        hex::encode(UNIQUE_KEY_HASH)
+    );
 }

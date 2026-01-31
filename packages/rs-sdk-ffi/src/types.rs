@@ -794,7 +794,7 @@ pub unsafe extern "C" fn dash_sdk_trunk_state_free(state: *mut DashSDKTrunkState
     }
 
     let state = Box::from_raw(state);
-    
+
     // Free elements
     if !state.elements.is_null() && state.elements_count > 0 {
         let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
@@ -805,16 +805,21 @@ pub unsafe extern "C" fn dash_sdk_trunk_state_free(state: *mut DashSDKTrunkState
         }
         let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
     }
-    
+
     // Free leaf boundaries
     if !state.leaf_boundaries.is_null() && state.leaf_boundaries_count > 0 {
-        let boundaries_slice = std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
+        let boundaries_slice =
+            std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
         for boundary in boundaries_slice.iter() {
             if !boundary.key.is_null() && boundary.key_len > 0 {
                 let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
             }
         }
-        let _ = Vec::from_raw_parts(state.leaf_boundaries, state.leaf_boundaries_count, state.leaf_boundaries_count);
+        let _ = Vec::from_raw_parts(
+            state.leaf_boundaries,
+            state.leaf_boundaries_count,
+            state.leaf_boundaries_count,
+        );
     }
 }
 
@@ -831,7 +836,7 @@ pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchSta
     }
 
     let state = Box::from_raw(state);
-    
+
     // Free elements
     if !state.elements.is_null() && state.elements_count > 0 {
         let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
@@ -842,16 +847,21 @@ pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchSta
         }
         let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
     }
-    
+
     // Free leaf boundaries
     if !state.leaf_boundaries.is_null() && state.leaf_boundaries_count > 0 {
-        let boundaries_slice = std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
+        let boundaries_slice =
+            std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
         for boundary in boundaries_slice.iter() {
             if !boundary.key.is_null() && boundary.key_len > 0 {
                 let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
             }
         }
-        let _ = Vec::from_raw_parts(state.leaf_boundaries, state.leaf_boundaries_count, state.leaf_boundaries_count);
+        let _ = Vec::from_raw_parts(
+            state.leaf_boundaries,
+            state.leaf_boundaries_count,
+            state.leaf_boundaries_count,
+        );
     }
 }
 
@@ -862,26 +872,34 @@ pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchSta
 /// - It may be null (no-op). When non-null, this frees all blocks, changes, addresses, and the struct.
 /// - Do not access `changes` after this call.
 #[no_mangle]
-pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(changes: *mut DashSDKRecentBalanceChanges) {
+pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(
+    changes: *mut DashSDKRecentBalanceChanges,
+) {
     if changes.is_null() {
         return;
     }
 
     let changes = Box::from_raw(changes);
-    
+
     // Free blocks
     if !changes.blocks.is_null() && changes.blocks_count > 0 {
         let blocks_slice = std::slice::from_raw_parts_mut(changes.blocks, changes.blocks_count);
         for block in blocks_slice.iter() {
             // Free changes within each block
             if !block.changes.is_null() && block.changes_count > 0 {
-                let changes_slice = std::slice::from_raw_parts_mut(block.changes, block.changes_count);
+                let changes_slice =
+                    std::slice::from_raw_parts_mut(block.changes, block.changes_count);
                 for change in changes_slice.iter() {
                     if !change.address.is_null() && change.address_len > 0 {
-                        let _ = Vec::from_raw_parts(change.address, change.address_len, change.address_len);
+                        let _ = Vec::from_raw_parts(
+                            change.address,
+                            change.address_len,
+                            change.address_len,
+                        );
                     }
                 }
-                let _ = Vec::from_raw_parts(block.changes, block.changes_count, block.changes_count);
+                let _ =
+                    Vec::from_raw_parts(block.changes, block.changes_count, block.changes_count);
             }
         }
         let _ = Vec::from_raw_parts(changes.blocks, changes.blocks_count, changes.blocks_count);
@@ -895,31 +913,43 @@ pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(changes: *mut Dash
 /// - It may be null (no-op). When non-null, this frees all ranges, changes, addresses, entries, and the struct.
 /// - Do not access `changes` after this call.
 #[no_mangle]
-pub unsafe extern "C" fn dash_sdk_compacted_balance_changes_free(changes: *mut DashSDKCompactedBalanceChanges) {
+pub unsafe extern "C" fn dash_sdk_compacted_balance_changes_free(
+    changes: *mut DashSDKCompactedBalanceChanges,
+) {
     if changes.is_null() {
         return;
     }
 
     let changes = Box::from_raw(changes);
-    
+
     // Free ranges
     if !changes.ranges.is_null() && changes.ranges_count > 0 {
         let ranges_slice = std::slice::from_raw_parts_mut(changes.ranges, changes.ranges_count);
         for range in ranges_slice.iter() {
             // Free changes within each range
             if !range.changes.is_null() && range.changes_count > 0 {
-                let changes_slice = std::slice::from_raw_parts_mut(range.changes, range.changes_count);
+                let changes_slice =
+                    std::slice::from_raw_parts_mut(range.changes, range.changes_count);
                 for change in changes_slice.iter() {
                     // Free address
                     if !change.address.is_null() && change.address_len > 0 {
-                        let _ = Vec::from_raw_parts(change.address, change.address_len, change.address_len);
+                        let _ = Vec::from_raw_parts(
+                            change.address,
+                            change.address_len,
+                            change.address_len,
+                        );
                     }
                     // Free add entries
                     if !change.add_entries.is_null() && change.add_entries_count > 0 {
-                        let _ = Vec::from_raw_parts(change.add_entries, change.add_entries_count, change.add_entries_count);
+                        let _ = Vec::from_raw_parts(
+                            change.add_entries,
+                            change.add_entries_count,
+                            change.add_entries_count,
+                        );
                     }
                 }
-                let _ = Vec::from_raw_parts(range.changes, range.changes_count, range.changes_count);
+                let _ =
+                    Vec::from_raw_parts(range.changes, range.changes_count, range.changes_count);
             }
         }
         let _ = Vec::from_raw_parts(changes.ranges, changes.ranges_count, changes.ranges_count);

@@ -49,7 +49,7 @@ use crate::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use crate::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use crate::ProtocolError;
-use bincode_derive::{Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;

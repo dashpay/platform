@@ -48,8 +48,7 @@ jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "confi
 ], optional = true }
 lazy_static = { version = "1.4" }
 num_enum = "0.7"
-bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
-bincode_derive = { version = "=2.0.0-rc.3" }
+bincode = { version = "=2.0.1", features = ["serde"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
 regex = { version = "1.10.4" }
 serde = { version = "1.0.219", features = ["derive"] }
@@ -330,7 +329,3 @@ token-reward-explanations = ["dep:chrono-tz"]
 
 factories = []
 client = ["factories", "state-transitions"]
-
-[package.metadata.cargo-machete]
-# bincode_derive is referenced here to ensure that we use correct version =2.0.0-rc.3; otherwise it gets updated to 2.0.1
-ignored = ["bincode_derive"]

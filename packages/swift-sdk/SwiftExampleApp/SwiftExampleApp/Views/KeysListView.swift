@@ -102,8 +102,7 @@ struct KeysListView: View {
 
   private func hasPrivateKey(for keyId: UInt32) -> Bool {
     // Check if we have a private key for this key ID in keychain
-    let hasKey = KeychainManager.shared.hasPrivateKey(
-      identityId: identity.id, keyIndex: Int32(keyId))
+    let hasKey = KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
     print("🔑 Checking private key for keyId: \(keyId) - found: \(hasKey)")
     return hasKey
   }
@@ -194,12 +193,10 @@ struct PrivateKeyView: View {
           Text("Private Key Warning")
             .font(.headline)
 
-          Text(
-            "Never share your private key with anyone. Anyone with access to this key can control your identity and spend your funds."
-          )
-          .multilineTextAlignment(.center)
-          .font(.caption)
-          .foregroundColor(.secondary)
+          Text("Never share your private key with anyone. Anyone with access to this key can control your identity and spend your funds.")
+            .multilineTextAlignment(.center)
+            .font(.caption)
+            .foregroundColor(.secondary)
         }
         .padding()
         .background(Color.orange.opacity(0.1))
@@ -237,8 +234,7 @@ struct PrivateKeyView: View {
         // Private Key Display
         if showingPrivateKey {
           if let privateKeyData = getPrivateKey(for: keyId),
-             let publicKey = identity.publicKeys.first(where: { $0.id == keyId })
-          {
+             let publicKey = identity.publicKeys.first(where: { $0.id == keyId }) {
             VStack(alignment: .leading, spacing: 16) {
               // Hex Format
               VStack(alignment: .leading, spacing: 8) {
@@ -349,17 +345,14 @@ struct PrivateKeyView: View {
           forgetPrivateKey()
         }
       } message: {
-        Text(
-          "Are you sure you want to forget this private key? This action cannot be undone and you will need to re-enter the key to use it again."
-        )
+        Text("Are you sure you want to forget this private key? This action cannot be undone and you will need to re-enter the key to use it again.")
       }
     }
   }
 
   private func forgetPrivateKey() {
     // Remove from keychain
-    let removed = KeychainManager.shared.deletePrivateKey(
-      identityId: identity.id, keyIndex: Int32(keyId))
+    let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(keyId))
 
     if removed {
       // Update the persistent public key to clear the reference
@@ -368,10 +361,17 @@ struct PrivateKeyView: View {
     }
   }
 
+  @MainActor
   private func getPrivateKey(for keyId: UInt32) -> Data? {
-    // Retrieve the actual stored private key from keychain
-    let privateKey = KeychainManager.shared.retrievePrivateKey(
-      identityId: identity.id, keyIndex: Int32(keyId))
+    // Use KeyManager to retrieve private key
+    let dppIdentity = DPPIdentity(
+      id: identity.id,
+      publicKeys: Dictionary(uniqueKeysWithValues: identity.publicKeys.map { ($0.id, $0) }),
+      balance: identity.balance,
+      revision: 0
+    )
+    let keyManager = KeyManager.withSharedKeychain()
+    let privateKey = try? keyManager.getPrivateKey(for: dppIdentity, keyIndex: keyId)
     print("🔑 Retrieving private key for identity: \(identity.id.toHexString()), keyId: \(keyId)")
     print("🔑 Private key found: \(privateKey != nil ? "Yes (\(privateKey!.count) bytes)" : "No")")
     return privateKey
