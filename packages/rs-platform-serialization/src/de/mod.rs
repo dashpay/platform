@@ -66,8 +66,8 @@ impl<'de, T> DefaultBorrowDecode<'de> for T where
 /// #     pub x: f32,
 /// #     pub y: f32,
 /// # }
-/// impl bincode::Decode for Entity {
-///     fn decode<D: bincode::de::Decoder>(
+/// impl<Context> bincode::Decode<Context> for Entity {
+///     fn decode<D: bincode::de::Decoder<Context = Context>>(
 ///         decoder: &mut D,
 ///     ) -> core::result::Result<Self, bincode::error::DecodeError> {
 ///         Ok(Self {
@@ -76,8 +76,8 @@ impl<'de, T> DefaultBorrowDecode<'de> for T where
 ///         })
 ///     }
 /// }
-/// impl<'de> bincode::BorrowDecode<'de> for Entity {
-///     fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = crate::BincodeContext>>(
+/// impl<'de, Context> bincode::BorrowDecode<'de, Context> for Entity {
+///     fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = Context>>(
 ///         decoder: &mut D,
 ///     ) -> core::result::Result<Self, bincode::error::DecodeError> {
 ///         Ok(Self {
@@ -93,12 +93,12 @@ impl<'de, T> DefaultBorrowDecode<'de> for T where
 /// To get specific integer types, you can use:
 /// ```
 /// # struct Foo;
-/// # impl bincode::Decode for Foo {
-/// #     fn decode<D: bincode::de::Decoder>(
+/// # impl<Context> bincode::Decode<Context> for Foo {
+/// #     fn decode<D: bincode::de::Decoder<Context = Context>>(
 /// #         decoder: &mut D,
 /// #     ) -> core::result::Result<Self, bincode::error::DecodeError> {
 /// let x: u8 = bincode::Decode::decode(decoder)?;
-/// let x = <u8 as bincode::Decode>::decode(decoder)?;
+/// let x = <u8 as bincode::Decode<Context>>::decode(decoder)?;
 /// #         Ok(Foo)
 /// #     }
 /// # }
