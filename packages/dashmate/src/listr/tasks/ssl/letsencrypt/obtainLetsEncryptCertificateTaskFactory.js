@@ -157,11 +157,10 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             command,
           ];
 
-          // Add profile for initial run
-          if (!ctx.isRenewal) {
-            legoArgs.push('--profile', 'shortlived');
-          } else {
-            // For renewal, renew if within 30 days of expiry (default)
+          // shortlived profile is required for IP address certificates
+          legoArgs.push('--profile', 'shortlived');
+
+          if (ctx.isRenewal) {
             legoArgs.push('--days', '30');
           }
 
