@@ -4,6 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 
+# Pass --clean through to rs-sdk-ffi if requested
+EXTRA_ARGS=""
+for arg in "$@"; do
+  case $arg in
+    --clean) EXTRA_ARGS="$EXTRA_ARGS --clean" ;;
+  esac
+done
+
 echo "=== SwiftDashSDK iOS Build (Unified) ==="
 
 echo "1) Building Rust FFI (rs-sdk-ffi)"
@@ -12,7 +20,7 @@ if [[ ! -x ./build_ios.sh ]]; then
   echo "❌ Missing rs-sdk-ffi/build_ios.sh"
   exit 1
 fi
-./build_ios.sh
+./build_ios.sh $EXTRA_ARGS
 popd >/dev/null
 
 # Expected output from rs-sdk-ffi

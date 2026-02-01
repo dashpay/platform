@@ -13,13 +13,16 @@ PROJECT_NAME="rs_sdk_ffi"
 
 # Parse arguments
 BUILD_ARCH="${1:-arm}"
+CLEAN_BUILD=0
 
 # Parse command line arguments
 for arg in "$@"; do
     case $arg in
         arm|x86|universal)
             BUILD_ARCH="$arg"
-            shift
+            ;;
+        --clean)
+            CLEAN_BUILD=1
             ;;
     esac
 done
@@ -69,6 +72,34 @@ else
     # Default to ARM
     check_target "aarch64-apple-ios"
     check_target "aarch64-apple-ios-sim"
+fi
+
+# Detect if rust-dashcore has changed since last iOS build
+RUST_DASHCORE_DIR="$PROJECT_ROOT/../rust-dashcore"
+HASHFILE="$PROJECT_ROOT/target/.rust_dashcore_ios_hash"
+if [[ -d "$RUST_DASHCORE_DIR" ]]; then
+    CURRENT_HASH=$(find "$RUST_DASHCORE_DIR/dash/src" "$RUST_DASHCORE_DIR/key-wallet/src" "$RUST_DASHCORE_DIR/dash-spv/src" "$RUST_DASHCORE_DIR/dash-spv-ffi/src" "$RUST_DASHCORE_DIR/key-wallet-manager/src" -name '*.rs' 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+    PREV_HASH=""
+    if [[ -f "$HASHFILE" ]]; then
+        PREV_HASH=$(cat "$HASHFILE")
+    fi
+    if [[ "$CURRENT_HASH" != "$PREV_HASH" ]]; then
+        echo -e "${YELLOW}rust-dashcore changes detected — cleaning cached iOS build artifacts${NC}"
+        CLEAN_BUILD=1
+    fi
+fi
+
+if [[ "$CLEAN_BUILD" -eq 1 ]]; then
+    echo -e "${GREEN}Cleaning rs-sdk-ffi and dependencies for iOS targets...${NC}"
+    cargo clean --release --target aarch64-apple-ios -p rs-sdk-ffi 2>/dev/null || true
+    cargo clean --release --target aarch64-apple-ios-sim -p rs-sdk-ffi 2>/dev/null || true
+    cargo clean --release --target x86_64-apple-ios -p rs-sdk-ffi 2>/dev/null || true
+    # Also clean path-dependency crates that cargo may cache
+    for pkg in dashcore key-wallet key-wallet-manager dash-spv dash-spv-ffi rs-platform-wallet rs-platform-wallet-ffi; do
+        cargo clean --release --target aarch64-apple-ios -p "$pkg" 2>/dev/null || true
+        cargo clean --release --target aarch64-apple-ios-sim -p "$pkg" 2>/dev/null || true
+        cargo clean --release --target x86_64-apple-ios -p "$pkg" 2>/dev/null || true
+    done
 fi
 
 # Build for iOS device (arm64) - always needed
@@ -470,6 +501,12 @@ else
     echo -e "${RED}✗ XCFramework creation failed${NC}"
     cat /tmp/xcframework.log
     exit 1
+fi
+
+# Save rust-dashcore hash so next build can detect changes
+if [[ -n "${CURRENT_HASH:-}" ]]; then
+    mkdir -p "$(dirname "$HASHFILE")"
+    echo "$CURRENT_HASH" > "$HASHFILE"
 fi
 
 echo -e "\n${GREEN}Build complete!${NC}"
