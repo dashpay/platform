@@ -3,7 +3,39 @@ use dpp::identity::SecurityLevel;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = SecurityLevel)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Flexible input type for SecurityLevel - accepts the enum, string name, or numeric value.
+ */
+export type SecurityLevelLike = SecurityLevel | "master" | "critical" | "high" | "medium" | 0 | 1 | 2 | 3;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "SecurityLevelLike")]
+    pub type SecurityLevelLikeJs;
+}
+
+impl TryFrom<SecurityLevelLikeJs> for SecurityLevelWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: SecurityLevelLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        SecurityLevelWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<SecurityLevelLikeJs> for SecurityLevel {
+    type Error = WasmDppError;
+
+    fn try_from(value: SecurityLevelLikeJs) -> Result<Self, Self::Error> {
+        let wasm: SecurityLevelWasm = value.try_into()?;
+        Ok(SecurityLevel::from(wasm))
+    }
+}
+
+#[wasm_bindgen(js_name = "SecurityLevel")]
 pub enum SecurityLevelWasm {
     MASTER = 0,
     CRITICAL = 1,
@@ -11,9 +43,10 @@ pub enum SecurityLevelWasm {
     MEDIUM = 3,
 }
 
-impl TryFrom<JsValue> for SecurityLevelWasm {
+impl TryFrom<&JsValue> for SecurityLevelWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "master" => Ok(SecurityLevelWasm::MASTER),
@@ -43,6 +76,14 @@ impl TryFrom<JsValue> for SecurityLevelWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from security level enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for SecurityLevelWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

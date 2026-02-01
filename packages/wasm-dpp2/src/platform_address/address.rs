@@ -1,5 +1,6 @@
-use crate::core::network::NetworkWasm;
+use crate::core::network::NetworkLikeJs;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
@@ -15,7 +16,7 @@ use wasm_bindgen::prelude::*;
 pub struct PlatformAddressWasm(PlatformAddress);
 
 #[wasm_bindgen(typescript_custom_section)]
-const PLATFORM_ADDRESS_TS_HELPERS: &'static str = r#"
+const PLATFORM_ADDRESS_TS_HELPERS: &str = r#"
 /**
  * A Platform address can be provided as:
  * - A PlatformAddress object
@@ -23,7 +24,37 @@ const PLATFORM_ADDRESS_TS_HELPERS: &'static str = r#"
  * - A bech32m string (e.g., "evo1..." or "tevo1...")
  */
 export type PlatformAddressLike = PlatformAddress | Uint8Array | string;
+
+/**
+ * An array of Platform addresses.
+ */
+export type PlatformAddressLikeArray = Array<PlatformAddress | Uint8Array | string>;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PlatformAddressLike")]
+    pub type PlatformAddressLikeJs;
+
+    #[wasm_bindgen(typescript_type = "PlatformAddressLikeArray")]
+    pub type PlatformAddressLikeArrayJs;
+}
+
+impl TryFrom<PlatformAddressLikeJs> for PlatformAddressWasm {
+    type Error = WasmDppError;
+    fn try_from(value: PlatformAddressLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        PlatformAddressWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<PlatformAddressLikeJs> for PlatformAddress {
+    type Error = WasmDppError;
+    fn try_from(value: PlatformAddressLikeJs) -> Result<Self, Self::Error> {
+        let wasm: PlatformAddressWasm = value.try_into()?;
+        Ok(PlatformAddress::from(wasm))
+    }
+}
 
 impl From<PlatformAddressWasm> for PlatformAddress {
     fn from(address: PlatformAddressWasm) -> Self {
@@ -194,16 +225,6 @@ impl Serialize for PlatformAddressWasm {
 
 #[wasm_bindgen(js_class = PlatformAddress)]
 impl PlatformAddressWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PlatformAddress".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PlatformAddress".to_string()
-    }
-
     /// Creates a new PlatformAddress from various input types.
     ///
     /// Accepts:
@@ -211,20 +232,14 @@ impl PlatformAddressWasm {
     /// - A Uint8Array (21 bytes: type byte + 20-byte hash)
     /// - An existing PlatformAddress object
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddress | Uint8Array | string")]
-        js_address: &JsValue,
-    ) -> WasmDppResult<PlatformAddressWasm> {
-        PlatformAddressWasm::try_from(js_address)
+    pub fn constructor(address: PlatformAddressLikeJs) -> WasmDppResult<PlatformAddressWasm> {
+        address.try_into()
     }
 
     /// Returns the bech32m-encoded address string for the specified network.
     #[wasm_bindgen(js_name = "toBech32m")]
-    pub fn to_bech32m(
-        &self,
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
-    ) -> WasmDppResult<String> {
-        let net: Network = NetworkWasm::try_from(&network)?.into();
+    pub fn to_bech32m(&self, network: NetworkLikeJs) -> WasmDppResult<String> {
+        let net: Network = network.try_into()?;
         Ok(self.0.to_bech32m_string(net))
     }
 
@@ -293,7 +308,9 @@ impl PlatformAddressWasm {
 
     /// Creates a PlatformAddress from a hex-encoded string.
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex_string: &str) -> WasmDppResult<PlatformAddressWasm> {
+    pub fn from_hex(
+        #[wasm_bindgen(js_name = "hexString")] hex_string: &str,
+    ) -> WasmDppResult<PlatformAddressWasm> {
         let bytes = hex::decode(hex_string)
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid hex: {}", e)))?;
         PlatformAddress::from_bytes(&bytes)
@@ -341,3 +358,5 @@ impl PlatformAddressWasm {
         self.0
     }
 }
+
+impl_wasm_type_info!(PlatformAddressWasm, PlatformAddress);

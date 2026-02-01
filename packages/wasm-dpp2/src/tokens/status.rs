@@ -1,3 +1,4 @@
+use crate::impl_wasm_type_info;
 use dpp::tokens::status::TokenStatus;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -20,10 +21,12 @@ impl From<TokenStatusWasm> for TokenStatus {
 
 #[wasm_bindgen(js_class = TokenStatus)]
 impl TokenStatusWasm {
-    #[wasm_bindgen(getter = "paused")]
-    pub fn paused(&self) -> bool {
+    #[wasm_bindgen(getter = "isPaused")]
+    pub fn is_paused(&self) -> bool {
         match &self.0 {
             TokenStatus::V0(v0) => v0.paused(),
         }
     }
 }
+
+impl_wasm_type_info!(TokenStatusWasm, TokenStatus);

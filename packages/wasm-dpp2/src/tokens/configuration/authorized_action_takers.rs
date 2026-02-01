@@ -1,10 +1,18 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::platform_value::string_encoding::encode;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Identifier | number | undefined")]
+    pub type AuthorizedActionTakersValue;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "AuthorizedActionTakers")]
@@ -24,16 +32,6 @@ impl From<AuthorizedActionTakersWasm> for AuthorizedActionTakers {
 
 #[wasm_bindgen(js_class = AuthorizedActionTakers)]
 impl AuthorizedActionTakersWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "AuthorizedActionTakers".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "AuthorizedActionTakers".to_string()
-    }
-
     #[wasm_bindgen(js_name = "NoOne")]
     pub fn no_one() -> Self {
         AuthorizedActionTakersWasm(AuthorizedActionTakers::NoOne)
@@ -45,14 +43,9 @@ impl AuthorizedActionTakersWasm {
     }
 
     #[wasm_bindgen(js_name = "Identity")]
-    pub fn identity(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identity_id: &JsValue,
-    ) -> WasmDppResult<Self> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();
-
+    pub fn identity(identity_id: IdentifierLikeJs) -> WasmDppResult<Self> {
         Ok(AuthorizedActionTakersWasm(
-            AuthorizedActionTakers::Identity(identity_id),
+            AuthorizedActionTakers::Identity(identity_id.try_into()?),
         ))
     }
 
@@ -66,7 +59,7 @@ impl AuthorizedActionTakersWasm {
         AuthorizedActionTakersWasm(AuthorizedActionTakers::Group(group_contract_position))
     }
 
-    #[wasm_bindgen(js_name = "getTakerType")]
+    #[wasm_bindgen(getter = "takerType")]
     pub fn taker_type(&self) -> String {
         match self.0 {
             AuthorizedActionTakers::NoOne => "NoOne".to_string(),
@@ -79,9 +72,9 @@ impl AuthorizedActionTakersWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> JsValue {
-        match self.0 {
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> AuthorizedActionTakersValue {
+        let js_value = match self.0 {
             AuthorizedActionTakers::NoOne => JsValue::undefined(),
             AuthorizedActionTakers::ContractOwner => JsValue::undefined(),
             AuthorizedActionTakers::Identity(identifier) => {
@@ -89,6 +82,10 @@ impl AuthorizedActionTakersWasm {
             }
             AuthorizedActionTakers::MainGroup => JsValue::undefined(),
             AuthorizedActionTakers::Group(position) => JsValue::from(position),
-        }
+        };
+        js_value.into()
     }
 }
+
+impl_try_from_js_value!(AuthorizedActionTakersWasm, "AuthorizedActionTakers");
+impl_wasm_type_info!(AuthorizedActionTakersWasm, AuthorizedActionTakers);
