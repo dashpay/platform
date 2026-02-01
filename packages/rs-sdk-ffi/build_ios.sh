@@ -74,17 +74,17 @@ else
     check_target "aarch64-apple-ios-sim"
 fi
 
-# Detect if rust-dashcore has changed since last iOS build
+# Detect if rust-dashcore is a local path dependency and has changed since last iOS build
 RUST_DASHCORE_DIR="$PROJECT_ROOT/../rust-dashcore"
 HASHFILE="$PROJECT_ROOT/target/.rust_dashcore_ios_hash"
-if [[ -d "$RUST_DASHCORE_DIR" ]]; then
+if [[ -d "$RUST_DASHCORE_DIR" ]] && grep -q 'path.*rust-dashcore' "$PROJECT_ROOT/packages/rs-sdk-ffi/Cargo.toml" "$PROJECT_ROOT/packages/rs-dpp/Cargo.toml" 2>/dev/null; then
     CURRENT_HASH=$(find "$RUST_DASHCORE_DIR/dash/src" "$RUST_DASHCORE_DIR/key-wallet/src" "$RUST_DASHCORE_DIR/dash-spv/src" "$RUST_DASHCORE_DIR/dash-spv-ffi/src" "$RUST_DASHCORE_DIR/key-wallet-manager/src" -name '*.rs' 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
     PREV_HASH=""
     if [[ -f "$HASHFILE" ]]; then
         PREV_HASH=$(cat "$HASHFILE")
     fi
     if [[ "$CURRENT_HASH" != "$PREV_HASH" ]]; then
-        echo -e "${YELLOW}rust-dashcore changes detected — cleaning cached iOS build artifacts${NC}"
+        echo -e "${YELLOW}Local rust-dashcore changes detected — cleaning cached iOS build artifacts${NC}"
         CLEAN_BUILD=1
     fi
 fi
