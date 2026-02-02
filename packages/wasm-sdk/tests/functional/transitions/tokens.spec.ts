@@ -199,6 +199,30 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
     });
   });
 
+  describe('tokenConfigUpdate()', () => {
+    it('should update token configuration', async () => {
+      // Contract owner (Identity 1) can update max supply on Token 0
+      // Token operations require CRITICAL security level (key index 1)
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
+
+      // Create a MaxSupply config change item (set max supply to 10000)
+      const configurationChangeItem = sdk.TokenConfigurationChangeItem.MaxSupplyItem(10000n);
+
+      const result = await client.tokenConfigUpdate({
+        dataContractId: testData.tokenContracts[0].contractId,
+        tokenPosition: testData.tokenContracts[0].position,
+        identityId: testData.identityId,
+        configurationChangeItem,
+        identityKey,
+        signer,
+      });
+
+      expect(result).to.exist();
+      // Token 0 has history tracking, so we should get a document back
+      expect(result.document).to.exist();
+    });
+  });
+
   describe('tokenSetPrice()', () => {
     it('should set a direct purchase price for tokens', async () => {
       // Contract owner (Identity 1) can set token prices

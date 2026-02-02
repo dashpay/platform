@@ -44,6 +44,7 @@ describe('TokensFacade', () => {
   let tokenSetPriceStub: SinonStub;
   let tokenDirectPurchaseStub: SinonStub;
   let tokenClaimStub: SinonStub;
+  let tokenConfigUpdateStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
@@ -147,6 +148,9 @@ describe('TokensFacade', () => {
     tokenClaimStub = this.sinon.stub(wasmSdk, 'tokenClaim').resolves({
       tokenId,
       claimedAmount: BigInt(5000000),
+    });
+    tokenConfigUpdateStub = this.sinon.stub(wasmSdk, 'tokenConfigUpdate').resolves({
+      tokenId,
     });
   });
 
@@ -522,6 +526,23 @@ describe('TokensFacade', () => {
       expect(tokenClaimStub).to.be.calledOnceWithExactly(options);
       expect(result.tokenId).to.equal(tokenId);
       expect(result.claimedAmount).to.equal(BigInt(5000000));
+    });
+  });
+
+  describe('configUpdate()', () => {
+    it('should update token configuration', async () => {
+      const options = {
+        tokenId,
+        configurationChangeItem: { type: 'MaxSupply', value: BigInt(1000000000) },
+        identityKey,
+        signer,
+        publicNote: 'Updating max supply',
+      };
+
+      const result = await client.tokens.configUpdate(options);
+
+      expect(tokenConfigUpdateStub).to.be.calledOnceWithExactly(options);
+      expect(result.tokenId).to.equal(tokenId);
     });
   });
 });
