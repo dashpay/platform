@@ -1,3 +1,10 @@
+### [3.0.1-hotfix.2](https://github.com/dashpay/platform/compare/v3.0.1-hotfix.1...v3.0.1-hotfix.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* **dashmate:** pass --profile shortlived on letsencrypt renewal
+
 ### [3.0.1-hotfix.1](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.1) (2026-01-26)
 
 
