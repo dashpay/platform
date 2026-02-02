@@ -203,22 +203,76 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_identity_authentication_path(
             network.ffiValue, identityIndex, keyIndex,
             pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
+    }
+
+    // MARK: - DIP-17 Platform Address Paths
+    // Key classes: 0 = payment (external), 1 = internal/change (reserved), 2 = funding
+
+    /// Get platform address funding path (DIP-17, key_class 2)
+    /// Path format: m/9'/coin_type'/17'/account'/2'/index
+    /// Used in asset locks to fund platform addresses
+    /// - Parameters:
+    ///   - network: The network type
+    ///   - accountIndex: The account index (typically 0)
+    ///   - fundingIndex: The funding key index
+    /// - Returns: The derivation path string
+    public static func getPlatformAddressFundingPath(network: KeyWalletNetwork = .mainnet,
+                                                    accountIndex: UInt32 = 0,
+                                                    fundingIndex: UInt32) -> String {
+        let coinType: UInt32 = network == .mainnet ? 5 : 1
+        // DIP-17 path: m/9'/coin_type'/17'/account'/2'/index
+        // All components except the final index are hardened
+        return "m/9'/\(coinType)'/17'/\(accountIndex)'/2'/\(fundingIndex)"
+    }
+
+    /// Get platform address payment path (DIP-17, key_class 0)
+    /// Path format: m/9'/coin_type'/17'/account'/0'/index
+    /// Used for receiving/sending to platform addresses
+    /// - Parameters:
+    ///   - network: The network type
+    ///   - accountIndex: The account index (typically 0)
+    ///   - addressIndex: The address index
+    /// - Returns: The derivation path string
+    public static func getPlatformAddressPaymentPath(network: KeyWalletNetwork = .mainnet,
+                                                    accountIndex: UInt32 = 0,
+                                                    addressIndex: UInt32) -> String {
+        let coinType: UInt32 = network == .mainnet ? 5 : 1
+        // DIP-17 path: m/9'/coin_type'/17'/account'/0'/index
+        // All components except the final index are hardened
+        return "m/9'/\(coinType)'/17'/\(accountIndex)'/0'/\(addressIndex)"
+    }
+
+    /// Get platform address internal/change path (DIP-17, key_class 1)
+    /// Path format: m/9'/coin_type'/17'/account'/1'/index
+    /// Reserved for wallet internal/change purposes (not currently used)
+    /// - Parameters:
+    ///   - network: The network type
+    ///   - accountIndex: The account index (typically 0)
+    ///   - addressIndex: The address index
+    /// - Returns: The derivation path string
+    public static func getPlatformAddressInternalPath(network: KeyWalletNetwork = .mainnet,
+                                                     accountIndex: UInt32 = 0,
+                                                     addressIndex: UInt32) -> String {
+        let coinType: UInt32 = network == .mainnet ? 5 : 1
+        // DIP-17 path: m/9'/coin_type'/17'/account'/1'/index
+        // All components except the final index are hardened
+        return "m/9'/\(coinType)'/17'/\(accountIndex)'/1'/\(addressIndex)"
     }
     
     /// Parse a derivation path string to indices

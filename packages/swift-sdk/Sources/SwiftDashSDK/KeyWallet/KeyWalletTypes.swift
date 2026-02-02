@@ -71,11 +71,15 @@ public enum AccountType: UInt32 {
     case providerOwnerKeys = 8
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
-    
+    /// Platform address funding keys (DIP-17, key_class 2)
+    /// Used in asset locks to fund platform addresses
+    /// Path: m/9'/coin_type'/17'/account'/2'/index
+    case platformAddressFunding = 11
+
     var ffiValue: FFIAccountType {
         FFIAccountType(rawValue: self.rawValue)
     }
-    
+
     init(ffiType: FFIAccountType) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }
@@ -309,7 +313,8 @@ public struct AccountCollectionSummary {
     public let hasProviderOwnerKeys: Bool
     public let hasProviderOperatorKeys: Bool
     public let hasProviderPlatformKeys: Bool
-    
+    // TODO: Add hasPlatformAddressFunding when FFI support is available
+
     init(ffiSummary: FFIAccountCollectionSummary) {
         // Convert BIP44 indices
         if ffiSummary.bip44_count > 0, let indices = ffiSummary.bip44_indices {
@@ -363,7 +368,8 @@ public struct ManagedAccountCollectionSummary {
     public let hasProviderOwnerKeys: Bool
     public let hasProviderOperatorKeys: Bool
     public let hasProviderPlatformKeys: Bool
-    
+    // TODO: Add hasPlatformAddressFunding when FFI support is available
+
     init(ffiSummary: FFIManagedAccountCollectionSummary) {
         // Convert BIP44 indices
         if ffiSummary.bip44_count > 0, let indices = ffiSummary.bip44_indices {

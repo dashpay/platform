@@ -103,6 +103,15 @@ pub const DIP13_PURPOSE: u32 = 9;
 /// DIP13 feature for identity keys
 pub const DIP13_IDENTITY_FEATURE: u32 = 5;
 
+/// DIP17 feature for platform payment addresses
+pub const DIP17_FEATURE: u32 = 17;
+/// Platform key class for payment addresses (receiving/sending)
+pub const PLATFORM_KEY_CLASS_PAYMENT: u32 = 0;
+/// Platform key class for internal/change addresses (reserved, not currently used)
+pub const PLATFORM_KEY_CLASS_INTERNAL: u32 = 1;
+/// Platform key class for funding keys (used in asset locks to fund platform addresses)
+pub const PLATFORM_KEY_CLASS_FUNDING: u32 = 2;
+
 /// Standard BIP44 derivation path for Dash
 /// m/44'/5'/account'/change/index for mainnet
 /// m/44'/1'/account'/change/index for testnet
@@ -237,6 +246,24 @@ pub struct Dip13DerivationPathWasm {
     pub description: String,
 }
 
+/// DIP-17 derivation path for platform payment addresses
+/// Path format: m/9'/coin_type'/17'/account'/key_class'/index
+#[wasm_bindgen(getter_with_clone, js_name = "Dip17DerivationPathInfo")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Dip17DerivationPathWasm {
+    pub path: String,
+    pub purpose: u32,
+    #[wasm_bindgen(js_name = "coinType")]
+    pub coin_type: u32,
+    pub feature: u32,
+    pub account: u32,
+    #[wasm_bindgen(js_name = "keyClass")]
+    pub key_class: u32,
+    pub index: u32,
+    pub description: String,
+}
+
 #[wasm_bindgen(getter_with_clone, js_name = "SeedPhraseKeyInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -268,6 +295,7 @@ pub struct PathDerivedKeyInfoWasm {
 
 impl_wasm_serde_conversions!(DerivationPathWasm, DerivationPathInfo);
 impl_wasm_serde_conversions!(Dip13DerivationPathWasm, Dip13DerivationPathInfo);
+impl_wasm_serde_conversions!(Dip17DerivationPathWasm, Dip17DerivationPathInfo);
 impl_wasm_serde_conversions!(SeedPhraseKeyInfoWasm, SeedPhraseKeyInfo);
 impl_wasm_serde_conversions!(PathDerivedKeyInfoWasm, PathDerivedKeyInfo);
 
@@ -583,6 +611,130 @@ impl WasmSdk {
             account,
             description: "DIP13 HD identity key path (testnet)".to_string(),
         }
+    }
+
+    /// Create a DIP17 mainnet derivation path for platform payment addresses
+    /// Path format: m/9'/5'/17'/account'/key_class'/index
+    /// Use key_class 0 for payment addresses, 1 for internal/change (reserved), 2 for funding keys
+    #[wasm_bindgen(js_name = "derivationPathDip17Mainnet")]
+    pub fn derivation_path_dip17_mainnet(
+        account: u32,
+        #[wasm_bindgen(js_name = "keyClass")] key_class: u32,
+        index: u32,
+    ) -> Dip17DerivationPathWasm {
+        let path_str = format!(
+            "m/{}'/{}'/{}'/{}'/{}'/{}",
+            DIP9_FEATURE_TYPE,
+            DASH_COIN_TYPE,
+            DIP17_FEATURE,
+            account,
+            key_class,
+            index
+        );
+
+        let description = match key_class {
+            PLATFORM_KEY_CLASS_PAYMENT => "DIP17 platform payment address path (mainnet)".to_string(),
+            PLATFORM_KEY_CLASS_INTERNAL => "DIP17 platform internal/change address path (mainnet, reserved)".to_string(),
+            PLATFORM_KEY_CLASS_FUNDING => "DIP17 platform address funding key path (mainnet)".to_string(),
+            _ => format!("DIP17 platform path with key_class {} (mainnet)", key_class),
+        };
+
+        Dip17DerivationPathWasm {
+            path: path_str,
+            purpose: DIP9_FEATURE_TYPE,
+            coin_type: DASH_COIN_TYPE,
+            feature: DIP17_FEATURE,
+            account,
+            key_class,
+            index,
+            description,
+        }
+    }
+
+    /// Create a DIP17 testnet derivation path for platform payment addresses
+    /// Path format: m/9'/1'/17'/account'/key_class'/index
+    /// Use key_class 0 for payment addresses, 1 for internal/change (reserved), 2 for funding keys
+    #[wasm_bindgen(js_name = "derivationPathDip17Testnet")]
+    pub fn derivation_path_dip17_testnet(
+        account: u32,
+        #[wasm_bindgen(js_name = "keyClass")] key_class: u32,
+        index: u32,
+    ) -> Dip17DerivationPathWasm {
+        let path_str = format!(
+            "m/{}'/{}'/{}'/{}'/{}'/{}",
+            DIP9_FEATURE_TYPE,
+            TESTNET_COIN_TYPE,
+            DIP17_FEATURE,
+            account,
+            key_class,
+            index
+        );
+
+        let description = match key_class {
+            PLATFORM_KEY_CLASS_PAYMENT => "DIP17 platform payment address path (testnet)".to_string(),
+            PLATFORM_KEY_CLASS_INTERNAL => "DIP17 platform internal/change address path (testnet, reserved)".to_string(),
+            PLATFORM_KEY_CLASS_FUNDING => "DIP17 platform address funding key path (testnet)".to_string(),
+            _ => format!("DIP17 platform path with key_class {} (testnet)", key_class),
+        };
+
+        Dip17DerivationPathWasm {
+            path: path_str,
+            purpose: DIP9_FEATURE_TYPE,
+            coin_type: TESTNET_COIN_TYPE,
+            feature: DIP17_FEATURE,
+            account,
+            key_class,
+            index,
+            description,
+        }
+    }
+
+    /// Create a DIP17 mainnet derivation path for platform payment addresses (key_class 0)
+    /// Path format: m/9'/5'/17'/0'/0'/index
+    /// Convenience method with default account=0 and key_class=0 (payment)
+    #[wasm_bindgen(js_name = "platformAddressPaymentPathMainnet")]
+    pub fn platform_address_payment_path_mainnet(index: u32) -> Dip17DerivationPathWasm {
+        Self::derivation_path_dip17_mainnet(0, PLATFORM_KEY_CLASS_PAYMENT, index)
+    }
+
+    /// Create a DIP17 testnet derivation path for platform payment addresses (key_class 0)
+    /// Path format: m/9'/1'/17'/0'/0'/index
+    /// Convenience method with default account=0 and key_class=0 (payment)
+    #[wasm_bindgen(js_name = "platformAddressPaymentPathTestnet")]
+    pub fn platform_address_payment_path_testnet(index: u32) -> Dip17DerivationPathWasm {
+        Self::derivation_path_dip17_testnet(0, PLATFORM_KEY_CLASS_PAYMENT, index)
+    }
+
+    /// Create a DIP17 mainnet derivation path for platform internal/change addresses (key_class 1)
+    /// Path format: m/9'/5'/17'/0'/1'/index
+    /// Convenience method with default account=0 and key_class=1 (internal, reserved)
+    #[wasm_bindgen(js_name = "platformAddressInternalPathMainnet")]
+    pub fn platform_address_internal_path_mainnet(index: u32) -> Dip17DerivationPathWasm {
+        Self::derivation_path_dip17_mainnet(0, PLATFORM_KEY_CLASS_INTERNAL, index)
+    }
+
+    /// Create a DIP17 testnet derivation path for platform internal/change addresses (key_class 1)
+    /// Path format: m/9'/1'/17'/0'/1'/index
+    /// Convenience method with default account=0 and key_class=1 (internal, reserved)
+    #[wasm_bindgen(js_name = "platformAddressInternalPathTestnet")]
+    pub fn platform_address_internal_path_testnet(index: u32) -> Dip17DerivationPathWasm {
+        Self::derivation_path_dip17_testnet(0, PLATFORM_KEY_CLASS_INTERNAL, index)
+    }
+
+    /// Create a DIP17 mainnet derivation path for platform address funding keys (key_class 2)
+    /// Path format: m/9'/5'/17'/0'/2'/index
+    /// Convenience method with default account=0 and key_class=2 (funding)
+    #[wasm_bindgen(js_name = "platformAddressFundingPathMainnet")]
+    pub fn platform_address_funding_path_mainnet(index: u32) -> Dip17DerivationPathWasm {
+        Self::derivation_path_dip17_mainnet(0, PLATFORM_KEY_CLASS_FUNDING, index)
+    }
+
+    /// Create a DIP17 testnet derivation path for platform address funding keys (key_class 2)
+    /// Path format: m/9'/1'/17'/0'/2'/index
+    /// Convenience method with default account=0 and key_class=2 (funding)
+    #[wasm_bindgen(js_name = "platformAddressFundingPathTestnet")]
+    pub fn platform_address_funding_path_testnet(index: u32) -> Dip17DerivationPathWasm {
+        Self::derivation_path_dip17_testnet(0, PLATFORM_KEY_CLASS_FUNDING, index)
     }
 
     /// Get child public key from extended public key

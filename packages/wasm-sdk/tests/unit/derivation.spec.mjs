@@ -45,6 +45,84 @@ describe('Key derivation', () => {
       const t = sdk.WasmSdk.derivationPathDip13Testnet(0);
       expect(t.path).to.equal("m/9'/1'/0'");
     });
+
+    it('DIP17 platform address payment path mainnet/testnet', () => {
+      // Test generic DIP17 method with key_class 0 (payment)
+      const m = sdk.WasmSdk.derivationPathDip17Mainnet(0, 0, 0);
+      expect(m.path).to.equal("m/9'/5'/17'/0'/0'/0");
+      expect(m.purpose).to.equal(9);
+      expect(m.coinType).to.equal(5);
+      expect(m.feature).to.equal(17);
+      expect(m.account).to.equal(0);
+      expect(m.keyClass).to.equal(0);
+      expect(m.index).to.equal(0);
+      expect(m.description).to.equal('DIP17 platform payment address path (mainnet)');
+
+      const t = sdk.WasmSdk.derivationPathDip17Testnet(0, 0, 0);
+      expect(t.path).to.equal("m/9'/1'/17'/0'/0'/0");
+      expect(t.coinType).to.equal(1);
+      expect(t.description).to.equal('DIP17 platform payment address path (testnet)');
+    });
+
+    it('DIP17 platform address internal/change path (reserved)', () => {
+      // Test generic DIP17 method with key_class 1 (internal/change, reserved)
+      const m = sdk.WasmSdk.derivationPathDip17Mainnet(0, 1, 0);
+      expect(m.path).to.equal("m/9'/5'/17'/0'/1'/0");
+      expect(m.keyClass).to.equal(1);
+      expect(m.description).to.equal('DIP17 platform internal/change address path (mainnet, reserved)');
+
+      const t = sdk.WasmSdk.derivationPathDip17Testnet(0, 1, 0);
+      expect(t.path).to.equal("m/9'/1'/17'/0'/1'/0");
+      expect(t.description).to.equal('DIP17 platform internal/change address path (testnet, reserved)');
+    });
+
+    it('DIP17 platform address funding path mainnet/testnet', () => {
+      // Test generic DIP17 method with key_class 2 (funding)
+      const m = sdk.WasmSdk.derivationPathDip17Mainnet(0, 2, 0);
+      expect(m.path).to.equal("m/9'/5'/17'/0'/2'/0");
+      expect(m.keyClass).to.equal(2);
+      expect(m.description).to.equal('DIP17 platform address funding key path (mainnet)');
+
+      const t = sdk.WasmSdk.derivationPathDip17Testnet(0, 2, 0);
+      expect(t.path).to.equal("m/9'/1'/17'/0'/2'/0");
+      expect(t.description).to.equal('DIP17 platform address funding key path (testnet)');
+    });
+
+    it('DIP17 convenience methods for payment paths', () => {
+      // Test convenience method with default account=0, key_class=0
+      const m = sdk.WasmSdk.platformAddressPaymentPathMainnet(5);
+      expect(m.path).to.equal("m/9'/5'/17'/0'/0'/5");
+      expect(m.index).to.equal(5);
+      expect(m.keyClass).to.equal(0);
+
+      const t = sdk.WasmSdk.platformAddressPaymentPathTestnet(10);
+      expect(t.path).to.equal("m/9'/1'/17'/0'/0'/10");
+      expect(t.index).to.equal(10);
+    });
+
+    it('DIP17 convenience methods for internal paths (reserved)', () => {
+      // Test convenience method with default account=0, key_class=1
+      const m = sdk.WasmSdk.platformAddressInternalPathMainnet(2);
+      expect(m.path).to.equal("m/9'/5'/17'/0'/1'/2");
+      expect(m.index).to.equal(2);
+      expect(m.keyClass).to.equal(1);
+
+      const t = sdk.WasmSdk.platformAddressInternalPathTestnet(4);
+      expect(t.path).to.equal("m/9'/1'/17'/0'/1'/4");
+      expect(t.index).to.equal(4);
+    });
+
+    it('DIP17 convenience methods for funding paths', () => {
+      // Test convenience method with default account=0, key_class=2
+      const m = sdk.WasmSdk.platformAddressFundingPathMainnet(3);
+      expect(m.path).to.equal("m/9'/5'/17'/0'/2'/3");
+      expect(m.index).to.equal(3);
+      expect(m.keyClass).to.equal(2);
+
+      const t = sdk.WasmSdk.platformAddressFundingPathTestnet(7);
+      expect(t.path).to.equal("m/9'/1'/17'/0'/2'/7");
+      expect(t.index).to.equal(7);
+    });
   });
 
   describe('Derive by path', () => {
@@ -100,6 +178,30 @@ describe('Key derivation', () => {
         mnemonic: seed, passphrase: null, path: 'm/9/5/5/0/0', network: 'mainnet',
       });
       expect(hardened.address).to.not.equal(nonHardened.address);
+    });
+
+    it('DIP17 platform address funding key derivation', () => {
+      // Test deriving a key using DIP17 funding path: m/9'/5'/17'/0'/2'/0
+      const pathInfo = sdk.WasmSdk.platformAddressFundingPathMainnet(0);
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithPath({
+        mnemonic: seed, passphrase: null, path: pathInfo.path, network: 'mainnet',
+      });
+      expect(r).to.exist();
+      expect(r.path).to.equal("m/9'/5'/17'/0'/2'/0");
+      expect(r.address.startsWith('X')).to.equal(true);
+      expect(r.privateKeyWif).to.be.a('string');
+    });
+
+    it('DIP17 platform address payment key derivation', () => {
+      // Test deriving a key using DIP17 payment path: m/9'/1'/17'/0'/0'/0
+      const pathInfo = sdk.WasmSdk.platformAddressPaymentPathTestnet(0);
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithPath({
+        mnemonic: seed, passphrase: null, path: pathInfo.path, network: 'testnet',
+      });
+      expect(r).to.exist();
+      expect(r.path).to.equal("m/9'/1'/17'/0'/0'/0");
+      expect(r.address.startsWith('y')).to.equal(true);
+      expect(r.privateKeyHex).to.be.a('string');
     });
   });
 
