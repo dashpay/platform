@@ -431,7 +431,7 @@ public class WalletManager {
         
         defer {
             if result.error_message != nil {
-                managed_account_result_free_error(&result)
+                managed_core_account_result_free_error(&result)
             }
         }
         
@@ -461,7 +461,7 @@ public class WalletManager {
         
         defer {
             if result.error_message != nil {
-                managed_account_result_free_error(&result)
+                managed_core_account_result_free_error(&result)
             }
         }
         

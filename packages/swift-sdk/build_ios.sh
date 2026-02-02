@@ -4,6 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/../.." && pwd )"
 
+# Pass --clean through to rs-sdk-ffi if requested
+EXTRA_ARGS=""
+for arg in "$@"; do
+  case $arg in
+    --clean) EXTRA_ARGS="$EXTRA_ARGS --clean" ;;
+  esac
+done
+
 echo "=== SwiftDashSDK iOS Build (Unified) ==="
 
 echo "1) Building Rust FFI (rs-sdk-ffi)"
@@ -12,7 +20,7 @@ if [[ ! -x ./build_ios.sh ]]; then
   echo "❌ Missing rs-sdk-ffi/build_ios.sh"
   exit 1
 fi
-./build_ios.sh
+./build_ios.sh $EXTRA_ARGS
 popd >/dev/null
 
 # Expected output from rs-sdk-ffi
@@ -82,19 +90,11 @@ fi
 echo "3) Verifying Swift builds (if Xcode available)"
 if command -v xcodebuild >/dev/null 2>&1; then
   set +e
-  # Try to find an available iPhone simulator
-  SIMULATOR_ID=$(xcrun simctl list devices available | grep -i "iPhone" | grep -i "Shutdown\|Booted" | head -1 | sed -E 's/.*\(([A-F0-9-]+)\).*/\1/')
-  if [[ -z "$SIMULATOR_ID" ]]; then
-    # Fallback to generic destination
-    DESTINATION='platform=iOS Simulator,name=Any iOS Simulator Device'
-  else
-    DESTINATION="platform=iOS Simulator,id=$SIMULATOR_ID"
-  fi
-  
   xcodebuild -project "$SCRIPT_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj" \
              -scheme SwiftExampleApp \
              -sdk iphonesimulator \
-             -destination "$DESTINATION" \
+             -destination 'generic/platform=iOS Simulator' \
+             EXCLUDED_ARCHS=x86_64 \
              -quiet build
   XC_STATUS=$?
   set -e
