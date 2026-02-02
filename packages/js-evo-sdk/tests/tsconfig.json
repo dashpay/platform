@@ -1,0 +1,22 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "declaration": false,
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@dashevo/wasm-sdk/compressed": ["../../wasm-sdk/dist/sdk.d.ts"],
+      "@dashevo/wasm-sdk": ["../../wasm-sdk/dist/sdk.d.ts"],
+      "@dashevo/wasm-sdk/*": ["../../wasm-sdk/dist/*"]
+    }
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules", "karma"]
+}

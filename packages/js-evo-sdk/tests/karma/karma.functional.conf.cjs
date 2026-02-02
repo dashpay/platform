@@ -6,11 +6,11 @@ module.exports = (config) => {
     files: [
       // Load bootstrap first to initialize chai and globals
       '../bootstrap.cjs',
-      '../functional/**/*.spec.mjs',
+      '../functional/**/*.spec.ts',
     ],
     preprocessors: {
       '../bootstrap.cjs': ['webpack'],
-      '../functional/**/*.spec.mjs': ['webpack'],
+      '../functional/**/*.spec.ts': ['webpack'],
     },
   });
 };

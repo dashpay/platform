@@ -1,8 +1,9 @@
 use crate::data_contract::DataContractWasm;
-use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -13,34 +14,54 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::{FeatureVersion, ProtocolVersion, TryFromPlatformVersioned};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * DataContractUpdateTransition serialized as a plain object.
+ */
+export interface DataContractUpdateTransitionObject {
+    dataContract: DataContractObject;
+    identityNonce: bigint;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * DataContractUpdateTransition serialized as JSON.
+ */
+export interface DataContractUpdateTransitionJSON {
+    dataContract: DataContractJSON;
+    identityNonce: string;
+    userFeeIncrease: number;
+    signaturePublicKeyId: number;
+    signature?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DataContractUpdateTransitionObject")]
+    pub type DataContractUpdateTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "DataContractUpdateTransitionJSON")]
+    pub type DataContractUpdateTransitionJSONJs;
+}
 
 #[wasm_bindgen(js_name = "DataContractUpdateTransition")]
 pub struct DataContractUpdateTransitionWasm(DataContractUpdateTransition);
 
 #[wasm_bindgen(js_class = DataContractUpdateTransition)]
 impl DataContractUpdateTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DataContractUpdateTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DataContractUpdateTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        data_contract: &DataContractWasm,
-        identity_nonce: IdentityNonce,
-        js_platform_version: JsValue,
+    pub fn constructor(
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "identityNonce")] identity_nonce: IdentityNonce,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
-        };
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let rs_data_contract_update_transition =
             DataContractUpdateTransition::try_from_platform_versioned(
@@ -95,14 +116,14 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "featureVersion")]
-    pub fn get_feature_version(&self) -> FeatureVersion {
+    pub fn feature_version(&self) -> FeatureVersion {
         self.0.feature_version()
     }
 
     #[wasm_bindgen(js_name = "verifyProtocolVersion")]
     pub fn verify_protocol_version(
         &self,
-        protocol_version: ProtocolVersion,
+        #[wasm_bindgen(js_name = "protocolVersion")] protocol_version: ProtocolVersion,
     ) -> WasmDppResult<bool> {
         self.0
             .verify_protocol_version(protocol_version)
@@ -112,13 +133,10 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(js_name = "setDataContract")]
     pub fn set_data_contract(
         &mut self,
-        data_contract: &DataContractWasm,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(js_name = "dataContract")] data_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<()> {
-        let platform_version = match js_platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
-        };
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let data_contract_serialization_format =
             DataContractInSerializationFormat::try_from_platform_versioned(
@@ -132,20 +150,17 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "identityContractNonce")]
-    pub fn get_identity_nonce(&self) -> IdentityNonce {
+    pub fn identity_contract_nonce(&self) -> IdentityNonce {
         self.0.identity_contract_nonce()
     }
 
     #[wasm_bindgen(js_name = "getDataContract")]
     pub fn get_data_contract(
         &self,
-        full_validation: Option<bool>,
-        js_platform_version: JsValue,
+        #[wasm_bindgen(js_name = "fullValidation")] full_validation: Option<bool>,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractWasm> {
-        let platform_version = match js_platform_version.is_undefined() {
-            true => PlatformVersionWasm::default(),
-            false => PlatformVersionWasm::try_from(js_platform_version)?,
-        };
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let data_contract_serialization_format = self.0.data_contract();
 
@@ -170,7 +185,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        state_transition: &StateTransitionWasm,
+        #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
     ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
         let rs_transition = StateTransition::from(state_transition.clone());
 
@@ -184,6 +199,12 @@ impl DataContractUpdateTransitionWasm {
 }
 
 impl_wasm_conversions!(
+    DataContractUpdateTransitionWasm,
+    DataContractUpdateTransition,
+    DataContractUpdateTransitionObjectJs,
+    DataContractUpdateTransitionJSONJs
+);
+impl_wasm_type_info!(
     DataContractUpdateTransitionWasm,
     DataContractUpdateTransition
 );

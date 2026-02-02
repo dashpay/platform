@@ -1,3 +1,5 @@
+node-option:
+  - import=ts-node/esm
 require:
   - tests/bootstrap.cjs
 recursive: true

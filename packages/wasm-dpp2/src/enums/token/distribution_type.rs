@@ -3,6 +3,17 @@ use dpp::data_contract::associated_token::token_distribution_key::TokenDistribut
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+export type TokenDistributionTypeLike = TokenDistributionType | string | number;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenDistributionTypeLike")]
+    pub type TokenDistributionTypeLikeJs;
+}
+
 #[wasm_bindgen(js_name = "TokenDistributionType")]
 #[allow(non_camel_case_types)]
 #[derive(Default)]
@@ -30,10 +41,10 @@ impl From<TokenDistributionType> for TokenDistributionTypeWasm {
     }
 }
 
-impl TryFrom<JsValue> for TokenDistributionTypeWasm {
+impl TryFrom<&JsValue> for TokenDistributionTypeWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<TokenDistributionTypeWasm, Self::Error> {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "preprogrammed" => Ok(TokenDistributionTypeWasm::PreProgrammed),
@@ -53,6 +64,14 @@ impl TryFrom<JsValue> for TokenDistributionTypeWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from distribution type enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for TokenDistributionTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 #[cfg(feature = "core-types-serialization")]
-use bincode::de::Decoder;
+use bincode::de::{BorrowDecoder, Decoder};
 #[cfg(feature = "core-types-serialization")]
 use bincode::enc::Encoder;
 #[cfg(feature = "core-types-serialization")]
@@ -95,8 +95,10 @@ impl Encode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl Decode for ValidatorSetV0 {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+impl<C> Decode<C> for ValidatorSetV0 {
+    fn decode<D: Decoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         // Decode the quorum hash directly as a [u8; 32] array
         let quorum_hash = <[u8; 32]>::decode(decoder)?;
         let quorum_index = Option::<u32>::decode(decoder)?;
@@ -139,8 +141,10 @@ impl Decode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl BorrowDecode<'_> for ValidatorSetV0 {
-    fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+impl<'de, C> BorrowDecode<'de, C> for ValidatorSetV0 {
+    fn borrow_decode<D: BorrowDecoder<'de, Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded
 
         // Decode the quorum hash directly as a [u8; 32] array

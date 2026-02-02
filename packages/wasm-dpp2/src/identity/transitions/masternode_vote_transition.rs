@@ -1,9 +1,11 @@
 use crate::VoteWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -18,8 +20,68 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const MASTERNODE_VOTE_OPTIONS_TS: &str = r#"
+export interface MasternodeVoteTransitionOptions {
+    proTxHash: IdentifierLike;
+    voterIdentityId: IdentifierLike;
+    vote: Vote;
+    nonce: bigint;
+    signaturePublicKeyId?: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * MasternodeVoteTransition serialized as a plain object.
+ */
+export interface MasternodeVoteTransitionObject {
+    proTxHash: Uint8Array;
+    voterIdentityId: Uint8Array;
+    vote: VoteObject;
+    nonce: bigint;
+    signaturePublicKeyId?: number;
+    signature?: Uint8Array;
+}
+
+/**
+ * MasternodeVoteTransition serialized as JSON.
+ */
+export interface MasternodeVoteTransitionJSON {
+    proTxHash: string;
+    voterIdentityId: string;
+    vote: VoteJSON;
+    nonce: string;
+    signaturePublicKeyId?: number;
+    signature?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionOptions")]
+    pub type MasternodeVoteTransitionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionObject")]
+    pub type MasternodeVoteTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "MasternodeVoteTransitionJSON")]
+    pub type MasternodeVoteTransitionJSONJs;
+}
+
+/// Serde struct for MasternodeVoteTransitionOptions (primitives only)
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MasternodeVoteTransitionOptionsInput {
+    nonce: IdentityNonce,
+    #[serde(default)]
+    signature_public_key_id: KeyID,
+    #[serde(default)]
+    signature: Vec<u8>,
+}
 
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
 #[derive(Clone)]
@@ -39,38 +101,29 @@ impl From<MasternodeVoteTransitionWasm> for MasternodeVoteTransition {
 
 #[wasm_bindgen(js_class = MasternodeVoteTransition)]
 impl MasternodeVoteTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "MasternodeVoteTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "MasternodeVoteTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_pro_tx_hash: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_voter_identity_id: &JsValue,
-        vote: &VoteWasm,
-        nonce: IdentityNonce,
-        signature_public_key: Option<KeyID>,
-        signature: Option<Vec<u8>>,
+    pub fn constructor(
+        options: MasternodeVoteTransitionOptionsJs,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?.into();
-        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?.into();
+        // Extract complex types first (borrows &options)
+        let pro_tx_hash: IdentifierWasm = try_from_options(&options, "proTxHash")?;
+        let voter_identity_id: IdentifierWasm = try_from_options(&options, "voterIdentityId")?;
+
+        let vote: VoteWasm = try_from_options(&options, "vote")?;
+
+        // Deserialize primitive fields via serde last (consumes options)
+        let input: MasternodeVoteTransitionOptionsInput =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
-                pro_tx_hash,
-                voter_identity_id,
-                vote: vote.clone().into(),
-                nonce,
-                signature_public_key_id: signature_public_key.unwrap_or(0),
-                signature: BinaryData::from(signature.unwrap_or_default()),
+                pro_tx_hash: pro_tx_hash.into(),
+                voter_identity_id: voter_identity_id.into(),
+                vote: vote.into(),
+                nonce: input.nonce,
+                signature_public_key_id: input.signature_public_key_id,
+                signature: BinaryData::from(input.signature),
             },
         )))
     }
@@ -108,26 +161,18 @@ impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(setter = proTxHash)]
     pub fn set_pro_tx_hash(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_pro_tx_hash: &JsValue,
+        #[wasm_bindgen(js_name = "proTxHash")] pro_tx_hash: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?.into();
-
-        self.0.set_pro_tx_hash(pro_tx_hash);
-
+        self.0.set_pro_tx_hash(pro_tx_hash.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = voterIdentityId)]
     pub fn set_voter_identity_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_voter_identity_id: &JsValue,
+        #[wasm_bindgen(js_name = "voterIdentityId")] voter_identity_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?.into();
-
-        self.0.set_voter_identity_id(voter_identity_id);
-
+        self.0.set_voter_identity_id(voter_identity_id.try_into()?);
         Ok(())
     }
 
@@ -137,19 +182,28 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = nonce)]
-    pub fn set_nonce(&mut self, nonce: IdentityNonce) {
+    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+        let nonce = try_to_u64(&nonce, "nonce")?;
         self.0 = match self.0.clone() {
             MasternodeVoteTransition::V0(mut vote) => {
                 vote.nonce = nonce;
 
                 MasternodeVoteTransition::V0(vote)
             }
-        }
+        };
+        Ok(())
     }
 
     #[wasm_bindgen(setter=signaturePublicKeyId)]
-    pub fn set_signature_public_key_id(&mut self, signature_public_key_id: KeyID) {
-        self.0.set_signature_public_key_id(signature_public_key_id)
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "signaturePublicKeyId")] signature_public_key_id: JsValue,
+    ) -> WasmDppResult<()> {
+        self.0.set_signature_public_key_id(try_to_u32(
+            &signature_public_key_id,
+            "signaturePublicKeyId",
+        )?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter=signature)]
@@ -186,7 +240,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> u16 {
+    pub fn user_fee_increase(&self) -> u16 {
         self.0.user_fee_increase()
     }
 
@@ -195,20 +249,22 @@ impl MasternodeVoteTransitionWasm {
         self.0.signable_bytes().map_err(Into::into)
     }
 
-    #[wasm_bindgen(getter = "assetLock")]
-    pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
+    #[wasm_bindgen(getter = "assetLockProof")]
+    pub fn asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
         self.0
             .optional_asset_lock_proof()
             .map(|asset_lock_proof| AssetLockProofWasm::from(asset_lock_proof.clone()))
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: u16) {
-        self.0.set_user_fee_increase(amount)
+    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0
+            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "modifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
+    pub fn modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -248,4 +304,11 @@ impl MasternodeVoteTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);
+impl_wasm_conversions!(
+    MasternodeVoteTransitionWasm,
+    MasternodeVoteTransition,
+    MasternodeVoteTransitionObjectJs,
+    MasternodeVoteTransitionJSONJs
+);
+
+impl_wasm_type_info!(MasternodeVoteTransitionWasm, MasternodeVoteTransition);

@@ -1,4 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
@@ -15,9 +17,58 @@ use wasm_bindgen::prelude::*;
 pub struct IdentifierWasm(Identifier);
 
 #[wasm_bindgen(typescript_custom_section)]
-const IDENTIFIER_TS_HELPERS: &'static str = r#"
+const IDENTIFIER_TS_HELPERS: &str = r#"
 export type IdentifierLike = Identifier | Uint8Array | string;
+export type IdentifierLikeArray = Array<Identifier | Uint8Array | string>;
+export type IdentifierLikeOrUndefined = Identifier | Uint8Array | string | undefined;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentifierLike")]
+    pub type IdentifierLikeJs;
+
+    #[wasm_bindgen(typescript_type = "IdentifierLikeArray")]
+    pub type IdentifierLikeArrayJs;
+
+    #[wasm_bindgen(typescript_type = "IdentifierLikeOrUndefined")]
+    pub type IdentifierLikeOrUndefinedJs;
+}
+
+impl TryFrom<IdentifierLikeJs> for IdentifierWasm {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        IdentifierWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<IdentifierLikeJs> for Identifier {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeJs) -> Result<Self, Self::Error> {
+        Ok(IdentifierWasm::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<IdentifierLikeOrUndefinedJs> for Option<IdentifierWasm> {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeOrUndefinedJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        if js_value.is_undefined() || js_value.is_null() {
+            Ok(None)
+        } else {
+            IdentifierWasm::try_from(js_value).map(Some)
+        }
+    }
+}
+
+impl TryFrom<IdentifierLikeOrUndefinedJs> for Option<Identifier> {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeOrUndefinedJs) -> Result<Self, Self::Error> {
+        let opt: Option<IdentifierWasm> = value.try_into()?;
+        Ok(opt.map(Identifier::from))
+    }
+}
 
 impl From<IdentifierWasm> for Identifier {
     fn from(identifier: IdentifierWasm) -> Self {
@@ -77,7 +128,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
             return IdentifierWasm::try_from(string.as_str());
         }
 
-        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
+        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() {
             let uint8_array = Uint8Array::from(value.clone());
             let bytes = uint8_array.to_vec();
 
@@ -87,7 +138,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         }
 
         Err(WasmDppError::invalid_argument(
-            "Invalid identifier. Expected Identifier, Uint8Array or string",
+            "Invalid identifier. Expected Identifier, Uint8Array, array or string",
         ))
     }
 }
@@ -204,22 +255,9 @@ impl Serialize for IdentifierWasm {
 
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Identifier".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Identifier".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identifier: &JsValue,
-    ) -> WasmDppResult<IdentifierWasm> {
-        IdentifierWasm::try_from(identifier)
+    pub fn constructor(identifier: IdentifierLikeJs) -> WasmDppResult<IdentifierWasm> {
+        identifier.try_into()
     }
 
     #[wasm_bindgen(js_name = "toBase58")]
@@ -293,24 +331,7 @@ impl IdentifierWasm {
     pub fn to_slice(&self) -> [u8; 32] {
         *self.0.as_bytes()
     }
-
-    /// Try to extract an Identifier from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to an IdentifierWasm. Accepts Identifier, Uint8Array, or string (Base58/hex).
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let id_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if id_js.is_undefined() || id_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        IdentifierWasm::try_from(&id_js)
-    }
 }
+
+impl_try_from_options!(IdentifierWasm);
+impl_wasm_type_info!(IdentifierWasm, Identifier);

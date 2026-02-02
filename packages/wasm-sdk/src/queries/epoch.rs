@@ -14,7 +14,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 use wasm_dpp2::identifier::IdentifierWasm;
-use wasm_dpp2::ProTxHashWasm;
+use wasm_dpp2::utils::try_from_options_optional;
+use wasm_dpp2::utils::try_to_vec;
+use wasm_dpp2::utils::JsMapExt;
+use wasm_dpp2::{ProTxHashLikeArrayJs, ProTxHashWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
 const EPOCHS_QUERY_TS: &'static str = r#"
@@ -160,10 +163,10 @@ export interface EvonodeProposedBlocksRangeQuery {
   limit?: number;
 
   /**
-   * ProTxHash (hex string) to resume from (exclusive by default).
+   * ProTxHash to resume from (exclusive by default).
    * @default undefined
    */
-  startAfter?: string;
+  startAfter?: ProTxHashLike;
 }
 "#;
 
@@ -179,8 +182,6 @@ struct EvonodeProposedBlocksRangeQueryInput {
     epoch: u16,
     #[serde(default)]
     limit: Option<u32>,
-    #[serde(default)]
-    start_after: Option<String>,
 }
 
 struct EvonodeProposedBlocksRangeQueryParsed {
@@ -192,14 +193,19 @@ struct EvonodeProposedBlocksRangeQueryParsed {
 fn parse_evonode_range_query(
     query: EvonodeProposedBlocksRangeQueryJs,
 ) -> Result<EvonodeProposedBlocksRangeQueryParsed, WasmSdkError> {
+    let query_js: JsValue = query.into();
+
+    // Extract startAfter before serde since it accepts ProTxHashLike (string, Uint8Array, or ProTxHash object)
+    let start_after: Option<ProTxHashWasm> = try_from_options_optional(&query_js, "startAfter")?;
+
     let input: EvonodeProposedBlocksRangeQueryInput = deserialize_required_query(
-        query,
+        query_js,
         "Query object is required",
         "evonode proposed blocks range query",
     )?;
 
-    let start_info = if let Some(start) = input.start_after {
-        let pro_tx_hash: ProTxHash = ProTxHashWasm::from_hex(&start)?.into();
+    let start_info = if let Some(pro_tx_hash_wasm) = start_after {
+        let pro_tx_hash: ProTxHash = pro_tx_hash_wasm.into();
         Some(QueryStartInfo {
             start_key: pro_tx_hash.to_byte_array().to_vec(),
             start_included: false,
@@ -242,15 +248,13 @@ impl WasmSdk {
         let epochs_result: drive_proof_verifier::types::ExtendedEpochInfos =
             ExtendedEpochInfo::fetch_many(self.as_ref(), query).await?;
 
-        let epochs_map = Map::new();
-
-        for (epoch_index, epoch_info) in epochs_result {
-            let key = Number::from(epoch_index as u32);
-            let value = epoch_info.map(ExtendedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
-
-        Ok(epochs_map)
+        Ok(Map::from_entries(epochs_result.into_iter().map(
+            |(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(ExtendedEpochInfoWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -300,14 +304,13 @@ impl WasmSdk {
             )
             .await?;
 
-        let epochs_map = Map::new();
-        for (epoch_index, epoch_info) in epochs_result {
-            let key = Number::from(epoch_index as u32);
-            let value = epoch_info.map(FinalizedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
-
-        Ok(epochs_map)
+        Ok(Map::from_entries(epochs_result.into_iter().map(
+            |(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(FinalizedEpochInfoWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -317,28 +320,25 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         &self,
         epoch: u16,
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike[]")] ids: Vec<JsValue>,
+        ids: ProTxHashLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
-        // Parse the ProTxHash values using centralized wrapper
-        let pro_tx_hashes: Vec<ProTxHash> = ids
-            .into_iter()
-            .map(|hash_js| ProTxHashWasm::try_from(&hash_js).map(|w| w.into()))
-            .collect::<Result<Vec<_>, _>>()?;
+        // Parse the ProTxHash values using helper function
+        let pro_tx_hashes: Vec<ProTxHash> =
+            try_to_vec::<ProTxHashWasm, _, _>(ids, "proTxHashes", "proTxHash")?;
 
         // Use FetchMany to get block counts for specific IDs
         let counts =
             ProposerBlockCountById::fetch_many(self.as_ref(), (epoch, pro_tx_hashes)).await?;
 
-        let map = Map::new();
-
-        for (identifier, count) in counts.0 {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
-
-        Ok(map)
+        Ok(Map::from_entries(counts.0.into_iter().map(
+            |(identifier, count)| {
+                let key = JsValue::from(IdentifierWasm::from(identifier));
+                let value = JsValue::from(BigInt::from(count));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
@@ -365,13 +365,13 @@ impl WasmSdk {
         )
         .await?;
 
-        let map = Map::new();
-        for (identifier, count) in counts_result.0 {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
-
-        Ok(map)
+        Ok(Map::from_entries(counts_result.0.into_iter().map(
+            |(identifier, count)| {
+                let key = JsValue::from(IdentifierWasm::from(identifier));
+                let value = JsValue::from(BigInt::from(count));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(js_name = "getCurrentEpoch")]
@@ -410,12 +410,12 @@ impl WasmSdk {
             ExtendedEpochInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let epochs_map = Map::new();
-        for (epoch_index, epoch_info) in epochs_result {
-            let key = Number::from(epoch_index as u32);
-            let value = epoch_info.map(ExtendedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
+        let epochs_map =
+            Map::from_entries(epochs_result.into_iter().map(|(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(ExtendedEpochInfoWasm::from));
+                (key, value)
+            }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
@@ -483,12 +483,12 @@ impl WasmSdk {
         let (epochs_result, metadata, proof) = dash_sdk::dpp::block::finalized_epoch_info::FinalizedEpochInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
             .await?;
 
-        let epochs_map = Map::new();
-        for (index, epoch) in epochs_result {
-            let key = Number::from(index as u32);
-            let value = epoch.map(FinalizedEpochInfoWasm::from);
-            epochs_map.set(&key.into(), &JsValue::from(value));
-        }
+        let epochs_map =
+            Map::from_entries(epochs_result.into_iter().map(|(epoch_index, epoch_info)| {
+                let key: JsValue = Number::from(epoch_index as u32).into();
+                let value = JsValue::from(epoch_info.map(FinalizedEpochInfoWasm::from));
+                (key, value)
+            }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             epochs_map, metadata, proof,
@@ -502,17 +502,13 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
-        #[wasm_bindgen(js_name = "proTxHashes")]
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike[]")]
-        pro_tx_hashes: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "proTxHashes")] pro_tx_hashes: ProTxHashLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::ProposerBlockCountById;
 
-        // Parse the ProTxHash values using centralized wrapper
-        let parsed_hashes: Vec<ProTxHash> = pro_tx_hashes
-            .into_iter()
-            .map(|hash_js| ProTxHashWasm::try_from(&hash_js).map(|w| w.into()))
-            .collect::<Result<Vec<_>, _>>()?;
+        // Parse the ProTxHash values using helper function
+        let parsed_hashes: Vec<ProTxHash> =
+            try_to_vec::<ProTxHashWasm, _, _>(pro_tx_hashes, "proTxHashes", "proTxHash")?;
 
         // Use FetchMany with proof to get block counts for specific IDs
         let (counts, metadata, proof) = ProposerBlockCountById::fetch_many_with_metadata_and_proof(
@@ -522,11 +518,11 @@ impl WasmSdk {
         )
         .await?;
 
-        let map = Map::new();
-        for (identifier, count) in counts.0 {
+        let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
             let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
+            let value = JsValue::from(BigInt::from(count));
+            (key, value)
+        }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             map, metadata, proof,
@@ -564,11 +560,11 @@ impl WasmSdk {
             )
             .await?;
 
-        let map = Map::new();
-        for (identifier, count) in counts.0 {
+        let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
             let key = JsValue::from(IdentifierWasm::from(identifier));
-            map.set(&key, &JsValue::from(BigInt::from(count)));
-        }
+            let value = JsValue::from(BigInt::from(count));
+            (key, value)
+        }));
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             map, metadata, proof,
