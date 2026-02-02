@@ -943,7 +943,7 @@ struct GetBranchStateView: View {
 
   private var isFormValid: Bool {
     guard let depthValue = UInt32(depth) else { return false }
-    return !keyHex.isEmpty && !expectedHashHex.isEmpty && expectedHashHex.count == 64
+    return !keyHex.isEmpty && AddressValidator.validateHash(expectedHashHex)
       && !checkpointHeight.isEmpty && depthValue >= 6 && depthValue <= 9
       && UInt64(checkpointHeight) != nil
   }

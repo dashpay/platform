@@ -58,6 +58,41 @@ public enum AddressValidator {
     public static func validateIdentityId(_ id: String) -> Bool {
         !id.trimmingCharacters(in: .whitespaces).isEmpty
     }
+
+    /// Validates a bech32m Platform address (dashevo1... or tdashevo1...).
+    /// - Returns: `true` if string is a valid bech32m address with correct HRP and 21 bytes of data.
+    public static func validateBech32mAddress(_ address: String) -> Bool {
+        Bech32m.isValidPlatformAddress(address)
+    }
+
+    /// Validates an address in either hex (42 chars) or bech32m format.
+    /// - Returns: `true` if string is valid in either format.
+    public static func validateAddress(_ address: String) -> Bool {
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("dashevo1") || trimmed.lowercased().hasPrefix("tdashevo1") {
+            return validateBech32mAddress(trimmed)
+        }
+        return validateHexAddress(trimmed)
+    }
+
+    /// Validates a 32-byte hash in hex format (64 characters).
+    /// - Returns: `true` if string is exactly 64 hex characters.
+    public static func validateHash(_ hex: String) -> Bool {
+        validateHexString(hex, byteLength: 32)
+    }
+
+    /// Validates an identity ID in hex format (64 characters = 32 bytes).
+    /// - Returns: `true` if string is exactly 64 hex characters.
+    public static func validateIdentityIdHex(_ hex: String) -> Bool {
+        validateHexString(hex, byteLength: 32)
+    }
+
+    /// Checks if a string is a valid hex identity ID (64 chars).
+    /// Useful for format detection (hex vs base58).
+    /// - Returns: `true` if string is exactly 64 hex characters.
+    public static func isHexIdentityId(_ id: String) -> Bool {
+        validateHexString(id, byteLength: 32)
+    }
 }
 
 // MARK: - Transfer Input Validator

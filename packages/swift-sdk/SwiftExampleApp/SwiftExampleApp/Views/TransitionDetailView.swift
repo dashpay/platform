@@ -1934,8 +1934,8 @@ struct TransitionDetailView: View {
       .replacingOccurrences(of: "0x", with: "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
 
-    // If it's hex (64 chars), convert to base58
-    if cleanId.count == 64, let data = Data(hexString: cleanId) {
+    // If it's hex (64 chars = 32 bytes), convert to base58
+    if AddressValidator.isHexIdentityId(cleanId), let data = Data(hexString: cleanId) {
       return data.toBase58String()
     }
 
