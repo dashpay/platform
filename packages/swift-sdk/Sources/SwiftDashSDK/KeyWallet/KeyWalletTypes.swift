@@ -413,7 +413,7 @@ public struct ManagedAccountCollectionSummary {
     public let hasProviderOperatorKeys: Bool
     public let hasProviderPlatformKeys: Bool
     
-    init(ffiSummary: FFIManagedAccountCollectionSummary) {
+    init(ffiSummary: FFIManagedCoreAccountCollectionSummary) {
         // Convert BIP44 indices
         if ffiSummary.bip44_count > 0, let indices = ffiSummary.bip44_indices {
             self.bip44Indices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.bip44_count))
