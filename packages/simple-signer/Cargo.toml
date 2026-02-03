@@ -16,7 +16,6 @@ state-transitions = [
 ]
 
 [dependencies]
-bincode = { version = "=2.0.1", features = ["serde"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "ed25519-dalek",
 ] }
