@@ -46,6 +46,7 @@ pub mod change_control_rules;
 pub mod config;
 pub mod group;
 pub mod storage_requirements;
+pub mod update_values;
 
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
@@ -65,7 +66,7 @@ use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
 
 type JsonSchema = JsonValue;
-type DefinitionName = String;
+pub(crate) type DefinitionName = String;
 pub type DocumentName = String;
 pub type TokenName = String;
 pub type GroupContractPosition = u16;

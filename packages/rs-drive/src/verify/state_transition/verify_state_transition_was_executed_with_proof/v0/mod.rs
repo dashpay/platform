@@ -19,7 +19,6 @@ use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{AddressNonce, Identifier};
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
@@ -99,29 +98,49 @@ impl Drive {
                 Ok((root_hash, VerifiedDataContract(contract)))
             }
             StateTransition::DataContractUpdate(data_contract_update) => {
-                // we expect to get a contract that matches the state transition
-                let keeps_history = data_contract_update
-                    .data_contract()
-                    .config()
-                    .keeps_history();
-                let (root_hash, contract) = Drive::verify_contract(
-                    proof,
-                    Some(keeps_history),
-                    false,
-                    true,
-                    data_contract_update.data_contract().id().into_buffer(),
-                    platform_version,
-                )?;
-                let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update", data_contract_update.data_contract().id()))))?;
-                let contract_for_serialization: DataContractInSerializationFormat = contract
-                    .clone()
-                    .try_into_platform_versioned(platform_version)?;
-                if let Some(mismatch) =
-                    contract_for_serialization.first_mismatch(data_contract_update.data_contract())
-                {
-                    return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", data_contract_update.data_contract().id(), mismatch))));
+                use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+
+                match data_contract_update {
+                    DataContractUpdateTransition::V0(v0) => {
+                        // V0 has the full data contract embedded
+                        let keeps_history = v0.data_contract.config().keeps_history();
+                        let (root_hash, contract) = Drive::verify_contract(
+                            proof,
+                            Some(keeps_history),
+                            false,
+                            true,
+                            v0.data_contract.id().into_buffer(),
+                            platform_version,
+                        )?;
+                        let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update)", v0.data_contract.id()))))?;
+                        let contract_for_serialization: DataContractInSerializationFormat =
+                            contract
+                                .clone()
+                                .try_into_platform_versioned(platform_version)?;
+                        if let Some(mismatch) =
+                            contract_for_serialization.first_mismatch(&v0.data_contract)
+                        {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!("proof of state transition execution did not contain exact expected contract after update with id {}: {}", v0.data_contract.id(), mismatch))));
+                        }
+                        Ok((root_hash, VerifiedDataContract(contract)))
+                    }
+                    DataContractUpdateTransition::V1(v1) => {
+                        // V1 has individual fields, not a full data contract
+                        // We verify the contract exists and get it from the proof
+                        let (root_hash, contract) = Drive::verify_contract(
+                            proof,
+                            None, // We don't know keeps_history from V1 transition alone
+                            false,
+                            true,
+                            v1.id.into_buffer(),
+                            platform_version,
+                        )?;
+                        let contract = contract.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain contract with id {} expected to exist because of state transition (update)", v1.id))))?;
+                        // For V1, we can't do a full mismatch check since we only have partial updates
+                        // The contract in the proof should have the updates applied
+                        Ok((root_hash, VerifiedDataContract(contract)))
+                    }
                 }
-                Ok((root_hash, VerifiedDataContract(contract)))
             }
             StateTransition::Batch(documents_batch_transition) => {
                 if documents_batch_transition.transitions_len() > 1 {

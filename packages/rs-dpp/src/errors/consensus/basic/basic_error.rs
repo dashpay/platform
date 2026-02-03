@@ -87,8 +87,9 @@ use crate::consensus::basic::{
 use crate::consensus::ConsensusError;
 
 use super::data_contract::{
-    DuplicateKeywordsError, InvalidDescriptionLengthError, InvalidKeywordLengthError,
-    TooManyKeywordsError,
+    DataContractUpdateTransitionConflictingKeywordError,
+    DataContractUpdateTransitionOverlappingFieldsError, DuplicateKeywordsError,
+    InvalidDescriptionLengthError, InvalidKeywordLengthError, TooManyKeywordsError,
 };
 use crate::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use crate::consensus::basic::overflow_error::OverflowError;
@@ -653,6 +654,16 @@ pub enum BasicError {
 
     #[error(transparent)]
     OutputAddressAlsoInputError(OutputAddressAlsoInputError),
+
+    #[error(transparent)]
+    DataContractUpdateTransitionOverlappingFieldsError(
+        DataContractUpdateTransitionOverlappingFieldsError,
+    ),
+
+    #[error(transparent)]
+    DataContractUpdateTransitionConflictingKeywordError(
+        DataContractUpdateTransitionConflictingKeywordError,
+    ),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -15,6 +15,8 @@ impl DataContract {
     /// - `groups`: A reference to a `BTreeMap` of group contract positions (`GroupContractPosition`)
     ///   mapped to their corresponding `Group` objects. These represent the groups associated with
     ///   the data contract.
+    /// - `allow_offset_start`: If true, allows the groups to start at a position other than 0.
+    ///   This is useful for update transitions where new groups continue from existing ones.
     /// - `platform_version`: A reference to the [`PlatformVersion`](crate::version::PlatformVersion)
     ///   object specifying the version of the platform and determining which validation method to use.
     ///
@@ -39,6 +41,7 @@ impl DataContract {
     ///   - Invalid individual group configurations (e.g., power-related errors or exceeding member limits).
     pub fn validate_groups(
         groups: &BTreeMap<GroupContractPosition, Group>,
+        allow_offset_start: bool,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -47,7 +50,7 @@ impl DataContract {
             .methods
             .validate_groups
         {
-            0 => Self::validate_groups_v0(groups, platform_version),
+            0 => Self::validate_groups_v0(groups, allow_offset_start, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_groups".to_string(),
                 known_versions: vec![0],

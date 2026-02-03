@@ -1,3 +1,5 @@
+mod registration_cost;
+mod update_contract_cost;
 mod v0;
 
 pub use v0::*;
@@ -16,6 +18,11 @@ use crate::prelude::{IdentityNonce, UserFeeIncrease};
 use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
+    /// Creates an update transition from a single data contract.
+    ///
+    /// Note: This method always creates a V0 transition (embedding the full contract)
+    /// because V1 transitions require both old and new contracts to compute deltas.
+    /// For V1 delta-based transitions, use `from_contract_update` instead.
     fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         data_contract: DataContract,
         identity: &PartialIdentity,
@@ -26,26 +33,17 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        match feature_version.unwrap_or(
-            platform_version
-                .dpp
-                .state_transition_serialization_versions
-                .contract_update_state_transition
-                .default_current_version,
-        ) {
-            0 => DataContractUpdateTransitionV0::new_from_data_contract(
-                data_contract,
-                identity,
-                key_id,
-                identity_contract_nonce,
-                user_fee_increase,
-                signer,
-                platform_version,
-                feature_version,
-            ),
-            v => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown DataContractUpdateTransition version for new_from_data_contract {v}"
-            ))),
-        }
+        // Always use V0 (embed full contract) since we only have a single contract.
+        // V1 delta-based transitions require both old and new contracts.
+        DataContractUpdateTransitionV0::new_from_data_contract(
+            data_contract,
+            identity,
+            key_id,
+            identity_contract_nonce,
+            user_fee_increase,
+            signer,
+            platform_version,
+            feature_version,
+        )
     }
 }

@@ -71,8 +71,12 @@ impl DataContractUpdateTransitionWasm {
             PlatformVersion::latest()
         };
 
+        let data_contract = self
+            .0
+            .data_contract()
+            .ok_or_else(|| JsError::new("V1 update transitions do not contain a data contract"))?;
         DataContractWasm::try_from_serialization_format_with_platform_version(
-            self.0.data_contract().clone(),
+            data_contract.clone(),
             false,
             platform_version,
         )

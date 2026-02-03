@@ -11,18 +11,26 @@ impl StateTransitionLike for DataContractCreateTransition {
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
             DataContractCreateTransition::V0(transition) => transition.modified_data_ids(),
+            DataContractCreateTransition::V1(transition) => transition.modified_data_ids(),
         }
     }
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         match self {
-            DataContractCreateTransition::V0(_) => 0,
+            DataContractCreateTransition::V0(transition) => {
+                transition.state_transition_protocol_version()
+            }
+            DataContractCreateTransition::V1(transition) => {
+                transition.state_transition_protocol_version()
+            }
         }
     }
+
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             DataContractCreateTransition::V0(transition) => transition.state_transition_type(),
+            DataContractCreateTransition::V1(transition) => transition.state_transition_type(),
         }
     }
 
@@ -30,12 +38,17 @@ impl StateTransitionLike for DataContractCreateTransition {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             DataContractCreateTransition::V0(transition) => transition.user_fee_increase(),
+            DataContractCreateTransition::V1(transition) => transition.user_fee_increase(),
         }
     }
+
     /// set a fee multiplier
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             DataContractCreateTransition::V0(transition) => {
+                transition.set_user_fee_increase(user_fee_increase)
+            }
+            DataContractCreateTransition::V1(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
             }
         }
@@ -44,6 +57,7 @@ impl StateTransitionLike for DataContractCreateTransition {
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             DataContractCreateTransition::V0(transition) => transition.unique_identifiers(),
+            DataContractCreateTransition::V1(transition) => transition.unique_identifiers(),
         }
     }
 }
@@ -53,18 +67,24 @@ impl StateTransitionSingleSigned for DataContractCreateTransition {
     fn signature(&self) -> &BinaryData {
         match self {
             DataContractCreateTransition::V0(transition) => transition.signature(),
+            DataContractCreateTransition::V1(transition) => transition.signature(),
         }
     }
+
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
             DataContractCreateTransition::V0(transition) => transition.set_signature(signature),
+            DataContractCreateTransition::V1(transition) => transition.set_signature(signature),
         }
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
             DataContractCreateTransition::V0(transition) => {
+                transition.set_signature_bytes(signature)
+            }
+            DataContractCreateTransition::V1(transition) => {
                 transition.set_signature_bytes(signature)
             }
         }
@@ -75,6 +95,7 @@ impl StateTransitionOwned for DataContractCreateTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             DataContractCreateTransition::V0(transition) => transition.owner_id(),
+            DataContractCreateTransition::V1(transition) => transition.owner_id(),
         }
     }
 }

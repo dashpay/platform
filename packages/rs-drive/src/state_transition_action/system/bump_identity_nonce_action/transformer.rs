@@ -55,6 +55,9 @@ impl BumpIdentityNonceAction {
             DataContractCreateTransition::V0(v0) => {
                 BumpIdentityNonceActionV0::from_contract_create(v0).into()
             }
+            DataContractCreateTransition::V1(v1) => {
+                BumpIdentityNonceActionV0::from_contract_create_v1(v1).into()
+            }
         }
     }
 
@@ -65,6 +68,9 @@ impl BumpIdentityNonceAction {
         match value {
             DataContractCreateTransition::V0(v0) => {
                 BumpIdentityNonceActionV0::from_borrowed_contract_create(v0).into()
+            }
+            DataContractCreateTransition::V1(v1) => {
+                BumpIdentityNonceActionV0::from_borrowed_contract_create_v1(v1).into()
             }
         }
     }
