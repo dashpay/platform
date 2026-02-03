@@ -34,9 +34,7 @@ impl TryFrom<PlatformVersionLikeJs> for PlatformVersion {
 
 #[wasm_bindgen(js_name = "PlatformVersion")]
 #[derive(Clone)]
-pub struct PlatformVersionWasm {
-    version: u32,
-}
+pub struct PlatformVersionWasm(u32);
 
 impl_wasm_type_info!(PlatformVersionWasm, PlatformVersion);
 
@@ -47,41 +45,33 @@ impl PlatformVersionWasm {
         PlatformVersion::get(version).map_err(|_| {
             WasmDppError::invalid_argument(format!("unknown platform version: {}", version))
         })?;
-        Ok(PlatformVersionWasm { version })
+        Ok(PlatformVersionWasm(version))
     }
 
     #[wasm_bindgen(js_name = "latest")]
     pub fn latest() -> PlatformVersionWasm {
-        PlatformVersionWasm {
-            version: PlatformVersion::latest().protocol_version,
-        }
+        PlatformVersionWasm(PlatformVersion::latest().protocol_version)
     }
 
     #[wasm_bindgen(js_name = "first")]
     pub fn first() -> PlatformVersionWasm {
-        PlatformVersionWasm {
-            version: PlatformVersion::first().protocol_version,
-        }
+        PlatformVersionWasm(PlatformVersion::first().protocol_version)
     }
 
     #[wasm_bindgen(js_name = "current")]
     pub fn current() -> PlatformVersionWasm {
-        PlatformVersionWasm {
-            version: PlatformVersion::desired().protocol_version,
-        }
+        PlatformVersionWasm(PlatformVersion::desired().protocol_version)
     }
 
     #[wasm_bindgen(getter)]
     pub fn version(&self) -> u32 {
-        self.version
+        self.0
     }
 }
 
 impl Default for PlatformVersionWasm {
     fn default() -> Self {
-        PlatformVersionWasm {
-            version: PlatformVersion::desired().protocol_version,
-        }
+        PlatformVersionWasm(PlatformVersion::desired().protocol_version)
     }
 }
 
@@ -106,7 +96,7 @@ impl TryFrom<&JsValue> for PlatformVersionWasm {
             WasmDppError::invalid_argument(format!("unknown platform version: {}", version))
         })?;
 
-        Ok(PlatformVersionWasm { version })
+        Ok(PlatformVersionWasm(version))
     }
 }
 
@@ -120,7 +110,7 @@ impl TryFrom<JsValue> for PlatformVersionWasm {
 
 impl From<PlatformVersionWasm> for PlatformVersion {
     fn from(value: PlatformVersionWasm) -> Self {
-        PlatformVersion::get(value.version)
+        PlatformVersion::get(value.0)
             .expect("PlatformVersionWasm should always contain a valid version")
             .clone()
     }
