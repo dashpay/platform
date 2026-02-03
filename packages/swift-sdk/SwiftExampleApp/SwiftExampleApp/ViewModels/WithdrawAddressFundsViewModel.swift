@@ -44,31 +44,27 @@ final class WithdrawAddressFundsViewModel: BaseViewModel {
   }
 
   func executeWithdrawal(sdk: SDK) async {
-    guard let inputAddressData = Data(hexString: inputAddressHex),
-      let privateKeyData = Data(hexString: inputPrivateKeyHex),
-      let inputAmt = UInt64(inputAmount)
+    guard let input = TransferInputBuilder.createInput(
+      addressHex: inputAddressHex,
+      amount: inputAmount,
+      nonce: 0,
+      privateKeyHex: inputPrivateKeyHex
+    )
     else {
       errorMessage = "Invalid input data"
       showResult = true
       return
     }
 
-    let coreFee = UInt32(coreFeePerByte) ?? 0
+    let coreFee = NumberTransformer.parseFee(coreFeePerByte) ?? 0
     isLoading = true
     errorMessage = nil
     result = nil
     showResult = false
 
     do {
-      let inputs = [
-        Addresses.AddressTransferInput(
-          addressBytes: inputAddressData,
-          amount: inputAmt,
-          nonce: 0,
-          privateKey: privateKeyData
-        )
-      ]
-      let changeAddressData: Data? = useChangeAddress ? Data(hexString: changeAddressHex) : nil
+      let inputs = [input]
+      let changeAddressData: Data? = useChangeAddress ? AddressTransformer.hexToData(changeAddressHex) : nil
       let withdrawalResult = try sdk.addresses.withdrawFunds(
         inputs: inputs,
         coreAddress: coreAddress,

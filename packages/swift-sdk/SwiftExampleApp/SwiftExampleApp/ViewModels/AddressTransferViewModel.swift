@@ -53,11 +53,16 @@ final class AddressTransferViewModel: BaseViewModel {
 
     /// Execute the transfer using the given SDK. Updates result or errorMessage on main actor.
     func executeTransfer(sdk: SDK) async {
-        guard let inputAddressData = Data(hexString: inputAddressHex),
-              let privateKeyData = Data(hexString: inputPrivateKeyHex),
-              let outputAddressData = Data(hexString: outputAddressHex),
-              let inputAmt = UInt64(inputAmount),
-              let outputAmt = UInt64(outputAmount)
+        guard let input = TransferInputBuilder.createInput(
+            addressHex: inputAddressHex,
+            amount: inputAmount,
+            nonce: 0,
+            privateKeyHex: inputPrivateKeyHex
+        ),
+        let output = TransferInputBuilder.createOutput(
+            addressHex: outputAddressHex,
+            amount: outputAmount
+        )
         else {
             errorMessage = "Invalid input data"
             showResult = true
@@ -70,20 +75,8 @@ final class AddressTransferViewModel: BaseViewModel {
         showResult = false
 
         do {
-            let inputs = [
-                Addresses.AddressTransferInput(
-                    addressBytes: inputAddressData,
-                    amount: inputAmt,
-                    nonce: 0,
-                    privateKey: privateKeyData
-                )
-            ]
-            let outputs = [
-                Addresses.AddressTransferOutput(
-                    addressBytes: outputAddressData,
-                    amount: outputAmt
-                )
-            ]
+            let inputs = [input]
+            let outputs = [output]
             let transferResult = try sdk.addresses.transferFunds(
                 inputs: inputs,
                 outputs: outputs,

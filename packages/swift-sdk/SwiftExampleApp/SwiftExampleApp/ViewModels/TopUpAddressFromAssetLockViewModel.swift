@@ -48,15 +48,15 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
   }
 
   func executeTopUp(sdk: SDK) async {
-    guard let outputAddressData = Data(hexString: outputAddressHex),
-      let privateKeyData = Data(hexString: assetLockPrivateKeyHex)
+    guard let outputAddressData = AddressTransformer.hexToData(outputAddressHex),
+      let privateKeyData = AddressTransformer.hexToData(assetLockPrivateKeyHex)
     else {
       errorMessage = "Invalid input data"
       showResult = true
       return
     }
 
-    let outputAmountValue = UInt64(outputAmount) ?? 0
+    let outputAmountValue = NumberTransformer.parseUInt64(outputAmount) ?? 0
     isLoading = true
     errorMessage = nil
     result = nil
@@ -72,9 +72,9 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
 
       let topUpResult: PlatformAddressInfosResult
       if proofType == .instant {
-        guard let instantLockData = Data(hexString: instantLockHex),
-          let transactionData = Data(hexString: transactionHex),
-          let outputIdx = UInt32(outputIndex)
+        guard let instantLockData = AddressTransformer.hexToData(instantLockHex),
+          let transactionData = AddressTransformer.hexToData(transactionHex),
+          let outputIdx = NumberTransformer.parseUInt32(outputIndex)
         else {
           errorMessage = "Invalid instant lock data"
           showResult = true
@@ -92,8 +92,8 @@ final class TopUpAddressFromAssetLockViewModel: BaseViewModel {
           outputs: outputs
         )
       } else {
-        guard let outPointData = Data(hexString: outPointHex),
-          let height = UInt32(coreChainLockedHeight)
+        guard let outPointData = AddressTransformer.hexToData(outPointHex),
+          let height = NumberTransformer.parseUInt32(coreChainLockedHeight)
         else {
           errorMessage = "Invalid chain lock data"
           showResult = true
