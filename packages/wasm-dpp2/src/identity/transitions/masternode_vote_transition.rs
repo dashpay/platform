@@ -246,7 +246,8 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
     pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        self.0.signable_bytes().map_err(Into::into)
+        let st = StateTransition::from(self.0.clone());
+        st.signable_bytes().map_err(Into::into)
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]

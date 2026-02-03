@@ -257,7 +257,8 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
     pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        Ok(self.0.signable_bytes()?)
+        let st = StateTransition::from(self.0.clone());
+        Ok(st.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
