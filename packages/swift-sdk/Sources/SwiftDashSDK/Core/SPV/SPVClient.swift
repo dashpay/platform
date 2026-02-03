@@ -15,9 +15,11 @@ import DashSDKFFI
 ///    FFIDashSpvClient locks the dir manually to avoid concurrency corruption and its only possible to
 ///    ensure is unlocked by freeing the pointer, FFI limitation
 ///  - Clearing the storage stops the SPVClient, a new one has to be created, FFI limitation
-internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
-    // SPVEventHandler for callbacks
-    private let spvEventHandler: T
+internal class SPVClient: @unchecked Sendable {
+    private var progressUpdateEventHandler: SPVProgressUpdateEventHandler?
+    private var syncEventsHandler: SPVSyncEventsHandler?
+    private var networkEventsHandler: SPVNetworkEventsHandler?
+    private var walletEventsHandler: SPVWalletEventsHandler?
 
     // FFI handles
     private let client: UnsafeMutablePointer<FFIDashSpvClient>
@@ -34,7 +36,7 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
 
     // Removed: Temporary poller for filter header progress (now event-driven via FFI)
 
-    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32, spvEventHandler: T) throws {
+    public init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32) throws {
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
@@ -125,20 +127,8 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
             throw SPVError.initializationFailed
         }
 
-        let result = dash_spv_ffi_client_start(client)
-        if result != 0 {
-            throw SPVError.startFailed(SPVClient.getLastDashFFIError())
-        }
-
         self.client = client
         self.config = configPtr
-        
-        // Set up events callbacks
-        self.spvEventHandler = spvEventHandler
-        dash_spv_ffi_client_set_event_callbacks(client, self.spvEventHandler.intoFFIEventCallbacks())
-        
-        // Call the event handler to notify about the initial sync progress
-        self.spvEventHandler.spvClient(didUpdateSyncProgress: self.getSyncProgress())
     }
 
     deinit {
@@ -156,9 +146,6 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
     }
 
     public func getSyncProgress() -> SPVSyncProgress {
-        // TODO
-        // The return struct lacks information provided by FFIDetailedSyncProgress,
-        // Unification of both structs in the FFI would be a better aproach
         guard let ptr = dash_spv_ffi_client_get_sync_progress(client) else {
           print("[SPV][GetSyncProgress] Failed to get sync progress (Should only fail if client is nil, but client is not nil)")
           return SPVSyncProgress.default()
@@ -174,6 +161,84 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
         return String(cString: errorMsg)
     }
 
+    // MARK: - Event Handlers operations    
+    
+    public func setProgressUpdateEventHandler(_ handler: SPVProgressUpdateEventHandler) {
+        self.progressUpdateEventHandler = handler
+    
+        let result = dash_spv_ffi_client_set_progress_callback(
+            self.client,
+            handler.intoFFIProgressCallback()
+        )
+    
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func clearProgressUpdateEventHandler() {
+        self.progressUpdateEventHandler = nil
+    
+        let result = dash_spv_ffi_client_clear_progress_callback(self.client)
+    
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func setSyncEventsHandler(_ handler: SPVSyncEventsHandler) {
+        self.syncEventsHandler = handler
+        
+        let result = dash_spv_ffi_client_set_sync_event_callbacks(
+            self.client,
+            handler.intoFFISyncEventCallbacks()
+        )
+        
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func clearSyncEventsHandler() {
+        self.syncEventsHandler = nil
+        
+        let result = dash_spv_ffi_client_clear_sync_event_callbacks(self.client)
+        
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func setNetworkEventsHandler(_ handler: SPVNetworkEventsHandler) {
+        self.networkEventsHandler = handler
+    
+        let result = dash_spv_ffi_client_set_network_event_callbacks(
+            self.client,
+            handler.intoFFINetworkEventCallbacks()
+        )
+    
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func clearNetworkEventsHandler() {
+        self.networkEventsHandler = nil
+    
+        let result = dash_spv_ffi_client_clear_network_event_callbacks(self.client)
+    
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func setWalletEventsHandler(_ handler: SPVWalletEventsHandler) {
+        self.walletEventsHandler = handler
+    
+        let result = dash_spv_ffi_client_set_wallet_event_callbacks(
+            self.client,
+            handler.intoFFIWalletEventCallbacks()
+        )
+    
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
+    public func clearWalletEventsHandler() {
+        self.walletEventsHandler = nil
+    
+        let result = dash_spv_ffi_client_clear_wallet_event_callbacks(self.client)
+    
+        assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+    }
+    
     /// Enable/disable masternode sync. If the client is running, apply the update immediately.
     public func setMasternodeSyncEnabled(_ enabled: Bool) throws {
         var rc = dash_spv_ffi_config_set_masternode_sync_enabled(config, enabled)
@@ -193,7 +258,7 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
         // TODO
         // Manually calling the event doesn't look like the right approach,
         // if FFISPVClient could send us an event callback automatically...
-        self.spvEventHandler.spvClient(didUpdateSyncProgress: SPVSyncProgress.default())
+        self.progressUpdateEventHandler?.onProgressUpdate(SPVSyncProgress.default())
     }
     
     public func destroy() {
@@ -201,41 +266,11 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
         dash_spv_ffi_config_destroy(config)
     }
 
-    // MARK: - Wallet Transaction Queries
-
-    /// Get the total count of transactions in the wallet's history.
-    /// This count persists across app restarts.
-    ///
-    /// - Returns: Total number of transactions, or 0 if wallet is empty or not initialized
-    /// NOTE: FFI function dash_spv_ffi_client_get_transaction_count not available in current build
-    public func getTransactionCount() -> UInt64 {
-        // NOTE: dash_spv_ffi_client_get_transaction_count is not available in current FFI
-        // When available, use: return UInt64(dash_spv_ffi_client_get_transaction_count(client))
-        return 0
-    }
-
-    /// Get the count of unique blocks that contain wallet transactions.
-    /// Only counts confirmed transactions (those with a block height).
-    /// This is the persistent "blocks hit" metric that survives app restarts.
-    ///
-    /// - Returns: Number of blocks with wallet transactions, or 0 if wallet is empty or not initialized
-    /// NOTE: FFI function dash_spv_ffi_client_get_blocks_with_transactions_count not available in current build
-    public func getBlocksWithTransactionsCount() -> UInt64 {
-        // NOTE: dash_spv_ffi_client_get_blocks_with_transactions_count is not available in current FFI
-        // When available, use: return UInt64(dash_spv_ffi_client_get_blocks_with_transactions_count(client))
-        return 0
-    }
-
     // MARK: - Synchronization
 
     public func startSync() async throws {
-        let spvEventHandlerPtr = Unmanaged.passUnretained(spvEventHandler).toOpaque()
-        
-        let result = dash_spv_ffi_client_sync_to_tip_with_progress(
+        let result = dash_spv_ffi_client_run(
             self.client,
-            onSpvProgressCallbackC,
-            onSpvCompletionCallbackC,
-            spvEventHandlerPtr
         )
 
         if result != 0 {

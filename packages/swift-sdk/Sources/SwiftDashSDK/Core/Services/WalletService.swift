@@ -131,18 +131,12 @@ public class WalletService: ObservableObject {
     
     // Internal properties
     private var modelContainer: ModelContainer?
-    private var syncTask: Task<Void, Never>?
-    private var balanceUpdateTask: Task<Void, Never>?
-    // Stats polling removed (progress is event-driven)
-    private var isClearingStorage = false
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     public private(set) var walletManager: CoreWalletManager?
     
     // SPV Client - new wrapper with proper sync support
-    private var spvClient: SPVClient<SPVEventHandlerImpl>?
-    
-    private var spvEventHandlerImpl: SPVEventHandlerImpl?
+    private var spvClient: SPVClient?
 
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
@@ -217,15 +211,18 @@ public class WalletService: ObservableObject {
       let net = currentNetwork
       
       SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(startHeight) on \(net.rawValue) during initialize()", minimumLevel: .high)
-      self.spvEventHandlerImpl = SPVEventHandlerImpl(walletService: self)
       
       do {
           spvClient = try SPVClient(
               network: self.currentNetwork.sdkNetwork,
               dataDir: dataDir,
               startHeight: startHeight,
-              spvEventHandler: self.spvEventHandlerImpl!
           )
+          
+          spvClient?.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
+          spvClient?.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
+          spvClient?.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
+          spvClient?.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
           
           try spvClient?.setMasternodeSyncEnabled(self.masternodesEnabled)
       } catch {
@@ -309,6 +306,10 @@ public class WalletService: ObservableObject {
         updateBalance()
     }
 
+    // Placeholder for balance update logic (i think events manage
+    // this but have to confirm)
+    private func updateBalance() {}
+    
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
         masternodesEnabled = enabled
@@ -326,39 +327,19 @@ public class WalletService: ObservableObject {
     // MARK: - Sync Management
     
     public func startSync() async {
-        guard syncTask == nil else { return }
-        guard !isClearingStorage else {
-            print("[SPV][Start] Skipping startSync while a storage clear is in progress")
-            return
-        }
         guard let spvClient = spvClient else {
             print("❌ SPV Client not initialized")
             return
         }
         
-        isSyncing = true
-
         lastSyncError = nil
 
-        // Capture references on MainActor
-        let serviceBox = SendableBox(self)
-        syncTask = Task.detached(priority: .userInitiated) {
-            let service = serviceBox.value
-            defer {
-                Task { @MainActor in service.syncTask = nil }
-            }
-
-            if Task.isCancelled { return }
-
-            do {
-                try await spvClient.startSync()
-            } catch {
-                await MainActor.run {
-                    service.lastSyncError = error
-                    service.isSyncing = false
-                }
-                print("❌ Sync failed: \(error)")
-            }
+        do {
+            try await spvClient.startSync()
+            self.isSyncing = true
+        } catch {
+            self.lastSyncError = error
+            print("❌ Sync failed: \(error)")
         }
     }
     
@@ -368,7 +349,6 @@ public class WalletService: ObservableObject {
       guard let client = spvClient else { return }
 
       client.stopSync()
-      self.syncTask = nil
       
       initializeNewSPVClient()
       
@@ -376,15 +356,11 @@ public class WalletService: ObservableObject {
     }
 
     public func clearSpvStorage() {
-        guard self.syncTask == nil else {
+        if self.isSyncing {
             print("[SPV][Clear] Sync task is running, cannot clear storage")
             return
         }
         
-        guard !isClearingStorage else {
-            print("[SPV][Clear] Clear already in progress, ignoring duplicate request")
-            return
-        }
         guard let spvClient = spvClient else { return }
 
 
@@ -502,21 +478,6 @@ public class WalletService: ObservableObject {
         }.sorted { $0.timestamp > $1.timestamp }
     }
     
-    // MARK: - Balance Management
-    
-    private func updateBalance() {
-        guard let wallet = currentWallet else {
-            balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
-            return
-        }
-        
-        balance = Balance(
-            confirmed: wallet.confirmedBalance,
-            unconfirmed: 0,
-            immature: 0
-        )
-    }
-    
     // MARK: - Address Management
     
     public func getNewAddress() async throws -> String {
@@ -577,89 +538,131 @@ public class WalletService: ObservableObject {
         return words.joined(separator: " ")
     }
     
-    internal final class SPVEventHandlerImpl: SPVEventHandler & Sendable {
+    // MARK: - SPV Event Handlers implementations
+    
+    internal final class SPVProgressUpdateEventHandlerImpl: SPVProgressUpdateEventHandler, Sendable {
         private let walletService: WalletService
-        
+    
         init(walletService: WalletService) {
             self.walletService = walletService
         }
-        
-        public func spvClient(didUpdateSyncProgress progress: SPVSyncProgress) {
-            Task { @MainActor in 
+    
+        func onProgressUpdate(_ progress: SPVSyncProgress) {
+            Task { @MainActor in
                 walletService.syncProgress = progress
             }
         }
-        
-        public func spvClient(didReceiveBlock block: SPVBlockEvent) {
-            SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
+    }
     
-            // Sync wallet state after processing a block (which may contain relevant transactions)
-            Task { @MainActor in 
+    internal final class SPVSyncEventsHandlerImpl: SPVSyncEventsHandler, Sendable {
+        private let walletService: WalletService
+    
+        init(walletService: WalletService) {
+            self.walletService = walletService
+        }
+    
+        func onStart(_ manager: SPVSyncManager) {
+            SDKLogger.log("Sync started for manager: \(manager)", minimumLevel: .medium)
+        }
+    
+        func onComplete(_ headerTip: UInt32) {
+            Task { @MainActor in
+                walletService.isSyncing = false
+                SDKLogger.log("Sync completed, header tip: \(headerTip)", minimumLevel: .medium)
+    
                 if let wm = walletService.walletManager {
                     for wallet in wm.wallets {
                         await wm.syncWalletStateFromRust(for: wallet)
                     }
                 }
-                walletService.updateBalance()
             }
         }
-        
-        public func spvClient(didReceiveTransaction transaction: SPVTransactionEvent) {
-            // Sync ALL wallets from Rust to SwiftData (transaction could belong to any wallet)
-            Task { @MainActor in 
+    
+        func onBlockHeadersStored(_ tipHeight: UInt32) {}
+        func onBlockHeadersSyncCompleted(_ tipHeight: UInt32) {}
+        func onFilterHeadersStored(_ startHeight: UInt32, _ endHeight: UInt32, _ tipHeight: UInt32) {}
+        func onFilterHeadersSyncCompleted(_ tipHeight: UInt32) {}
+        func onFilterStored(_ startHeight: UInt32, _ endHeight: UInt32) {}
+        func onFilterSyncCompleted(_ tipHeight: UInt32) {}
+        func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32) {}
+        func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {
+            Task { @MainActor in
+                walletService.blocksHit += 1
+            }
+        }
+        func onMasternodeStateUpdated(_ height: UInt32) {}
+        func onChainLockReceived(_ height: UInt32, _ hash: Data, _ validated: Bool) {}
+        func onInstantLockReceived(_ txid: Data, _ validated: Bool) {}
+        func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String) {
+            SDKLogger.error("Sync manager \(manager) error: \(errorMsg)")
+            
+            Task { @MainActor in
+                walletService.lastSyncError = SPVError.syncFailed(errorMsg)
+            }
+        }
+    }
+ 
+    internal final class SPVNetworkEventsHandlerImpl: SPVNetworkEventsHandler, Sendable {
+        private let walletService: WalletService
+    
+        init(walletService: WalletService) {
+            self.walletService = walletService
+        }
+    
+        func onPeerConnected(_ address: String) {
+            SDKLogger.log("Peer connected: \(address)", minimumLevel: .high)
+        }
+    
+        func onPeerDisconnected(_ address: String) {
+            SDKLogger.log("Peer disconnected: \(address)", minimumLevel: .high)
+        }
+    
+        func onPeersUpdated(_ connectedCount: UInt32, _ bestHeight: UInt32) {
+            SDKLogger.log("Peers updated: \(connectedCount) connected, best height: \(bestHeight)", minimumLevel: .medium)
+        }
+    }
+
+    internal final class SPVWalletEventsHandlerImpl: SPVWalletEventsHandler, Sendable {
+        private let walletService: WalletService
+    
+        init(walletService: WalletService) {
+            self.walletService = walletService
+        }
+    
+        func onTransactionReceived(
+            _ walletId: String,
+            _ accountIndex: UInt32,
+            _ txid: Data,
+            _ amount: Int64,
+            _ addresses: [String]
+        ) {
+            Task { @MainActor in
                 if let wm = walletService.walletManager {
                     for wallet in wm.wallets {
                         await wm.syncWalletStateFromRust(for: wallet)
                     }
                 }
-        
-                // Then update UI from the now-synchronized SwiftData (if viewing a wallet)
+    
                 if walletService.currentWallet != nil {
                     await walletService.loadTransactions()
-                    walletService.updateBalance()
                 }
             }
         }
-        
-        public func spvClient(didUpdateBlocksHit count: Int) {
-            Task { @MainActor in 
-                walletService.blocksHit += count
-        
-                // Sync wallet state periodically during sync (every 50 blocks processed)
-                if count > 0 && count % 50 == 0 {
-                    if let wm = walletService.walletManager {
-                        for wallet in wm.wallets {
-                            await wm.syncWalletStateFromRust(for: wallet)
-                        }
-                    }
-                    walletService.updateBalance()
-                }
+    
+        func onBalanceUpdated(
+            _ walletId: String,
+            _ spendable: UInt64,
+            _ unconfirmed: UInt64,
+            _ immature: UInt64,
+            _ locked: UInt64
+        ) {
+            Task { @MainActor in
+              walletService.balance = Balance(
+                  confirmed: spendable,
+                  unconfirmed: unconfirmed,
+                  immature: immature
+              )
             }
-        }
-        
-        public func spvClient(didCompleteSync success: Bool, error: String?) {
-            Task { @MainActor in 
-                walletService.isSyncing = false
-        
-                if success {
-                    SDKLogger.log("✅ Sync completed successfully", minimumLevel: .medium)
-        
-                    // Final sync from Rust to SwiftData after sync completes
-                    if let wm = walletService.walletManager {
-                        for wallet in wm.wallets {
-                            await wm.syncWalletStateFromRust(for: wallet)
-                        }
-                    }
-                    walletService.updateBalance()
-                } else {
-                    SDKLogger.error("❌ Sync failed: \(error ?? "Unknown error")")
-                    walletService.lastSyncError = SPVError.syncFailed(error ?? "Unknown error")
-                }
-            }
-        }
-        
-        public func spvClient(didChangeConnectionStatus connected: Bool, peers: Int) {
-            SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
         }
     }
 }
