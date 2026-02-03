@@ -26,6 +26,10 @@ describe('WasmSdkBuilder', () => {
     it('should expose local method', () => {
       expect(sdk.WasmSdkBuilder.local).to.be.a('function');
     });
+
+    it('should expose withAddresses method', () => {
+      expect(sdk.WasmSdkBuilder.withAddresses).to.be.a('function');
+    });
   });
 
   describe('testnet()', () => {

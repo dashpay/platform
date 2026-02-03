@@ -90,18 +90,20 @@ export class EvoSDK {
     }
     await initWasm();
 
-    const { network, version, proofs, settings, logs, addresses } = this.options;
+    const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
 
-    // Prefetch trusted context (quorums + masternode addresses) for the network
+    // Prefetch trusted context only when trusted mode is requested
     let context: wasm.WasmTrustedContext | undefined;
-    if (network === 'mainnet') {
-      context = await wasm.WasmTrustedContext.prefetchMainnet();
-    } else if (network === 'testnet') {
-      context = await wasm.WasmTrustedContext.prefetchTestnet();
-    } else if (network === 'local') {
-      context = await wasm.WasmTrustedContext.prefetchLocal();
-    } else {
-      throw new Error(`Unknown network: ${network}`);
+    if (trusted) {
+      if (network === 'mainnet') {
+        context = await wasm.WasmTrustedContext.prefetchMainnet();
+      } else if (network === 'testnet') {
+        context = await wasm.WasmTrustedContext.prefetchTestnet();
+      } else if (network === 'local') {
+        context = await wasm.WasmTrustedContext.prefetchLocal();
+      } else {
+        throw new Error(`Unknown network: ${network}`);
+      }
     }
 
     let builder: wasm.WasmSdkBuilder;
@@ -112,8 +114,10 @@ export class EvoSDK {
       builder = wasm.WasmSdkBuilder.mainnet();
     } else if (network === 'testnet') {
       builder = wasm.WasmSdkBuilder.testnet();
-    } else {
+    } else if (network === 'local') {
       builder = wasm.WasmSdkBuilder.local();
+    } else {
+      throw new Error(`Unknown network: ${network}`);
     }
 
     // Attach trusted context for proof verification and discovered addresses
