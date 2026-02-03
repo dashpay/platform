@@ -118,7 +118,6 @@ public class WalletService: ObservableObject {
     @Published public private(set) var syncProgress: SPVSyncProgress = SPVSyncProgress.default()
     @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
-    @Published public var isSyncing = false
     @Published public var masternodesEnabled = true
     
     // Absolute heights for header sync display (current/target)
@@ -336,7 +335,6 @@ public class WalletService: ObservableObject {
 
         do {
             try await spvClient.startSync()
-            self.isSyncing = true
         } catch {
             self.lastSyncError = error
             print("❌ Sync failed: \(error)")
@@ -352,11 +350,10 @@ public class WalletService: ObservableObject {
       
       initializeNewSPVClient()
       
-      isSyncing = false
     }
 
     public func clearSpvStorage() {
-        if self.isSyncing {
+        if syncProgress.state.isRunning() {
             print("[SPV][Clear] Sync task is running, cannot clear storage")
             return
         }
@@ -567,7 +564,6 @@ public class WalletService: ObservableObject {
     
         func onComplete(_ headerTip: UInt32) {
             Task { @MainActor in
-                walletService.isSyncing = false
                 SDKLogger.log("Sync completed, header tip: \(headerTip)", minimumLevel: .medium)
     
                 if let wm = walletService.walletManager {

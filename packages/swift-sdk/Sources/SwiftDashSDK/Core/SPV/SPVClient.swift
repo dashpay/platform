@@ -172,6 +172,8 @@ internal class SPVClient: @unchecked Sendable {
         )
     
         assert(result == 0, "It should only fail if the client is nil, but client is not nil")
+
+        handler.onProgressUpdate(self.getSyncProgress())
     }
     
     public func clearProgressUpdateEventHandler() {
@@ -258,7 +260,7 @@ internal class SPVClient: @unchecked Sendable {
         // TODO
         // Manually calling the event doesn't look like the right approach,
         // if FFISPVClient could send us an event callback automatically...
-        self.progressUpdateEventHandler?.onProgressUpdate(SPVSyncProgress.default())
+        self.progressUpdateEventHandler?.onProgressUpdate(self.getSyncProgress())
     }
     
     public func destroy() {

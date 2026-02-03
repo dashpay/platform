@@ -83,7 +83,7 @@ struct ContentView: View {
                     .tag(RootTab.settings)
             }
             .overlay(alignment: .top) {
-                if walletService.isSyncing {
+                if !walletService.syncProgress.state.isRunning() {
                     GlobalSyncIndicator(showDetails: selectedTab == .wallets && unifiedState.showWalletsSyncDetails)
                         .environmentObject(walletService)
                 }
@@ -99,6 +99,14 @@ struct GlobalSyncIndicator: View {
     // Helpers
     private var phaseTitle: String {
         switch walletService.syncProgress.state {
+        case .initializing: return "Initializing"
+        case .waitingForConnections: return "Waiting for Connection"
+        case .waitForEvents: return "Waiting for Events"
+        case .syncing: return "Syncing"
+        case .synced: return "Synced"
+        case .error:
+            let errMsg = walletService.lastSyncError?.localizedDescription ?? "Unknown error"
+            return "Error occurred during sync \(errMsg)"
         default:
             return "Unexpected stage (\(walletService.syncProgress.state))"
         }
@@ -115,7 +123,7 @@ struct GlobalSyncIndicator: View {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.caption)
                         .symbolEffect(.pulse)
-                    Text("Syncing: \(phaseTitle)")
+                    Text(phaseTitle)
                         .font(.caption)
                     Spacer()
                     // No right-side numbers in the top bar per design

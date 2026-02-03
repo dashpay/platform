@@ -21,7 +21,20 @@ public enum SPVSyncState: UInt32, Sendable {
     case syncing = 3
     case synced = 4
     case error = 5
-    case unknown = 6
+    case unknown = 999
+    
+    public func isRunning() -> Bool {
+        switch self {
+        case .initializing, .waitingForConnections, .waitForEvents, .syncing:
+            return true
+        case .synced, .error, .unknown:
+            return false
+        }
+    }
+    
+    public func isComplete() -> Bool {
+        return self == .synced
+    }
 }
 
 // MARK: - Block Headers Progress
@@ -192,7 +205,7 @@ public struct SPVSyncProgress: Sendable {
 
     public static func `default`() -> SPVSyncProgress {
         SPVSyncProgress(
-            state: .initializing,
+            state: .unknown,
             percentage: 0.0,
             headers: nil,
             filterHeaders: nil,

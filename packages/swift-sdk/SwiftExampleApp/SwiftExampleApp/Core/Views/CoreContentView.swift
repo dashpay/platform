@@ -96,12 +96,12 @@ var body: some View {
                         Spacer()
 
                         Button(action: toggleSync) {
-                            Text(walletService.isSyncing ? "Pause" : "Start")
+                            Text(walletService.syncProgress.state.isRunning() ? "Pause" : "Start")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(walletService.isSyncing ? .orange : .blue)
+                        .tint(walletService.syncProgress.state.isRunning() ? .orange : .blue)
                         .controlSize(.mini)
 
                         Button(action: clearSyncData) {
@@ -112,8 +112,8 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
-                        .disabled(walletService.isSyncing)
-                        .opacity((walletService.isSyncing) ? 0.5 : 1.0)
+                        .disabled(walletService.syncProgress.state.isRunning())
+                        .opacity((walletService.syncProgress.state.isRunning()) ? 0.5 : 1.0)
                     }
                 }
                 .padding(.vertical, 4)
@@ -232,7 +232,7 @@ var body: some View {
     // MARK: - Sync Methods
     
     private func toggleSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             pauseSync()
         } else {
             startSync()
@@ -250,28 +250,28 @@ var body: some View {
     }
     
     private func restartHeaderSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartHeaderSync() when implemented
             print("Restarting header sync...")
         }
     }
 
     private func restartFilterHeaderSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartFilterHeaderSync() when implemented
             print("Restarting filter header sync...")
         }
     }
 
     private func restartMasternodeSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartMasternodeSync() when implemented
             print("Restarting masternode sync...")
         }
     }
 
     private func restartTransactionSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartTransactionSync() when implemented
             print("Restarting transaction sync...")
         }
@@ -279,7 +279,7 @@ var body: some View {
 
     private func clearSyncData() {
         // Button is disabled during sync
-        guard !walletService.isSyncing else {
+        guard !walletService.syncProgress.state.isRunning() else {
             print("⚠️ Clear button should be disabled during sync")
             return
         }
