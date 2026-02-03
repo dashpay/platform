@@ -18,6 +18,7 @@ fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
         })
         .collect()
 }
+// Mainnet addresses from mnowatch.org
 fn default_mainnet_addresses() -> Vec<Address> {
     parse_addresses(&[
         "https://149.28.241.190:443",
@@ -27,6 +28,7 @@ fn default_mainnet_addresses() -> Vec<Address> {
         "https://5.189.164.253:443",
     ])
 }
+// Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
 fn default_testnet_addresses() -> Vec<Address> {
     parse_addresses(&[
         "https://52.12.176.90:1443",
@@ -338,6 +340,13 @@ impl WasmSdkBuilder {
     }
 
     /// Configure platform version to use.
+    ///
+    /// Available versions:
+    /// - 1: Platform version 1
+    /// - 2: Platform version 2
+    /// - ... up to latest version
+    ///
+    /// Defaults to latest version if not specified.
     #[wasm_bindgen(js_name = "withVersion")]
     pub fn with_version(
         self,
@@ -357,6 +366,12 @@ impl WasmSdkBuilder {
     }
 
     /// Configure request settings for the SDK.
+    ///
+    /// Settings include:
+    /// - connect_timeout_ms: Timeout for establishing connection (in milliseconds)
+    /// - timeout_ms: Timeout for single request (in milliseconds)
+    /// - retries: Number of retries in case of failed requests
+    /// - ban_failed_address: Whether to ban DAPI address if node not responded or responded with error
     #[wasm_bindgen(js_name = "withSettings")]
     pub fn with_settings(
         self,
@@ -404,6 +419,9 @@ impl WasmSdkBuilder {
 #[wasm_bindgen]
 impl WasmSdk {
     /// Configure tracing/logging level or filter (static, global)
+    ///
+    /// Accepts simple levels: "off", "error", "warn", "info", "debug", "trace"
+    /// or a full EnvFilter string like: "wasm_sdk=debug,rs_dapi_client=warn"
     #[wasm_bindgen(js_name = "setLogLevel")]
     pub fn set_log_level(
         #[wasm_bindgen(js_name = "levelOrFilter")] level_or_filter: &str,
@@ -415,6 +433,7 @@ impl WasmSdk {
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     /// Configure tracing/logging via the builder
+    /// Returns a new builder with logging configured
     #[wasm_bindgen(js_name = "withLogs")]
     pub fn with_logs(
         self,

@@ -44,6 +44,7 @@ impl ContextProvider for WasmContext {
         _id: &Identifier,
         _platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+        // Return None for now - this means the contract will be fetched from the network
         Ok(None)
     }
 
@@ -51,6 +52,12 @@ impl ContextProvider for WasmContext {
         &self,
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        // For WASM context without trusted provider, we need to fetch token configuration
+        // from the network. This is a simplified implementation that would need to be
+        // enhanced with actual network fetching logic in a production environment.
+        // TODO: Implement actual token configuration fetching from network
+        // For now, we'll return None which will cause the proof verification to fail
+        // with a clearer error message indicating missing token configuration
         tracing::warn!(
             token_id = %token_id,
             "Token configuration not available in WASM context - this will cause proof verification to fail. Use trusted context builders for proof verification."
@@ -60,6 +67,8 @@ impl ContextProvider for WasmContext {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+        // Return a reasonable default for platform activation height
+        // This is the height at which Platform was activated on testnet
         Ok(1)
     }
 }
@@ -71,6 +80,7 @@ impl ContextProvider for WasmTrustedContext {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
+        // Delegate to the inner provider
         self.inner
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
