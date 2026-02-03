@@ -12,9 +12,9 @@ dpp = { path = "../rs-dpp" }
 
 
 # Core dependencies
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "b9a6c8b03c70ecfca05e456434904e56ec832a1d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "b9a6c8b03c70ecfca05e456434904e56ec832a1d" }                          # Key wallet dependencies (from rust-dashcore)
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "b9a6c8b03c70ecfca05e456434904e56ec832a1d", optional = true }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "e42d26b4519668ca556f9359bc31a8a2ebf4f6c0" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "e42d26b4519668ca556f9359bc31a8a2ebf4f6c0" }                          # Key wallet dependencies (from rust-dashcore)
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "e42d26b4519668ca556f9359bc31a8a2ebf4f6c0", optional = true }
 
 # Standard dependencies
 thiserror = "1.0"

@@ -87,8 +87,8 @@ prometheus = "0.14"
 once_cell = "1.19"
 
 # Dash Core RPC client
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "b9a6c8b03c70ecfca05e456434904e56ec832a1d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "b9a6c8b03c70ecfca05e456434904e56ec832a1d" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e42d26b4519668ca556f9359bc31a8a2ebf4f6c0" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e42d26b4519668ca556f9359bc31a8a2ebf4f6c0" }
 
 rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 
