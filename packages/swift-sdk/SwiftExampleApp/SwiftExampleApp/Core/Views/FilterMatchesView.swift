@@ -79,7 +79,7 @@ struct FilterMatchesView: View {
             await waitForSyncToComplete()
 
             // Initialize with current sync height
-            let currentHeight = UInt32(walletService.syncProgress.filterHeight)
+            let currentHeight = walletService.syncProgress.filters?.currentHeight ?? 0
             await service.initialize(endHeight: currentHeight)
         }
         .alert("Jump to Height", isPresented: $showJumpToAlert) {

@@ -60,7 +60,7 @@ private typealias Byte32 = (
 )
 
 func onSpvProgressCallbackC(
-    progressPtr: UnsafePointer<FFIDetailedSyncProgress>?,
+    progressPtr: UnsafePointer<FFISyncProgress>?,
     userData: UnsafeMutableRawPointer?
 ) {
     let spvEventHandler = rawPtrIntoSpvEventHandler(userData)
@@ -249,14 +249,14 @@ private func rawPtrIntoSpvEventHandler(_ ptr: UnsafeMutableRawPointer?) -> any S
     return Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as! any SPVEventHandler
 }
 
-public func ffiSyncProgressPtrIntoSpvSyncProgress(_ ptr: UnsafePointer<FFIDetailedSyncProgress>?) -> SPVSyncProgress {
+public func ffiSyncProgressPtrIntoSpvSyncProgress(_ ptr: UnsafePointer<FFISyncProgress>?) -> SPVSyncProgress {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
         assert(false, "Progress pointer is nil!")
         return SPVSyncProgress.default()
     }
 
-    return SPVSyncProgress.from(ptr.pointee)
+    return SPVSyncProgress(ptr.pointee)
 }
 
 // MARK: - SPV Event Types

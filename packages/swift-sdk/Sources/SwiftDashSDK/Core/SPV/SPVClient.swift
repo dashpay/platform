@@ -166,7 +166,7 @@ internal class SPVClient<T: SPVEventHandler & Sendable>: @unchecked Sendable {
         defer { dash_spv_ffi_sync_progress_destroy(ptr) }
         let p = ptr.pointee
         
-        return SPVSyncProgress.from(p)
+        return SPVSyncProgress(p)
     }
     
     public static func getLastDashFFIError() -> String {
