@@ -69,7 +69,9 @@ export class EvoSDK {
   }
 
   get wasm(): wasm.WasmSdk {
-    if (!this.wasmSdk) throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
+    if (!this.wasmSdk) {
+      throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
+    }
     return this.wasmSdk;
   }
 
@@ -83,47 +85,59 @@ export class EvoSDK {
   }
 
   async connect(): Promise<void> {
-    if (this.wasmSdk) return; // idempotent
+    if (this.wasmSdk) {
+      return; // idempotent
+    }
     await initWasm();
 
-    const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
+    const { network, version, proofs, settings, logs, addresses } = this.options;
 
-    let builder: wasm.WasmSdkBuilder;
-
-    // If specific addresses are provided, use them instead of network presets
-    if (addresses && addresses.length > 0) {
-      // Prefetch trusted quorums for the network before creating builder with addresses
-      if (network === 'mainnet') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
-      } else if (network === 'testnet') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
-      } else if (network === 'local') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
-      }
-      builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
-    } else if (network === 'mainnet') {
-      await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
-
-      builder = trusted ? wasm.WasmSdkBuilder.mainnetTrusted() : wasm.WasmSdkBuilder.mainnet();
+    // Prefetch trusted context (quorums + masternode addresses) for the network
+    let context: wasm.WasmTrustedContext | undefined;
+    if (network === 'mainnet') {
+      context = await wasm.WasmTrustedContext.prefetchMainnet();
     } else if (network === 'testnet') {
-      await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
-
-      builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
+      context = await wasm.WasmTrustedContext.prefetchTestnet();
     } else if (network === 'local') {
-      // Default local dashmate gateway and quorum list sidecar
-      await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
-
-      builder = trusted ? wasm.WasmSdkBuilder.localTrusted() : wasm.WasmSdkBuilder.local();
+      context = await wasm.WasmTrustedContext.prefetchLocal();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
 
-    if (version) builder = builder.withVersion(version);
-    if (typeof proofs === 'boolean') builder = builder.withProofs(proofs);
-    if (logs) builder = builder.withLogs(logs);
+    let builder: wasm.WasmSdkBuilder;
+
+    if (addresses && addresses.length > 0) {
+      builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
+    } else if (network === 'mainnet') {
+      builder = wasm.WasmSdkBuilder.mainnet();
+    } else if (network === 'testnet') {
+      builder = wasm.WasmSdkBuilder.testnet();
+    } else {
+      builder = wasm.WasmSdkBuilder.local();
+    }
+
+    // Attach trusted context for proof verification and discovered addresses
+    if (context) {
+      builder = builder.withTrustedContext(context);
+    }
+
+    if (version) {
+      builder = builder.withVersion(version);
+    }
+    if (typeof proofs === 'boolean') {
+      builder = builder.withProofs(proofs);
+    }
+    if (logs) {
+      builder = builder.withLogs(logs);
+    }
     if (settings) {
       const { connectTimeoutMs, timeoutMs, retries, banFailedAddress } = settings;
-      builder = builder.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
+      builder = builder.withSettings(
+        connectTimeoutMs ?? null,
+        timeoutMs ?? null,
+        retries ?? null,
+        banFailedAddress ?? null,
+      );
     }
 
     this.wasmSdk = builder.build();

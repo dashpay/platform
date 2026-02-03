@@ -23,12 +23,8 @@ describe('WasmSdkBuilder', () => {
       expect(sdk.WasmSdkBuilder.testnet).to.be.a('function');
     });
 
-    it('should expose mainnetTrusted method', () => {
-      expect(sdk.WasmSdkBuilder.mainnetTrusted).to.be.a('function');
-    });
-
-    it('should expose testnetTrusted method', () => {
-      expect(sdk.WasmSdkBuilder.testnetTrusted).to.be.a('function');
+    it('should expose local method', () => {
+      expect(sdk.WasmSdkBuilder.local).to.be.a('function');
     });
   });
 

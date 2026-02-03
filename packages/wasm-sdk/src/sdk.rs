@@ -3,25 +3,11 @@ use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::sdk::Uri;
 use dash_sdk::{Sdk, SdkBuilder};
-use once_cell::sync::Lazy;
 use rs_dapi_client::{Address, RequestSettings};
 use std::ops::{Deref, DerefMut};
-use std::sync::Mutex;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
-pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
-    Lazy::new(|| Mutex::new(None));
-pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
-    Lazy::new(|| Mutex::new(None));
-pub(crate) static LOCAL_TRUSTED_CONTEXT: Lazy<Mutex<Option<WasmTrustedContext>>> =
-    Lazy::new(|| Mutex::new(None));
-const DEFAULT_LOCAL_QUORUM_URL: &str = "http://127.0.0.1:2444";
-static MAINNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
-    Lazy::new(|| Mutex::new(None));
-static TESTNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
-    Lazy::new(|| Mutex::new(None));
-static LOCAL_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
-    Lazy::new(|| Mutex::new(None));
+
 fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
     addresses
         .iter()
@@ -33,7 +19,6 @@ fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
         .collect()
 }
 fn default_mainnet_addresses() -> Vec<Address> {
-    // Trimmed seed list to keep bundle size small; used only if no prefetched cache is available.
     parse_addresses(&[
         "https://149.28.241.190:443",
         "https://198.7.115.48:443",
@@ -57,91 +42,52 @@ fn default_testnet_addresses() -> Vec<Address> {
 fn default_local_addresses() -> Vec<Address> {
     parse_addresses(&["https://127.0.0.1:2443"])
 }
-async fn fetch_and_cache_addresses(
-    trusted_context: &WasmTrustedContext,
-    cache: &Lazy<Mutex<Option<Vec<Address>>>>,
-) -> Result<(), WasmSdkError> {
-    let address_list = trusted_context
-        .fetch_masternode_addresses()
-        .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to fetch masternodes: {}", e)))?;
-    let addresses: Vec<Address> = address_list
-        .into_iter()
-        .map(|(addr, _status)| addr)
-        .collect();
-    *cache.lock().unwrap() = Some(addresses);
-    Ok(())
-}
 
 #[wasm_bindgen]
-pub struct WasmSdk(Sdk);
-// Dereference JsSdk to Sdk so that we can use &JsSdk everywhere where &sdk is needed
-impl std::ops::Deref for WasmSdk {
+pub struct WasmSdk {
+    sdk: Sdk,
+    trusted_context: Option<WasmTrustedContext>,
+}
+
+// Dereference WasmSdk to Sdk so that we can use &WasmSdk everywhere where &Sdk is needed
+impl Deref for WasmSdk {
     type Target = Sdk;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.sdk
     }
 }
 
 impl AsRef<Sdk> for WasmSdk {
     fn as_ref(&self) -> &Sdk {
-        &self.0
-    }
-}
-
-impl From<Sdk> for WasmSdk {
-    fn from(sdk: Sdk) -> Self {
-        WasmSdk(sdk)
+        &self.sdk
     }
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     pub fn version(&self) -> u32 {
-        self.0.version().protocol_version
+        self.sdk.version().protocol_version
     }
 
     /// Get reference to the inner SDK for direct gRPC calls
     pub(crate) fn inner_sdk(&self) -> &Sdk {
-        &self.0
+        &self.sdk
     }
 
-    /// Get the network this SDK is configured for
-    pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
-        self.0.network
+    /// Get a reference to the trusted context, if available
+    pub(crate) fn trusted_context(&self) -> Option<&WasmTrustedContext> {
+        self.trusted_context.as_ref()
     }
 }
 
 impl WasmSdk {
     /// Add a data contract to the context provider's cache.
-    /// This is needed so that subsequent operations (like document transitions)
-    /// can verify proofs that reference this contract.
     pub(crate) fn add_contract_to_context_cache(
         &self,
         contract: &dash_sdk::dpp::data_contract::DataContract,
     ) -> Result<(), crate::error::WasmSdkError> {
-        match self.network() {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                if let Some(context) = guard.as_ref() {
-                    context.add_known_contract(contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                if let Some(context) = guard.as_ref() {
-                    context.add_known_contract(contract.clone());
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Regtest => {
-                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                if let Some(context) = guard.as_ref() {
-                    context.add_known_contract(contract.clone());
-                }
-            }
-            _ => {
-                // Other networks don't use trusted context, so nothing to cache
-            }
+        if let Some(ref context) = self.trusted_context {
+            context.add_known_contract(contract.clone());
         }
         Ok(())
     }
@@ -150,15 +96,9 @@ impl WasmSdk {
 #[wasm_bindgen]
 impl WasmSdk {
     /// Forces reload of the identity nonce from Platform on the next state transition.
-    ///
-    /// This clears the cached nonce for the given identity, ensuring that the next
-    /// state transition will fetch the current nonce from Platform instead of using
-    /// a potentially stale cached value.
-    ///
-    /// @param identityId - The identifier of the identity whose nonce cache should be cleared
     #[wasm_bindgen(js_name = "refreshIdentityNonce")]
     pub async fn refresh_identity_nonce(&self, identity_id: wasm_dpp2::identifier::IdentifierWasm) {
-        self.0.refresh_identity_nonce(&identity_id.into()).await;
+        self.sdk.refresh_identity_nonce(&identity_id.into()).await;
     }
 
     /// Get a cached contract from the trusted context if available
@@ -166,112 +106,53 @@ impl WasmSdk {
         &self,
         contract_id: &dash_sdk::platform::Identifier,
     ) -> Option<std::sync::Arc<dash_sdk::platform::DataContract>> {
-        match self.network() {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .and_then(|ctx| ctx.get_known_contract(contract_id))
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .and_then(|ctx| ctx.get_known_contract(contract_id))
-            }
-            dash_sdk::dpp::dashcore::Network::Regtest => {
-                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .and_then(|ctx| ctx.get_known_contract(contract_id))
-            }
-            _ => None,
-        }
+        self.trusted_context
+            .as_ref()
+            .and_then(|ctx| ctx.get_known_contract(contract_id))
     }
 
     /// Cache a contract in the trusted context
     pub(crate) fn cache_contract(&self, contract: dash_sdk::platform::DataContract) {
-        match self.network() {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                if let Some(ref context) = *TESTNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(contract);
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                if let Some(ref context) = *MAINNET_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(contract);
-                }
-            }
-            dash_sdk::dpp::dashcore::Network::Regtest => {
-                if let Some(ref context) = *LOCAL_TRUSTED_CONTEXT.lock().unwrap() {
-                    context.add_known_contract(contract);
-                }
-            }
-            _ => {} // Other networks don't use trusted context
+        if let Some(ref context) = self.trusted_context {
+            context.add_known_contract(contract);
         }
     }
 
     /// Fetch a contract, checking cache first
-    /// Returns the contract from cache if available, otherwise fetches from network and caches it
     pub(crate) async fn get_or_fetch_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
     ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
         use dash_sdk::platform::Fetch;
 
-        // Check cache first
         if let Some(cached) = self.get_cached_contract(&contract_id) {
             return Ok((*cached).clone());
         }
 
-        // Fetch from network
         let contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
             .await?
             .ok_or_else(|| crate::error::WasmSdkError::not_found("Data contract not found"))?;
 
-        // Cache for future use
         self.cache_contract(contract.clone());
 
         Ok(contract)
     }
 
     /// Remove a contract from the cache
-    /// This allows forcing a fresh fetch on next access
     pub(crate) fn remove_cached_contract(
         &self,
         contract_id: &dash_sdk::platform::Identifier,
     ) -> bool {
-        match self.network() {
-            dash_sdk::dpp::dashcore::Network::Testnet => {
-                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .map(|ctx| ctx.remove_known_contract(contract_id))
-                    .unwrap_or(false)
-            }
-            dash_sdk::dpp::dashcore::Network::Dash => {
-                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .map(|ctx| ctx.remove_known_contract(contract_id))
-                    .unwrap_or(false)
-            }
-            dash_sdk::dpp::dashcore::Network::Regtest => {
-                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .map(|ctx| ctx.remove_known_contract(contract_id))
-                    .unwrap_or(false)
-            }
-            _ => false,
-        }
+        self.trusted_context
+            .as_ref()
+            .map(|ctx| ctx.remove_known_contract(contract_id))
+            .unwrap_or(false)
     }
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     /// Remove a data contract from the cache.
-    /// This forces a fresh fetch from the network on the next access.
     /// Returns true if the contract was in the cache and was removed.
     #[wasm_bindgen(js_name = "removeCachedContract")]
     pub fn remove_cached_contract_js(
@@ -284,74 +165,21 @@ impl WasmSdk {
 }
 
 #[wasm_bindgen]
-impl WasmSdk {
-    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsMainnet")]
-    pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
-        let trusted_context = WasmTrustedContext::new_mainnet()
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        trusted_context
-            .prefetch_quorums()
-            .await
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        fetch_and_cache_addresses(&trusted_context, &MAINNET_DISCOVERED_ADDRESSES).await?;
-
-        // Store the context for later use
-        *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsTestnet")]
-    pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
-        let trusted_context = WasmTrustedContext::new_testnet()
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        trusted_context
-            .prefetch_quorums()
-            .await
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        fetch_and_cache_addresses(&trusted_context, &TESTNET_DISCOVERED_ADDRESSES).await?;
-
-        // Store the context for later use
-        *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsLocal")]
-    pub async fn prefetch_trusted_quorums_local() -> Result<(), WasmSdkError> {
-        let trusted_context = WasmTrustedContext::new_local_with_url(DEFAULT_LOCAL_QUORUM_URL)
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        trusted_context
-            .prefetch_quorums()
-            .await
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        fetch_and_cache_addresses(&trusted_context, &LOCAL_DISCOVERED_ADDRESSES).await?;
-
-        *LOCAL_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-        Ok(())
-    }
+pub struct WasmSdkBuilder {
+    inner: SdkBuilder,
+    trusted_context: Option<WasmTrustedContext>,
 }
-
-#[wasm_bindgen]
-pub struct WasmSdkBuilder(SdkBuilder);
 
 impl Deref for WasmSdkBuilder {
     type Target = SdkBuilder;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
 impl DerefMut for WasmSdkBuilder {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.inner
     }
 }
 
@@ -368,12 +196,6 @@ impl WasmSdkBuilder {
     /// # Arguments
     /// * `addresses` - Array of HTTPS URLs (e.g., ["https://127.0.0.1:1443"])
     /// * `network` - Network identifier: "mainnet", "testnet" or "local"
-    ///
-    /// # Example
-    /// ```javascript
-    /// const builder = WasmSdkBuilder.withAddresses(['https://127.0.0.1:1443'], 'testnet');
-    /// const sdk = builder.build();
-    /// ```
     #[wasm_bindgen(js_name = "withAddresses")]
     pub fn new_with_addresses(
         addresses: Vec<String>,
@@ -382,7 +204,6 @@ impl WasmSdkBuilder {
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::Uri;
 
-        // Parse and validate addresses
         if addresses.is_empty() {
             return Err(WasmSdkError::invalid_argument(
                 "Addresses must be a non-empty array",
@@ -401,7 +222,6 @@ impl WasmSdkBuilder {
 
         let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
 
-        // Parse network - mainnet, testnet and local are supported
         let network = match network.to_lowercase().as_str() {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
@@ -415,200 +235,95 @@ impl WasmSdkBuilder {
         };
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(parsed_addresses);
-        let sdk_builder = match network {
-            Network::Dash => {
-                let address_list = address_list.clone();
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(network)
+            .with_context_provider(WasmContext {});
 
-                // Use the cached trusted context if available for mainnet
-                let context = {
-                    let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                    guard.clone()
-                }
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    WasmTrustedContext::new_mainnet()
-                        .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-                })?;
-
-                SdkBuilder::new(address_list)
-                    .with_network(network)
-                    .with_context_provider(context)
-            }
-            Network::Testnet => {
-                let address_list = address_list.clone();
-
-                // Use the cached trusted context if available for testnet
-                let context = {
-                    let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                    guard.clone()
-                }
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    WasmTrustedContext::new_testnet()
-                        .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-                })?;
-
-                SdkBuilder::new(address_list)
-                    .with_network(network)
-                    .with_context_provider(context)
-            }
-            Network::Regtest => {
-                let address_list = address_list.clone();
-
-                let context = {
-                    let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                    guard.clone()
-                }
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    WasmTrustedContext::new_local()
-                        .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-                })?;
-
-                SdkBuilder::new(address_list)
-                    .with_network(network)
-                    .with_context_provider(context)
-            }
-            _ => unreachable!("Network already validated to mainnet, testnet or local"),
-        };
-
-        Ok(Self(sdk_builder))
+        Ok(Self {
+            inner: sdk_builder,
+            trusted_context: None,
+        })
     }
 
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
-        let mainnet_addresses = MAINNET_DISCOVERED_ADDRESSES
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(default_mainnet_addresses);
-
-        let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
+        let address_list = dash_sdk::sdk::AddressList::from_iter(default_mainnet_addresses());
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
             .with_context_provider(WasmContext {});
 
-        Self(sdk_builder)
+        Self {
+            inner: sdk_builder,
+            trusted_context: None,
+        }
+    }
+
+    #[wasm_bindgen(js_name = "testnet")]
+    pub fn new_testnet() -> Self {
+        let address_list = dash_sdk::sdk::AddressList::from_iter(default_testnet_addresses());
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
+            .with_context_provider(WasmContext {});
+
+        Self {
+            inner: sdk_builder,
+            trusted_context: None,
+        }
     }
 
     /// Create a new SdkBuilder preconfigured for a local network using default dashmate gateway.
     #[wasm_bindgen(js_name = "local")]
     pub fn new_local() -> Self {
-        // Dashmate local gateway defaults to 2443
-        let local_addresses = vec!["https://127.0.0.1:2443".parse().unwrap()];
-
-        let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
+        let address_list = dash_sdk::sdk::AddressList::from_iter(default_local_addresses());
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
             .with_context_provider(WasmContext {});
 
-        Self(sdk_builder)
+        Self {
+            inner: sdk_builder,
+            trusted_context: None,
+        }
     }
 
-    #[wasm_bindgen(js_name = "localTrusted")]
-    pub fn new_local_trusted() -> Result<Self, WasmSdkError> {
-        let trusted_context = {
-            let mut guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-            if let Some(ctx) = guard.as_ref() {
-                ctx.clone()
-            } else {
-                let new_ctx = WasmTrustedContext::new_local()
-                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-                *guard = Some(new_ctx.clone());
-                new_ctx
-            }
+    /// Attach a pre-fetched trusted context to this builder.
+    ///
+    /// The context provides quorum keys for proof verification and
+    /// discovered masternode addresses for network connectivity.
+    /// If the context has discovered addresses, they replace the
+    /// builder's current address list.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const context = await WasmTrustedContext.prefetchTestnet();
+    /// const builder = WasmSdkBuilder.testnet().withTrustedContext(context);
+    /// const sdk = builder.build();
+    /// ```
+    #[wasm_bindgen(js_name = "withTrustedContext")]
+    pub fn with_trusted_context(self, context: &WasmTrustedContext) -> Self {
+        let discovered = context.discovered_addresses();
+
+        // Replace address list with discovered addresses if available
+        let inner = if !discovered.is_empty() {
+            let address_list = dash_sdk::sdk::AddressList::from_iter(discovered.to_vec());
+            self.inner
+                .with_address_list(address_list)
+                .with_context_provider(context.clone())
+        } else {
+            self.inner.with_context_provider(context.clone())
         };
 
-        let local_addresses = LOCAL_DISCOVERED_ADDRESSES
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(default_local_addresses);
-
-        let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
-            .with_context_provider(trusted_context);
-
-        Ok(Self(sdk_builder))
-    }
-
-    #[wasm_bindgen(js_name = "mainnetTrusted")]
-    pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
-        // Use the cached context if available, otherwise create a new one and store it
-        let trusted_context = {
-            let mut guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-            if let Some(ctx) = guard.as_ref() {
-                ctx.clone()
-            } else {
-                let new_ctx = WasmTrustedContext::new_mainnet()
-                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-                *guard = Some(new_ctx.clone());
-                new_ctx
-            }
-        };
-
-        let mainnet_addresses = MAINNET_DISCOVERED_ADDRESSES
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(default_mainnet_addresses);
-
-        let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Dash)
-            .with_context_provider(trusted_context);
-
-        Ok(Self(sdk_builder))
-    }
-
-    #[wasm_bindgen(js_name = "testnet")]
-    pub fn new_testnet() -> Self {
-        let testnet_addresses = TESTNET_DISCOVERED_ADDRESSES
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(default_testnet_addresses);
-
-        let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
-            .with_context_provider(WasmContext {});
-
-        Self(sdk_builder)
-    }
-
-    #[wasm_bindgen(js_name = "testnetTrusted")]
-    pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
-        // Use the cached context if available, otherwise create a new one and store it
-        let trusted_context = {
-            let mut guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-            if let Some(ctx) = guard.as_ref() {
-                ctx.clone()
-            } else {
-                let new_ctx = WasmTrustedContext::new_testnet()
-                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-                *guard = Some(new_ctx.clone());
-                new_ctx
-            }
-        };
-
-        let testnet_addresses = TESTNET_DISCOVERED_ADDRESSES
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(default_testnet_addresses);
-
-        let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
-            .with_context_provider(trusted_context);
-
-        Ok(Self(sdk_builder))
+        Self {
+            inner,
+            trusted_context: Some(context.clone()),
+        }
     }
 
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
-        self.0.build().map(WasmSdk).map_err(WasmSdkError::from)
+        let sdk = self.inner.build().map_err(WasmSdkError::from)?;
+        Ok(WasmSdk {
+            sdk,
+            trusted_context: self.trusted_context,
+        })
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]
@@ -616,17 +331,13 @@ impl WasmSdkBuilder {
         self,
         #[wasm_bindgen(js_name = "contextProvider")] context_provider: WasmContext,
     ) -> Self {
-        WasmSdkBuilder(self.0.with_context_provider(context_provider))
+        Self {
+            inner: self.inner.with_context_provider(context_provider),
+            trusted_context: None,
+        }
     }
 
     /// Configure platform version to use.
-    ///
-    /// Available versions:
-    /// - 1: Platform version 1
-    /// - 2: Platform version 2
-    /// - ... up to latest version
-    ///
-    /// Defaults to latest version if not specified.
     #[wasm_bindgen(js_name = "withVersion")]
     pub fn with_version(
         self,
@@ -639,16 +350,13 @@ impl WasmSdkBuilder {
             ))
         })?;
 
-        Ok(WasmSdkBuilder(self.0.with_version(version)))
+        Ok(Self {
+            inner: self.inner.with_version(version),
+            trusted_context: self.trusted_context,
+        })
     }
 
     /// Configure request settings for the SDK.
-    ///
-    /// Settings include:
-    /// - connect_timeout_ms: Timeout for establishing connection (in milliseconds)
-    /// - timeout_ms: Timeout for single request (in milliseconds)
-    /// - retries: Number of retries in case of failed requests
-    /// - ban_failed_address: Whether to ban DAPI address if node not responded or responded with error
     #[wasm_bindgen(js_name = "withSettings")]
     pub fn with_settings(
         self,
@@ -675,7 +383,10 @@ impl WasmSdkBuilder {
             settings.ban_failed_address = Some(ban);
         }
 
-        WasmSdkBuilder(self.0.with_settings(settings))
+        Self {
+            inner: self.inner.with_settings(settings),
+            trusted_context: self.trusted_context,
+        }
     }
 
     #[wasm_bindgen(js_name = "withProofs")]
@@ -683,16 +394,16 @@ impl WasmSdkBuilder {
         self,
         #[wasm_bindgen(js_name = "enableProofs")] enable_proofs: bool,
     ) -> Self {
-        WasmSdkBuilder(self.0.with_proofs(enable_proofs))
+        Self {
+            inner: self.inner.with_proofs(enable_proofs),
+            trusted_context: self.trusted_context,
+        }
     }
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     /// Configure tracing/logging level or filter (static, global)
-    ///
-    /// Accepts simple levels: "off", "error", "warn", "info", "debug", "trace"
-    /// or a full EnvFilter string like: "wasm_sdk=debug,rs_dapi_client=warn"
     #[wasm_bindgen(js_name = "setLogLevel")]
     pub fn set_log_level(
         #[wasm_bindgen(js_name = "levelOrFilter")] level_or_filter: &str,
@@ -704,7 +415,6 @@ impl WasmSdk {
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     /// Configure tracing/logging via the builder
-    /// Returns a new builder with logging configured
     #[wasm_bindgen(js_name = "withLogs")]
     pub fn with_logs(
         self,
