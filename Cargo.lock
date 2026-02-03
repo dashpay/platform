@@ -4317,7 +4317,6 @@ version = "3.0.0"
 dependencies = [
  "bincode",
  "grovedb-version",
- "once_cell",
  "thiserror 2.0.17",
  "versioned-feature-core 1.0.0 (git+https://github.com/dashpay/versioned-feature-core)",
 ]
