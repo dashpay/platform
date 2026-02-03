@@ -24,67 +24,97 @@ export class TokensFacade {
     return w.getTokenTotalSupply(tokenId);
   }
 
-  async totalSupplyWithProof(tokenId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.TokenTotalSupply | null>> {
+  async totalSupplyWithProof(
+    tokenId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.TokenTotalSupply | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenTotalSupplyWithProofInfo(tokenId);
   }
 
-  async statuses(tokenIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, wasm.TokenStatus>> {
+  async statuses(tokenIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.TokenStatus>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenStatuses(tokenIds);
   }
 
-  async statusesWithProof(tokenIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.TokenStatus>>> {
+  async statusesWithProof(
+    tokenIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.TokenStatus>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenStatusesWithProofInfo(tokenIds);
   }
 
-  async balances(identityIds: wasm.IdentifierLike[], tokenId: wasm.IdentifierLike): Promise<Map<wasm.Identifier, bigint>> {
+  async balances(identityIds: wasm.IdentifierLikeArray, tokenId: wasm.IdentifierLike):
+    Promise<Map<wasm.Identifier, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenBalances(identityIds, tokenId);
   }
 
-  async balancesWithProof(identityIds: wasm.IdentifierLike[], tokenId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  async balancesWithProof(
+    identityIds: wasm.IdentifierLikeArray,
+    tokenId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenBalancesWithProofInfo(identityIds, tokenId);
   }
 
-  async identityBalances(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, bigint>> {
+  async identityBalances(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLikeArray):
+    Promise<Map<wasm.Identifier, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenBalances(identityId, tokenIds);
   }
 
-  async identityBalancesWithProof(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  async identityBalancesWithProof(
+    identityId: wasm.IdentifierLike,
+    tokenIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenBalancesWithProofInfo(identityId, tokenIds);
   }
 
-  async identityTokenInfos(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, wasm.IdentityTokenInfo>> {
+  async identityTokenInfos(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLikeArray):
+    Promise<Map<wasm.Identifier, wasm.IdentityTokenInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenInfos(identityId, tokenIds);
   }
 
-  async identitiesTokenInfos(identityIds: wasm.IdentifierLike[], tokenId: wasm.IdentifierLike): Promise<Map<wasm.Identifier, wasm.IdentityTokenInfo>> {
+  async identitiesTokenInfos(identityIds: wasm.IdentifierLikeArray, tokenId: wasm.IdentifierLike):
+    Promise<Map<wasm.Identifier, wasm.IdentityTokenInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenInfos(identityIds, tokenId);
   }
 
-  async identityTokenInfosWithProof(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.IdentityTokenInfo>>> {
+  async identityTokenInfosWithProof(
+    identityId: wasm.IdentifierLike,
+    tokenIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.IdentityTokenInfo>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenInfosWithProofInfo(identityId, tokenIds);
   }
 
-  async identitiesTokenInfosWithProof(identityIds: wasm.IdentifierLike[], tokenId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.IdentityTokenInfo>>> {
+  async identitiesTokenInfosWithProof(
+    identityIds: wasm.IdentifierLikeArray,
+    tokenId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.IdentityTokenInfo>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenInfosWithProofInfo(identityIds, tokenId);
   }
 
-  async directPurchasePrices(tokenIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, wasm.TokenPriceInfo>> {
+  async directPurchasePrices(tokenIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.TokenPriceInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenDirectPurchasePrices(tokenIds);
   }
 
-  async directPurchasePricesWithProof(tokenIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.TokenPriceInfo>>> {
+  async directPurchasePricesWithProof(
+    tokenIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.TokenPriceInfo>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenDirectPurchasePricesWithProofInfo(tokenIds);
   }
@@ -94,17 +124,29 @@ export class TokensFacade {
     return w.getTokenContractInfo(contractId);
   }
 
-  async contractInfoWithProof(contractId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.TokenContractInfo | undefined>> {
+  async contractInfoWithProof(
+    contractId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    wasm.TokenContractInfo | undefined
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenContractInfoWithProofInfo(contractId);
   }
 
-  async perpetualDistributionLastClaim(identityId: wasm.IdentifierLike, tokenId: wasm.IdentifierLike): Promise<wasm.RewardDistributionMoment | undefined> {
+  async perpetualDistributionLastClaim(
+    identityId: wasm.IdentifierLike,
+    tokenId: wasm.IdentifierLike,
+  ): Promise<wasm.RewardDistributionMoment | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenPerpetualDistributionLastClaim(identityId, tokenId);
   }
 
-  async perpetualDistributionLastClaimWithProof(identityId: wasm.IdentifierLike, tokenId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.RewardDistributionMoment | undefined>> {
+  async perpetualDistributionLastClaimWithProof(
+    identityId: wasm.IdentifierLike,
+    tokenId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    wasm.RewardDistributionMoment | undefined
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenPerpetualDistributionLastClaimWithProofInfo(identityId, tokenId);
   }

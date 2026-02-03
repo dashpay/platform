@@ -28,7 +28,7 @@ export type PlatformAddressLike = PlatformAddress | Uint8Array | string;
 /**
  * An array of Platform addresses.
  */
-export type PlatformAddressLikeArray = Array<PlatformAddress | Uint8Array | string>;
+export type PlatformAddressLikeArray = Array<PlatformAddressLike>;
 "#;
 
 #[wasm_bindgen]
