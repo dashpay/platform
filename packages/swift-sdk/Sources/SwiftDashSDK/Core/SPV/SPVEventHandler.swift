@@ -1,7 +1,7 @@
-import Foundation
 import DashSDKFFI
+import Foundation
 
-internal enum SPVSyncManager: UInt32, Sendable {
+enum SPVSyncManager: UInt32, Sendable {
     case headers = 0
     case filterHeaders = 1
     case filters = 2
@@ -12,7 +12,7 @@ internal enum SPVSyncManager: UInt32, Sendable {
     case unknown = 999
 }
 
-// Swift compatible type with C *const u8[32]
+/// Swift compatible type with C *const u8[32]
 private typealias Byte32 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -20,7 +20,7 @@ private typealias Byte32 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
 )
 
-// Swift compatible type with C *const u8[96]
+/// Swift compatible type with C *const u8[96]
 private typealias Byte96 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -38,19 +38,19 @@ private typealias Byte96 = (
 
 // MARK: - Progress callback
 
-internal protocol SPVProgressUpdateEventHandler: AnyObject {
-  func onProgressUpdate(_ progress: SPVSyncProgress)
-  
-  func intoFFIProgressCallback() -> FFIProgressCallback
+protocol SPVProgressUpdateEventHandler: AnyObject {
+    func onProgressUpdate(_ progress: SPVSyncProgress)
+
+    func intoFFIProgressCallback() -> FFIProgressCallback
 }
 
 extension SPVProgressUpdateEventHandler {
-  func intoFFIProgressCallback() -> FFIProgressCallback {
-      return FFIProgressCallback(
-          on_progress: onSpvProgressUpdateCallbackC,
-          user_data: Unmanaged.passUnretained(self).toOpaque()
-      )
-  }
+    func intoFFIProgressCallback() -> FFIProgressCallback {
+        return FFIProgressCallback(
+            on_progress: onSpvProgressUpdateCallbackC,
+            user_data: Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
 }
 
 private func onSpvProgressUpdateCallbackC(
@@ -69,7 +69,7 @@ private func rawPtrIntoSpvProgressUpdateEventHandler(
 ) -> any SPVProgressUpdateEventHandler {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
-        assert(false, "SPVProgressUpdateEventHandler pointer is nil!")
+        assertionFailure("SPVProgressUpdateEventHandler pointer is nil!")
         return DummySPVProgressUpdateEventHandler()
     }
 
@@ -77,7 +77,7 @@ private func rawPtrIntoSpvProgressUpdateEventHandler(
 }
 
 private final class DummySPVProgressUpdateEventHandler: SPVProgressUpdateEventHandler {
-    func onProgressUpdate(_ progress: SPVSyncProgress) {}
+    func onProgressUpdate(_: SPVSyncProgress) {}
 
     func intoFFIProgressCallback() -> FFIProgressCallback {
         .init()
@@ -86,46 +86,46 @@ private final class DummySPVProgressUpdateEventHandler: SPVProgressUpdateEventHa
 
 // MARK: - Sync event callbacks
 
-internal protocol SPVSyncEventsHandler: AnyObject {
-  func onStart(_ manager: SPVSyncManager)
-  func onComplete(_ headerTip: UInt32)
-  func onBlockHeadersStored(_ tipHeight: UInt32)
-  func onBlockHeadersSyncCompleted(_ tipHeight: UInt32)
-  func onFilterHeadersStored(_ startHeight: UInt32, _ endHeight: UInt32, _ tipHeight: UInt32)
-  func onFilterHeadersSyncCompleted(_ tipHeight: UInt32)
-  func onFilterStored(_ startHeight: UInt32, _ endHeight: UInt32)
-  func onFilterSyncCompleted(_ tipHeight: UInt32)
-  func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32)
-  func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32)
-  func onMasternodeStateUpdated(_ height: UInt32)
-  func onChainLockReceived(_ height: UInt32, _ hash: Data, _ signature: Data, _ validated: Bool)
-  func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool)
-  func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String)
-  
-  func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks
+protocol SPVSyncEventsHandler: AnyObject {
+    func onStart(_ manager: SPVSyncManager)
+    func onComplete(_ headerTip: UInt32)
+    func onBlockHeadersStored(_ tipHeight: UInt32)
+    func onBlockHeadersSyncCompleted(_ tipHeight: UInt32)
+    func onFilterHeadersStored(_ startHeight: UInt32, _ endHeight: UInt32, _ tipHeight: UInt32)
+    func onFilterHeadersSyncCompleted(_ tipHeight: UInt32)
+    func onFilterStored(_ startHeight: UInt32, _ endHeight: UInt32)
+    func onFilterSyncCompleted(_ tipHeight: UInt32)
+    func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32)
+    func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32)
+    func onMasternodeStateUpdated(_ height: UInt32)
+    func onChainLockReceived(_ height: UInt32, _ hash: Data, _ signature: Data, _ validated: Bool)
+    func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool)
+    func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String)
+
+    func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks
 }
 
 extension SPVSyncEventsHandler {
-  func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
-    FFISyncEventCallbacks(
-      on_sync_start: onSpvSyncStartCallbackC,
-      on_block_headers_stored: onSpvBlockHeadersStoredCallbackC,
-      on_block_header_sync_complete: onSpvBlockHeaderSyncCompletedCallbackC,
-      on_filter_headers_stored: onSpvFilterHeadersStoredCallbackC,
-      on_filter_headers_sync_complete: onSpvFilterHeadersSyncCompletedCallbackC,
-      on_filters_stored: onSpvFiltersStoredCallbackC,
-      on_filters_sync_complete: onSpvFiltersSyncCompletedCallbackC,
-      on_blocks_needed: onSpvBlocksNeededCallbackC,
-      on_block_processed: onSpvBlockProcessedCallbackC,
-      on_masternode_state_updated: onSpvMasternodeStateUpdatedCallbackC,
-      on_chainlock_received: onSpvChainLockReceivedCallbackC,
-      on_instantlock_received: onSpvInstantLockReceivedCallbackC,
-      on_manager_error: onSpvSyncManagerErrorCallbackC,
-      on_sync_complete: onSpvSyncCompleteCallbackC,
-      
-      user_data: Unmanaged.passUnretained(self).toOpaque()
-    )
-  }
+    func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
+        FFISyncEventCallbacks(
+            on_sync_start: onSpvSyncStartCallbackC,
+            on_block_headers_stored: onSpvBlockHeadersStoredCallbackC,
+            on_block_header_sync_complete: onSpvBlockHeaderSyncCompletedCallbackC,
+            on_filter_headers_stored: onSpvFilterHeadersStoredCallbackC,
+            on_filter_headers_sync_complete: onSpvFilterHeadersSyncCompletedCallbackC,
+            on_filters_stored: onSpvFiltersStoredCallbackC,
+            on_filters_sync_complete: onSpvFiltersSyncCompletedCallbackC,
+            on_blocks_needed: onSpvBlocksNeededCallbackC,
+            on_block_processed: onSpvBlockProcessedCallbackC,
+            on_masternode_state_updated: onSpvMasternodeStateUpdatedCallbackC,
+            on_chainlock_received: onSpvChainLockReceivedCallbackC,
+            on_instantlock_received: onSpvInstantLockReceivedCallbackC,
+            on_manager_error: onSpvSyncManagerErrorCallbackC,
+            on_sync_complete: onSpvSyncCompleteCallbackC,
+
+            user_data: Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
 }
 
 private func onSpvSyncStartCallbackC(
@@ -203,13 +203,13 @@ private func onSpvBlocksNeededCallbackC(
     userData: UnsafeMutableRawPointer?
 ) {
     guard let block else {
-        assert(false, "FFIBlockNeeded pointer is nil!")
+        assertionFailure("FFIBlockNeeded pointer is nil!")
         return
     }
-    
-    let blockHeight = block.pointee.height;
+
+    let blockHeight = block.pointee.height
     let blockHash = withUnsafeBytes(of: block.pointee.hash) { Data($0) }
-  
+
     rawPtrIntoSpvSyncEventsHandler(userData)
         .onBlocksNeeded(blockHeight, blockHash, count)
 }
@@ -257,7 +257,7 @@ private func onSpvInstantLockReceivedCallbackC(
     let txid = bytePtrIntoData(txidPtr, 32)
 
     let instantLockData = bytePtrIntoData(instantlockDataPtr, Int(instantlockDataLen))
-    
+
     rawPtrIntoSpvSyncEventsHandler(userData)
         .onInstantLockReceived(txid, instantLockData, validated)
 }
@@ -278,7 +278,7 @@ private func onSpvSyncManagerErrorCallbackC(
 private func rawPtrIntoSpvSyncEventsHandler(_ ptr: UnsafeMutableRawPointer?) -> any SPVSyncEventsHandler {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
-        assert(false, "SPVSyncEventsHandler pointer is nil!")
+        assertionFailure("SPVSyncEventsHandler pointer is nil!")
         return DummySPVSyncEventsHandler()
     }
 
@@ -286,20 +286,20 @@ private func rawPtrIntoSpvSyncEventsHandler(_ ptr: UnsafeMutableRawPointer?) -> 
 }
 
 private final class DummySPVSyncEventsHandler: SPVSyncEventsHandler {
-    func onStart(_ manager: SPVSyncManager) {}
-    func onComplete(_ headerTip: UInt32) {}
-    func onBlockHeadersStored(_ tipHeight: UInt32) {}
-    func onBlockHeadersSyncCompleted(_ tipHeight: UInt32) {}
-    func onFilterHeadersStored(_ startHeight: UInt32, _ endHeight: UInt32, _ tipHeight: UInt32) {}
-    func onFilterHeadersSyncCompleted(_ tipHeight: UInt32) {}
-    func onFilterStored(_ startHeight: UInt32, _ endHeight: UInt32) {}
-    func onFilterSyncCompleted(_ tipHeight: UInt32) {}
-    func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32) {}
-    func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {}
-    func onMasternodeStateUpdated(_ height: UInt32) {}
-    func onChainLockReceived(_ height: UInt32, _ hash: Data, _ signature: Data, _ validated: Bool) {}
-    func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {}
-    func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String) {}
+    func onStart(_: SPVSyncManager) {}
+    func onComplete(_: UInt32) {}
+    func onBlockHeadersStored(_: UInt32) {}
+    func onBlockHeadersSyncCompleted(_: UInt32) {}
+    func onFilterHeadersStored(_: UInt32, _: UInt32, _: UInt32) {}
+    func onFilterHeadersSyncCompleted(_: UInt32) {}
+    func onFilterStored(_: UInt32, _: UInt32) {}
+    func onFilterSyncCompleted(_: UInt32) {}
+    func onBlocksNeeded(_: UInt32, _: Data, _: UInt32) {}
+    func onBlocksProcessed(_: UInt32, _: Data, _: UInt32) {}
+    func onMasternodeStateUpdated(_: UInt32) {}
+    func onChainLockReceived(_: UInt32, _: Data, _: Data, _: Bool) {}
+    func onInstantLockReceived(_: Data, _: Data, _: Bool) {}
+    func onSyncManagerError(_: SPVSyncManager, _: String) {}
 
     func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
         .init()
@@ -308,7 +308,7 @@ private final class DummySPVSyncEventsHandler: SPVSyncEventsHandler {
 
 // MARK: - Network event callbacks
 
-internal protocol SPVNetworkEventsHandler: AnyObject {
+protocol SPVNetworkEventsHandler: AnyObject {
     func onPeerConnected(_ address: String)
     func onPeerDisconnected(_ address: String)
     func onPeersUpdated(_ connectedCount: UInt32, _ bestHeight: UInt32)
@@ -334,7 +334,7 @@ private func onSpvPeerConnectedCallbackC(
     let handler = rawPtrIntoSpvNetworkEventsHandler(userData)
 
     guard let addressPtr else {
-        assert(false, "PeerConnected address pointer is nil")
+        assertionFailure("PeerConnected address pointer is nil")
         return
     }
 
@@ -349,7 +349,7 @@ private func onSpvPeerDisconnectedCallbackC(
     let handler = rawPtrIntoSpvNetworkEventsHandler(userData)
 
     guard let addressPtr else {
-        assert(false, "PeerDisconnected address pointer is nil")
+        assertionFailure("PeerDisconnected address pointer is nil")
         return
     }
 
@@ -362,18 +362,18 @@ private func onSpvPeersUpdatedCallbackC(
     bestHeight: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
-      rawPtrIntoSpvNetworkEventsHandler(userData)
-          .onPeersUpdated(
+    rawPtrIntoSpvNetworkEventsHandler(userData)
+        .onPeersUpdated(
             connectedCount,
             bestHeight
-          )
+        )
 }
 
 private func rawPtrIntoSpvNetworkEventsHandler(
     _ ptr: UnsafeMutableRawPointer?
 ) -> any SPVNetworkEventsHandler {
     guard let ptr else {
-        assert(false, "SPVNetworkEventsHandler pointer is nil!")
+        assertionFailure("SPVNetworkEventsHandler pointer is nil!")
         return DummySPVNetworkEventsHandler()
     }
 
@@ -383,9 +383,9 @@ private func rawPtrIntoSpvNetworkEventsHandler(
 }
 
 private final class DummySPVNetworkEventsHandler: SPVNetworkEventsHandler {
-    func onPeerConnected(_ address: String) {}
-    func onPeerDisconnected(_ address: String) {}
-    func onPeersUpdated(_ connectedCount: UInt32, _ bestHeight: UInt32) {}
+    func onPeerConnected(_: String) {}
+    func onPeerDisconnected(_: String) {}
+    func onPeersUpdated(_: UInt32, _: UInt32) {}
 
     func intoFFINetworkEventCallbacks() -> FFINetworkEventCallbacks {
         .init()
@@ -394,7 +394,7 @@ private final class DummySPVNetworkEventsHandler: SPVNetworkEventsHandler {
 
 // MARK: - Wallet event callbacks
 
-internal protocol SPVWalletEventsHandler: AnyObject {
+protocol SPVWalletEventsHandler: AnyObject {
     func onTransactionReceived(
         _ walletId: String,
         _ accountIndex: UInt32,
@@ -435,7 +435,7 @@ private func onSpvTransactionReceivedCallbackC(
     let handler = rawPtrIntoSpvWalletEventsHandler(userData)
 
     guard let walletIdPtr else {
-        assert(false, "TransactionReceived walletId pointer is nil")
+        assertionFailure("TransactionReceived walletId pointer is nil")
         return
     }
 
@@ -463,7 +463,7 @@ private func onSpvBalanceUpdatedCallbackC(
     let handler = rawPtrIntoSpvWalletEventsHandler(userData)
 
     guard let walletIdPtr else {
-        assert(false, "BalanceUpdated walletId pointer is nil")
+        assertionFailure("BalanceUpdated walletId pointer is nil")
         return
     }
 
@@ -482,7 +482,7 @@ private func rawPtrIntoSpvWalletEventsHandler(
     _ ptr: UnsafeMutableRawPointer?
 ) -> any SPVWalletEventsHandler {
     guard let ptr else {
-        assert(false, "SPVWalletEventsHandler pointer is nil!")
+        assertionFailure("SPVWalletEventsHandler pointer is nil!")
         return DummySPVWalletEventsHandler()
     }
 
@@ -493,19 +493,19 @@ private func rawPtrIntoSpvWalletEventsHandler(
 
 private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
     func onTransactionReceived(
-        _ walletId: String,
-        _ accountIndex: UInt32,
-        _ txid: Data,
-        _ amount: Int64,
-        _ addresses: [String]
+        _: String,
+        _: UInt32,
+        _: Data,
+        _: Int64,
+        _: [String]
     ) {}
 
     func onBalanceUpdated(
-        _ walletId: String,
-        _ spendable: UInt64,
-        _ unconfirmed: UInt64,
-        _ immature: UInt64,
-        _ locked: UInt64
+        _: String,
+        _: UInt64,
+        _: UInt64,
+        _: UInt64,
+        _: UInt64
     ) {}
 
     func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
@@ -515,10 +515,10 @@ private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
 
 // MARK: - Helpers
 
-private func bytePtrIntoData(_ ptr: UnsafeRawPointer?, _ len: Int) -> Data {
+private func bytePtrIntoData(_ ptr: UnsafeRawPointer?, _: Int) -> Data {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
-        assert(false, "Byte32 pointer is nil!")
+        assertionFailure("Byte32 pointer is nil!")
         return Data()
     }
 
@@ -528,7 +528,7 @@ private func bytePtrIntoData(_ ptr: UnsafeRawPointer?, _ len: Int) -> Data {
 private func addressesPtrIntoString(_ ptr: UnsafePointer<CChar>?) -> [String] {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
-        assert(false, "Addresses pointer is nil!")
+        assertionFailure("Addresses pointer is nil!")
         return [""]
     }
 
@@ -539,7 +539,7 @@ private func addressesPtrIntoString(_ ptr: UnsafePointer<CChar>?) -> [String] {
 public func ffiSyncProgressPtrIntoSpvSyncProgress(_ ptr: UnsafePointer<FFISyncProgress>?) -> SPVSyncProgress {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
-        assert(false, "Progress pointer is nil!")
+        assertionFailure("Progress pointer is nil!")
         return SPVSyncProgress.default()
     }
 
