@@ -83,7 +83,7 @@ struct ContentView: View {
                     .tag(RootTab.settings)
             }
             .overlay(alignment: .top) {
-                if !walletService.syncProgress.state.isRunning() {
+                if walletService.syncProgress.state.isSyncing() {
                     GlobalSyncIndicator(showDetails: selectedTab == .wallets && unifiedState.showWalletsSyncDetails)
                         .environmentObject(walletService)
                 }

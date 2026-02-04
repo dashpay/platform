@@ -173,6 +173,8 @@ internal class SPVClient: @unchecked Sendable {
     
         assert(result == 0, "It should only fail if the client is nil, but client is not nil")
 
+        // We dont receive an initial progress update from the client
+        // so we trigger one manually here
         handler.onProgressUpdate(self.getSyncProgress())
     }
     

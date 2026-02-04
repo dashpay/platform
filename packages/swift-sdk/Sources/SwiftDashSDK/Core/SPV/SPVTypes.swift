@@ -21,13 +21,25 @@ public enum SPVSyncState: UInt32, Sendable {
     case syncing = 3
     case synced = 4
     case error = 5
+    
+    // Custom states, not in FFI
+    case idle = 998
     case unknown = 999
+    
+    public func isSyncing() -> Bool {
+        switch self {
+        case .waitingForConnections, .waitForEvents, .syncing:
+            return true
+        case .initializing, .synced, .unknown, .idle, .error:
+            return false
+        }
+    }
     
     public func isRunning() -> Bool {
         switch self {
-        case .initializing, .waitingForConnections, .waitForEvents, .syncing:
+        case .waitingForConnections, .waitForEvents, .syncing, .synced:
             return true
-        case .synced, .error, .unknown:
+        case .initializing, .unknown, .idle, .error:
             return false
         }
     }
@@ -205,7 +217,7 @@ public struct SPVSyncProgress: Sendable {
 
     public static func `default`() -> SPVSyncProgress {
         SPVSyncProgress(
-            state: .unknown,
+            state: .idle,
             percentage: 0.0,
             headers: nil,
             filterHeaders: nil,
