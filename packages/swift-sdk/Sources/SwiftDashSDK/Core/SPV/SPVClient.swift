@@ -34,8 +34,6 @@ class SPVClient: @unchecked Sendable {
         return false
     }()
 
-    // Removed: Temporary poller for filter header progress (now event-driven via FFI)
-
     init(network: Network = DashSDKNetwork(rawValue: 1), dataDir: String?, startHeight: UInt32) throws {
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
