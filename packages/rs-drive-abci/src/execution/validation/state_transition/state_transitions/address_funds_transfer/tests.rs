@@ -8291,4 +8291,452 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // SECURITY AUDIT TESTS
+    // Tests demonstrating vulnerabilities found during security audit.
+    // These tests are expected to FAIL until the vulnerabilities are fixed.
+    // ==========================================
+
+    mod security_audit {
+        use super::*;
+        use dpp::consensus::signature::SignatureError;
+
+        /// AUDIT H1: Witness validation uses zip() without count check.
+        ///
+        /// `validate_witnesses` pairs inputs with witnesses using `zip()`, which
+        /// silently stops at the shorter iterator. With 0 witnesses on 2 inputs,
+        /// zip produces 0 iterations and validation "passes" (no errors).
+        /// The witness count mismatch is only caught later by structure validation.
+        ///
+        /// This test verifies that the PROCESSING pipeline rejects a transition
+        /// with fewer witnesses than inputs as an UNPAID error (meaning the
+        /// witness validation stage caught it, not the structure validation stage).
+        ///
+        /// Location: rs-dpp/.../state_transition_witness_validation.rs:56-60
+        #[test]
+        fn test_audit_h1_zero_witnesses_should_be_caught_by_witness_validation() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([1u8; 32]);
+            let addr_b = signer.add_p2pkh([2u8; 32]);
+
+            setup_address_with_balance(&mut platform, addr_a, 0, dash_to_credits!(1.0));
+            setup_address_with_balance(&mut platform, addr_b, 0, dash_to_credits!(1.0));
+
+            // Create a transition with 2 inputs but 0 witnesses.
+            // The validate_witnesses zip() produces 0 iterations → "passes".
+            // Only structure validation catches the mismatch later.
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr_a, (1 as AddressNonce, dash_to_credits!(0.1)));
+            inputs.insert(addr_b, (1 as AddressNonce, dash_to_credits!(0.1)));
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(10), dash_to_credits!(0.2));
+
+            // Construct transition with 0 witnesses (not matching 2 inputs)
+            let transition = create_raw_transition_with_dummy_witnesses(
+                inputs,
+                outputs,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                0, // 0 witnesses for 2 inputs
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // The transition is correctly rejected. But the question is: by WHICH
+            // validation stage? If witness validation caught it (correct), it would
+            // be an InvalidStateTransitionSignatureError (unpaid). If structure
+            // validation caught it (current buggy behavior), it would be
+            // InputWitnessCountMismatchError (also unpaid).
+            //
+            // We assert it should be a signature error (from witness validation),
+            // not a count mismatch error (from structure validation that runs later).
+            // Currently FAILS: witness validation passes with 0 iterations,
+            // and structure validation catches it as InputWitnessCountMismatchError.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    )
+                )],
+                "AUDIT H1: With 0 witnesses on 2 inputs, witness validation should catch \
+                the mismatch and return InvalidStateTransitionSignatureError. Currently, \
+                zip() produces 0 iterations so witness validation passes, and the error \
+                is caught later by structure validation as InputWitnessCountMismatchError. \
+                Got: {:?}",
+                processing_result.execution_results()
+            );
+        }
+
+        /// AUDIT M4: Credits (u64) cast to SumValue (i64) truncation destroys funds.
+        ///
+        /// When setting an address balance, `set_balance_to_address_operations_v0` at
+        /// `set_balance_to_address/v0/mod.rs:55` casts `balance as SumValue` where
+        /// SumValue is i64. For balance values > i64::MAX, the cast produces a negative
+        /// value. `remove_balance_from_address` then clamps the negative sum to 0,
+        /// effectively destroying the funds.
+        ///
+        /// This test sets up a transfer that would result in a very large balance and
+        /// verifies the balance is preserved correctly.
+        ///
+        /// Location: rs-drive/src/drive/address_funds/set_balance_to_address/v0/mod.rs:55
+        #[test]
+        fn test_audit_m4_u64_to_i64_truncation_destroys_funds() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Set up sender with a balance slightly above i64::MAX
+            // i64::MAX = 9_223_372_036_854_775_807
+            let large_balance: u64 = i64::MAX as u64 + 1; // 9_223_372_036_854_775_808
+
+            let mut signer = TestAddressSigner::new();
+            let sender_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, sender_address, 0, large_balance);
+
+            // Transfer a small amount to a new address
+            let recipient_address = create_platform_address(2);
+            let transfer_amount = dash_to_credits!(0.01);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(sender_address, (1 as AddressNonce, transfer_amount));
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(recipient_address, transfer_amount);
+
+            let transition = create_signed_transition_with_custom_outputs(
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transfer should succeed"
+            );
+
+            // Commit to read final balances
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // After transfer, sender should have large_balance - transfer_amount - fees
+            let (_, sender_final) = platform
+                .drive
+                .fetch_balance_and_nonce(&sender_address, None, platform_version)
+                .expect("should fetch")
+                .expect("sender should exist");
+
+            // The sender's remaining balance should be close to large_balance - transfer_amount
+            // If the u64→i64 cast corrupts the balance, this will be 0 or some wrong value
+            let expected_min = large_balance - transfer_amount - dash_to_credits!(0.01); // Allow for fees
+
+            assert!(
+                sender_final >= expected_min,
+                "AUDIT M4: Sender balance after transfer is {} but expected at least {}. \
+                The balance {} (> i64::MAX = {}) was cast to i64 at \
+                set_balance_to_address/v0/mod.rs:55, producing a negative SumValue. \
+                This corrupts the balance tracking in GroveDB's sum tree.",
+                sender_final,
+                expected_min,
+                large_balance,
+                i64::MAX,
+            );
+        }
+
+        /// AUDIT L2: Nonce overflow at u32::MAX locks address permanently.
+        ///
+        /// `AddressNonce` is defined as `u32` (rs-dpp/src/lib.rs:117), meaning an
+        /// address can be used at most ~4.3 billion times. After nonce reaches u32::MAX,
+        /// no further transactions are possible — the address is permanently locked.
+        ///
+        /// This test sets up an address with nonce at u32::MAX - 1, performs one
+        /// transaction (nonce becomes u32::MAX), then attempts another transaction
+        /// to verify the address cannot transact further.
+        ///
+        /// Location: rs-dpp/src/lib.rs:117
+        #[test]
+        fn test_audit_l2_nonce_overflow_at_u32_max_locks_address() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
+            // Set up address with nonce at u32::MAX - 1 and large balance
+            let nonce_near_max: AddressNonce = u32::MAX - 1;
+            setup_address_with_balance(
+                &mut platform,
+                input_address,
+                nonce_near_max,
+                dash_to_credits!(10.0),
+            );
+
+            let recipient = create_platform_address(2);
+
+            // First transaction: nonce = u32::MAX (should succeed)
+            let transition1 = create_signed_address_funds_transfer_transition(
+                &signer,
+                input_address,
+                u32::MAX, // nonce = u32::MAX
+                dash_to_credits!(0.01),
+                recipient,
+                dash_to_credits!(0.01),
+            );
+
+            let result1 = transition1.serialize_to_bytes().expect("should serialize");
+            let platform_state = platform.state.load();
+            let transaction1 = platform.drive.grove.start_transaction();
+
+            let processing_result1 = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result1],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction1,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            // This transaction should succeed (nonce u32::MAX is valid)
+            assert_matches!(
+                processing_result1.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction with nonce u32::MAX should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction1)
+                .unwrap()
+                .expect("should commit");
+
+            // After this, the address nonce is at u32::MAX.
+            // Any further transaction would need nonce = u32::MAX + 1 = overflow.
+            // The address is effectively locked forever.
+            // This test documents the behavior — it's a low-severity issue since
+            // 4.3 billion transactions per address is practically unreachable,
+            // but there's no graceful handling or error message.
+            //
+            // Note: We can't easily test the "next" transaction because we'd need
+            // nonce u32::MAX + 1 which wraps to 0 and would be rejected as a
+            // nonce reuse. This is documented as a design limitation.
+        }
+
+        /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
+        ///
+        /// When fee strategy step DeductFromInput(0) drains input A to zero,
+        /// A is removed from the BTreeMap. The next step DeductFromInput(1)
+        /// now targets what was originally at index 2 (C) instead of index 1 (B),
+        /// because all indices shifted down after the removal.
+        ///
+        /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
+        #[test]
+        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([10u8; 32]);
+            let addr_b = signer.add_p2pkh([20u8; 32]);
+            let addr_c = signer.add_p2pkh([30u8; 32]);
+
+            // Determine BTreeMap sort order (PlatformAddress sorts by hash)
+            let mut sorted_addrs = vec![addr_a, addr_b, addr_c];
+            sorted_addrs.sort();
+            let first = sorted_addrs[0]; // BTreeMap index 0
+            let second = sorted_addrs[1]; // BTreeMap index 1
+            let third = sorted_addrs[2]; // BTreeMap index 2
+
+            // Set up balances so that "first" has tiny remaining balance after transfer
+            let first_balance = dash_to_credits!(0.1);
+            let second_balance = dash_to_credits!(1.0);
+            let third_balance = dash_to_credits!(1.0);
+
+            // Input amount leaves only 1000 credits remaining for first
+            let first_input = first_balance - 1000;
+            let second_input = dash_to_credits!(0.01);
+            let third_input = dash_to_credits!(0.01);
+
+            setup_address_with_balance(&mut platform, first, 0, first_balance);
+            setup_address_with_balance(&mut platform, second, 0, second_balance);
+            setup_address_with_balance(&mut platform, third, 0, third_balance);
+
+            let total_transfer = first_input + second_input + third_input;
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(first, (1 as AddressNonce, first_input));
+            inputs.insert(second, (1 as AddressNonce, second_input));
+            inputs.insert(third, (1 as AddressNonce, third_input));
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(100), total_transfer);
+
+            // Fee strategy: deduct from index 0 (first), then index 1 (should be second).
+            // Bug: after first is drained and removed, index 1 becomes third.
+            let fee_strategy = vec![
+                AddressFundsFeeStrategyStep::DeductFromInput(0),
+                AddressFundsFeeStrategyStep::DeductFromInput(1),
+            ];
+
+            let transition = create_signed_transition_with_custom_outputs(
+                &signer,
+                inputs,
+                outputs,
+                fee_strategy,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            // Commit to read final balances
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Check that fees were deducted from SECOND (index 1), not THIRD.
+            // remaining_before_fee for second = second_balance - second_input
+            let second_remaining_before_fee = second_balance - second_input;
+
+            let (_, second_final) = platform
+                .drive
+                .fetch_balance_and_nonce(&second, None, platform_version)
+                .expect("should fetch")
+                .expect("second address should exist");
+
+            // If fee was correctly deducted from second (BTreeMap index 1 before mutation),
+            // second_final should be LESS than second_remaining_before_fee.
+            // With the bug, second is untouched and third gets the fee instead.
+            assert!(
+                second_final < second_remaining_before_fee,
+                "AUDIT M1: Fee should have been deducted from second address (original \
+                BTreeMap index 1), but it was deducted from third address instead. \
+                After first was drained (1000 credits) and removed from BTreeMap, \
+                DeductFromInput(1) shifted to target the third address. \
+                second's balance: {} (expected < {})",
+                second_final,
+                second_remaining_before_fee
+            );
+        }
+    }
 }

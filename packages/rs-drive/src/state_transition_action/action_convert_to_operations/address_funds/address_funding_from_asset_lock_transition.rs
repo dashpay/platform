@@ -25,7 +25,7 @@ impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionA
             0 => {
                 let asset_lock_outpoint = self.asset_lock_outpoint();
 
-                let (inputs, outputs, mut asset_lock_value) =
+                let (inputs, outputs, mut asset_lock_value, input_contributions_total) =
                     self.inputs_with_remaining_balance_outputs_and_asset_lock_value_owned();
 
                 let initial_balance = asset_lock_value.remaining_credit_value();
@@ -56,9 +56,12 @@ impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionA
                 // Calculate the sum of explicit outputs
                 let explicit_outputs_sum: u64 = outputs.values().flatten().sum();
 
-                // Calculate remainder: initial_balance - explicit_outputs_sum
-                // Note: fees are handled separately during validation, inputs have been consumed above
-                let remainder_balance = initial_balance.saturating_sub(explicit_outputs_sum);
+                // Total available for outputs = asset lock + input contributions
+                // (input credits are already in the system — we're moving them, not creating them)
+                let total_available = initial_balance + input_contributions_total;
+
+                // Calculate remainder: total_available - explicit_outputs_sum
+                let remainder_balance = total_available.saturating_sub(explicit_outputs_sum);
 
                 // Add balance to outputs
                 for (address, balance_option) in outputs {

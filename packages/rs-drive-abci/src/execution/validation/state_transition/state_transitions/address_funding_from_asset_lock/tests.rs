@@ -8920,4 +8920,708 @@ mod tests {
             }
         }
     }
+
+    // ==========================================
+    // SECURITY AUDIT TESTS
+    // Tests demonstrating vulnerabilities found during security audit.
+    // These tests are expected to FAIL until the vulnerabilities are fixed.
+    // ==========================================
+
+    mod security_audit {
+        use super::*;
+
+        /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
+        ///
+        /// When fee strategy step DeductFromInput(0) drains input A to zero,
+        /// A is removed from the BTreeMap. The next step DeductFromInput(1)
+        /// now targets what was originally at index 2 (C) instead of index 1 (B),
+        /// because all indices shifted down after the removal.
+        ///
+        /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
+        #[test]
+        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([10u8; 32]);
+            let addr_b = signer.add_p2pkh([20u8; 32]);
+            let addr_c = signer.add_p2pkh([30u8; 32]);
+
+            // Determine BTreeMap sort order
+            let mut sorted_addrs = vec![addr_a, addr_b, addr_c];
+            sorted_addrs.sort();
+            let first = sorted_addrs[0];
+            let second = sorted_addrs[1];
+            let third = sorted_addrs[2];
+
+            let first_balance = dash_to_credits!(0.1);
+            let second_balance = dash_to_credits!(1.0);
+            let third_balance = dash_to_credits!(1.0);
+
+            // Input amount leaves only 1000 credits remaining for first
+            let first_input = first_balance - 1000;
+            let second_input = dash_to_credits!(0.01);
+            let third_input = dash_to_credits!(0.01);
+
+            setup_address_with_balance(&mut platform, first, 0, first_balance);
+            setup_address_with_balance(&mut platform, second, 0, second_balance);
+            setup_address_with_balance(&mut platform, third, 0, third_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock provides ~1.0 Dash of credits
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(first, (1 as AddressNonce, first_input));
+            inputs.insert(second, (1 as AddressNonce, second_input));
+            inputs.insert(third, (1 as AddressNonce, third_input));
+
+            let remainder_address = create_platform_address(100);
+            let mut outputs = BTreeMap::new();
+            outputs.insert(remainder_address, None); // remainder output
+
+            // Fee strategy: deduct from index 0 (first), then index 1 (should be second).
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::DeductFromInput(1),
+                ],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            let second_remaining_before_fee = second_balance - second_input;
+
+            let (_, second_final) = platform
+                .drive
+                .fetch_balance_and_nonce(&second, None, platform_version)
+                .expect("should fetch")
+                .expect("second address should exist");
+
+            assert!(
+                second_final < second_remaining_before_fee,
+                "AUDIT M1: Fee should have been deducted from second address (original \
+                BTreeMap index 1), but it was deducted from third address instead. \
+                After first was drained (1000 credits) and removed from BTreeMap, \
+                DeductFromInput(1) shifted to target the third address. \
+                second's balance: {} (expected < {})",
+                second_final,
+                second_remaining_before_fee
+            );
+        }
+
+        /// AUDIT M2: ReduceOutput index invalidated after remainder removal.
+        ///
+        /// When `total_available == explicit_outputs_sum`, the remainder output is
+        /// removed at `advanced_structure/v0/mod.rs:84-86`. If the fee strategy
+        /// includes `ReduceOutput(i)` targeting the remainder position, the index
+        /// becomes out-of-bounds after removal. Fee deduction silently skips the
+        /// step, meaning the attacker gets a free (zero-fee) transaction.
+        ///
+        /// This test creates a transition where total available equals explicit outputs
+        /// (so remainder is 0 and removed), with a fee strategy targeting the removed output.
+        ///
+        /// Location: rs-dpp/.../address_funding_from_asset_lock/advanced_structure/v0/mod.rs:84-86
+        #[test]
+        fn test_audit_m2_reduce_output_index_invalid_after_remainder_removal() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock provides ~1.0 Dash of credits (100_000_000 duffs * 1000)
+            let asset_lock_credits = dash_to_credits!(1.0);
+
+            // Create two explicit outputs that sum to exactly the asset lock amount.
+            // This means remainder = 0, which triggers remainder removal.
+            let output_addr_1 = create_platform_address(1);
+            let output_addr_2 = create_platform_address(2);
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(output_addr_1, Some(asset_lock_credits / 2));
+            outputs.insert(output_addr_2, Some(asset_lock_credits / 2));
+
+            // Fee strategy targets ReduceOutput(2) — originally the remainder position.
+            // After remainder is removed (outputs shrink from 3 to 2), index 2 is OOB.
+            // Fee deduction may silently skip, giving a free transaction.
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(), // No address inputs
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(2)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // The transition should either:
+            // 1. Be rejected because the fee strategy references an invalid index, OR
+            // 2. Have fees properly deducted from a different output.
+            // It should NOT succeed with zero fees paid.
+            match processing_result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }] => {
+                    // If it succeeded, verify fees were actually deducted
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("should commit");
+
+                    let bal_1 = platform
+                        .drive
+                        .fetch_balance_and_nonce(&output_addr_1, None, platform_version)
+                        .expect("should fetch")
+                        .map(|(_, b)| b)
+                        .unwrap_or(0);
+
+                    let bal_2 = platform
+                        .drive
+                        .fetch_balance_and_nonce(&output_addr_2, None, platform_version)
+                        .expect("should fetch")
+                        .map(|(_, b)| b)
+                        .unwrap_or(0);
+
+                    let total_output = bal_1 + bal_2;
+
+                    // If fees were properly deducted, total_output < asset_lock_credits
+                    assert!(
+                        total_output < asset_lock_credits,
+                        "AUDIT M2: Transaction succeeded but total output ({}) equals \
+                        asset lock credits ({}). Fees were not deducted because \
+                        ReduceOutput(2) targeted the removed remainder position. \
+                        The fee deduction was silently skipped, giving a free transaction.",
+                        total_output,
+                        asset_lock_credits,
+                    );
+                }
+                _ => {
+                    // Rejected — this is acceptable behavior (fee strategy validation caught it)
+                }
+            }
+        }
+
+        /// AUDIT M5: No explicit conservation-of-credits check (asset lock only).
+        ///
+        /// This test verifies credit conservation when using only an asset lock
+        /// (no address inputs). All asset lock credits should end up in outputs + fees.
+        /// This is a standalone conservation test complementing C2.
+        ///
+        /// Location: rs-drive/.../address_funding_from_asset_lock_transition.rs
+        #[test]
+        fn test_audit_m5_conservation_assertion_with_asset_lock_only() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_credits = dash_to_credits!(1.0);
+
+            // Pure asset lock funding — no address inputs
+            let output_addr = create_platform_address(1);
+            let remainder_addr = create_platform_address(2);
+
+            let explicit_amount = dash_to_credits!(0.3);
+            let mut outputs = BTreeMap::new();
+            outputs.insert(output_addr, Some(explicit_amount));
+            outputs.insert(remainder_addr, None); // remainder
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(), // No address inputs
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Pure asset lock funding should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Read final balances
+            let output_final = platform
+                .drive
+                .fetch_balance_and_nonce(&output_addr, None, platform_version)
+                .expect("should fetch")
+                .map(|(_, b)| b)
+                .unwrap_or(0);
+
+            let remainder_final = platform
+                .drive
+                .fetch_balance_and_nonce(&remainder_addr, None, platform_version)
+                .expect("should fetch")
+                .map(|(_, b)| b)
+                .unwrap_or(0);
+
+            let total_in_addresses = output_final + remainder_final;
+
+            // Conservation: all asset lock credits should be in outputs + fees
+            // total_in_addresses + fees_paid = asset_lock_credits
+            // So: total_in_addresses <= asset_lock_credits
+            //     total_in_addresses >= asset_lock_credits - max_reasonable_fee
+            let max_reasonable_fee = dash_to_credits!(0.01);
+
+            assert!(
+                total_in_addresses >= asset_lock_credits - max_reasonable_fee,
+                "AUDIT M5: Credits not conserved. Asset lock provided {} credits, \
+                but output addresses only received {} credits total. \
+                Expected at least {} (asset_lock - max_fee {}). \
+                There is no explicit conservation-of-credits assertion in the processing code.",
+                asset_lock_credits,
+                total_in_addresses,
+                asset_lock_credits - max_reasonable_fee,
+                max_reasonable_fee,
+            );
+
+            assert!(
+                total_in_addresses <= asset_lock_credits,
+                "AUDIT M5: Output total {} exceeds asset lock credits {}. \
+                Credits were created from nothing!",
+                total_in_addresses,
+                asset_lock_credits,
+            );
+        }
+
+        /// AUDIT M3: Remainder arithmetic uses unchecked operations.
+        ///
+        /// At `address_funding_from_asset_lock/mod.rs:61,64`, the transformer uses
+        /// `.sum()` and unchecked subtraction for remainder computation. If structure
+        /// validation is bypassed, these operations could wrap/underflow.
+        ///
+        /// This test verifies that structure validation catches the overflow at the
+        /// correct level, but notes the transformer lacks defense-in-depth.
+        ///
+        /// Location: rs-drive/.../address_funding_from_asset_lock/mod.rs:61,64
+        #[test]
+        fn test_audit_m3_remainder_arithmetic_unchecked() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, _asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock provides ~1.0 Dash
+
+            // Create outputs that sum to > u64::MAX
+            let output_addr_1 = create_platform_address(1);
+            let output_addr_2 = create_platform_address(2);
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(output_addr_1, Some(u64::MAX));
+            outputs.insert(output_addr_2, Some(u64::MAX));
+
+            let transition = create_raw_transition_with_dummy_witnesses(
+                asset_lock_proof,
+                BTreeMap::new(),
+                outputs,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]),
+                0,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be rejected (overflow in output sum)
+            assert!(
+                !matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "AUDIT M3: Outputs summing to > u64::MAX should be rejected. \
+                Structure validation should catch this, but the transformer at \
+                mod.rs:61,64 uses .sum() and unchecked subtraction which would \
+                wrap silently if the check were bypassed. Defense-in-depth requires \
+                checked_add/checked_sub in the transformer."
+            );
+        }
+
+        /// AUDIT C2: Remainder calculation ignores input contributions — funds destroyed.
+        ///
+        /// When a transition combines an asset lock with existing address inputs,
+        /// the remainder is computed as `asset_lock_balance - explicit_outputs_sum`,
+        /// completely ignoring the input contributions. The input funds are deducted
+        /// from the source address but never routed to any output — credits are
+        /// permanently destroyed.
+        ///
+        /// Locations:
+        /// - rs-drive/.../address_funding_from_asset_lock/mod.rs:64 (resolved_outputs)
+        /// - rs-drive/.../address_funding_from_asset_lock_transition.rs:61 (operations)
+        #[test]
+        fn test_audit_c2_remainder_should_include_input_contributions() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let input_balance = dash_to_credits!(0.5);
+            let input_amount = dash_to_credits!(0.3);
+            setup_address_with_balance(&mut platform, input_address, 0, input_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock provides ~1.0 Dash of credits
+
+            // Combine asset lock + existing address input, all going to remainder
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_amount));
+
+            let remainder_address = create_platform_address(2);
+            let mut outputs = BTreeMap::new();
+            outputs.insert(remainder_address, None); // Single remainder output
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            // Commit so we can read final balances
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Check remainder balance
+            let remainder_result = platform
+                .drive
+                .fetch_balance_and_nonce(&remainder_address, None, platform_version)
+                .expect("should fetch");
+
+            let remainder_balance = remainder_result.map(|(_, balance)| balance).unwrap_or(0);
+
+            // Expected: asset_lock (~1.0 Dash) + input (0.3 Dash) - fees
+            //         = ~1.3 Dash - small_fee > 1.2 Dash
+            // Actual (BUG): asset_lock (~1.0 Dash) - fees < 1.0 Dash
+            // The 0.3 Dash from the input address is deducted but never added
+            // to any output — those credits are permanently destroyed.
+            assert!(
+                remainder_balance > dash_to_credits!(1.2),
+                "AUDIT C2: Remainder should include input contributions. \
+                Expected > {} credits (~1.3 Dash - fees), got {} credits. \
+                The input contribution of {} credits ({} Dash) was deducted from \
+                the source address but never routed to any output — destroyed.",
+                dash_to_credits!(1.2),
+                remainder_balance,
+                input_amount,
+                "0.3"
+            );
+        }
+
+        /// AUDIT C2 (conservation): Verify total credits are conserved.
+        ///
+        /// After processing an asset-lock-with-inputs transition, the total
+        /// credits across all affected addresses plus the withdrawal document
+        /// should equal the initial credits. Currently, input contributions
+        /// vanish, violating conservation.
+        #[test]
+        fn test_audit_c2_credits_conservation_with_inputs() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let input_balance = dash_to_credits!(1.0);
+            let input_amount = dash_to_credits!(0.5);
+            setup_address_with_balance(&mut platform, input_address, 0, input_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_credits = dash_to_credits!(1.0); // ~1 Dash from fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_amount));
+
+            let explicit_address = create_platform_address(2);
+            let remainder_address = create_platform_address(3);
+            let explicit_amount = dash_to_credits!(0.2);
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(explicit_address, Some(explicit_amount));
+            outputs.insert(remainder_address, None);
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Read all final balances
+            let _input_final = platform
+                .drive
+                .fetch_balance_and_nonce(&input_address, None, platform_version)
+                .expect("should fetch")
+                .map(|(_, b)| b)
+                .unwrap_or(0);
+
+            let explicit_final = platform
+                .drive
+                .fetch_balance_and_nonce(&explicit_address, None, platform_version)
+                .expect("should fetch")
+                .map(|(_, b)| b)
+                .unwrap_or(0);
+
+            let remainder_final = platform
+                .drive
+                .fetch_balance_and_nonce(&remainder_address, None, platform_version)
+                .expect("should fetch")
+                .map(|(_, b)| b)
+                .unwrap_or(0);
+
+            // Total credits in = asset_lock + input_amount
+            let total_credits_in = asset_lock_credits + input_amount;
+
+            // Total credits out = input_remaining + explicit + remainder + fees
+            // input_remaining = input_balance - input_amount
+            let _input_remaining = input_balance - input_amount;
+            let total_credits_in_addresses = explicit_final + remainder_final;
+
+            // The output addresses should have received total_credits_in minus fees.
+            // input_final should equal input_remaining minus any fee deducted from it.
+            // Conservation: explicit_final + remainder_final >= total_credits_in - max_reasonable_fee
+            let max_reasonable_fee = dash_to_credits!(0.01); // Fees should be small
+
+            assert!(
+                total_credits_in_addresses >= total_credits_in - max_reasonable_fee,
+                "AUDIT C2: Credits not conserved. Input contributed {} credits but \
+                output addresses only received {} credits total. Expected at least {} \
+                (total_in {} - max_fee {}). The input contribution was destroyed.",
+                input_amount,
+                total_credits_in_addresses,
+                total_credits_in - max_reasonable_fee,
+                total_credits_in,
+                max_reasonable_fee,
+            );
+        }
+    }
 }

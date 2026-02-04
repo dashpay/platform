@@ -5830,4 +5830,457 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // SECURITY AUDIT TESTS
+    // Tests demonstrating vulnerabilities found during security audit.
+    // These tests are expected to FAIL until the vulnerabilities are fixed.
+    // ==========================================
+
+    mod security_audit {
+        use super::*;
+        use dpp::state_transition::StateTransitionStructureValidation;
+
+        /// AUDIT C1 (Structure): Output amount exceeds input sum — should be rejected.
+        ///
+        /// The withdrawal amount is computed as `total_inputs - output_amount`.
+        /// If `output_amount > total_inputs`, this subtraction underflows (panic in
+        /// debug, wrap in release). Structure validation currently does NOT check
+        /// that `output_amount <= input_sum`.
+        ///
+        /// Location: rs-drive/.../address_credit_withdrawal/v0/transformer.rs:40
+        #[test]
+        fn test_audit_c1_output_exceeds_input_should_be_rejected_by_structure() {
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(999);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(0.01)),
+            );
+
+            // Output (change) is 100x larger than input sum
+            let output = Some((create_platform_address(2), dash_to_credits!(1.0)));
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            // SHOULD be invalid: output (1.0 Dash) > input (0.01 Dash) would
+            // cause underflow in withdrawal amount calculation.
+            // Currently FAILS: structure validation does not check this invariant.
+            assert!(
+                !result.is_valid(),
+                "AUDIT C1: Structure validation should reject when output amount ({}) exceeds \
+                input sum ({}). The withdrawal amount would underflow to a huge u64 value.",
+                dash_to_credits!(1.0),
+                dash_to_credits!(0.01),
+            );
+        }
+
+        /// AUDIT C1 (Processing): When output > input reaches the transformer,
+        /// the unchecked subtraction panics in debug mode or wraps in release mode.
+        ///
+        /// This test submits a signed transition where output > input. Since
+        /// structure validation does not catch this, processing reaches the
+        /// transformer where `total_inputs - output_amount` underflows.
+        ///
+        /// Expected: the transition is rejected with an error.
+        /// Actual: panics (debug) or produces a wrapped withdrawal amount (release).
+        #[test]
+        fn test_audit_c1_output_exceeds_input_processing_should_reject() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Address has 1.0 Dash balance
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Input takes 0.01 Dash from the address
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.01)));
+
+            // Output (change) requests 0.5 Dash — more than input sum of 0.01 Dash
+            // withdrawal_amount = 0.01 - 0.5 = UNDERFLOW
+            let output_address = create_platform_address(2);
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                Some((output_address, dash_to_credits!(0.5))),
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // In debug mode, this panics at `total_inputs - output_amount`.
+            // In release mode, the withdrawal amount wraps to u64::MAX - delta.
+            // Either way, the transition should be REJECTED, not succeed.
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition without panic");
+
+            // Should NOT be a successful execution
+            assert!(
+                !matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "AUDIT C1: Withdrawal with output (0.5 Dash) > input sum (0.01 Dash) should \
+                be rejected. The withdrawal amount underflows to {}. Currently this either \
+                panics (debug) or produces a wrapped value (release).",
+                (dash_to_credits!(0.01) as u128).wrapping_sub(dash_to_credits!(0.5) as u128)
+            );
+        }
+
+        /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
+        ///
+        /// When fee strategy step DeductFromInput(0) drains input A to zero,
+        /// A is removed from the BTreeMap. The next step DeductFromInput(1)
+        /// now targets what was originally at index 2 (C) instead of index 1 (B),
+        /// because all indices shifted down after the removal.
+        ///
+        /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
+        #[test]
+        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([10u8; 32]);
+            let addr_b = signer.add_p2pkh([20u8; 32]);
+            let addr_c = signer.add_p2pkh([30u8; 32]);
+
+            // Determine BTreeMap sort order
+            let mut sorted_addrs = vec![addr_a, addr_b, addr_c];
+            sorted_addrs.sort();
+            let first = sorted_addrs[0];
+            let second = sorted_addrs[1];
+            let third = sorted_addrs[2];
+
+            let first_balance = dash_to_credits!(0.1);
+            let second_balance = dash_to_credits!(1.0);
+            let third_balance = dash_to_credits!(1.0);
+
+            // Input amount leaves only 1000 credits remaining for first
+            let first_input = first_balance - 1000;
+            let second_input = dash_to_credits!(0.01);
+            let third_input = dash_to_credits!(0.01);
+
+            setup_address_with_balance(&mut platform, first, 0, first_balance);
+            setup_address_with_balance(&mut platform, second, 0, second_balance);
+            setup_address_with_balance(&mut platform, third, 0, third_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(first, (1 as AddressNonce, first_input));
+            inputs.insert(second, (1 as AddressNonce, second_input));
+            inputs.insert(third, (1 as AddressNonce, third_input));
+
+            // Fee strategy: deduct from index 0 (first), then index 1 (should be second).
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::DeductFromInput(1),
+                ],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            let second_remaining_before_fee = second_balance - second_input;
+
+            let (_, second_final) = platform
+                .drive
+                .fetch_balance_and_nonce(&second, None, platform_version)
+                .expect("should fetch")
+                .expect("second address should exist");
+
+            assert!(
+                second_final < second_remaining_before_fee,
+                "AUDIT M1: Fee should have been deducted from second address (original \
+                BTreeMap index 1), but it was deducted from third address instead. \
+                After first was drained (1000 credits) and removed from BTreeMap, \
+                DeductFromInput(1) shifted to target the third address. \
+                second's balance: {} (expected < {})",
+                second_final,
+                second_remaining_before_fee
+            );
+        }
+
+        /// AUDIT H2: Missing MIN_WITHDRAWAL_AMOUNT validation for address withdrawals.
+        ///
+        /// The identity credit withdrawal transition checks MIN_WITHDRAWAL_AMOUNT at
+        /// `identity_credit_withdrawal/structure/v1/mod.rs:33`, but the address credit
+        /// withdrawal transition has no such check. An attacker can create a withdrawal
+        /// with a tiny amount (e.g., 1 credit) which is economically irrational and
+        /// wastes chain resources (creates a Core transaction for dust).
+        ///
+        /// This test creates a withdrawal where `withdrawal_amount = input_sum - output_amount`
+        /// is very small (1000 credits = dust) and verifies that structure validation rejects it.
+        ///
+        /// Location: rs-dpp/.../address_credit_withdrawal/v0/state_transition_validation.rs
+        #[test]
+        fn test_audit_h2_dust_withdrawal_below_min_amount_should_be_rejected() {
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(999);
+
+            // Input has 0.1 Dash, output takes back 0.1 Dash minus 1000 credits
+            // This leaves withdrawal_amount = 1000 credits (dust)
+            let input_amount = dash_to_credits!(0.1);
+            let output_amount = input_amount - 1000; // Leave only 1000 credits for withdrawal
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, input_amount),
+            );
+
+            let output = Some((create_platform_address(2), output_amount));
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            // SHOULD be invalid: 1000 credits is below any reasonable MIN_WITHDRAWAL_AMOUNT.
+            // The identity credit withdrawal enforces this, but address withdrawal does not.
+            assert!(
+                !result.is_valid(),
+                "AUDIT H2: Dust withdrawal of 1000 credits (input {} - output {} = {}) \
+                should be rejected by structure validation. Identity credit withdrawal \
+                enforces MIN_WITHDRAWAL_AMOUNT but address credit withdrawal does not. \
+                This allows economically irrational withdrawals that waste Core chain \
+                resources creating dust transactions.",
+                input_amount,
+                output_amount,
+                input_amount - output_amount,
+            );
+        }
+
+        /// AUDIT H2 (Processing): Dust withdrawal reaches processing without rejection.
+        ///
+        /// Signed version of the H2 test that goes through the full processing pipeline.
+        #[test]
+        fn test_audit_h2_dust_withdrawal_processing_should_reject() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Input takes 0.1 Dash, output returns all but 1000 credits
+            let input_amount = dash_to_credits!(0.1);
+            let output_amount = input_amount - 1000;
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_amount));
+
+            let output_address = create_platform_address(2);
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                Some((output_address, output_amount)),
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Dust withdrawal should NOT succeed
+            assert!(
+                !matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "AUDIT H2: Dust withdrawal of {} credits should be rejected during processing. \
+                Currently there is no MIN_WITHDRAWAL_AMOUNT check for address credit withdrawals.",
+                1000
+            );
+        }
+
+        /// AUDIT H3: Unchecked `.sum()` in withdrawal transformer uses wrapping arithmetic.
+        ///
+        /// At `transformer.rs:36`, the withdrawal transformer computes input sum using
+        /// `.sum()` which wraps on overflow in release mode. Structure validation has
+        /// an upstream overflow check, but if bypassed, the transformer would produce
+        /// a wrapped (incorrect) sum. This is a defense-in-depth violation.
+        ///
+        /// This test verifies that structure validation correctly catches the overflow
+        /// (complementing M7). The transformer code should also use `checked_add`.
+        ///
+        /// Location: rs-drive/.../address_credit_withdrawal/v0/transformer.rs:36
+        #[test]
+        fn test_audit_h3_transformer_sum_should_use_checked_add() {
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(999);
+
+            // Two inputs that sum to > u64::MAX
+            let mut inputs = BTreeMap::new();
+            inputs.insert(create_platform_address(1), (0 as AddressNonce, u64::MAX));
+            inputs.insert(create_platform_address(2), (0 as AddressNonce, u64::MAX));
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1, // Valid Fibonacci number
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness(), create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            // Structure validation should catch the overflow
+            assert!(
+                !result.is_valid(),
+                "AUDIT H3: Two inputs of u64::MAX should cause overflow. Structure validation \
+                catches this, but the transformer at transformer.rs:36 uses .sum() which would \
+                silently wrap in release mode if structure validation were bypassed. \
+                The transformer should use checked_add for defense-in-depth."
+            );
+
+            // Verify it's specifically an overflow error (not some other error)
+            let has_overflow_error = result
+                .errors
+                .iter()
+                .any(|e| matches!(e, ConsensusError::BasicError(BasicError::OverflowError(_))));
+            assert!(
+                has_overflow_error,
+                "AUDIT H3: Expected OverflowError for input sum overflow, got {:?}",
+                result.errors
+            );
+        }
+    }
 }

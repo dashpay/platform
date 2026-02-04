@@ -380,4 +380,98 @@ mod tests {
 
         assert_eq!(witness, deserialized);
     }
+
+    /// AUDIT L1: Unbounded P2SH witness size during deserialization.
+    ///
+    /// The `Decode` impl for `AddressWitness::P2sh` at line 65 decodes
+    /// `Vec::<BinaryData>::decode(decoder)?` with no maximum length limit.
+    /// A malicious payload could specify a huge signatures vector length,
+    /// causing OOM or excessive allocation during deserialization.
+    ///
+    /// This test encodes a P2SH witness with a very large number of signatures
+    /// and verifies it decodes successfully, demonstrating the lack of limits.
+    ///
+    /// Location: rs-dpp/src/address_funds/witness.rs:65
+    #[test]
+    fn test_audit_l1_unbounded_p2sh_witness_deserialization() {
+        // Create a P2SH witness with 1000 signatures — an unreasonable number
+        // for any legitimate multisig scheme (Bitcoin limits to 20 keys in standard scripts).
+        let num_signatures = 1000;
+        let signatures: Vec<BinaryData> = (0..num_signatures)
+            .map(|i| BinaryData::new(vec![0x30, 0x44, i as u8]))
+            .collect();
+
+        let witness = AddressWitness::P2sh {
+            signatures,
+            redeem_script: BinaryData::new(vec![0x52, 0xae]),
+        };
+
+        // Encode and decode — should succeed since there is no limit
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        // Verify the decode produced the same oversized witness
+        if let AddressWitness::P2sh { signatures, .. } = &decoded {
+            // This SHOULD be rejected by a reasonable max limit (e.g., 20 for standard multisig).
+            // Currently succeeds because there is no application-level limit.
+            assert!(
+                signatures.len() <= 20,
+                "AUDIT L1: P2SH witness with {} signatures was decoded without rejection. \
+                The Decode impl has no maximum length limit on the signatures vector. \
+                A malicious payload could specify millions of signatures, causing OOM. \
+                Recommendation: add a max length check during deserialization.",
+                signatures.len()
+            );
+        } else {
+            panic!("Expected P2sh variant");
+        }
+    }
+
+    /// AUDIT L3: No maximum length check on P2SH signatures vector.
+    ///
+    /// Similar to L1 but specifically testing the application-level invariant:
+    /// P2SH multisig scripts are limited to a small number of signatures (typically
+    /// up to 20 in standard Bitcoin scripts), but the AddressWitness type places
+    /// no such limit. Even a modest number like 100 signatures is unreasonable.
+    ///
+    /// This test verifies encode/decode roundtrip succeeds for unreasonable
+    /// signature counts, demonstrating the lack of validation.
+    ///
+    /// Location: rs-dpp/src/address_funds/witness.rs:28-33
+    #[test]
+    fn test_audit_l3_no_max_signatures_count_check() {
+        // Test various unreasonable signature counts
+        for count in [50, 100, 500] {
+            let signatures: Vec<BinaryData> = (0..count)
+                .map(|_| BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]))
+                .collect();
+
+            let witness = AddressWitness::P2sh {
+                signatures: signatures.clone(),
+                redeem_script: BinaryData::new(vec![0x52, 0xae]),
+            };
+
+            // Encode/decode roundtrip
+            let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+            let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+                .unwrap()
+                .0;
+
+            assert_eq!(witness, decoded);
+
+            if let AddressWitness::P2sh { signatures, .. } = decoded {
+                assert!(
+                    signatures.len() <= 20,
+                    "AUDIT L3: P2SH witness with {} signatures passes encode/decode \
+                    with no rejection. Standard Bitcoin P2SH multisig allows at most \
+                    20 public keys. The AddressWitness type should enforce a maximum \
+                    signatures count to prevent abuse. Currently mitigated by tx size \
+                    limits, but defense-in-depth requires an explicit check.",
+                    count
+                );
+            }
+        }
+    }
 }

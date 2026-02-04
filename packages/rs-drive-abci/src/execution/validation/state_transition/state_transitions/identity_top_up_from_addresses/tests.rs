@@ -2,8 +2,8 @@
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-        create_dummy_witness, setup_address_with_balance, TestAddressSigner,
-        TestProtocolError as ProtocolError,
+        create_dummy_witness, create_platform_address, setup_address_with_balance,
+        TestAddressSigner, TestProtocolError as ProtocolError,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -3278,6 +3278,214 @@ mod tests {
                 &transition_bytes,
                 platform_version
             ));
+        }
+    }
+
+    // ==========================================
+    // SECURITY AUDIT TESTS
+    // Tests demonstrating vulnerabilities found during security audit.
+    // These tests are expected to FAIL until the vulnerabilities are fixed.
+    // ==========================================
+
+    mod security_audit {
+        use super::*;
+
+        /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
+        ///
+        /// When fee strategy step DeductFromInput(0) drains input A to zero,
+        /// A is removed from the BTreeMap. The next step DeductFromInput(1)
+        /// now targets what was originally at index 2 (C) instead of index 1 (B),
+        /// because all indices shifted down after the removal.
+        ///
+        /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
+        #[test]
+        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let identity = setup_identity(&mut platform, 1, dash_to_credits!(1.0));
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([10u8; 32]);
+            let addr_b = signer.add_p2pkh([20u8; 32]);
+            let addr_c = signer.add_p2pkh([30u8; 32]);
+
+            // Determine BTreeMap sort order
+            let mut sorted_addrs = vec![addr_a, addr_b, addr_c];
+            sorted_addrs.sort();
+            let first = sorted_addrs[0];
+            let second = sorted_addrs[1];
+            let third = sorted_addrs[2];
+
+            let first_balance = dash_to_credits!(0.1);
+            let second_balance = dash_to_credits!(1.0);
+            let third_balance = dash_to_credits!(1.0);
+
+            // Input amount leaves only 1000 credits remaining for first
+            let first_input = first_balance - 1000;
+            let second_input = dash_to_credits!(0.01);
+            let third_input = dash_to_credits!(0.01);
+
+            setup_address_with_balance(&mut platform, first, 0, first_balance);
+            setup_address_with_balance(&mut platform, second, 0, second_balance);
+            setup_address_with_balance(&mut platform, third, 0, third_balance);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(first, (1 as AddressNonce, first_input));
+            inputs.insert(second, (1 as AddressNonce, second_input));
+            inputs.insert(third, (1 as AddressNonce, third_input));
+
+            // Fee strategy: deduct from index 0 (first), then index 1 (should be second).
+            let fee_strategy = AddressFundsFeeStrategy::from(vec![
+                AddressFundsFeeStrategyStep::DeductFromInput(0),
+                AddressFundsFeeStrategyStep::DeductFromInput(1),
+            ]);
+
+            let transition = create_signed_transition_with_options(
+                &identity,
+                &signer,
+                inputs,
+                None,
+                fee_strategy,
+                0,
+                platform_version,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            let second_remaining_before_fee = second_balance - second_input;
+
+            let (_, second_final) = platform
+                .drive
+                .fetch_balance_and_nonce(&second, None, platform_version)
+                .expect("should fetch")
+                .expect("second address should exist");
+
+            assert!(
+                second_final < second_remaining_before_fee,
+                "AUDIT M1: Fee should have been deducted from second address (original \
+                BTreeMap index 1), but it was deducted from third address instead. \
+                After first was drained (1000 credits) and removed from BTreeMap, \
+                DeductFromInput(1) shifted to target the third address. \
+                second's balance: {} (expected < {})",
+                second_final,
+                second_remaining_before_fee
+            );
+        }
+
+        /// AUDIT M3: Unchecked subtraction in identity_top_up_from_addresses transformer.
+        ///
+        /// At `transformer.rs:24`, the transformer uses `.sum()` (wrapping) and at
+        /// line 28 uses unchecked subtraction. If structure validation is bypassed,
+        /// these operations could wrap/underflow silently.
+        ///
+        /// This test verifies structure validation catches overflow, but notes
+        /// the transformer lacks defense-in-depth.
+        ///
+        /// Location: rs-drive/.../identity_top_up_from_addresses/v0/transformer.rs:24,28
+        #[test]
+        fn test_audit_m3_unchecked_subtraction_in_transformer() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let identity = setup_identity(&mut platform, 1, dash_to_credits!(1.0));
+
+            // Two inputs that sum to > u64::MAX
+            let mut inputs = BTreeMap::new();
+            inputs.insert(create_platform_address(1), (0 as AddressNonce, u64::MAX));
+            inputs.insert(create_platform_address(2), (0 as AddressNonce, u64::MAX));
+
+            let transition = create_raw_transition_with_dummy_witnesses(
+                identity.id(),
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                2,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert!(
+                !matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                ),
+                "AUDIT M3: Inputs summing to > u64::MAX should be rejected. \
+                Structure validation catches this, but transformer.rs:24 uses .sum() \
+                and line 28 uses unchecked subtraction. If structure validation were \
+                bypassed, the transformer would wrap silently."
+            );
         }
     }
 }
