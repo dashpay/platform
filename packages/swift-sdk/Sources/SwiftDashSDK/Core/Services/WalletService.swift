@@ -193,15 +193,9 @@ public class WalletService: ObservableObject {
     }
     
     private func initializeNewSPVClient() {
-      // This ensures no memory leaks when creating a new client
-      // and unlocks the storage in case we are about to use the same (we are)
-      if self.spvClient != nil {
-        self.spvClient!.destroy()
-      }
-      
       SDKLogger.log("Initializing SPV Client for \(self.currentNetwork.rawValue)...", minimumLevel: .medium)
       
-      let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
+      let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(self.currentNetwork.rawValue).path
       // Currently always starting at 0 for simplicity. While this is
       // currently configurable, the SPVClient should decide using the wallet
       // creation time to determine the start height, removing usage complexity
@@ -212,6 +206,12 @@ public class WalletService: ObservableObject {
       SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(startHeight) on \(net.rawValue) during initialize()", minimumLevel: .high)
       
       do {
+          // This ensures no memory leaks when creating a new client
+          // and unlocks the storage in case we are about to use the same (we are)
+          if self.spvClient != nil {
+            self.spvClient!.destroy()
+          }
+          
           spvClient = try SPVClient(
               network: self.currentNetwork.sdkNetwork,
               dataDir: dataDir,
@@ -388,16 +388,8 @@ public class WalletService: ObservableObject {
         
         print("=== WalletService.switchNetwork START ===")
         print("Switching from \(currentNetwork.rawValue) to \(network.rawValue)")
-        
-        // Stop any ongoing sync and cleaning the storage
-        // NOTE: In dash-spv dev-v0.42 29/01/2026 the storage doesn't 
-        // store data in different location depending on the network, thats 
-        // why we need to manually drop the storage. If clearing the storage 
-        // fails this will lead to data inconsistency. If this note is not 
-        // removed when you see it, contact Borja @borja.castellano for an 
-        // update on how SPVClient implementation stores different network data 
-        self.stopSync()
-        self.clearSpvStorage()        
+
+        self.stopSync() 
         
         // Clear current wallet manager
         walletManager = nil
