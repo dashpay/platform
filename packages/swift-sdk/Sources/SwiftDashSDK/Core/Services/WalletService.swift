@@ -587,8 +587,8 @@ public class WalletService: ObservableObject {
             }
         }
         func onMasternodeStateUpdated(_ height: UInt32) {}
-        func onChainLockReceived(_ height: UInt32, _ hash: Data, _ validated: Bool) {}
-        func onInstantLockReceived(_ txid: Data, _ validated: Bool) {}
+        func onChainLockReceived(_ height: UInt32, _ hash:  Data, _ signature: Data, _ validated: Bool) {}
+        func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {}
         func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String) {
             SDKLogger.error("Sync manager \(manager) error: \(errorMsg)")
             

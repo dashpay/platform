@@ -12,8 +12,24 @@ internal enum SPVSyncManager: UInt32, Sendable {
     case unknown = 999
 }
 
-// Swift compatible type with C const uint8_t (*foo)[32]
+// Swift compatible type with C *const u8[32]
 private typealias Byte32 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+)
+
+// Swift compatible type with C *const u8[96]
+private typealias Byte96 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -82,8 +98,8 @@ internal protocol SPVSyncEventsHandler: AnyObject {
   func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32)
   func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32)
   func onMasternodeStateUpdated(_ height: UInt32)
-  func onChainLockReceived(_ height: UInt32, _ hash: Data, _ validated: Bool)
-  func onInstantLockReceived(_ txid: Data, _ validated: Bool)
+  func onChainLockReceived(_ height: UInt32, _ hash: Data, _ signature: Data, _ validated: Bool)
+  func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool)
   func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String)
   
   func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks
@@ -204,7 +220,7 @@ private func onSpvBlockProcessedCallbackC(
     newAddressCount: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
-    let hash = byte32PtrIntoData(hashPtr)
+    let hash = bytePtrIntoData(hashPtr, 32)
     rawPtrIntoSpvSyncEventsHandler(userData)
         .onBlocksProcessed(height, hash, newAddressCount)
 }
@@ -220,24 +236,30 @@ private func onSpvMasternodeStateUpdatedCallbackC(
 private func onSpvChainLockReceivedCallbackC(
     height: UInt32,
     hashPtr: UnsafePointer<Byte32>?,
+    signaturePtr: UnsafePointer<Byte96>?,
     validated: Bool,
     userData: UnsafeMutableRawPointer?
 ) {
-    let hash = byte32PtrIntoData(hashPtr)
+    let hash = bytePtrIntoData(hashPtr, 32)
+    let signature = bytePtrIntoData(signaturePtr, 96)
 
     rawPtrIntoSpvSyncEventsHandler(userData)
-        .onChainLockReceived(height, hash, validated)
+        .onChainLockReceived(height, hash, signature, validated)
 }
 
 private func onSpvInstantLockReceivedCallbackC(
     txidPtr: UnsafePointer<Byte32>?,
+    instantlockDataPtr: UnsafePointer<UInt8>?,
+    instantlockDataLen: UInt,
     validated: Bool,
     userData: UnsafeMutableRawPointer?
 ) {
-    let txid = byte32PtrIntoData(txidPtr)
+    let txid = bytePtrIntoData(txidPtr, 32)
 
+    let instantLockData = bytePtrIntoData(instantlockDataPtr, Int(instantlockDataLen))
+    
     rawPtrIntoSpvSyncEventsHandler(userData)
-        .onInstantLockReceived(txid, validated)
+        .onInstantLockReceived(txid, instantLockData, validated)
 }
 
 private func onSpvSyncManagerErrorCallbackC(
@@ -275,8 +297,8 @@ private final class DummySPVSyncEventsHandler: SPVSyncEventsHandler {
     func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32) {}
     func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {}
     func onMasternodeStateUpdated(_ height: UInt32) {}
-    func onChainLockReceived(_ height: UInt32, _ hash: Data, _ validated: Bool) {}
-    func onInstantLockReceived(_ txid: Data, _ validated: Bool) {}
+    func onChainLockReceived(_ height: UInt32, _ hash: Data, _ signature: Data, _ validated: Bool) {}
+    func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {}
     func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String) {}
 
     func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks {
@@ -418,7 +440,7 @@ private func onSpvTransactionReceivedCallbackC(
     }
 
     let walletId = String(cString: walletIdPtr)
-    let txid = byte32PtrIntoData(txidPtr)
+    let txid = bytePtrIntoData(txidPtr, 32)
     let addresses = addressesPtrIntoString(addressesPtr)
 
     handler.onTransactionReceived(
@@ -493,7 +515,7 @@ private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
 
 // MARK: - Helpers
 
-private func byte32PtrIntoData(_ ptr: UnsafePointer<Byte32>?) -> Data {
+private func bytePtrIntoData(_ ptr: UnsafeRawPointer?, _ len: Int) -> Data {
     guard let ptr else {
         // If the pointer in nil, a bug in the dash-spv library has occurred
         assert(false, "Byte32 pointer is nil!")
