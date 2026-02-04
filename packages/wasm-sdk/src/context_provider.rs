@@ -96,6 +96,10 @@ impl ContextProvider for WasmTrustedContext {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.inner.get_platform_activation_height()
     }
+
+    fn update_data_contract(&self, contract: Arc<DataContract>) {
+        self.inner.update_data_contract(contract)
+    }
 }
 
 impl WasmTrustedContext {
