@@ -12,7 +12,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -180,12 +180,6 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(getter = "signature")]
     pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        let st = StateTransition::from(self.0.clone());
-        Ok(st.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]

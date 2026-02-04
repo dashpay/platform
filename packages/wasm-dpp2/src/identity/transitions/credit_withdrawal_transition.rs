@@ -15,7 +15,7 @@ use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
@@ -259,12 +259,6 @@ impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(getter = "coreFeePerByte")]
     pub fn core_fee_per_byte(&self) -> u32 {
         self.0.core_fee_per_byte()
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        let st = StateTransition::from(self.0.clone());
-        Ok(st.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]

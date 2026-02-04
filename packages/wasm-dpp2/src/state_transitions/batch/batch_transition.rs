@@ -11,7 +11,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -187,12 +187,6 @@ impl BatchTransitionWasm {
         self.0
             .set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
         Ok(())
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        let st = StateTransition::from(self.0.clone());
-        Ok(st.signable_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]

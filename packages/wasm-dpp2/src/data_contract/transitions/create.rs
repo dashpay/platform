@@ -8,7 +8,7 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::{DataContract, IdentityNonce};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::{
@@ -187,12 +187,6 @@ impl DataContractCreateTransitionWasm {
         )?;
 
         Ok(DataContractWasm::from(rs_data_contract))
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        let st = StateTransition::from(self.0.clone());
-        Ok(st.signable_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
