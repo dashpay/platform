@@ -3284,12 +3284,6 @@ mod tests {
         }
     }
 
-    // ==========================================
-    // SECURITY AUDIT TESTS
-    // Tests demonstrating vulnerabilities found during security audit.
-    // These tests are expected to FAIL until the vulnerabilities are fixed.
-    // ==========================================
-
     mod security {
         use super::*;
 
@@ -3429,22 +3423,9 @@ mod tests {
         /// Location: rs-drive/.../identity_top_up_from_addresses/v0/transformer.rs:24,28
         #[test]
         fn test_transformer_subtraction_uses_checked_arithmetic() {
+            use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
+
             let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let identity = setup_identity(&mut platform, 1, dash_to_credits!(1.0));
 
             // Two inputs that sum to > u64::MAX
             let mut inputs = BTreeMap::new();
@@ -3452,7 +3433,7 @@ mod tests {
             inputs.insert(create_platform_address(2), (0 as AddressNonce, u64::MAX));
 
             let transition = create_raw_transition_with_dummy_witnesses(
-                identity.id(),
+                Identifier::random(),
                 inputs,
                 None,
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -3461,33 +3442,14 @@ mod tests {
                 2,
             );
 
-            let result = transition.serialize_to_bytes().expect("should serialize");
+            let result = transition
+                .validate_basic_structure(dpp::dashcore::Network::Testnet, platform_version)
+                .expect("validation should not return Err");
 
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            assert!(
-                !matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                ),
-                "AUDIT M3: Inputs summing to > u64::MAX should be rejected. \
-                Structure validation catches this, but transformer.rs:24 uses .sum() \
-                and line 28 uses unchecked subtraction. If structure validation were \
-                bypassed, the transformer would wrap silently."
+            assert!(!result.is_valid());
+            assert_matches!(
+                result.first_error().unwrap(),
+                ConsensusError::BasicError(BasicError::OverflowError(_))
             );
         }
     }

@@ -5829,12 +5829,6 @@ mod tests {
         }
     }
 
-    // ==========================================
-    // SECURITY AUDIT TESTS
-    // Tests demonstrating vulnerabilities found during security audit.
-    // These tests are expected to FAIL until the vulnerabilities are fixed.
-    // ==========================================
-
     mod security {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
@@ -5958,16 +5952,12 @@ mod tests {
                 )
                 .expect("expected to process state transition without panic");
 
-            // Should NOT be a successful execution
-            assert!(
-                !matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                ),
-                "AUDIT C1: Withdrawal with output (0.5 Dash) > input sum (0.01 Dash) should \
-                be rejected. The withdrawal amount underflows to {}. Currently this either \
-                panics (debug) or produces a wrapped value (release).",
-                (dash_to_credits!(0.01) as u128).wrapping_sub(dash_to_credits!(0.5) as u128)
+            // Should NOT be a successful execution — output > input must be rejected
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::WithdrawalBalanceMismatchError(_))
+                )]
             );
         }
 
@@ -6213,14 +6203,11 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Dust withdrawal should NOT succeed
-            assert!(
-                !matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                ),
-                "AUDIT H2: Dust withdrawal of {} credits should be rejected during processing. \
-                Currently there is no MIN_WITHDRAWAL_AMOUNT check for address credit withdrawals.",
-                1000
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::WithdrawalBelowMinAmountError(_))
+                )]
             );
         }
 

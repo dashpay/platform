@@ -234,12 +234,6 @@ mod tests {
         }
     }
 
-    // ==========================================
-    // SECURITY AUDIT TESTS
-    // Tests demonstrating vulnerabilities found during security audit.
-    // These tests are expected to FAIL until the vulnerabilities are fixed.
-    // ==========================================
-
     mod security {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
@@ -363,14 +357,11 @@ mod tests {
             // This rejection happens at the drive operation level, NOT in transform_into_action.
             // transform_into_action passes it through with zero validation.
             // This test documents that the transformer is a pure pass-through.
-            assert!(
-                !matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                ),
-                "AUDIT L6: Transfer exceeding balance should be rejected. \
-                Note: rejection happens at drive operation level, not in transform_into_action. \
-                transform_into_action_v0 is a pure pass-through with zero validation."
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_))
+                )]
             );
         }
 

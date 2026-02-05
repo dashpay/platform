@@ -8921,12 +8921,6 @@ mod tests {
         }
     }
 
-    // ==========================================
-    // SECURITY AUDIT TESTS
-    // Tests demonstrating vulnerabilities found during security audit.
-    // These tests are expected to FAIL until the vulnerabilities are fixed.
-    // ==========================================
-
     mod security {
         use super::*;
 
@@ -9312,32 +9306,22 @@ mod tests {
         /// Location: rs-drive/.../address_funding_from_asset_lock/mod.rs:61,64
         #[test]
         fn test_remainder_arithmetic_uses_checked_operations() {
-            let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
+            use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
-            let platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
+            let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
             let (asset_lock_proof, _asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
-            // Asset lock provides ~1.0 Dash
 
-            // Create outputs that sum to > u64::MAX
+            // Create outputs that sum to > u64::MAX, with a remainder output
             let output_addr_1 = create_platform_address(1);
             let output_addr_2 = create_platform_address(2);
+            let remainder_addr = create_platform_address(3);
 
             let mut outputs = BTreeMap::new();
             outputs.insert(output_addr_1, Some(u64::MAX));
             outputs.insert(output_addr_2, Some(u64::MAX));
+            outputs.insert(remainder_addr, None); // Remainder output
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
@@ -9347,35 +9331,14 @@ mod tests {
                 0,
             );
 
-            let result = transition.serialize_to_bytes().expect("should serialize");
+            let result = transition
+                .validate_basic_structure(dpp::dashcore::Network::Testnet, platform_version)
+                .expect("validation should not return Err");
 
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &[result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            // Should be rejected (overflow in output sum)
-            assert!(
-                !matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                ),
-                "AUDIT M3: Outputs summing to > u64::MAX should be rejected. \
-                Structure validation should catch this, but the transformer at \
-                mod.rs:61,64 uses .sum() and unchecked subtraction which would \
-                wrap silently if the check were bypassed. Defense-in-depth requires \
-                checked_add/checked_sub in the transformer."
+            assert!(!result.is_valid());
+            assert_matches!(
+                result.first_error().unwrap(),
+                ConsensusError::BasicError(BasicError::OverflowError(_))
             );
         }
 

@@ -4,7 +4,7 @@ fn is_perfect_square(number: u64) -> bool {
     }
     // Integer square root via Newton's method
     let mut x = number;
-    let mut y = (x + 1) / 2;
+    let mut y = x.div_ceil(2);
     while y < x {
         x = y;
         y = (x + number / x) / 2;

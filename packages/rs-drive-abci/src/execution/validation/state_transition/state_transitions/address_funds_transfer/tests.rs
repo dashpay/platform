@@ -5240,10 +5240,12 @@ mod tests {
 
             // Should fail with some error (not panic)
             assert!(!processing_result.execution_results().is_empty());
-            assert!(!matches!(
-                processing_result.execution_results()[0],
-                StateTransitionExecutionResult::SuccessfulExecution { .. }
-            ));
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
+            );
         }
     }
 
@@ -6103,12 +6105,11 @@ mod tests {
                 .expect("expected to process");
 
             // Should fail - timelock scripts should not be accepted
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Timelock (CLTV) script should not be accepted"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -6179,12 +6180,11 @@ mod tests {
                 .expect("expected to process");
 
             // Should fail - either invalid script format or signature verification fails
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "OP_RETURN script should not be accepted"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -6568,12 +6568,11 @@ mod tests {
                 .expect("expected to process");
 
             // MUST fail - OP_TRUE script without proper multisig structure is not valid
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "OP_TRUE script should NOT be accepted - this would be a critical vulnerability!"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -6642,12 +6641,11 @@ mod tests {
                 )
                 .expect("expected to process");
 
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "OP_1 script should NOT be accepted"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -6834,12 +6832,11 @@ mod tests {
                 )
                 .expect("expected to process");
 
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Disabled opcode OP_CAT should not be accepted"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -6908,12 +6905,11 @@ mod tests {
                 )
                 .expect("expected to process");
 
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Disabled opcode OP_VER should not be accepted"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -6989,12 +6985,11 @@ mod tests {
                 .expect("expected to process");
 
             // Large scripts should be rejected (or at least the OP_1 should fail validation)
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Very large redeem script should be rejected"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -7190,12 +7185,11 @@ mod tests {
                 .expect("expected to process");
 
             // Non-canonical DER should be rejected
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Non-canonical DER signature should be rejected"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -7265,12 +7259,11 @@ mod tests {
                 .expect("expected to process");
 
             // Empty script should fail (leaves empty stack)
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Empty script should be rejected"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -7342,12 +7335,11 @@ mod tests {
                 .expect("expected to process");
 
             // OP_CODESEPARATOR in non-standard script should be rejected
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[0],
-                    StateTransitionExecutionResult::SuccessfulExecution { .. }
-                ),
-                "Script with OP_CODESEPARATOR should be rejected"
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(_))
+                )]
             );
         }
 
@@ -8295,13 +8287,7 @@ mod tests {
         }
     }
 
-    // ==========================================
-    // SECURITY AUDIT TESTS
-    // Tests demonstrating vulnerabilities found during security audit.
-    // These tests are expected to FAIL until the vulnerabilities are fixed.
-    // ==========================================
-
-    mod security {
+    mod security_edge_cases {
         use super::*;
         use dpp::consensus::signature::SignatureError;
 
