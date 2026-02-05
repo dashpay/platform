@@ -11434,6 +11434,16 @@ mod tests {
                 .unwrap()
                 .expect("should commit");
 
+            // Verify first address was fully drained (exercising the index-shift scenario)
+            let first_result = platform
+                .drive
+                .fetch_balance_and_nonce(&first, None, platform_version)
+                .expect("should fetch");
+            assert!(
+                first_result.is_none() || first_result.map(|(_, b)| b) == Some(0),
+                "First address should be fully drained to exercise index-shift scenario"
+            );
+
             let second_remaining_before_fee = second_balance - second_input;
 
             let (_, second_final) = platform
