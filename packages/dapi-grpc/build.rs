@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    env,
     fs::{create_dir_all, remove_dir_all},
     path::PathBuf,
 };
@@ -13,23 +14,32 @@ const SERDE_WITH_STRING: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
 
 fn main() {
+    let output_base = resolve_output_base().unwrap_or_else(|e| {
+        eprintln!("[error] => resolve output base failed: {e}");
+        std::process::exit(1);
+    });
+    println!(
+        "cargo:rustc-env=DAPI_GRPC_OUT_DIR={}",
+        output_base.display()
+    );
+
     #[cfg(feature = "server")]
-    generate_code(ImplType::Server);
+    generate_code(ImplType::Server, &output_base);
     #[cfg(feature = "client")]
-    generate_code(ImplType::Client);
+    generate_code(ImplType::Client, &output_base);
 
     if std::env::var("CARGO_CFG_TARGET_ARCH")
         .unwrap_or_default()
         .eq("wasm32")
     {
-        generate_code(ImplType::Wasm);
+        generate_code(ImplType::Wasm, &output_base);
     }
 }
 
-fn generate_code(typ: ImplType) {
+fn generate_code(typ: ImplType, output_base: &PathBuf) {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
-        PathBuf::from("src/core"),
+        output_base.join("core"),
         &typ,
     );
 
@@ -39,7 +49,7 @@ fn generate_code(typ: ImplType) {
 
     let platform = MappingConfig::new(
         PathBuf::from("protos/platform/v0/platform.proto"),
-        PathBuf::from("src/platform"),
+        output_base.join("platform"),
         &typ,
     );
 
@@ -49,7 +59,7 @@ fn generate_code(typ: ImplType) {
 
     let drive = MappingConfig::new(
         PathBuf::from("protos/drive/v0/drive.proto"),
-        PathBuf::from("src/drive"),
+        output_base.join("drive"),
         &typ,
     );
 
@@ -60,6 +70,7 @@ fn generate_code(typ: ImplType) {
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
+    println!("cargo:rerun-if-env-changed=DAPI_GRPC_OUT_DIR");
 }
 
 struct MappingConfig {
@@ -461,4 +472,14 @@ fn abs_path(path: &PathBuf) -> PathBuf {
     }
 
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+}
+
+/// Resolve output base directory for generated files.
+fn resolve_output_base() -> Result<PathBuf, String> {
+    env::var("DAPI_GRPC_OUT_DIR")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("OUT_DIR").map(PathBuf::from))
+        .map_err(|_| {
+            "OUT_DIR should be provided by Cargo; set DAPI_GRPC_OUT_DIR to override it".to_string()
+        })
 }
