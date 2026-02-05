@@ -13,6 +13,7 @@ mod tests {
     };
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
@@ -1045,7 +1046,9 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::InputWitnessCountMismatchError(_))
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    )
                 )]
             );
         }
@@ -3287,7 +3290,7 @@ mod tests {
     // These tests are expected to FAIL until the vulnerabilities are fixed.
     // ==========================================
 
-    mod security_audit {
+    mod security {
         use super::*;
 
         /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
@@ -3299,7 +3302,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
         #[test]
-        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+        fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3425,7 +3428,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../identity_top_up_from_addresses/v0/transformer.rs:24,28
         #[test]
-        fn test_audit_m3_unchecked_subtraction_in_transformer() {
+        fn test_transformer_subtraction_uses_checked_arithmetic() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {

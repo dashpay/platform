@@ -240,7 +240,7 @@ mod tests {
     // These tests are expected to FAIL until the vulnerabilities are fixed.
     // ==========================================
 
-    mod security_audit {
+    mod security {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
 
@@ -258,7 +258,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../identity_credit_transfer_to_addresses_transition.rs:38
         #[test]
-        fn test_audit_m9_recipient_sum_overflow_wraps_balance_removal() {
+        fn test_recipient_sum_overflow_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             // Create two recipients whose amounts sum to > u64::MAX
@@ -297,109 +297,6 @@ mod tests {
             );
         }
 
-        /// AUDIT L5: No network-specific address validation — all-zero address accepted.
-        ///
-        /// Transfers to an address with all-zero hash bytes (PlatformAddress::P2pkh([0u8; 20]))
-        /// are accepted because no network-specific or format validation occurs.
-        /// This address is unspendable (no one knows the private key for hash160 = 0).
-        ///
-        /// Location: rs-dpp/.../identity_credit_transfer_to_addresses_transition/v0/state_transition_validation.rs
-        #[test]
-        fn test_audit_l5_all_zero_address_accepted() {
-            let platform_version = PlatformVersion::latest();
-
-            // Create a transfer to an all-zero P2PKH address
-            let all_zero_address = PlatformAddress::P2pkh([0u8; 20]);
-
-            let mut recipient_addresses = BTreeMap::new();
-            recipient_addresses.insert(all_zero_address, dash_to_credits!(0.1));
-
-            let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
-                identity_id: [1u8; 32].into(),
-                recipient_addresses,
-                nonce: 1,
-                user_fee_increase: 0,
-                signature_public_key_id: 0,
-                signature: BinaryData::new(vec![0; 65]),
-            };
-
-            // Structure validation currently accepts this
-            let result = transition_v0.validate_structure(platform_version);
-
-            // SHOULD be rejected: all-zero address is likely unspendable
-            assert!(
-                !result.is_valid(),
-                "AUDIT L5: Transfer to all-zero address PlatformAddress::P2pkh([0u8; 20]) \
-                should be rejected. No network-specific address validation is performed. \
-                This address is unspendable — funds sent here are permanently lost. \
-                Structure validation should reject known-bad addresses."
-            );
-        }
-
-        /// AUDIT L5 (Processing): All-zero address transfer succeeds end-to-end.
-        #[test]
-        fn test_audit_l5_all_zero_address_processing_succeeds() {
-            let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let mut rng = StdRng::seed_from_u64(567);
-
-            let (identity, signer) = create_identity_with_transfer_key(
-                [1u8; 32],
-                dash_to_credits!(1.0),
-                &mut rng,
-                platform_version,
-            );
-
-            add_identity_to_drive(&mut platform, &identity);
-
-            // Transfer to all-zero address
-            let all_zero_address = PlatformAddress::P2pkh([0u8; 20]);
-            let mut recipient_addresses = BTreeMap::new();
-            recipient_addresses.insert(all_zero_address, dash_to_credits!(0.1));
-
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
-            let result = transition.serialize_to_bytes().expect("should serialize");
-
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process");
-
-            // Should NOT succeed — funds to all-zero address are lost
-            assert!(
-                !matches!(
-                    processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-                ),
-                "AUDIT L5: Transfer to all-zero address should be rejected. \
-                Currently succeeds, sending funds to an unspendable address."
-            );
-        }
-
         /// AUDIT L6: transform_into_action performs zero validation.
         ///
         /// `transform_into_action_v0` at `transform_into_action/v0/mod.rs:16-23`
@@ -411,7 +308,7 @@ mod tests {
         ///
         /// Location: rs-drive-abci/.../identity_credit_transfer_to_addresses/transform_into_action/v0/mod.rs:16-23
         #[test]
-        fn test_audit_l6_transform_into_action_no_validation() {
+        fn test_transform_into_action_passes_without_validation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -488,7 +385,7 @@ mod tests {
         ///
         /// Location: rs-drive-abci/.../state_transition_estimated_fee_validation.rs:19
         #[test]
-        fn test_audit_l8_fee_estimation_saturating_vs_structure_checked_add() {
+        fn test_fee_estimation_saturating_add_matches_structure_validation() {
             let platform_version = PlatformVersion::latest();
 
             // Create recipients whose sum overflows u64

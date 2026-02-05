@@ -3921,7 +3921,7 @@ mod tests {
 
         #[test]
         fn test_large_amount_withdrawal() {
-            // Test withdrawal with very large amounts
+            // Test withdrawal at the maximum allowed amount (500 Dash)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3939,18 +3939,16 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            // Very large balance (1 billion credits)
-            let large_balance = 1_000_000_000_000_000_000u64;
+            // Balance large enough to cover max withdrawal + fees
+            let large_balance = dash_to_credits!(600.0);
             setup_address_with_balance(&mut platform, input_address, 0, large_balance);
 
             let mut rng = StdRng::seed_from_u64(567);
 
             let mut inputs = BTreeMap::new();
-            // Withdraw most of it
-            inputs.insert(
-                input_address,
-                (1 as AddressNonce, large_balance - dash_to_credits!(1.0)),
-            );
+            // Withdraw the max allowed amount (500 Dash = 50_000_000_000_000 credits)
+            let max_withdrawal = platform_version.system_limits.max_withdrawal_amount;
+            inputs.insert(input_address, (1 as AddressNonce, max_withdrawal));
 
             let transition = create_signed_address_credit_withdrawal_transition(
                 &signer,
@@ -5837,7 +5835,7 @@ mod tests {
     // These tests are expected to FAIL until the vulnerabilities are fixed.
     // ==========================================
 
-    mod security_audit {
+    mod security {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
 
@@ -5850,7 +5848,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../address_credit_withdrawal/v0/transformer.rs:40
         #[test]
-        fn test_audit_c1_output_exceeds_input_should_be_rejected_by_structure() {
+        fn test_output_exceeds_input_rejected_by_structure() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(999);
 
@@ -5900,7 +5898,7 @@ mod tests {
         /// Expected: the transition is rejected with an error.
         /// Actual: panics (debug) or produces a wrapped withdrawal amount (release).
         #[test]
-        fn test_audit_c1_output_exceeds_input_processing_should_reject() {
+        fn test_output_exceeds_input_rejected_by_processing() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5982,7 +5980,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
         #[test]
-        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+        fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6106,7 +6104,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../address_credit_withdrawal/v0/state_transition_validation.rs
         #[test]
-        fn test_audit_h2_dust_withdrawal_below_min_amount_should_be_rejected() {
+        fn test_withdrawal_below_min_amount_rejected_by_structure() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(999);
 
@@ -6157,7 +6155,7 @@ mod tests {
         ///
         /// Signed version of the H2 test that goes through the full processing pipeline.
         #[test]
-        fn test_audit_h2_dust_withdrawal_processing_should_reject() {
+        fn test_withdrawal_below_min_amount_rejected_by_processing() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6238,7 +6236,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../address_credit_withdrawal/v0/transformer.rs:36
         #[test]
-        fn test_audit_h3_transformer_sum_should_use_checked_add() {
+        fn test_transformer_input_sum_uses_checked_add() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(999);
 

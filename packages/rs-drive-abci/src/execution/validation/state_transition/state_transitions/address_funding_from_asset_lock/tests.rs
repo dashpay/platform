@@ -8927,7 +8927,7 @@ mod tests {
     // These tests are expected to FAIL until the vulnerabilities are fixed.
     // ==========================================
 
-    mod security_audit {
+    mod security {
         use super::*;
 
         /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
@@ -8939,7 +8939,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
         #[test]
-        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+        fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9070,7 +9070,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../address_funding_from_asset_lock/advanced_structure/v0/mod.rs:84-86
         #[test]
-        fn test_audit_m2_reduce_output_index_invalid_after_remainder_removal() {
+        fn test_reduce_output_index_after_remainder_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9186,7 +9186,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../address_funding_from_asset_lock_transition.rs
         #[test]
-        fn test_audit_m5_conservation_assertion_with_asset_lock_only() {
+        fn test_credits_conservation_with_asset_lock_only() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9311,7 +9311,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../address_funding_from_asset_lock/mod.rs:61,64
         #[test]
-        fn test_audit_m3_remainder_arithmetic_unchecked() {
+        fn test_remainder_arithmetic_uses_checked_operations() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9391,7 +9391,7 @@ mod tests {
         /// - rs-drive/.../address_funding_from_asset_lock/mod.rs:64 (resolved_outputs)
         /// - rs-drive/.../address_funding_from_asset_lock_transition.rs:61 (operations)
         #[test]
-        fn test_audit_c2_remainder_should_include_input_contributions() {
+        fn test_remainder_includes_input_contributions() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9499,7 +9499,7 @@ mod tests {
         /// should equal the initial credits. Currently, input contributions
         /// vanish, violating conservation.
         #[test]
-        fn test_audit_c2_credits_conservation_with_inputs() {
+        fn test_credits_conservation_with_inputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {

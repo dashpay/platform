@@ -1,8 +1,22 @@
 fn is_perfect_square(number: u64) -> bool {
-    (number as f64).sqrt().fract() == 0.0
+    if number < 2 {
+        return true;
+    }
+    // Integer square root via Newton's method
+    let mut x = number;
+    let mut y = (x + 1) / 2;
+    while y < x {
+        x = y;
+        y = (x + number / x) / 2;
+    }
+    x * x == number
 }
 
-pub fn is_fibonacci_number(number: u64) -> bool {
+pub fn is_non_zero_fibonacci_number(number: u64) -> bool {
+    if number == 0 {
+        return false;
+    }
+
     let square_check_up = 5u64
         .checked_mul(number)
         .and_then(|n| n.checked_mul(number))
@@ -15,7 +29,9 @@ pub fn is_fibonacci_number(number: u64) -> bool {
 
     match (square_check_up, square_check_down) {
         (Some(n1), Some(n2)) => is_perfect_square(n1) || is_perfect_square(n2),
-        _ => false, // Return false if either calculation overflows
+        (Some(n1), None) => is_perfect_square(n1),
+        (None, Some(n2)) => is_perfect_square(n2),
+        (None, None) => false,
     }
 }
 
@@ -32,9 +48,9 @@ mod tests {
     /// Currently not exploitable for `core_fee_per_byte` (u32), but the function
     /// accepts u64 and is technically unsound for large inputs.
     ///
-    /// Location: rs-dpp/src/util/is_fibonacci_number.rs:1-3
+    /// Location: rs-dpp/src/util/is_non_zero_fibonacci_number.rs:1-3
     #[test]
-    fn test_audit_m6_large_values_float_imprecision() {
+    fn test_is_perfect_square_large_values() {
         // For small values, is_perfect_square works correctly
         assert!(is_perfect_square(0));
         assert!(is_perfect_square(1));
@@ -85,26 +101,26 @@ mod tests {
         );
     }
 
-    /// AUDIT M6 (supplementary): Verify is_fibonacci_number works for known values
+    /// AUDIT M6 (supplementary): Verify is_non_zero_fibonacci_number works for known values
     #[test]
-    fn test_audit_m6_known_fibonacci_numbers() {
-        // Known Fibonacci numbers
+    fn test_known_non_zero_fibonacci_numbers() {
+        // Known non-zero Fibonacci numbers
         let fibs = [
-            0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597,
+            1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597,
         ];
         for &n in &fibs {
             assert!(
-                is_fibonacci_number(n),
+                is_non_zero_fibonacci_number(n),
                 "{} should be recognized as a Fibonacci number",
                 n
             );
         }
 
         // Known non-Fibonacci numbers
-        let non_fibs = [4, 6, 7, 9, 10, 11, 12, 14, 15, 16, 22, 100];
+        let non_fibs = [0, 4, 6, 7, 9, 10, 11, 12, 14, 15, 16, 22, 100];
         for &n in &non_fibs {
             assert!(
-                !is_fibonacci_number(n),
+                !is_non_zero_fibonacci_number(n),
                 "{} should NOT be recognized as a Fibonacci number",
                 n
             );

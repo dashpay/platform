@@ -14,6 +14,7 @@ mod tests {
     };
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
@@ -382,7 +383,9 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::InputWitnessCountMismatchError(_))
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    )
                 )]
             );
         }
@@ -8298,7 +8301,7 @@ mod tests {
     // These tests are expected to FAIL until the vulnerabilities are fixed.
     // ==========================================
 
-    mod security_audit {
+    mod security {
         use super::*;
         use dpp::consensus::signature::SignatureError;
 
@@ -8315,7 +8318,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../state_transition_witness_validation.rs:56-60
         #[test]
-        fn test_audit_h1_zero_witnesses_should_be_caught_by_witness_validation() {
+        fn test_zero_witnesses_rejected_by_witness_validation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8404,111 +8407,62 @@ mod tests {
 
         /// AUDIT M4: Credits (u64) cast to SumValue (i64) truncation destroys funds.
         ///
-        /// When setting an address balance, `set_balance_to_address_operations_v0` at
-        /// `set_balance_to_address/v0/mod.rs:55` casts `balance as SumValue` where
-        /// SumValue is i64. For balance values > i64::MAX, the cast produces a negative
-        /// value. `remove_balance_from_address` then clamps the negative sum to 0,
-        /// effectively destroying the funds.
+        /// When setting an address balance, `set_balance_to_address_operations_v0`
+        /// casts `balance as SumValue` where SumValue is i64. For balance values
+        /// > i64::MAX, this would produce a negative value. The Drive layer now
+        /// guards against this with an overflow check, returning an error instead
+        /// of silently truncating.
         ///
-        /// This test sets up a transfer that would result in a very large balance and
-        /// verifies the balance is preserved correctly.
+        /// In practice this can never happen because MAX_CREDITS == i64::MAX and
+        /// all input validation enforces this, but the Drive layer should still
+        /// reject such values defensively.
         ///
-        /// Location: rs-drive/src/drive/address_funds/set_balance_to_address/v0/mod.rs:55
+        /// Location: rs-drive/src/drive/address_funds/set_balance_to_address/v0/mod.rs
         #[test]
-        fn test_audit_m4_u64_to_i64_truncation_destroys_funds() {
+        fn test_balance_exceeding_i64_max_returns_overflow_error() {
             let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
 
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
+            let platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            // Set up sender with a balance slightly above i64::MAX
-            // i64::MAX = 9_223_372_036_854_775_807
+            let address = PlatformAddress::P2pkh([1u8; 20]);
             let large_balance: u64 = i64::MAX as u64 + 1; // 9_223_372_036_854_775_808
 
-            let mut signer = TestAddressSigner::new();
-            let sender_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(&mut platform, sender_address, 0, large_balance);
-
-            // Transfer a small amount to a new address
-            let recipient_address = create_platform_address(2);
-            let transfer_amount = dash_to_credits!(0.01);
-
-            let mut inputs = BTreeMap::new();
-            inputs.insert(sender_address, (1 as AddressNonce, transfer_amount));
-
-            let mut outputs = BTreeMap::new();
-            outputs.insert(recipient_address, transfer_amount);
-
-            let transition = create_signed_transition_with_custom_outputs(
-                &signer,
-                inputs,
-                outputs,
-                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            // Attempting to set a balance > i64::MAX should return an overflow error
+            let mut drive_operations = Vec::new();
+            let result = platform.drive.set_balance_to_address(
+                address,
+                0,
+                large_balance,
+                &mut None,
+                &mut drive_operations,
+                platform_version,
             );
-
-            let result = transition.serialize_to_bytes().expect("should serialize");
-
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-                "Transfer should succeed"
-            );
-
-            // Commit to read final balances
-            platform
-                .drive
-                .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("should commit");
-
-            // After transfer, sender should have large_balance - transfer_amount - fees
-            let (_, sender_final) = platform
-                .drive
-                .fetch_balance_and_nonce(&sender_address, None, platform_version)
-                .expect("should fetch")
-                .expect("sender should exist");
-
-            // The sender's remaining balance should be close to large_balance - transfer_amount
-            // If the u64→i64 cast corrupts the balance, this will be 0 or some wrong value
-            let expected_min = large_balance - transfer_amount - dash_to_credits!(0.01); // Allow for fees
 
             assert!(
-                sender_final >= expected_min,
-                "AUDIT M4: Sender balance after transfer is {} but expected at least {}. \
-                The balance {} (> i64::MAX = {}) was cast to i64 at \
-                set_balance_to_address/v0/mod.rs:55, producing a negative SumValue. \
-                This corrupts the balance tracking in GroveDB's sum tree.",
-                sender_final,
-                expected_min,
+                result.is_err(),
+                "AUDIT M4: set_balance_to_address should reject balance {} (> i64::MAX = {}) \
+                with an overflow error to prevent u64→i64 truncation in sum tree storage.",
                 large_balance,
                 i64::MAX,
+            );
+
+            // Verify that i64::MAX itself is accepted (boundary value)
+            let mut drive_operations = Vec::new();
+            let result = platform.drive.set_balance_to_address(
+                address,
+                0,
+                i64::MAX as u64,
+                &mut None,
+                &mut drive_operations,
+                platform_version,
+            );
+
+            assert!(
+                result.is_ok(),
+                "set_balance_to_address should accept balance == i64::MAX"
             );
         }
 
@@ -8524,7 +8478,7 @@ mod tests {
         ///
         /// Location: rs-dpp/src/lib.rs:117
         #[test]
-        fn test_audit_l2_nonce_overflow_at_u32_max_locks_address() {
+        fn test_nonce_at_u32_max_locks_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8616,7 +8570,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
         #[test]
-        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+        fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {

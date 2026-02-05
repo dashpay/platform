@@ -603,10 +603,9 @@ mod tests {
             // and fails when trying to validate the missing second witness
             assert_matches!(
                 check_result.errors.as_slice(),
-                [ConsensusError::SignatureError(_)]
-                    | [ConsensusError::BasicError(
-                        BasicError::InputWitnessCountMismatchError(_)
-                    )]
+                [ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_)
+                )]
             );
         }
 
@@ -8840,8 +8839,13 @@ mod tests {
                 dash_to_credits!(10.0),
             );
 
-            // Set up output address with near-max balance
-            setup_address_with_balance(&mut platform, output_address.clone(), 0, u64::MAX - 1000);
+            // Set up output address with near-max balance (leave room for other balances in sum tree)
+            setup_address_with_balance(
+                &mut platform,
+                output_address.clone(),
+                0,
+                i64::MAX as u64 - dash_to_credits!(1000.0),
+            );
 
             let mut inputs = BTreeMap::new();
             inputs.insert(
@@ -11323,7 +11327,7 @@ mod tests {
     // These tests are expected to FAIL until the vulnerabilities are fixed.
     // ==========================================
 
-    mod security_audit {
+    mod security {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
 
@@ -11336,7 +11340,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
         #[test]
-        fn test_audit_m1_fee_deduction_index_shifts_after_btreemap_mutation() {
+        fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -11468,7 +11472,7 @@ mod tests {
         ///
         /// Location: rs-drive/.../identity_create_from_addresses/v0/transformer.rs:39,43
         #[test]
-        fn test_audit_m3_unchecked_subtraction_in_transformer() {
+        fn test_transformer_subtraction_uses_checked_arithmetic() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(999);
 
@@ -11545,7 +11549,7 @@ mod tests {
         ///
         /// Location: rs-drive-abci/.../identity_create_from_addresses (fee deduction logic)
         #[test]
-        fn test_audit_m8_partial_fee_payment_should_be_rejected() {
+        fn test_partial_fee_payment_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -11663,7 +11667,7 @@ mod tests {
         ///
         /// Location: rs-dpp/.../state_transition_identity_id_from_inputs.rs
         #[test]
-        fn test_audit_l4_identity_id_has_no_domain_separator() {
+        fn test_identity_id_has_no_domain_separator() {
             use dpp::state_transition::StateTransitionIdentityIdFromInputs;
 
             let platform_version = PlatformVersion::latest();

@@ -9,13 +9,15 @@ use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
     OutputAddressAlsoInputError, OutputBelowMinimumError, TransitionNoInputsError,
-    TransitionOverMaxInputsError, WithdrawalBalanceMismatchError,
+    TransitionOverMaxInputsError, WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
-use crate::state_transition::address_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
+use crate::state_transition::address_credit_withdrawal_transition::{
+    MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
+};
 use crate::state_transition::StateTransitionStructureValidation;
-use crate::util::is_fibonacci_number::is_fibonacci_number;
+use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::withdrawal::Pooling;
 use platform_version::version::PlatformVersion;
@@ -180,7 +182,7 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
         }
 
         // Validate core_fee_per_byte is a Fibonacci number
-        if !is_fibonacci_number(self.core_fee_per_byte as u64) {
+        if !is_non_zero_fibonacci_number(self.core_fee_per_byte as u64) {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidCreditWithdrawalTransitionCoreFeeError::new(
                     self.core_fee_per_byte,
@@ -218,6 +220,21 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
                     input_sum,
                     output_amount,
                     input_sum.saturating_sub(output_amount),
+                ))
+                .into(),
+            );
+        }
+
+        // Validate withdrawal amount meets minimum and maximum
+        let withdrawal_amount = input_sum - output_amount; // Safe: checked input_sum > output_amount above
+        if withdrawal_amount < MIN_WITHDRAWAL_AMOUNT
+            || withdrawal_amount > platform_version.system_limits.max_withdrawal_amount
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
+                    withdrawal_amount,
+                    MIN_WITHDRAWAL_AMOUNT,
+                    platform_version.system_limits.max_withdrawal_amount,
                 ))
                 .into(),
             );
