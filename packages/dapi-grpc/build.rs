@@ -478,7 +478,7 @@ fn abs_path(path: &PathBuf) -> PathBuf {
 fn resolve_output_base() -> Result<PathBuf, String> {
     env::var("DAPI_GRPC_OUT_DIR")
         .map(PathBuf::from)
-        .or_else(|_| env::var("OUT_DIR").map(PathBuf::from))
+        .or_else(|_| env::var("OUT_DIR").map(|out_dir| PathBuf::from(out_dir).join("dapi_grpc")))
         .map_err(|_| {
             "OUT_DIR should be provided by Cargo; set DAPI_GRPC_OUT_DIR to override it".to_string()
         })
