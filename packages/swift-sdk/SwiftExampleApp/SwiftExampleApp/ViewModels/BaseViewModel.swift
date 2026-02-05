@@ -72,7 +72,7 @@ class BaseViewModel: ObservableObject {
     ///   - operation: The async operation to execute.
     /// - Returns: The result of the operation, or nil if it failed.
     @discardableResult
-    func executeAsync<T>(
+    func executeAsync<T: Sendable>(
         showResultOnSuccess: Bool = true,
         operation: () async throws -> T
     ) async -> T? {

@@ -144,7 +144,7 @@ public enum AsyncOperation {
     ///   - onComplete: Called when operation completes (success or failure).
     ///   - operation: The async operation to run.
     @MainActor
-    public static func execute<T>(
+    public static func execute<T: Sendable>(
         onStart: (() -> Void)? = nil,
         onSuccess: ((T) -> Void)? = nil,
         onError: ((String) -> Void)? = nil,
