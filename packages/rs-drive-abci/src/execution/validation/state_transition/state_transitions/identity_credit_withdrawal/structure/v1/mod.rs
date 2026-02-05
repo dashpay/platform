@@ -11,7 +11,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
 };
-use dpp::util::is_fibonacci_number::is_fibonacci_number;
+use dpp::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
@@ -53,7 +53,7 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
         }
 
         // validate core_fee is in fibonacci sequence
-        if !is_fibonacci_number(self.core_fee_per_byte() as u64) {
+        if !is_non_zero_fibonacci_number(self.core_fee_per_byte() as u64) {
             result.add_error(InvalidCreditWithdrawalTransitionCoreFeeError::new(
                 self.core_fee_per_byte(),
                 MIN_CORE_FEE_PER_BYTE,
