@@ -96,13 +96,6 @@ impl PlatformAddress {
     /// Type byte for P2SH addresses in bech32m encoding (user-facing)
     pub const P2SH_TYPE: u8 = 0x80;
 
-    /// Type byte for P2PKH addresses in storage keys (internal/consensus-critical)
-    /// This MUST remain 0x00 for backwards compatibility with existing state.
-    const P2PKH_STORAGE_TYPE: u8 = 0x00;
-    /// Type byte for P2SH addresses in storage keys (internal/consensus-critical)
-    /// This MUST remain 0x01 for backwards compatibility with existing state.
-    const P2SH_STORAGE_TYPE: u8 = 0x01;
-
     /// Returns the appropriate HRP (Human-Readable Part) for the given network.
     ///
     /// Per DIP-0018:
@@ -223,23 +216,13 @@ impl PlatformAddress {
     }
 
     /// Converts the PlatformAddress to bytes for storage keys.
-    /// Format: [address_type (1 byte)] + [hash (20 bytes)]
+    /// Format: [variant_index (1 byte)] + [hash (20 bytes)]
     ///
-    /// NOTE: This uses storage type bytes (0x00/0x01) for backwards compatibility,
-    /// NOT the bech32m type bytes (0xb0/0x80). These bytes are used as keys in GroveDB.
+    /// Uses bincode serialization which produces: 0x00 for P2pkh, 0x01 for P2sh.
+    /// These bytes are used as keys in GroveDB.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(1 + ADDRESS_HASH_SIZE);
-        match self {
-            PlatformAddress::P2pkh(hash) => {
-                bytes.push(Self::P2PKH_STORAGE_TYPE);
-                bytes.extend_from_slice(hash);
-            }
-            PlatformAddress::P2sh(hash) => {
-                bytes.push(Self::P2SH_STORAGE_TYPE);
-                bytes.extend_from_slice(hash);
-            }
-        }
-        bytes
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("PlatformAddress serialization cannot fail")
     }
 
     /// Gets a base64 string of the PlatformAddress concatenated with the nonce.
@@ -255,32 +238,15 @@ impl PlatformAddress {
     }
 
     /// Creates a PlatformAddress from storage bytes.
-    /// Format: [address_type (1 byte)] + [hash (20 bytes)]
+    /// Format: [variant_index (1 byte)] + [hash (20 bytes)]
     ///
-    /// NOTE: This expects storage type bytes (0x00/0x01) for backwards compatibility,
-    /// NOT the bech32m type bytes (0xb0/0x80).
+    /// Uses bincode deserialization which expects: 0x00 for P2pkh, 0x01 for P2sh.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        if bytes.len() < 1 + ADDRESS_HASH_SIZE {
-            return Err(ProtocolError::DecodingError(format!(
-                "cannot decode PlatformAddress: expected {} bytes, got {}",
-                1 + ADDRESS_HASH_SIZE,
-                bytes.len()
-            )));
-        }
-
-        let address_type = bytes[0];
-        let hash: [u8; 20] = bytes[1..21]
-            .try_into()
-            .map_err(|_| ProtocolError::DecodingError("invalid hash length".to_string()))?;
-
-        match address_type {
-            Self::P2PKH_STORAGE_TYPE => Ok(PlatformAddress::P2pkh(hash)),
-            Self::P2SH_STORAGE_TYPE => Ok(PlatformAddress::P2sh(hash)),
-            _ => Err(ProtocolError::DecodingError(format!(
-                "invalid address type: {}",
-                address_type
-            ))),
-        }
+        let (address, _): (Self, usize) =
+            bincode::decode_from_slice(bytes, bincode::config::standard()).map_err(|e| {
+                ProtocolError::DecodingError(format!("cannot decode PlatformAddress: {}", e))
+            })?;
+        Ok(address)
     }
 
     /// Returns the hash portion of the address (20 bytes)
@@ -1303,17 +1269,21 @@ mod tests {
     }
 
     #[test]
-    fn test_storage_bytes_use_legacy_type_bytes() {
-        // Verify that to_bytes() uses storage type bytes (0x00/0x01) for backwards compatibility
+    fn test_storage_bytes_format() {
+        // Verify that to_bytes() (using bincode) produces expected format:
+        // [variant_index (1 byte)] + [hash (20 bytes)]
+        // P2pkh = variant 0, P2sh = variant 1
         let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
         let p2sh = PlatformAddress::P2sh([0xCD; 20]);
 
         let p2pkh_bytes = p2pkh.to_bytes();
         let p2sh_bytes = p2sh.to_bytes();
 
-        // Storage type bytes must be 0x00 for P2PKH and 0x01 for P2SH
-        assert_eq!(p2pkh_bytes[0], 0x00, "P2PKH storage type byte must be 0x00");
-        assert_eq!(p2sh_bytes[0], 0x01, "P2SH storage type byte must be 0x01");
+        // Verify format: 21 bytes total, first byte is variant index
+        assert_eq!(p2pkh_bytes.len(), 21);
+        assert_eq!(p2sh_bytes.len(), 21);
+        assert_eq!(p2pkh_bytes[0], 0x00, "P2pkh variant index must be 0x00");
+        assert_eq!(p2sh_bytes[0], 0x01, "P2sh variant index must be 0x01");
 
         // Verify roundtrip through from_bytes
         let p2pkh_decoded = PlatformAddress::from_bytes(&p2pkh_bytes).unwrap();
@@ -1324,11 +1294,12 @@ mod tests {
 
     #[test]
     fn test_bech32m_uses_different_type_bytes_than_storage() {
-        // Verify that bech32m encoding uses different type bytes (0xb0/0x80) than storage (0x00/0x01)
+        // Verify that bech32m encoding uses type bytes (0xb0/0x80)
+        // while storage (bincode) uses variant indices (0x00/0x01)
         let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
         let p2sh = PlatformAddress::P2sh([0xCD; 20]);
 
-        // Storage bytes use 0x00/0x01
+        // Storage bytes (bincode) use variant indices 0x00/0x01
         assert_eq!(p2pkh.to_bytes()[0], 0x00);
         assert_eq!(p2sh.to_bytes()[0], 0x01);
 
