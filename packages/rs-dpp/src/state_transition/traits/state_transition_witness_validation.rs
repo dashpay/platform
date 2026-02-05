@@ -50,15 +50,25 @@ pub trait StateTransitionWitnessValidation: StateTransitionWitnessSigned + Signa
     /// # Returns
     /// * `WitnessValidationResult` - Contains validation result and operations performed
     fn validate_witnesses(&self, signable_bytes: &[u8]) -> WitnessValidationResult {
+        let inputs = self.inputs();
+        let witnesses = self.witnesses();
+
+        // Verify witness count matches input count before zipping
+        if inputs.len() != witnesses.len() {
+            return WitnessValidationResult::new_with_error(
+                InvalidStateTransitionSignatureError::new(format!(
+                    "Number of witnesses ({}) does not match number of inputs ({})",
+                    witnesses.len(),
+                    inputs.len()
+                ))
+                .into(),
+            );
+        }
+
         let mut total_operations = AddressWitnessVerificationOperations::new();
 
         // Validate each witness against its corresponding input address
-        for (i, (address, witness)) in self
-            .inputs()
-            .keys()
-            .zip(self.witnesses().iter())
-            .enumerate()
-        {
+        for (i, (address, witness)) in inputs.keys().zip(witnesses.iter()).enumerate() {
             match address.verify_bytes_against_witness(witness, signable_bytes) {
                 Ok(operations) => {
                     total_operations.combine(&operations);

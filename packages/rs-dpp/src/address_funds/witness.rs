@@ -6,6 +6,10 @@ use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of entries in a P2SH signatures vector.
+/// This is 16 (max keys from OP_PUSHNUM_16) + 1 (CHECKMULTISIG dummy byte).
+pub const MAX_P2SH_SIGNATURES: usize = 17;
+
 /// The input witness data required to spend from a PlatformAddress.
 ///
 /// This enum captures the different spending patterns for P2PKH and P2SH addresses.
@@ -63,6 +67,13 @@ impl Decode for AddressWitness {
             }
             1 => {
                 let signatures = Vec::<BinaryData>::decode(decoder)?;
+                if signatures.len() > MAX_P2SH_SIGNATURES {
+                    return Err(DecodeError::OtherString(format!(
+                        "P2SH signatures count {} exceeds maximum {}",
+                        signatures.len(),
+                        MAX_P2SH_SIGNATURES,
+                    )));
+                }
                 let redeem_script = BinaryData::decode(decoder)?;
                 Ok(AddressWitness::P2sh {
                     signatures,
@@ -87,6 +98,13 @@ impl<'de> bincode::BorrowDecode<'de> for AddressWitness {
             }
             1 => {
                 let signatures = Vec::<BinaryData>::borrow_decode(decoder)?;
+                if signatures.len() > MAX_P2SH_SIGNATURES {
+                    return Err(DecodeError::OtherString(format!(
+                        "P2SH signatures count {} exceeds maximum {}",
+                        signatures.len(),
+                        MAX_P2SH_SIGNATURES,
+                    )));
+                }
                 let redeem_script = BinaryData::borrow_decode(decoder)?;
                 Ok(AddressWitness::P2sh {
                     signatures,
@@ -188,6 +206,13 @@ impl<'de> Deserialize<'de> for AddressWitness {
                     "p2sh" => {
                         let signatures =
                             signatures.ok_or_else(|| de::Error::missing_field("signatures"))?;
+                        if signatures.len() > MAX_P2SH_SIGNATURES {
+                            return Err(de::Error::custom(format!(
+                                "P2SH signatures count {} exceeds maximum {}",
+                                signatures.len(),
+                                MAX_P2SH_SIGNATURES,
+                            )));
+                        }
                         let redeem_script = redeem_script
                             .ok_or_else(|| de::Error::missing_field("redeemScript"))?;
                         Ok(AddressWitness::P2sh {
@@ -377,5 +402,110 @@ mod tests {
         let deserialized: AddressWitness = serde_json::from_str(&json).unwrap();
 
         assert_eq!(witness, deserialized);
+    }
+
+    /// AUDIT L1: Unbounded P2SH witness size during deserialization.
+    ///
+    /// The `Decode` impl for `AddressWitness::P2sh` now enforces
+    /// `MAX_P2SH_SIGNATURES` during deserialization. A payload with more
+    /// signatures than the limit is rejected with a decode error.
+    ///
+    /// Location: rs-dpp/src/address_funds/witness.rs
+    #[test]
+    fn test_p2sh_witness_rejects_excessive_signatures() {
+        // Create a P2SH witness with 1000 signatures — far above MAX_P2SH_SIGNATURES
+        let num_signatures = 1000;
+        let signatures: Vec<BinaryData> = (0..num_signatures)
+            .map(|i| BinaryData::new(vec![0x30, 0x44, i as u8]))
+            .collect();
+
+        let witness = AddressWitness::P2sh {
+            signatures,
+            redeem_script: BinaryData::new(vec![0x52, 0xae]),
+        };
+
+        // Encode succeeds (encoding has no limit), but decode must reject
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&encoded, config::standard());
+
+        assert!(
+            result.is_err(),
+            "AUDIT L1: P2SH witness with {} signatures should be rejected during \
+            deserialization. MAX_P2SH_SIGNATURES = {}.",
+            num_signatures,
+            MAX_P2SH_SIGNATURES,
+        );
+    }
+
+    /// AUDIT L3: No maximum length check on P2SH signatures vector.
+    ///
+    /// The deserialization now enforces `MAX_P2SH_SIGNATURES` (17). Signature
+    /// counts above this limit are rejected during decode. The boundary value
+    /// (17) is accepted, and 18+ is rejected.
+    ///
+    /// Location: rs-dpp/src/address_funds/witness.rs
+    #[test]
+    fn test_p2sh_witness_max_signatures_boundary() {
+        // Counts above MAX_P2SH_SIGNATURES should be rejected during decode
+        for count in [50, 100, 500] {
+            let signatures: Vec<BinaryData> = (0..count)
+                .map(|_| BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]))
+                .collect();
+
+            let witness = AddressWitness::P2sh {
+                signatures,
+                redeem_script: BinaryData::new(vec![0x52, 0xae]),
+            };
+
+            let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+            let result: Result<(AddressWitness, usize), _> =
+                bincode::decode_from_slice(&encoded, config::standard());
+
+            assert!(
+                result.is_err(),
+                "AUDIT L3: P2SH witness with {} signatures should be rejected during \
+                deserialization. MAX_P2SH_SIGNATURES = {}.",
+                count,
+                MAX_P2SH_SIGNATURES,
+            );
+        }
+
+        // MAX_P2SH_SIGNATURES (17) should be accepted
+        let signatures: Vec<BinaryData> = (0..MAX_P2SH_SIGNATURES)
+            .map(|_| BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]))
+            .collect();
+
+        let witness = AddressWitness::P2sh {
+            signatures,
+            redeem_script: BinaryData::new(vec![0x52, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let decoded: AddressWitness = bincode::decode_from_slice(&encoded, config::standard())
+            .unwrap()
+            .0;
+
+        assert_eq!(witness, decoded);
+
+        // MAX_P2SH_SIGNATURES + 1 should be rejected
+        let signatures: Vec<BinaryData> = (0..MAX_P2SH_SIGNATURES + 1)
+            .map(|_| BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]))
+            .collect();
+
+        let witness = AddressWitness::P2sh {
+            signatures,
+            redeem_script: BinaryData::new(vec![0x52, 0xae]),
+        };
+
+        let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
+        let result: Result<(AddressWitness, usize), _> =
+            bincode::decode_from_slice(&encoded, config::standard());
+
+        assert!(
+            result.is_err(),
+            "P2SH witness with {} signatures (MAX + 1) should be rejected",
+            MAX_P2SH_SIGNATURES + 1,
+        );
     }
 }

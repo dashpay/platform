@@ -9,13 +9,15 @@ use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
     OutputAddressAlsoInputError, OutputBelowMinimumError, TransitionNoInputsError,
-    TransitionOverMaxInputsError,
+    TransitionOverMaxInputsError, WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
-use crate::state_transition::address_credit_withdrawal_transition::MIN_CORE_FEE_PER_BYTE;
+use crate::state_transition::address_credit_withdrawal_transition::{
+    MIN_CORE_FEE_PER_BYTE, MIN_WITHDRAWAL_AMOUNT,
+};
 use crate::state_transition::StateTransitionStructureValidation;
-use crate::util::is_fibonacci_number::is_fibonacci_number;
+use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::withdrawal::Pooling;
 use platform_version::version::PlatformVersion;
@@ -171,9 +173,6 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
             }
         }
 
-        // Note: The withdrawal amount is implicitly input_sum - output_sum
-        // No explicit balance check needed here as the withdrawal amount is computed, not specified
-
         // Validate pooling - currently we do not support pooling, so we must validate that pooling is `Never`
         if self.pooling != Pooling::Never {
             return SimpleConsensusValidationResult::new_with_error(
@@ -183,7 +182,7 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
         }
 
         // Validate core_fee_per_byte is a Fibonacci number
-        if !is_fibonacci_number(self.core_fee_per_byte as u64) {
+        if !is_non_zero_fibonacci_number(self.core_fee_per_byte as u64) {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidCreditWithdrawalTransitionCoreFeeError::new(
                     self.core_fee_per_byte,
@@ -212,6 +211,35 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
             );
         }
 
+        // Validate that input_sum > output_amount (withdrawal amount must be positive)
+        let input_sum = input_sum.unwrap(); // Safe: checked above
+        let output_amount = self.output.as_ref().map_or(0, |(_, amount)| *amount);
+        if input_sum <= output_amount {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::WithdrawalBalanceMismatchError(WithdrawalBalanceMismatchError::new(
+                    input_sum,
+                    output_amount,
+                    input_sum.saturating_sub(output_amount),
+                ))
+                .into(),
+            );
+        }
+
+        // Validate withdrawal amount meets minimum and maximum
+        let withdrawal_amount = input_sum - output_amount; // Safe: checked input_sum > output_amount above
+        if withdrawal_amount < MIN_WITHDRAWAL_AMOUNT
+            || withdrawal_amount > platform_version.system_limits.max_withdrawal_amount
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
+                    withdrawal_amount,
+                    MIN_WITHDRAWAL_AMOUNT,
+                    platform_version.system_limits.max_withdrawal_amount,
+                ))
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -221,7 +249,9 @@ mod tests {
     use super::*;
     use crate::address_funds::AddressWitness;
     use crate::address_funds::PlatformAddress;
+    use crate::identity::core_script::CoreScript;
     use assert_matches::assert_matches;
+    use rand::SeedableRng;
     use std::collections::BTreeMap;
 
     #[test]
@@ -243,6 +273,8 @@ mod tests {
                 },
             ],
             fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            core_fee_per_byte: 1, // Valid Fibonacci number — ensures we reach the overflow check
+            output_script: CoreScript::random_p2pkh(&mut rand::rngs::StdRng::seed_from_u64(1)),
             ..Default::default()
         };
 
@@ -251,9 +283,7 @@ mod tests {
         assert_matches!(
             result.errors.as_slice(),
             [crate::consensus::ConsensusError::BasicError(
-                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(
-                    InvalidCreditWithdrawalTransitionCoreFeeError { .. }
-                )
+                BasicError::OverflowError(_)
             )]
         );
     }
