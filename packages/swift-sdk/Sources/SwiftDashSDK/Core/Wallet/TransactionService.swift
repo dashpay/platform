@@ -13,12 +13,12 @@ class TransactionService: ObservableObject {
     
     private let walletManager: CoreWalletManager
     private let modelContainer: ModelContainer
-    private let spvClient: SPVClient<WalletService.SPVEventHandlerImpl>
+    private let spvClient: SPVClient
 
     init(
         walletManager: CoreWalletManager,
         modelContainer: ModelContainer,
-        spvClient: SPVClient<WalletService.SPVEventHandlerImpl>
+        spvClient: SPVClient
     ) {
         self.walletManager = walletManager
         self.modelContainer = modelContainer

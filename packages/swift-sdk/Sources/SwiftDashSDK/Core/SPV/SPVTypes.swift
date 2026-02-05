@@ -1,102 +1,293 @@
-/**
- This file contains wrappers and helpers to interact with the SPV FFI 
+/* 
+ This file contains wrappers and helpers to interact with the SPV FFI
  structs used in this SDK. Freeing FFI structs is handled always by the caller
-*/
+ */
+
+import DashSDKFFI
+import Foundation
+
+// SyncProgress.swift
+// Swift wrappers for Rust FFI sync progress
+// All types are Sendable & public
 
 import Foundation
-import DashSDKFFI
+
+// MARK: - SPVSyncState
+
+public enum SPVSyncState: UInt32, Sendable {
+    case initializing = 0
+    case waitingForConnections = 1
+    case waitForEvents = 2
+    case syncing = 3
+    case synced = 4
+    case error = 5
+
+    // Custom states, not in FFI
+    case idle = 998
+    case unknown = 999
+
+    public func isSyncing() -> Bool {
+        switch self {
+        case .waitingForConnections, .waitForEvents, .syncing:
+            return true
+        case .initializing, .synced, .unknown, .idle, .error:
+            return false
+        }
+    }
+
+    public func isRunning() -> Bool {
+        switch self {
+        case .waitingForConnections, .waitForEvents, .syncing, .synced:
+            return true
+        case .initializing, .unknown, .idle, .error:
+            return false
+        }
+    }
+
+    public func isComplete() -> Bool {
+        return self == .synced
+    }
+}
+
+// MARK: - Block Headers Progress
+
+public struct SPVBlockHeadersProgress: Sendable {
+    public let state: SPVSyncState
+    public let currentHeight: UInt32
+    public let targetHeight: UInt32
+    public let processed: UInt32
+    public let buffered: UInt32
+    public let percentage: Double
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIBlockHeadersProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        currentHeight = ffi.current_height
+        targetHeight = ffi.target_height
+        processed = ffi.processed
+        buffered = ffi.buffered
+        percentage = ffi.percentage
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - Filter Headers Progress
+
+public struct SPVFilterHeadersProgress: Sendable {
+    public let state: SPVSyncState
+    public let currentHeight: UInt32
+    public let targetHeight: UInt32
+    public let blockHeaderTipHeight: UInt32
+    public let processed: UInt32
+    public let percentage: Double
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIFilterHeadersProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        currentHeight = ffi.current_height
+        targetHeight = ffi.target_height
+        blockHeaderTipHeight = ffi.block_header_tip_height
+        processed = ffi.processed
+        percentage = ffi.percentage
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - Filters Progress
+
+public struct SPVFiltersProgress: Sendable {
+    public let state: SPVSyncState
+    public let currentHeight: UInt32
+    public let targetHeight: UInt32
+    public let filterHeaderTipHeight: UInt32
+    public let downloaded: UInt32
+    public let processed: UInt32
+    public let matched: UInt32
+    public let percentage: Double
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIFiltersProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        currentHeight = ffi.current_height
+        targetHeight = ffi.target_height
+        filterHeaderTipHeight = ffi.filter_header_tip_height
+        downloaded = ffi.downloaded
+        processed = ffi.processed
+        matched = ffi.matched
+        percentage = ffi.percentage
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - Blocks Progress
+
+public struct SPVBlocksProgress: Sendable {
+    public let state: SPVSyncState
+    public let lastProcessed: UInt32
+    public let requested: UInt32
+    public let fromStorage: UInt32
+    public let downloaded: UInt32
+    public let processed: UInt32
+    public let relevant: UInt32
+    public let transactions: UInt32
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIBlocksProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        lastProcessed = ffi.last_processed
+        requested = ffi.requested
+        fromStorage = ffi.from_storage
+        downloaded = ffi.downloaded
+        processed = ffi.processed
+        relevant = ffi.relevant
+        transactions = ffi.transactions
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - Masternodes Progress
+
+public struct SPVMasternodesProgress: Sendable {
+    public let state: SPVSyncState
+    public let currentHeight: UInt32
+    public let targetHeight: UInt32
+    public let blockHeaderTipHeight: UInt32
+    public let diffsProcessed: UInt32
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIMasternodesProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        currentHeight = ffi.current_height
+        targetHeight = ffi.target_height
+        blockHeaderTipHeight = ffi.block_header_tip_height
+        diffsProcessed = ffi.diffs_processed
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - ChainLock Progress
+
+public struct SPVChainLockProgress: Sendable {
+    public let state: SPVSyncState
+    public let bestValidatedHeight: UInt32
+    public let valid: UInt32
+    public let invalid: UInt32
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIChainLockProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        bestValidatedHeight = ffi.best_validated_height
+        valid = ffi.valid
+        invalid = ffi.invalid
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - InstantSend Progress
+
+public struct SPVInstantSendProgress: Sendable {
+    public let state: SPVSyncState
+    public let pending: UInt32
+    public let valid: UInt32
+    public let invalid: UInt32
+    public let lastActivity: UInt64
+
+    public init(_ ffi: FFIInstantSendProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        pending = ffi.pending
+        valid = ffi.valid
+        invalid = ffi.invalid
+        lastActivity = ffi.last_activity
+    }
+}
+
+// MARK: - Aggregate Sync Progress
 
 public struct SPVSyncProgress: Sendable {
-    public let stage: SPVSyncStage
-    public let currentHeight: UInt32
-    public let masternodeHeight: UInt32
-    public let targetHeight: UInt32
-    public let filterHeaderHeight: UInt32
-    public let filterHeight: UInt32
-    public let syncStartedAt: TimeInterval
-    public let rate: Double // blocks per second
-    public let estimatedTimeRemaining: TimeInterval?
-    public let peerCount: UInt32
+    public let state: SPVSyncState
+    public let percentage: Double
+
+    public let headers: SPVBlockHeadersProgress?
+    public let filterHeaders: SPVFilterHeadersProgress?
+    public let filters: SPVFiltersProgress?
+    public let blocks: SPVBlocksProgress?
+    public let masternodes: SPVMasternodesProgress?
+    public let chainLocks: SPVChainLockProgress?
+    public let instantSend: SPVInstantSendProgress?
 
     public static func `default`() -> SPVSyncProgress {
         SPVSyncProgress(
-            stage: .idle,
-            currentHeight: 0,
-            masternodeHeight: 0,
-            targetHeight: 0,
-            filterHeaderHeight: 0,
-            filterHeight: 0,
-            syncStartedAt: 0,
-            rate: 0,
-            estimatedTimeRemaining: nil,
-            peerCount: 0
+            state: .idle,
+            percentage: 0.0,
+            headers: nil,
+            filterHeaders: nil,
+            filters: nil,
+            blocks: nil,
+            masternodes: nil,
+            chainLocks: nil,
+            instantSend: nil
         )
     }
 
-    internal static func from(_ detailed: FFIDetailedSyncProgress) -> SPVSyncProgress {
-        let overview = detailed.overview
-    
-        return SPVSyncProgress(
-            stage: SPVSyncStage(ffiStage: detailed.stage),
-            currentHeight: overview.header_height,
-            masternodeHeight: overview.masternode_height,
-            targetHeight: detailed.total_height,
-            filterHeaderHeight: overview.filter_header_height,
-            filterHeight: overview.last_synced_filter_height,
-            syncStartedAt: TimeInterval(detailed.sync_start_timestamp),
-            rate: detailed.headers_per_second,
-            estimatedTimeRemaining: detailed.estimated_seconds_remaining > 0
-                ? TimeInterval(detailed.estimated_seconds_remaining)
-                : nil,
-            peerCount: overview.peer_count
-        )
+    private init(state: SPVSyncState, percentage: Double, headers: SPVBlockHeadersProgress?, filterHeaders: SPVFilterHeadersProgress?,
+                 filters: SPVFiltersProgress?, blocks: SPVBlocksProgress?, masternodes: SPVMasternodesProgress?, chainLocks: SPVChainLockProgress?,
+                 instantSend: SPVInstantSendProgress?)
+    {
+        self.state = state
+        self.percentage = percentage
+        self.headers = headers
+        self.filterHeaders = filterHeaders
+        self.filters = filters
+        self.blocks = blocks
+        self.masternodes = masternodes
+        self.chainLocks = chainLocks
+        self.instantSend = instantSend
     }
-    
-    internal static func from(_ overview: FFISyncProgress) -> SPVSyncProgress {
-        SPVSyncProgress(
-            stage: .idle,
-            currentHeight: overview.header_height,
-            masternodeHeight: overview.masternode_height,
-            targetHeight: 0,
-            filterHeaderHeight: overview.filter_header_height,
-            filterHeight: overview.last_synced_filter_height,
-            syncStartedAt: 0, // TODO: This field exists in the Rust struct but the FFI does not provide it yet
-            rate: 0,
-            estimatedTimeRemaining: nil,
-            peerCount: overview.peer_count
-        )
-    }
-}
 
-public enum SPVSyncStage: String, Sendable {
-    case idle = "Idle"
-    case connecting = "Connecting"
-    case queryingHeight = "Querying Height"
-    case downloading = "Downloading"
-    case validating = "Validating"
-    case storing = "Storing"
-    case downloadingFilterHeaders = "Downloading Filter Headers"
-    case downloadingFilters = "Downloading Filters"
-    case downloadingBlocks = "Downloading Blocks"
-    case complete = "Complete"
-    case failed = "Failed"
-    case unknown = "Unknown"
-}
+    public init(_ ffi: FFISyncProgress) {
+        state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
+        percentage = ffi.percentage
 
-extension SPVSyncStage {
-    init(ffiStage: FFISyncStage) {
-        switch ffiStage.rawValue {
-            case 0: self = .connecting
-            case 1: self = .queryingHeight
-            case 2: self = .downloading
-            case 3: self = .validating
-            case 4: self = .storing
-            case 5: self = .downloadingFilterHeaders
-            case 6: self = .downloadingFilters
-            case 7: self = .downloadingBlocks
-            case 8: self = .complete
-            case 9: self = .failed
-            default: self = .unknown
+        if let headersPtr = ffi.headers {
+            headers = SPVBlockHeadersProgress(headersPtr.pointee)
+        } else {
+            headers = nil
+        }
+
+        if let filterHeadersPtr = ffi.filter_headers {
+            filterHeaders = SPVFilterHeadersProgress(filterHeadersPtr.pointee)
+        } else {
+            filterHeaders = nil
+        }
+
+        if let filtersPtr = ffi.filters {
+            filters = SPVFiltersProgress(filtersPtr.pointee)
+        } else {
+            filters = nil
+        }
+
+        if let blocksPtr = ffi.blocks {
+            blocks = SPVBlocksProgress(blocksPtr.pointee)
+        } else {
+            blocks = nil
+        }
+
+        if let masternodesPtr = ffi.masternodes {
+            masternodes = SPVMasternodesProgress(masternodesPtr.pointee)
+        } else {
+            masternodes = nil
+        }
+
+        if let chainLocksPtr = ffi.chainlocks {
+            chainLocks = SPVChainLockProgress(chainLocksPtr.pointee)
+        } else {
+            chainLocks = nil
+        }
+
+        if let instantSendPtr = ffi.instantsend {
+            instantSend = SPVInstantSendProgress(instantSendPtr.pointee)
+        } else {
+            instantSend = nil
         }
     }
 }

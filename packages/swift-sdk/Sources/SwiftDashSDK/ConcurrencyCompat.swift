@@ -5,7 +5,3 @@ import Foundation
 // or explicitly synchronized at the Rust boundary.
 
 extension OpaquePointer: @retroactive @unchecked Sendable {}
-
-// FFI value types from DashSDKFFI headers used across actor boundaries
-// These are plain C structs and treated as inert data blobs.
-extension FFIDetailedSyncProgress: @retroactive @unchecked Sendable {}
