@@ -1,3 +1,15 @@
+### [3.0.1-hotfix.3](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
+
+
+### Bug Fixes
+
+* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](https://github.com/dashpay/platform/issues/3018))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 23 ([#3054](https://github.com/dashpay/platform/issues/3054))
+
 ### [3.0.1-hotfix.2](https://github.com/dashpay/platform/compare/v3.0.1-hotfix.1...v3.0.1-hotfix.2) (2026-02-02)
 
 
