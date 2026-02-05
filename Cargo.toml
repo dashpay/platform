@@ -45,5 +45,5 @@ members = [
 
 [workspace.package]
 
-version = "3.0.1-hotfix.3"
+version = "3.0.1-hotfix.4"
 rust-version = "1.92"
