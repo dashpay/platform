@@ -122,7 +122,6 @@ public class WalletService: ObservableObject {
     @Published public var lastSyncError: Error?
 
     private var activeSyncStartTimestamp: TimeInterval = 0
-    @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
     @Published var currentNetwork: AppNetwork = .testnet
 
     // Internal properties
@@ -294,10 +293,7 @@ public class WalletService: ObservableObject {
 
     public func loadWallet(_ wallet: HDWallet) async {
         currentWallet = wallet
-
-        // Load transactions
-        await loadTransactions()
-
+        
         // Update balance
         updateBalance()
     }
@@ -391,7 +387,6 @@ public class WalletService: ObservableObject {
         // Clear current wallet manager
         walletManager = nil
         currentWallet = nil
-        transactions = []
         
         // Reconfigure with new network
         if let modelContainer = modelContainer {
@@ -439,30 +434,7 @@ public class WalletService: ObservableObject {
 
         return txid
     }
-
-    private func loadTransactions() async {
-        guard let wallet = currentWallet else { return }
-
-        // Convert HDTransaction to CoreTransaction
-        transactions = wallet.transactions.map { hdTx in
-            CoreTransaction(
-                id: hdTx.txHash,
-                amount: hdTx.amount,
-                fee: hdTx.fee,
-                timestamp: hdTx.timestamp,
-                blockHeight: hdTx.blockHeight != nil ? Int64(hdTx.blockHeight!) : nil,
-                confirmations: hdTx.confirmations,
-                type: hdTx.type,
-                memo: nil,
-                inputs: [],
-                outputs: [],
-                isInstantSend: hdTx.isInstantSend,
-                isAssetLock: false,
-                rawData: hdTx.rawTransaction
-            )
-        }.sorted { $0.timestamp > $1.timestamp }
-    }
-
+    
     // MARK: - Address Management
 
     public func getNewAddress() async throws -> String {
@@ -498,7 +470,6 @@ public class WalletService: ObservableObject {
         // If this was the current wallet, clear it
         if currentWallet?.id == wallet.id {
             currentWallet = nil
-            transactions = []
         }
 
         // Remove wallet from observable state BEFORE SwiftData delete
