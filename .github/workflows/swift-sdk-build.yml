@@ -41,6 +41,12 @@ jobs:
           echo "=== Git log -1 ==="
           git log -1 --oneline
 
+      - name: Force download correct BaseViewModel.swift from GitHub
+        run: |
+          curl -sL "https://raw.githubusercontent.com/dashpay/platform/${{ github.sha }}/packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift" -o packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+          echo "=== After curl - BaseViewModel.swift line count ==="
+          wc -l packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+
       - name: Show Xcode and Swift versions (use default on self-hosted runner)
         run: |
           xcodebuild -version
