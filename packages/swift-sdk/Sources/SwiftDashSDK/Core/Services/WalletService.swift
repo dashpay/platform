@@ -119,9 +119,7 @@ public class WalletService: ObservableObject {
     @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var masternodesEnabled = true
-
-    // Absolute heights for header sync display (current/target)
-    @Published public var blocksHit: Int = 0
+    
     @Published public var lastSyncError: Error?
 
     private var activeSyncStartTimestamp: TimeInterval = 0
@@ -562,11 +560,7 @@ public class WalletService: ObservableObject {
         func onFilterStored(_ startHeight: UInt32, _ endHeight: UInt32) {}
         func onFilterSyncCompleted(_ tipHeight: UInt32) {}
         func onBlocksNeeded(_ height: UInt32, _ hash: Data, _ count: UInt32) {}
-        func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {
-            Task { @MainActor in
-                walletService.blocksHit += 1
-            }
-        }
+        func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {}
         func onMasternodeStateUpdated(_ height: UInt32) {}
         func onChainLockReceived(_ height: UInt32, _ hash:  Data, _ signature: Data, _ validated: Bool) {}
         func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {}

@@ -90,10 +90,6 @@ var body: some View {
 
                     // Controls row
                     HStack(spacing: 8) {
-                        Text("Blocks hit: \(walletService.blocksHit)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-
                         Spacer()
 
                         Button(action: toggleSync) {
