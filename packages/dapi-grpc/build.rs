@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     env,
     fs::{create_dir_all, remove_dir_all},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use tonic_prost_build::Builder;
@@ -36,7 +36,7 @@ fn main() {
     }
 }
 
-fn generate_code(typ: ImplType, output_base: &PathBuf) {
+fn generate_code(typ: ImplType, output_base: &Path) {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
         output_base.join("core"),
