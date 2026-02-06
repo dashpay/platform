@@ -150,9 +150,9 @@ class BaseViewModel: ObservableObject {
     }
 
     /// Execute an async operation with automatic loading state management
-    func executeAsync<T>(
+    func executeAsync<T: Sendable>(
         showResultOnSuccess: Bool = true,
-        operation: () async throws -> T
+        operation: @Sendable () async throws -> T
     ) async -> T? {
         startLoading()
         do {
