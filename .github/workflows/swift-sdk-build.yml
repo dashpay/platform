@@ -30,6 +30,17 @@ jobs:
           git clean -ffdx
           git reset --hard HEAD
 
+      - name: Debug - Show BaseViewModel.swift content
+        run: |
+          echo "=== BaseViewModel.swift line count ==="
+          wc -l packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+          echo "=== BaseViewModel.swift full content ==="
+          cat -n packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+          echo "=== Git status ==="
+          git status
+          echo "=== Git log -1 ==="
+          git log -1 --oneline
+
       - name: Show Xcode and Swift versions (use default on self-hosted runner)
         run: |
           xcodebuild -version
