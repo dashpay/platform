@@ -385,21 +385,20 @@ struct WalletInfoView: View {
 
     private func loadAccountCounts() async {
         // TODO: This can probably be refactored now with with single network manager?
-        guard let manager = walletService.walletManager else { return }
         if mainnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
+            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
                 mainnetAccountCount = list.count
             }
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
+            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
                 testnetAccountCount = list.count
             }
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
+            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
                 devnetAccountCount = list.count
             }
         } else { devnetAccountCount = nil }
@@ -466,7 +465,7 @@ struct WalletInfoView: View {
             }
 
             // Notify the wallet service (removes wallet from observable arrays)
-            await walletService.walletDeleted(wallet)
+            walletService.walletManager.removeWalletFromObservableState(wallet)
 
             // Now safe to delete from Core Data (cascade will delete accounts/addresses)
             modelContext.delete(wallet)

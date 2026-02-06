@@ -286,7 +286,7 @@ struct CreateWalletView: View {
                     throw WalletError.walletError("No network selected")
                 }
 
-                let _ = try await walletService.createWallet(
+                let _ = try await walletService.walletManager.createWallet(
                     label: walletLabel,
                     mnemonic: mnemonic,
                     pin: walletPin,

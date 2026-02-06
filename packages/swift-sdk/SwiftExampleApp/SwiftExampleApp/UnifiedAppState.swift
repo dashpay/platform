@@ -52,11 +52,8 @@ class UnifiedAppState: ObservableObject {
         }
         
         // Initialize services
-        self.walletService = WalletService.shared
         self.platformState = AppState()
-        
-        // Configure wallet service with the current network from platform state
-        self.walletService.configure(modelContainer: modelContainer, network: platformState.currentNetwork)
+        self.walletService = WalletService(modelContainer: modelContainer, network: platformState.currentNetwork)
         
         // Initialize unified state (will be updated with real SDKs during async init)
         self.unifiedState = UnifiedStateManager()
