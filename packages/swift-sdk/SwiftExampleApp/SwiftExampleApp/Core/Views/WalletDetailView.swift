@@ -140,9 +140,6 @@ struct WalletDetailView: View {
             }
             .environmentObject(walletService)
         }
-        .task {
-            await walletService.loadWallet(wallet)
-        }
         .onAppear { unifiedAppState.showWalletsSyncDetails = false }
     }
 }

@@ -253,7 +253,7 @@ struct CreateWalletView: View {
         }
     }
 
-    private func createWallet(using mnemonic: String?) {
+    private func createWallet(using mnemonic: String) {
         guard !walletLabel.isEmpty,
               walletPin == confirmPin,
               walletPin.count >= 4 && walletPin.count <= 6 else {
@@ -270,8 +270,8 @@ struct CreateWalletView: View {
             do {
                 print("=== STARTING WALLET CREATION ===")
                 
-                let mnemonic: String? = (showImportOption ? importMnemonic : mnemonic)
-                print("Has mnemonic: \(mnemonic != nil)")
+                let mnemonic = (showImportOption ? importMnemonic : mnemonic)
+                print("Has mnemonic: \(mnemonic)")
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
                 
@@ -286,7 +286,6 @@ struct CreateWalletView: View {
                     throw WalletError.walletError("No network selected")
                 }
 
-                // Create exactly one wallet in the SDK; do not append network to label
                 let _ = try await walletService.createWallet(
                     label: walletLabel,
                     mnemonic: mnemonic,

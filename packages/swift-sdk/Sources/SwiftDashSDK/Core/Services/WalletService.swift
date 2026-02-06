@@ -116,7 +116,6 @@ public class WalletService: ObservableObject {
     
     // Published properties
     @Published public private(set) var syncProgress: SPVSyncProgress = SPVSyncProgress.default()
-    @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
     @Published public var masternodesEnabled = true
     
     @Published public var lastSyncError: Error?
@@ -158,27 +157,6 @@ public class WalletService: ObservableObject {
         initializeNewSPVClient()
         
         SDKLogger.log("Loading current wallet...", minimumLevel: .medium)
-        
-        guard modelContainer != nil else { return }
-        
-        // The WalletManager will handle loading and restoring wallets from persistence
-        // It will restore the serialized wallet bytes to the FFI wallet manager
-        // This happens automatically in WalletManager.init() through loadWallets()
-        
-        // Just sync the current wallet from WalletManager
-        if let walletManager = self.walletManager {
-            Task {
-                // WalletManager's loadWallets() is called in its init
-                // We just need to sync the current wallet
-                if let wallet = walletManager.currentWallet {
-                    self.currentWallet = wallet
-                    await loadWallet(wallet)
-                } else if let firstWallet = walletManager.wallets.first {
-                    self.currentWallet = firstWallet
-                    await loadWallet(firstWallet)
-                }
-            }
-        }
         
         SDKLogger.log("=== WalletService.configure END ===", minimumLevel: .medium)
     }
@@ -249,58 +227,14 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
 
-    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", isImport: Bool = false) async throws -> HDWallet {
-        print("=== WalletService.createWallet START ===")
-        print("Label: \(label)")
-        print("Has mnemonic: \(mnemonic != nil)")
-        print("PIN: \(pin)")
-        print("ModelContainer available: \(modelContainer != nil)")
-        
-        guard let walletManager = walletManager else {
-            print("ERROR: WalletManager not initialized")
-            print("WalletManager is nil")
-            throw WalletError.notImplemented("WalletManager not initialized")
-        }
-        
-        do {
-            // Create wallet using our refactored WalletManager that wraps FFI
-            print("WalletManager available, creating wallet...")
-            let wallet = try await walletManager.createWallet(
-                label: label,
-                mnemonic: mnemonic,
-                pin: pin,
-                isImport: isImport
-            )
-            
-            print("Wallet created by WalletManager, ID: \(wallet.id)")
-            print("Loading wallet...")
-            
-            // Load the newly created wallet
-            await loadWallet(wallet)
-
-            // Persist sync-from changes
-            try modelContainer?.mainContext.save()
-            
-            print("=== WalletService.createWallet SUCCESS ===")
-            return wallet
-        } catch {
-            print("=== WalletService.createWallet FAILED ===")
-            print("Error type: \(type(of: error))")
-            print("Error: \(error)")
-            throw error
-        }
+    public func createWallet(label: String, mnemonic: String, pin: String, isImport: Bool) async throws -> HDWallet {
+        return try await walletManager!.createWallet(
+            label: label,
+            mnemonic: mnemonic,
+            pin: pin,
+            isImport: isImport
+        )
     }
-    
-    public func loadWallet(_ wallet: HDWallet) async {
-        currentWallet = wallet
-        
-        // Update balance
-        updateBalance()
-    }
-
-    // Placeholder for balance update logic (i think events manage
-    // this but have to confirm)
-    private func updateBalance() {}
     
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
@@ -386,7 +320,6 @@ public class WalletService: ObservableObject {
         
         // Clear current wallet manager
         walletManager = nil
-        currentWallet = nil
         
         // Reconfigure with new network
         if let modelContainer = modelContainer {
@@ -395,102 +328,9 @@ public class WalletService: ObservableObject {
         
         print("=== WalletService.switchNetwork END ===")
     }
-    
-    // MARK: - Address Management
-    
-    public func generateAddresses(for account: HDAccount, count: Int, type: AddressType) async throws {
-        guard let walletManager = self.walletManager else {
-            throw WalletError.notImplemented("WalletManager not available")
-        }
-        
-        try await walletManager.generateAddresses(for: account, count: count, type: type)
-        try? modelContainer?.mainContext.save()
-    }
-    
-    // MARK: - Transaction Management
-    
-    public func sendTransaction(to address: String, amount: UInt64, memo: String? = nil) async throws -> String {
-        guard let wallet = currentWallet else {
-            throw WalletError.notImplemented("No active wallet")
-        }
-        
-        guard wallet.confirmedBalance >= amount else {
-            throw WalletError.notImplemented("Insufficient funds")
-        }
-        
-        // Mock transaction creation
-        let txid = UUID().uuidString
-        let transaction = HDTransaction(txHash: txid, timestamp: Date())
-        transaction.amount = -Int64(amount)
-        transaction.fee = 1000
-        transaction.type = "sent"
-        transaction.wallet = wallet
-        
-        modelContainer?.mainContext.insert(transaction)
-        try? modelContainer?.mainContext.save()
-        
-        // Update balance
-        updateBalance()
-        
-        return txid
-    }
-    
-    // MARK: - Address Management
-    
-    public func getNewAddress() async throws -> String {
-        guard let wallet = currentWallet else {
-            throw WalletError.notImplemented("No active wallet")
-        }
-        
-        // Find next unused address or create new one
-        let currentAccount = wallet.accounts.first ?? wallet.createAccount()
-        let existingAddresses = currentAccount.externalAddresses
-        let nextIndex = UInt32(existingAddresses.count)
-        
-        // Mock address generation
-        let address = "yMockAddress\(nextIndex)"
-        
-        let hdAddress = HDAddress(
-            address: address,
-            index: nextIndex,
-            derivationPath: "m/44'/5'/0'/0/\(nextIndex)",
-            addressType: .external,
-            account: currentAccount
-        )
-        
-        modelContainer?.mainContext.insert(hdAddress)
-        try? modelContainer?.mainContext.save()
-        
-        return address
-    }
-    
-    // MARK: - Wallet Deletion
-    
+
     public func walletDeleted(_ wallet: HDWallet) async {
-        // If this was the current wallet, clear it
-        if currentWallet?.id == wallet.id {
-            currentWallet = nil
-        }
-
-        // Remove wallet from observable state BEFORE SwiftData delete
-        // This prevents "Never access a full future backing data" crash
-        if let walletManager = walletManager {
-            await walletManager.removeWalletFromObservableState(wallet)
-
-            // Set a new current wallet if available
-            if currentWallet == nil, let firstWallet = walletManager.wallets.first {
-                await loadWallet(firstWallet)
-            }
-        }
-    }
-    
-    // MARK: - Helpers
-    
-    private func generateMnemonic() -> String {
-        // Mock mnemonic generation
-        let words = ["abandon", "ability", "able", "about", "above", "absent",
-                    "absorb", "abstract", "absurd", "abuse", "access", "accident"]
-        return words.joined(separator: " ")
+        await walletManager!.removeWalletFromObservableState(wallet)
     }
     
     // MARK: - SPV Event Handlers implementations
