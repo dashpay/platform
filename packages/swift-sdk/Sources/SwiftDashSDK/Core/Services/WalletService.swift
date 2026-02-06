@@ -86,30 +86,22 @@ func print(_ items: Any..., separator: String = " ", terminator: String = "\n") 
 
 @MainActor
 public class WalletService: ObservableObject {
-    // Sendable wrapper to move non-Sendable references across actor boundaries when safe
-    private final class SendableBox<T>: @unchecked Sendable { let value: T; init(_ v: T) { self.value = v } }
     public static let shared = WalletService()
 
     // Published properties
     @Published public private(set) var syncProgress: SPVSyncProgress = SPVSyncProgress.default()
     @Published public var masternodesEnabled = true
-    
     @Published public var lastSyncError: Error?
-
-    private var activeSyncStartTimestamp: TimeInterval = 0
     @Published var currentNetwork: AppNetwork = .testnet
 
     // Internal properties
     private var modelContainer: ModelContainer?
-
-    // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
-    public private(set) var walletManager: CoreWalletManager?
-
+    
     // SPV Client - new wrapper with proper sync support
     private var spvClient: SPVClient?
-
-    // Mock SDK for now - will be replaced with real SDK
-    private var sdk: Any?
+    
+    // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
+    public private(set) var walletManager: CoreWalletManager?
 
     private init() {}
 
@@ -136,12 +128,7 @@ public class WalletService: ObservableObject {
         
         SDKLogger.log("=== WalletService.configure END ===", minimumLevel: .medium)
     }
-
-    public func setSharedSDK(_ sdk: Any) {
-        self.sdk = sdk
-        SDKLogger.log("✅ WalletService configured with shared SDK", minimumLevel: .medium)
-    }
-
+    
     private func initializeNewSPVClient() {
       SDKLogger.log("Initializing SPV Client for \(self.currentNetwork.rawValue)...", minimumLevel: .medium)
 
