@@ -555,15 +555,7 @@ public class WalletService: ObservableObject {
         }
     
         func onComplete(_ headerTip: UInt32) {
-            Task { @MainActor in
-                SDKLogger.log("Sync completed, header tip: \(headerTip)", minimumLevel: .medium)
-    
-                if let wm = walletService.walletManager {
-                    for wallet in wm.wallets {
-                        await wm.syncWalletStateFromRust(for: wallet)
-                    }
-                }
-            }
+            
         }
     
         func onBlockHeadersStored(_ tipHeight: UInt32) {}
@@ -623,19 +615,7 @@ public class WalletService: ObservableObject {
             _ txid: Data,
             _ amount: Int64,
             _ addresses: [String]
-        ) {
-            Task { @MainActor in
-                if let wm = walletService.walletManager {
-                    for wallet in wm.wallets {
-                        await wm.syncWalletStateFromRust(for: wallet)
-                    }
-                }
-    
-                if walletService.currentWallet != nil {
-                    await walletService.loadTransactions()
-                }
-            }
-        }
+        ) { }
     
         func onBalanceUpdated(
             _ walletId: String,
