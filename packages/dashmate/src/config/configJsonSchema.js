@@ -1073,6 +1073,9 @@ export default {
                         $ref: '#/definitions/tenderdashNodeAddress',
                       },
                     },
+                    allowlistOnly: {
+                      type: 'boolean',
+                    },
                     flushThrottleTimeout: {
                       $ref: '#/definitions/duration',
                     },

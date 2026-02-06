@@ -1398,6 +1398,26 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '3.1.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (options.platform?.drive?.tenderdash?.docker
+              && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
+              options.platform.drive.tenderdash.docker.image = defaultConfig
+                .get('platform.drive.tenderdash.docker.image');
+            }
+
+            if (options.platform?.drive?.tenderdash?.p2p
+              && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
+              options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig
+                .get('platform.drive.tenderdash.p2p.allowlistOnly');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
