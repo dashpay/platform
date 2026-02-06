@@ -52,7 +52,7 @@ struct AccountListView: View {
 
         do {
             // Get accounts from wallet manager
-            let fetchedAccounts = try await walletService.walletManager?.getAccounts(for: wallet) ?? []
+            let fetchedAccounts = try await walletService.walletManager.getAccounts(for: wallet)
             await MainActor.run {
                 self.accounts = fetchedAccounts
                 self.isLoading = false

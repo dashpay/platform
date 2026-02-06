@@ -56,7 +56,7 @@ public class CoreWalletManager: ObservableObject {
     }
 
     // MARK: - Wallet Management
-    func createWallet(label: String, mnemonic: String? = nil, pin: String, isImport: Bool = false) async throws -> HDWallet {
+    public func createWallet(label: String, mnemonic: String? = nil, pin: String, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }

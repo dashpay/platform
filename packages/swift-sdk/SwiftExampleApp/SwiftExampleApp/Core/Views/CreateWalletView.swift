@@ -286,8 +286,12 @@ struct CreateWalletView: View {
                     throw WalletError.walletError("No network selected")
                 }
 
+<<<<<<< HEAD
                 // Create exactly one wallet in the SDK; do not append network to label
                 _ = try await walletService.createWallet(
+=======
+                let _ = try await walletService.walletManager.createWallet(
+>>>>>>> db8ce6d36 (refactoring  wallet service optional fields into not optional)
                     label: walletLabel,
                     mnemonic: mnemonic,
                     pin: walletPin,

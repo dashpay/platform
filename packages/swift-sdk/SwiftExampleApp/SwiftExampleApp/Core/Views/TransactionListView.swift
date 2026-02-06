@@ -83,14 +83,8 @@ struct TransactionListView: View {
         defer { isLoading = false }
 
         do {
-            // Get wallet manager
-            guard let walletManager = walletService.walletManager else {
-                throw NSError(domain: "TransactionListView", code: 1,
-                            userInfo: [NSLocalizedDescriptionKey: "Wallet manager not initialized"])
-            }
-
             // Get transactions from the wallet manager
-            let fetchedTransactions = try await walletManager.getTransactions(for: wallet)
+            let fetchedTransactions = try await walletService.walletManager.getTransactions(for: wallet)
 
             await MainActor.run {
                 self.transactions = fetchedTransactions
