@@ -554,18 +554,7 @@ public class WalletService: ObservableObject {
             SDKLogger.log("Sync started for manager: \(manager)", minimumLevel: .medium)
         }
 
-        func onComplete(_ headerTip: UInt32, _ cycle: UInt32) {
-            Task { @MainActor in
-                SDKLogger.log("Sync completed, header tip: \(headerTip), cycle: \(cycle)", minimumLevel: .medium)
-
-                if let wm = walletService.walletManager {
-                    for wallet in wm.wallets {
-                        await wm.syncWalletStateFromRust(for: wallet)
-                    }
-                }
-            }
-        }
-
+        func onComplete(_ headerTip: UInt32, _ cycle: UInt32) {}
         func onBlockHeadersStored(_ tipHeight: UInt32) {}
         func onBlockHeadersSyncCompleted(_ tipHeight: UInt32) {}
         func onFilterHeadersStored(_ startHeight: UInt32, _ endHeight: UInt32, _ tipHeight: UInt32) {}
@@ -623,6 +612,7 @@ public class WalletService: ObservableObject {
             _ txid: Data,
             _ amount: Int64,
             _ addresses: [String]
+<<<<<<< HEAD
         ) {
             Task { @MainActor in
                 if let wm = walletService.walletManager {
@@ -637,6 +627,10 @@ public class WalletService: ObservableObject {
             }
         }
 
+=======
+        ) { }
+
+>>>>>>> a72969687 (fixed the performance issue while sync)
         func onBalanceUpdated(
             _ walletId: String,
             _ spendable: UInt64,
