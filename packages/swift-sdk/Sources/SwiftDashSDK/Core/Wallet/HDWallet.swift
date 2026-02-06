@@ -96,6 +96,14 @@ public final class HDWallet: HDWalletModels {
         accounts.append(account)
         return account
     }
+    
+    public func getAddress() -> HDAddress? {
+        guard let currentAccount = self.accounts.first else {
+            return nil
+        }
+
+        return currentAccount.externalAddresses.last
+    }
 }
 
 // MARK: - HD Account

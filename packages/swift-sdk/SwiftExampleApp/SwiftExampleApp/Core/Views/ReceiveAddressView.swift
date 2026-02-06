@@ -6,65 +6,58 @@ struct ReceiveAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
-
-    @State private var currentAddress: String = ""
-    @State private var isLoadingAddress = false
+    
     @State private var copiedToClipboard = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
-                if isLoadingAddress {
-                    ProgressView("Generating address...")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if !currentAddress.isEmpty {
-                    VStack(spacing: 24) {
-                        // QR Code
-                        if let qrImage = generateQRCode(from: currentAddress) {
-                            Image(uiImage: qrImage)
-                                .interpolation(.none)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 250, height: 250)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(12)
-                        }
-
-                        // Address
-                        VStack(spacing: 12) {
-                            Text("Your Dash Address")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-
-                            Text(currentAddress)
-                                .font(.system(.body, design: .monospaced))
-                                .multilineTextAlignment(.center)
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                                .onTapGesture {
-                                    copyToClipboard()
-                                }
-                        }
-                        .padding(.horizontal)
-
-                        // Copy Button
-                        Button {
-                            copyToClipboard()
-                        } label: {
-                            Label(
-                                copiedToClipboard ? "Copied!" : "Copy Address",
-                                systemImage: copiedToClipboard ? "checkmark" : "doc.on.doc"
-                            )
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.horizontal)
-
-                        Spacer()
-                    }
+                let currentAddress = wallet.getAddress()?.address ?? ""
+                
+                // QR Code
+                if let qrImage = generateQRCode(from: currentAddress) {
+                    Image(uiImage: qrImage)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 250, height: 250)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
                 }
+                
+                // Address
+                VStack(spacing: 12) {
+                    Text("Your Dash Address")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Text(currentAddress)
+                        .font(.system(.body, design: .monospaced))
+                        .multilineTextAlignment(.center)
+                        .padding()
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .cornerRadius(8)
+                        .onTapGesture {
+                            copyToClipboard(currentAddress)
+                        }
+                }
+                .padding(.horizontal)
+                
+                // Copy Button
+                Button {
+                    copyToClipboard(currentAddress)
+                } label: {
+                    Label(
+                        copiedToClipboard ? "Copied!" : "Copy Address",
+                        systemImage: copiedToClipboard ? "checkmark" : "doc.on.doc"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal)
+                
+                Spacer()
             }
             .navigationTitle("Receive Dash")
             .navigationBarTitleDisplayMode(.inline)
@@ -76,29 +69,6 @@ struct ReceiveAddressView: View {
                 }
             }
         }
-        .task {
-            await loadAddress()
-        }
-    }
-
-    private func loadAddress() async {
-        isLoadingAddress = true
-
-        // Try to get existing receive address or generate new one
-        if let currentAccount = wallet.accounts.first,
-           let lastAddress = currentAccount.externalAddresses.last {
-            currentAddress = lastAddress.address
-        } else {
-            do {
-                currentAddress = try await walletService.getNewAddress()
-            } catch {
-                // Use a mock address for now
-                let addressCount = wallet.accounts.first?.externalAddresses.count ?? 0
-                currentAddress = "yMockReceiveAddress\(addressCount)"
-            }
-        }
-
-        isLoadingAddress = false
     }
 
     private func generateQRCode(from string: String) -> UIImage? {
@@ -118,9 +88,9 @@ struct ReceiveAddressView: View {
 
         return nil
     }
-
-    private func copyToClipboard() {
-        UIPasteboard.general.string = currentAddress
+    
+    private func copyToClipboard(_ string: String) {
+        UIPasteboard.general.string = string
         copiedToClipboard = true
 
         // Reset after 2 seconds
