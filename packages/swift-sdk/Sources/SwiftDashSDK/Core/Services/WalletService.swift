@@ -117,7 +117,6 @@ public class WalletService: ObservableObject {
     // Published properties
     @Published public private(set) var syncProgress: SPVSyncProgress = SPVSyncProgress.default()
     @Published var currentWallet: HDWallet? // Placeholder - use WalletManager instead
-    @Published public var balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
     @Published public var masternodesEnabled = true
     
     @Published public var lastSyncError: Error?
@@ -393,7 +392,6 @@ public class WalletService: ObservableObject {
         walletManager = nil
         currentWallet = nil
         transactions = []
-        balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
         
         // Reconfigure with new network
         if let modelContainer = modelContainer {
@@ -501,7 +499,6 @@ public class WalletService: ObservableObject {
         if currentWallet?.id == wallet.id {
             currentWallet = nil
             transactions = []
-            balance = Balance(confirmed: 0, unconfirmed: 0, immature: 0)
         }
 
         // Remove wallet from observable state BEFORE SwiftData delete
@@ -606,7 +603,7 @@ public class WalletService: ObservableObject {
             _ txid: Data,
             _ amount: Int64,
             _ addresses: [String]
-        ) { }
+        ) {}
     
         func onBalanceUpdated(
             _ walletId: String,
@@ -614,15 +611,7 @@ public class WalletService: ObservableObject {
             _ unconfirmed: UInt64,
             _ immature: UInt64,
             _ locked: UInt64
-        ) {
-            Task { @MainActor in
-              walletService.balance = Balance(
-                  confirmed: spendable,
-                  unconfirmed: unconfirmed,
-                  immature: immature
-              )
-            }
-        }
+        ) {}
     }
 }
 
