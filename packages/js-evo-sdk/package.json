@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/evo-sdk",
-  "version": "3.0.1-hotfix.4",
+  "version": "3.0.1",
   "type": "module",
   "main": "./dist/evo-sdk.module.js",
   "types": "./dist/sdk.d.ts",
