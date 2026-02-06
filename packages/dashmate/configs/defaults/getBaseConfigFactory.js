@@ -341,11 +341,11 @@ export default function getBaseConfigFactory() {
             },
             epochTime: 788400,
           },
-            tenderdash: {
-              mode: 'full',
-              docker: {
-              image: 'dashpay/tenderdash:1.6-dev',
-              },
+          tenderdash: {
+            mode: 'full',
+            docker: {
+              image: 'dashpay/tenderdash:1.6-dev.1',
+            },
             p2p: {
               host: '0.0.0.0',
               port: 26656,
