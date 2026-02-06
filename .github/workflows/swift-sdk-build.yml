@@ -150,6 +150,12 @@ jobs:
           rustup toolchain install "$TOOLCHAIN" --profile minimal --no-self-update
           rustup target add --toolchain "$TOOLCHAIN" aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
+      - name: Clean Xcode derived data and Swift package caches
+        run: |
+          rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
+          rm -rf packages/swift-sdk/.build || true
+          rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
+
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |
           bash packages/swift-sdk/build_ios.sh
