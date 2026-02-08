@@ -651,7 +651,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create transfer signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (transferKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createTransferSigner(for: dppIdentity)
     }
     defer {
@@ -785,7 +785,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createSignerForKey(
         for: dppIdentity,
         purpose: .authentication,
@@ -850,7 +850,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createSignerForKey(
         for: fromIdentity,
         purpose: .authentication,
@@ -915,7 +915,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find authentication key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createSignerForKey(
         for: ownerDPPIdentity,
         purpose: .authentication,
@@ -983,7 +983,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to find any key with private key and create signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (selectedKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createSignerForKey(
         for: fromIdentity,
         purpose: nil,
@@ -1324,7 +1324,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create token operation signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (freezingKey, signer) = try await createTokenOperationSigner(for: dppIdentity)
+    let (freezingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1375,7 +1375,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create token operation signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (unfreezingKey, signer) = try await createTokenOperationSigner(for: dppIdentity)
+    let (unfreezingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1424,7 +1424,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create token operation signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (destroyKey, signer) = try await createTokenOperationSigner(for: dppIdentity)
+    let (destroyKey, signer) = try createTokenOperationSigner(for: dppIdentity)
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1473,7 +1473,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create token operation signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (claimingKey, signer) = try await createTokenOperationSigner(for: dppIdentity)
+    let (claimingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1545,7 +1545,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create token operation signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (transferKey, signer) = try await createTokenOperationSigner(for: dppIdentity)
+    let (transferKey, signer) = try createTokenOperationSigner(for: dppIdentity)
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1600,7 +1600,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create token operation signer
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (pricingKey, signer) = try await createTokenOperationSigner(for: dppIdentity)
+    let (pricingKey, signer) = try createTokenOperationSigner(for: dppIdentity)
     defer {
       keyManager.destroySigner(signer)
     }
@@ -1708,7 +1708,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (signingKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createContractSigner(for: dppIdentity)
     }
     defer {
@@ -1782,7 +1782,7 @@ struct TransitionDetailView: View {
 
     // Use KeyManager to create contract signer (requires CRITICAL + AUTHENTICATION)
     let keyManager = await MainActor.run { KeyManager.withSharedKeychain() }
-    let (signingKey, signer) = try await MainActor.run {
+    let (_, signer) = try await MainActor.run {
       try keyManager.createContractSigner(for: dppIdentity)
     }
     defer {
