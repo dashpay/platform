@@ -118,11 +118,17 @@ impl DocumentType {
         match self {
             DocumentType::V0(v0) => {
                 recalculate_integer_types_from_schema(&mut v0.properties, &v0.schema)?;
-                recalculate_integer_types_from_schema(&mut v0.flattened_properties, &v0.schema)?;
+                recalculate_flattened_integer_types_from_schema(
+                    &mut v0.flattened_properties,
+                    &v0.schema,
+                )?;
             }
             DocumentType::V1(v1) => {
                 recalculate_integer_types_from_schema(&mut v1.properties, &v1.schema)?;
-                recalculate_integer_types_from_schema(&mut v1.flattened_properties, &v1.schema)?;
+                recalculate_flattened_integer_types_from_schema(
+                    &mut v1.flattened_properties,
+                    &v1.schema,
+                )?;
             }
         }
         Ok(())
@@ -220,6 +226,64 @@ fn recalculate_integer_types_from_schema(
                 }
             }
             _ => {}
+        }
+    }
+
+    Ok(())
+}
+
+/// Resolves a dotted property key (e.g. "parent.child.field") to its schema definition
+/// by walking through nested "properties" objects in the JSON Schema.
+fn resolve_schema_for_dotted_key<'a>(schema: &'a Value, dotted_key: &str) -> Option<&'a Value> {
+    use platform_value::ValueMapHelper;
+
+    let segments: Vec<&str> = dotted_key.split('.').collect();
+    let mut current = schema;
+
+    for segment in &segments {
+        // Enter "properties" at this level, then look up the segment
+        let props = current
+            .as_map()
+            .and_then(|map| map.get_optional_key(property_names::PROPERTIES))?;
+
+        current = props
+            .as_map()
+            .and_then(|map| map.get_optional_key(segment))?;
+    }
+
+    Some(current)
+}
+
+/// Recalculates integer property types for flattened properties (dotted keys).
+///
+/// Unlike `recalculate_integer_types_from_schema` which handles nested properties
+/// via Object recursion, this function resolves dotted keys (e.g. "parent.child")
+/// by walking through the schema's nested "properties" objects.
+fn recalculate_flattened_integer_types_from_schema(
+    properties: &mut IndexMap<String, DocumentProperty>,
+    schema: &Value,
+) -> Result<(), DataContractError> {
+    use crate::data_contract::document_type::property::find_integer_type_for_subschema_value;
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
+    for (name, prop) in properties.iter_mut() {
+        if !matches!(&prop.property_type, DocumentPropertyType::I64) {
+            continue;
+        }
+
+        let schema_val = match resolve_schema_for_dotted_key(schema, name) {
+            Some(val) => val,
+            None => continue,
+        };
+
+        if let Ok(value_map) = schema_val.to_btree_ref_string_map() {
+            if let Ok(Some(type_str)) = value_map.get_optional_str(property_names::TYPE) {
+                if type_str == "integer" {
+                    if let Ok(sized_type) = find_integer_type_for_subschema_value(&value_map) {
+                        prop.property_type = sized_type;
+                    }
+                }
+            }
         }
     }
 
