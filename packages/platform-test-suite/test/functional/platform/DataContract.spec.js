@@ -175,6 +175,7 @@ describe('Platform', () => {
         keepsHistory: true,
         documentsKeepHistoryContractDefault: false,
         documentsMutableContractDefault: true,
+        sizedIntegerTypes: true,
       });
       fetchedDataContract.setDocumentSchema(newDocumentType, {
         type: 'object',
