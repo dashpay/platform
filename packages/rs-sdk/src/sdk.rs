@@ -889,6 +889,12 @@ impl SdkBuilder {
         }
     }
 
+    /// Replace the address list on this builder.
+    pub fn with_address_list(mut self, addresses: AddressList) -> Self {
+        self.addresses = Some(addresses);
+        self
+    }
+
     /// Create a new SdkBuilder that will generate mock client.
     pub fn new_mock() -> Self {
         Self::default()
