@@ -17,21 +17,19 @@ impl DataContractConfig {
             return v0_result;
         }
 
-        // Validate: sized_integer_types cannot be explicitly disabled once enabled.
-        // Only check when the new config is V1 (which explicitly has the field).
-        // V0 configs don't have the concept of sized_integer_types — they should not
-        // be treated as "disabling" it, since SDKs may send V0 configs due to protocol
-        // version constraints (e.g. wasm-dpp uses PlatformVersion::first()).
-        if let DataContractConfig::V1(_) = new_config {
-            if self.sized_integer_types() && !new_config.sized_integer_types() {
-                return SimpleConsensusValidationResult::new_with_error(
-                    DataContractConfigUpdateError::new(
-                        contract_id,
-                        "contract can not disable sized integer types once enabled, as this would break deserialization of existing documents",
-                    )
-                    .into(),
-                );
-            }
+        // Validate: sized_integer_types cannot change from true to false.
+        // V1→V0 (true→false) is DANGEROUS: documents serialized with sized types (version byte 1/2)
+        // would break when deserialized with I64 types.
+        // V0→V1 (false→true) is SAFE: version byte 0 docs use from_bytes_v0 which forces I64
+        // regardless of current config.
+        if self.sized_integer_types() && !new_config.sized_integer_types() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(
+                    contract_id,
+                    "contract can not disable sized integer types once enabled, as this would break deserialization of existing documents",
+                )
+                .into(),
+            );
         }
 
         SimpleConsensusValidationResult::new()
@@ -45,7 +43,7 @@ mod tests {
     use crate::data_contract::config::v1::DataContractConfigV1;
 
     #[test]
-    fn test_v1_to_v0_allowed() {
+    fn test_v1_to_v0_rejected() {
         let contract_id = Identifier::new([1u8; 32]);
         let config_v1 = DataContractConfig::V1(DataContractConfigV1::default());
         let config_v0 = DataContractConfig::V0(DataContractConfigV0::default());
@@ -54,14 +52,10 @@ mod tests {
         assert!(config_v1.sized_integer_types());
         assert!(!config_v0.sized_integer_types());
 
-        // V1→V0 is allowed because V0 configs can't express sized_integer_types.
-        // SDKs (e.g. wasm-dpp) may send V0 configs due to using PlatformVersion::first()
-        // which forces config deserialization to V0. We don't treat this as "disabling"
-        // sized_integer_types — only an explicit V1(sized=false) is rejected.
         let result = config_v1.validate_update_v1(&config_v0, contract_id);
         assert!(
-            result.is_valid(),
-            "V1→V0 config change should be allowed (V0 can't express sized_integer_types). Errors: {:?}",
+            !result.is_valid(),
+            "V1→V0 config change should be rejected because it disables sized integer types. Errors: {:?}",
             result.errors
         );
     }
