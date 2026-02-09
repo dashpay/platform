@@ -2309,7 +2309,6 @@ impl Strategy {
                             let amount_per_output = total_input / output_count as Credits;
                             let remainder = total_input % output_count as Credits;
                             let mut outputs = BTreeMap::new();
-                            let mut outputs_created = 0usize;
 
                             // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
                             let input_addresses: HashSet<_> = inputs.keys().cloned().collect();
@@ -2327,14 +2326,13 @@ impl Strategy {
                             let mut existing_output_addresses: HashSet<PlatformAddress> =
                                 HashSet::new();
 
-                            for _ in 0..output_count {
+                            for (outputs_created, _) in (0..output_count).enumerate() {
                                 // First output gets the remainder to ensure exact balance
                                 let this_output_amount = if outputs_created == 0 {
                                     amount_per_output + remainder
                                 } else {
                                     amount_per_output
                                 };
-                                outputs_created += 1;
 
                                 // Check if we should use an existing address as output
                                 let use_existing = use_existing_outputs_chance
