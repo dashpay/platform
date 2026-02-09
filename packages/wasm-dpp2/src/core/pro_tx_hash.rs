@@ -17,7 +17,7 @@ const PRO_TX_HASH_LIKE_TS: &str = r#"
  * - Uint8Array: 32 bytes in internal byte order
  */
 export type ProTxHashLike = ProTxHash | string | Uint8Array;
-export type ProTxHashLikeArray = Array<ProTxHash | string | Uint8Array>;
+export type ProTxHashLikeArray = Array<ProTxHashLike>;
 "#;
 
 /// Extern type for flexible ProTxHash input
@@ -26,7 +26,7 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "ProTxHashLike")]
     pub type ProTxHashLikeJs;
 
-    #[wasm_bindgen(typescript_type = "ProTxHashLike | null")]
+    #[wasm_bindgen(typescript_type = "ProTxHashLike | undefined")]
     pub type ProTxHashLikeNullableJs;
 
     #[wasm_bindgen(typescript_type = "ProTxHashLikeArray")]

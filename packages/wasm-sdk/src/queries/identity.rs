@@ -324,7 +324,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Identity | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Identity | undefined>"
     )]
     pub async fn get_identity_with_proof_info(
         &self,
@@ -552,7 +552,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityNonceWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
     )]
     pub async fn get_identity_nonce_with_proof_info(
         &self,
@@ -602,7 +602,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityContractNonceWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
     )]
     pub async fn get_identity_contract_nonce_with_proof_info(
         &self,
@@ -656,7 +656,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesBalances",
-        unchecked_return_type = "Map<Identifier, bigint | null>"
+        unchecked_return_type = "Map<Identifier, bigint | undefined>"
     )]
     pub async fn get_identities_balances(
         &self,
@@ -910,7 +910,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityBalanceWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
     )]
     pub async fn get_identity_balance_with_proof_info(
         &self,
@@ -939,7 +939,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesBalancesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint | null>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint | undefined>>"
     )]
     pub async fn get_identities_balances_with_proof_info(
         &self,
@@ -982,7 +982,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityBalanceAndRevisionWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<IdentityBalanceAndRevision | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<IdentityBalanceAndRevision | undefined>"
     )]
     pub async fn get_identity_balance_and_revision_with_proof_info(
         &self,
@@ -1013,7 +1013,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityByPublicKeyHashWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Identity | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Identity | undefined>"
     )]
     pub async fn get_identity_by_public_key_hash_with_proof_info(
         &self,

@@ -61,17 +61,17 @@ describe('DataContract', () => {
 
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
+      expect(dataContract.toBytes(new PlatformVersion(1))).to.deep.equal(fromHexString(dataContractBytes));
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(
-        dataContract.toBytes(),
+        dataContract.toBytes(new PlatformVersion(1)),
         false,
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
 
       expect(dataContract).to.be.an.instanceof(wasm.DataContract);
 
-      expect(dataContractFromBytes.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
+      expect(dataContractFromBytes.toBytes(new PlatformVersion(1))).to.deep.equal(fromHexString(dataContractBytes));
     });
 
     it('should allow to create DataContract from bytes without full validation', () => {
@@ -80,7 +80,7 @@ describe('DataContract', () => {
       const dataContractFromBytes = wasm.DataContract.fromBytes(
         fromHexString(dataContractBytes),
         false,
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
       const dataContractFromValue = wasm.DataContract.fromJSON(json, true);
 
@@ -103,15 +103,15 @@ describe('DataContract', () => {
   describe('fromObject()', () => {
     it('should allow to create DataContract from object produced by toObject', () => {
       const originalContract = wasm.DataContract.fromJSON(json, true);
-      const objectRepresentation = originalContract.toObject(PlatformVersion.PLATFORM_V1);
+      const objectRepresentation = originalContract.toObject(new PlatformVersion(1));
 
       const reconstructedContract = wasm.DataContract.fromObject(
         objectRepresentation,
         true,
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
 
-      expect(reconstructedContract.toObject(PlatformVersion.PLATFORM_V1)).to.deep.equal(
+      expect(reconstructedContract.toObject(new PlatformVersion(1))).to.deep.equal(
         objectRepresentation,
       );
     });
@@ -124,11 +124,11 @@ describe('DataContract', () => {
       const dataContract = wasm.DataContract.fromBytes(
         fromHexString(dataContractBytes),
         true,
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
 
-      const base64 = dataContract.toBase64(PlatformVersion.PLATFORM_V1);
-      const bytes = dataContract.toBytes(PlatformVersion.PLATFORM_V1);
+      const base64 = dataContract.toBase64(new PlatformVersion(1));
+      const bytes = dataContract.toBytes(new PlatformVersion(1));
       const bytesFromBase64 = Buffer.from(base64, 'base64');
 
       expect(bytesFromBase64).to.deep.equal(Buffer.from(bytes));
@@ -136,11 +136,11 @@ describe('DataContract', () => {
       const dataContractFromBase64 = wasm.DataContract.fromBase64(
         base64,
         true,
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
 
       const actualBytes = Buffer.from(
-        dataContractFromBase64.toBytes(PlatformVersion.PLATFORM_V1),
+        dataContractFromBase64.toBytes(new PlatformVersion(1)),
       );
       expect(actualBytes).to.deep.equal(Buffer.from(bytes));
     });
@@ -150,7 +150,7 @@ describe('DataContract', () => {
     it('should allow to get json', () => {
       const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.toJSON()).to.deep.equal(json);
+      expect(dataContract.toJSON(new PlatformVersion(1))).to.deep.equal(json);
     });
   });
 
@@ -232,7 +232,7 @@ describe('DataContract', () => {
 
       const newConfig = { ...oldConfig, canBeDeleted: !oldConfig.canBeDeleted };
 
-      dataContract.setConfig(newConfig, PlatformVersion.PLATFORM_V1);
+      dataContract.setConfig(newConfig, new PlatformVersion(1));
 
       expect(dataContract.config).to.deep.equal(newConfig);
     });
@@ -247,7 +247,7 @@ describe('DataContract', () => {
         pupup: json.documentSchemas.withdrawal,
       };
 
-      dataContract.setSchemas(newSchema, null, true, PlatformVersion.PLATFORM_V1);
+      dataContract.setSchemas(newSchema, null, true, new PlatformVersion(1));
 
       const { schemas } = dataContract;
 
