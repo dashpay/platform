@@ -23,7 +23,7 @@ simple-signer = { path = "../simple-signer" }
 
 
 # Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "12ba186fd24a85fcb4736f0868b393f8a5b58c46", optional = true }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "fb03aed05786196504a713c4518ba1b3cda365c6", optional = true }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
