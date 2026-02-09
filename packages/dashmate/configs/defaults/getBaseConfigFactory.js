@@ -344,13 +344,14 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.5',
+              image: 'dashpay/tenderdash:1.6-dev.1',
             },
             p2p: {
               host: '0.0.0.0',
               port: 26656,
               persistentPeers: [],
               seeds: [],
+              allowlistOnly: false,
               flushThrottleTimeout: '100ms',
               maxPacketMsgPayloadSize: 10240,
               sendRate: 5120000,
