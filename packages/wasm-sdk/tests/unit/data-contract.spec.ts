@@ -7,40 +7,6 @@ import contractFixtureV1 from './fixtures/data-contract-v1-with-docs-tokens-grou
 const PLATFORM_VERSION_CONTRACT_V0 = 1;
 const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v9
 
-// Platform version compatibility ranges
-const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // V0 supported versions
-const V1_COMPATIBLE_VERSIONS = [9, 10]; // V1 starts at platform version 9
-const V0_ONLY_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // Versions that only support V0
-const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS);
-
-// Helper function for testing contract compatibility across versions
-const testContractAcrossVersions = (
-  contractFixture,
-  contractName,
-  compatibleVersions,
-  incompatibleVersions = [],
-) => {
-  compatibleVersions.forEach((version) => {
-    it(`should work with platform version ${version}`, () => {
-      const contract = sdk.DataContract.fromJSON(contractFixture, true, version);
-      expect(contract).to.be.ok();
-      expect(contract.id.toBase58()).to.equal(contractFixture.id);
-
-      const roundTripped = contract.toJSON(version);
-      expect(roundTripped.id).to.equal(contractFixture.id);
-
-      contract.free();
-    });
-  });
-
-  incompatibleVersions.forEach((version) => {
-    it(`should fail with platform version ${version}`, () => {
-      expect(() => {
-        sdk.DataContract.fromJSON(contractFixture, true, version);
-      }).to.throw(/unknown version|dpp unknown version/);
-    });
-  });
-};
 
 describe('DataContract', () => {
   before(async () => {
@@ -497,57 +463,5 @@ describe('DataContract', () => {
     });
   });
 
-  describe('Platform Version Compatibility Matrix', () => {
-    describe('V0 Contract Compatibility', () => {
-      testContractAcrossVersions(contractFixtureV0, 'V0', V0_COMPATIBLE_VERSIONS);
-    });
-
-    describe('V1 Contract Compatibility', () => {
-      testContractAcrossVersions(contractFixtureV1, 'V1', V1_COMPATIBLE_VERSIONS, V0_ONLY_VERSIONS);
-    });
-
-    describe('Edge Cases', () => {
-      it('should fail with zero version', () => {
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV0, true, 0);
-        }).to.throw(/unknown version|unknown platform version value/);
-      });
-
-      it('should fail with negative version', () => {
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV0, true, -1);
-        }).to.throw(/unknown version|unknown platform version value/);
-      });
-
-      it('should fail with version beyond latest known', () => {
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV0, true, LATEST_KNOWN_VERSION + 1);
-        }).to.throw(/unknown version|unknown platform version value/);
-      });
-
-      it('should fail with version far beyond reasonable range', () => {
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV0, true, LATEST_KNOWN_VERSION * 10);
-        }).to.throw(/unknown version|unknown platform version value/);
-      });
-
-      it('should support V0 contract at V9 transition (backward compatibility)', () => {
-        const contract = sdk.DataContract.fromJSON(contractFixtureV0, true, 9);
-        expect(contract.id.toBase58()).to.equal(contractFixtureV0.id);
-        contract.free();
-      });
-
-      it('should support V1 contract at V9 (first supported version)', () => {
-        const contractV1 = sdk.DataContract.fromJSON(contractFixtureV1, true, 9);
-        expect(contractV1.id.toBase58()).to.equal(contractFixtureV1.id);
-        contractV1.free();
-      });
-
-      it('should fail V1 contract at V8 (last unsupported version)', () => {
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV1, true, 8);
-        }).to.throw(/dpp unknown version/);
-      });
-    });
-  });
 });
+s

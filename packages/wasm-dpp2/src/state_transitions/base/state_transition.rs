@@ -265,6 +265,11 @@ impl StateTransitionWasm {
         Ok(st.into())
     }
 
+    #[wasm_bindgen(js_name = "getSignableBytes")]
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.signable_bytes()?)
+    }
+
     #[wasm_bindgen(js_name = "hash")]
     pub fn get_hash(
         &self,
