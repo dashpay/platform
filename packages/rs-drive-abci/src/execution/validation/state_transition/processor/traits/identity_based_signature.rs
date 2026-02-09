@@ -130,7 +130,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
-            | StateTransition::AddressCreditWithdrawal(_) => Ok(ConsensusValidationResult::new()),
+            | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => Ok(ConsensusValidationResult::new()),
         }
     }
 
@@ -165,7 +168,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
-            | StateTransition::AddressCreditWithdrawal(_) => false,
+            | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => false,
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
@@ -188,7 +194,10 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
-            | StateTransition::IdentityTopUp(_) => false,
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => false,
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)

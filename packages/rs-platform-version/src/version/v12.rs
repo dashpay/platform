@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v7::DRIVE_ABCI_VALIDATION_VERSIONS_V7;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v6::DRIVE_VERSION_V6;
+use crate::version::drive_versions::v7::DRIVE_VERSION_V7;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
@@ -30,10 +30,10 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_12: ProtocolVersion = 12;
 
-/// This version was for Platform release 3.1.0
+/// This version was for Platform release 3.1.0 with shielded transactions support.
 pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
-    drive: DRIVE_VERSION_V6,
+    drive: DRIVE_VERSION_V7,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V7,

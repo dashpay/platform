@@ -11,6 +11,7 @@ use dpp::state_transition::state_transitions::identity::identity_topup_from_addr
 use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+use dpp::state_transition::shield_transition::ShieldTransition;
 use drive::drive::Drive;
 use drive::error::Error;
 use drive::grovedb::TransactionArg;
@@ -139,6 +140,7 @@ impl StateTransitionAddressBalancesAndNoncesInnerValidation
 {
 }
 impl StateTransitionAddressBalancesAndNoncesInnerValidation for AddressCreditWithdrawalTransition {}
+impl StateTransitionAddressBalancesAndNoncesInnerValidation for ShieldTransition {}
 
 /// Trait for validating address balances and nonces in state transitions.
 pub trait StateTransitionAddressBalancesAndNoncesValidation {
@@ -164,7 +166,8 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_)
-            | StateTransition::IdentityTopUpFromAddresses(_) => true,
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::Shield(_) => true,
             StateTransition::DataContractCreate(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::DataContractUpdate(_)
@@ -174,7 +177,9 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => false,
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => false,
         }
     }
 
@@ -222,6 +227,13 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
                     transaction,
                     platform_version,
                 ),
+            StateTransition::Shield(st) => st
+                .validate_address_balances_and_nonces_internal_validation(
+                    drive,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                ),
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
@@ -231,7 +243,9 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => {
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => {
                 Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()))
             }
         }

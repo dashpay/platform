@@ -114,7 +114,10 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreate(_)
-            | StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 }
@@ -160,7 +163,10 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::IdentityTopUpFromAddresses(_)
                     | StateTransition::AddressFundsTransfer(_)
                     | StateTransition::AddressFundingFromAssetLock(_)
-                    | StateTransition::AddressCreditWithdrawal(_) => false,
+                    | StateTransition::AddressCreditWithdrawal(_)
+                    | StateTransition::Shield(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_) => false,
                 };
 
                 Ok(has_nonce_validation)

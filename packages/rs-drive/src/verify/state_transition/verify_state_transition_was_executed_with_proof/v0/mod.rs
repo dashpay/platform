@@ -1115,6 +1115,11 @@ impl Drive {
 
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => Err(Error::Proof(ProofError::InvalidTransition(
+                "shielded state transitions do not support proof verification yet".to_string(),
+            ))),
         }
     }
 }

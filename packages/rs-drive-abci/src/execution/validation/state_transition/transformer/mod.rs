@@ -229,6 +229,21 @@ impl StateTransitionActionTransformer for StateTransition {
                     remaining_address_input_balances.clone(),
                 )
             }
+            StateTransition::Shield(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shield transition transformer is not yet implemented",
+                )))
+            }
+            StateTransition::ShieldedTransfer(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shielded transfer transition transformer is not yet implemented",
+                )))
+            }
+            StateTransition::Unshield(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "unshield transition transformer is not yet implemented",
+                )))
+            }
         }
     }
 }

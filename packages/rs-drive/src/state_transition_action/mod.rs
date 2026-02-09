@@ -11,6 +11,8 @@ pub mod action_convert_to_operations;
 pub mod address_funds;
 /// documents_batch
 pub mod batch;
+/// shielded
+pub mod shielded;
 
 use crate::state_transition_action::address_funds::address_credit_withdrawal::AddressCreditWithdrawalTransitionAction;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
@@ -27,6 +29,9 @@ use crate::state_transition_action::identity::identity_topup::IdentityTopUpTrans
 use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
+use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
+use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
+use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction,
 };
@@ -90,6 +95,12 @@ pub enum StateTransitionAction {
     /// partially use the asset lock for funding invalid asset lock transactions like
     /// identity top up and identity create
     BumpAddressInputNoncesAction(BumpAddressInputNoncesAction),
+    /// shield (address -> shielded pool)
+    ShieldAction(ShieldTransitionAction),
+    /// shielded transfer (shielded -> shielded)
+    ShieldedTransferAction(ShieldedTransferTransitionAction),
+    /// unshield (shielded pool -> address)
+    UnshieldAction(UnshieldTransitionAction),
 }
 
 impl StateTransitionAction {
@@ -135,6 +146,9 @@ impl StateTransitionAction {
             StateTransitionAction::BumpAddressInputNoncesAction(action) => {
                 action.user_fee_increase()
             }
+            StateTransitionAction::ShieldAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldedTransferAction(action) => action.user_fee_increase(),
+            StateTransitionAction::UnshieldAction(action) => action.user_fee_increase(),
         }
     }
 }

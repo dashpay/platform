@@ -136,8 +136,15 @@ use crate::state_transition::identity_update_transition::{
 };
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
+use crate::state_transition::shield_transition::{ShieldTransition, ShieldTransitionSignable};
+use crate::state_transition::shielded_transfer_transition::{
+    ShieldedTransferTransition, ShieldedTransferTransitionSignable,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::unshield_transition::{
+    UnshieldTransition, UnshieldTransitionSignable,
+};
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
 
@@ -162,6 +169,9 @@ macro_rules! call_method {
             StateTransition::AddressFundsTransfer(st) => st.$method($args),
             StateTransition::AddressFundingFromAssetLock(st) => st.$method($args),
             StateTransition::AddressCreditWithdrawal(st) => st.$method($args),
+            StateTransition::Shield(st) => st.$method($args),
+            StateTransition::ShieldedTransfer(st) => st.$method($args),
+            StateTransition::Unshield(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -181,6 +191,9 @@ macro_rules! call_method {
             StateTransition::AddressFundsTransfer(st) => st.$method(),
             StateTransition::AddressFundingFromAssetLock(st) => st.$method(),
             StateTransition::AddressCreditWithdrawal(st) => st.$method(),
+            StateTransition::Shield(st) => st.$method(),
+            StateTransition::ShieldedTransfer(st) => st.$method(),
+            StateTransition::Unshield(st) => st.$method(),
         }
     };
 }
@@ -203,6 +216,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::AddressFundsTransfer(_) => None,
             StateTransition::AddressFundingFromAssetLock(_) => None,
             StateTransition::AddressCreditWithdrawal(_) => None,
+            StateTransition::Shield(_) => None,
+            StateTransition::ShieldedTransfer(_) => None,
+            StateTransition::Unshield(_) => None,
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -222,6 +238,9 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::AddressFundsTransfer(_) => None,
             StateTransition::AddressFundingFromAssetLock(_) => None,
             StateTransition::AddressCreditWithdrawal(_) => None,
+            StateTransition::Shield(_) => None,
+            StateTransition::ShieldedTransfer(_) => None,
+            StateTransition::Unshield(_) => None,
         }
     };
 }
@@ -244,6 +263,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::AddressFundsTransfer(_) => {}
             StateTransition::AddressFundingFromAssetLock(_) => {}
             StateTransition::AddressCreditWithdrawal(_) => {}
+            StateTransition::Shield(_) => {}
+            StateTransition::ShieldedTransfer(_) => {}
+            StateTransition::Unshield(_) => {}
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -263,6 +285,9 @@ macro_rules! call_method_identity_signed {
             StateTransition::AddressFundsTransfer(_) => {}
             StateTransition::AddressFundingFromAssetLock(_) => {}
             StateTransition::AddressCreditWithdrawal(_) => {}
+            StateTransition::Shield(_) => {}
+            StateTransition::ShieldedTransfer(_) => {}
+            StateTransition::Unshield(_) => {}
         }
     };
 }
@@ -300,6 +325,15 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::AddressCreditWithdrawal(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "address credit withdrawal can not be called for identity signing".to_string(),
             )),
+            StateTransition::Shield(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "shield transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::ShieldedTransfer(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "shielded transfer transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::Unshield(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "unshield transition can not be called for identity signing".to_string(),
+            )),
         }
     };
     ($state_transition:expr, $method:ident) => {
@@ -332,6 +366,15 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::AddressCreditWithdrawal(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "address credit withdrawal can not be called for identity signing".to_string(),
+            )),
+            StateTransition::Shield(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "shield transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::ShieldedTransfer(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "shielded transfer transition can not be called for identity signing".to_string(),
+            )),
+            StateTransition::Unshield(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "unshield transition can not be called for identity signing".to_string(),
             )),
         }
     };
@@ -371,6 +414,9 @@ pub enum StateTransition {
     AddressFundsTransfer(AddressFundsTransferTransition),
     AddressFundingFromAssetLock(AddressFundingFromAssetLockTransition),
     AddressCreditWithdrawal(AddressCreditWithdrawalTransition),
+    Shield(ShieldTransition),
+    ShieldedTransfer(ShieldedTransferTransition),
+    Unshield(UnshieldTransition),
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -453,13 +499,20 @@ impl StateTransition {
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_) => 11..=LATEST_VERSION,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => 12..=LATEST_VERSION,
         }
     }
 
     pub fn is_identity_signed(&self) -> bool {
         !matches!(
             self,
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
+            StateTransition::IdentityCreate(_)
+                | StateTransition::IdentityTopUp(_)
+                | StateTransition::Shield(_)
+                | StateTransition::ShieldedTransfer(_)
+                | StateTransition::Unshield(_)
         )
     }
 
@@ -556,6 +609,9 @@ impl StateTransition {
             Self::AddressFundsTransfer(_) => "AddressFundsTransfer".to_string(),
             Self::AddressFundingFromAssetLock(_) => "AddressFundingFromAssetLock".to_string(),
             Self::AddressCreditWithdrawal(_) => "AddressCreditWithdrawal".to_string(),
+            Self::Shield(_) => "Shield".to_string(),
+            Self::ShieldedTransfer(_) => "ShieldedTransfer".to_string(),
+            Self::Unshield(_) => "Unshield".to_string(),
         }
     }
 
@@ -577,6 +633,9 @@ impl StateTransition {
             StateTransition::AddressFundsTransfer(_) => None,
             StateTransition::AddressFundingFromAssetLock(st) => Some(st.signature()),
             StateTransition::AddressCreditWithdrawal(_) => None,
+            StateTransition::Shield(_) => None,
+            StateTransition::ShieldedTransfer(_) => None,
+            StateTransition::Unshield(_) => None,
         }
     }
 
@@ -587,6 +646,9 @@ impl StateTransition {
             StateTransition::IdentityTopUpFromAddresses(st) => st.inputs().len() as u16,
             StateTransition::AddressFundsTransfer(st) => st.inputs().len() as u16,
             StateTransition::AddressCreditWithdrawal(st) => st.inputs().len() as u16,
+            StateTransition::Shield(st) => st.inputs().len() as u16,
+            StateTransition::ShieldedTransfer(_) => 0,
+            StateTransition::Unshield(_) => 0,
             _ => 1,
         }
     }
@@ -655,6 +717,9 @@ impl StateTransition {
             StateTransition::AddressFundsTransfer(_) => None,
             StateTransition::AddressFundingFromAssetLock(_) => None,
             StateTransition::AddressCreditWithdrawal(_) => None,
+            StateTransition::Shield(_) => None,
+            StateTransition::ShieldedTransfer(_) => None,
+            StateTransition::Unshield(_) => None,
         }
     }
 
@@ -676,6 +741,9 @@ impl StateTransition {
             StateTransition::AddressFundsTransfer(st) => Some(st.inputs()),
             StateTransition::AddressFundingFromAssetLock(st) => Some(st.inputs()),
             StateTransition::AddressCreditWithdrawal(st) => Some(st.inputs()),
+            StateTransition::Shield(st) => Some(st.inputs()),
+            StateTransition::ShieldedTransfer(_) => None,
+            StateTransition::Unshield(_) => None,
         }
     }
 
@@ -734,7 +802,10 @@ impl StateTransition {
             }
             StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
-            | StateTransition::AddressFundsTransfer(_) => false,
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_) => false,
             StateTransition::AddressFundingFromAssetLock(st) => {
                 st.set_signature(signature);
                 true
@@ -889,6 +960,22 @@ impl StateTransition {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "address credit withdrawal transition can not be called for identity signing"
                         .to_string(),
+                ))
+            }
+            StateTransition::Shield(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "shield transition can not be called for identity signing".to_string(),
+                ))
+            }
+            StateTransition::ShieldedTransfer(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "shielded transfer transition can not be called for identity signing"
+                        .to_string(),
+                ))
+            }
+            StateTransition::Unshield(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "unshield transition can not be called for identity signing".to_string(),
                 ))
             }
         }
@@ -1226,6 +1313,13 @@ impl StateTransitionStructureValidation for StateTransition {
                 transition.validate_structure(platform_version)
             }
             StateTransition::AddressCreditWithdrawal(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::Shield(transition) => transition.validate_structure(platform_version),
+            StateTransition::ShieldedTransfer(transition) => {
+                transition.validate_structure(platform_version)
+            }
+            StateTransition::Unshield(transition) => {
                 transition.validate_structure(platform_version)
             }
         }

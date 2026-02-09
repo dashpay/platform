@@ -59,6 +59,10 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub address_credit_withdrawal: DriveAbciStateTransitionValidationVersion,
     pub address_funds_from_asset_lock: DriveAbciStateTransitionValidationVersion,
     pub address_funds_transfer: DriveAbciStateTransitionValidationVersion,
+
+    pub shield_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub unshield_state_transition: DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]

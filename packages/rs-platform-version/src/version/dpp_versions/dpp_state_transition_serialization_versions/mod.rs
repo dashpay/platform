@@ -28,6 +28,9 @@ pub struct DPPStateTransitionSerializationVersions {
     pub address_funds_transfer_state_transition: FeatureVersionBounds,
     pub address_funding_from_asset_lock_state_transition: FeatureVersionBounds,
     pub address_credit_withdrawal_state_transition: FeatureVersionBounds,
+    pub shield_state_transition: FeatureVersionBounds,
+    pub shielded_transfer_state_transition: FeatureVersionBounds,
+    pub unshield_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

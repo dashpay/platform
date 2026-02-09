@@ -579,6 +579,7 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
+            TreeType::CommitmentTree => Element::empty_commitment_tree_with_flags(element_flags),
         };
 
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)
