@@ -1100,7 +1100,7 @@ export default {
                       minimum: 1,
                     },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'allowlistOnly', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
                   additionalProperties: false,
                 },
                 mempool: {
