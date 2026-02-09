@@ -1398,6 +1398,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '3.0.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = 'dashpay/dashd:23';
+          });
+
+        return configFile;
+      },
       '3.1.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
