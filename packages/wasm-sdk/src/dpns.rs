@@ -457,7 +457,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDpnsUsernameByNameWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<DpnsUsernameInfo | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<DpnsUsernameInfo | undefined>"
     )]
     pub async fn get_dpns_username_by_name_with_proof_info(
         &self,
@@ -558,7 +558,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDpnsUsernameWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<string | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<string | undefined>"
     )]
     pub async fn get_dpns_username_with_proof_info(
         &self,
