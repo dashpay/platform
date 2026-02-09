@@ -7,7 +7,6 @@ import contractFixtureV1 from './fixtures/data-contract-v1-with-docs-tokens-grou
 const PLATFORM_VERSION_CONTRACT_V0 = 1;
 const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v9
 
-
 describe('DataContract', () => {
   before(async () => {
     await init();
@@ -462,6 +461,4 @@ describe('DataContract', () => {
       contract2.free();
     });
   });
-
 });
-s
