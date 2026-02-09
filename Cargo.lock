@@ -5878,6 +5878,7 @@ name = "simple-signer"
 version = "3.0.0"
 dependencies = [
  "base64 0.22.1",
+ "bincode",
  "dpp",
  "hex",
  "tracing",
