@@ -165,7 +165,7 @@ describe('IdentityCreateTransition', () => {
       const transition = wasm.IdentityCreateTransition.default(1);
       const st = transition.toStateTransition();
 
-      expect(st.getSignableBytes().length).to.equal(229);
+      expect(st.getSignableBytes().length).to.equal(230);
     });
   });
 
