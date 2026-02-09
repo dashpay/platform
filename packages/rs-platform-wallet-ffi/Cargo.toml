@@ -23,8 +23,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Core dependencies (for Network type)
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "3202614f145b847c5cf9aeecf76139c21ce04e9b" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "3202614f145b847c5cf9aeecf76139c21ce04e9b" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
 
 # Error handling
 thiserror = "1.0"

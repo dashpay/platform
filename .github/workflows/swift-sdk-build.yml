@@ -22,6 +22,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Force clean working directory
+        run: |
+          git clean -ffdx
+          git reset --hard HEAD
+
+      - name: Debug - Show BaseViewModel.swift content
+        run: |
+          echo "=== BaseViewModel.swift line count ==="
+          wc -l packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+          echo "=== BaseViewModel.swift full content ==="
+          cat -n packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+          echo "=== Git status ==="
+          git status
+          echo "=== Git log -1 ==="
+          git log -1 --oneline
+
+      - name: Force download correct BaseViewModel.swift from GitHub
+        run: |
+          curl -sL "https://raw.githubusercontent.com/dashpay/platform/${{ github.sha }}/packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift" -o packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
+          echo "=== After curl - BaseViewModel.swift line count ==="
+          wc -l packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
 
       - name: Show Xcode and Swift versions (use default on self-hosted runner)
         run: |
@@ -149,6 +173,12 @@ jobs:
           TOOLCHAIN="${{ steps.dashcore_toolchain.outputs.channel }}"
           rustup toolchain install "$TOOLCHAIN" --profile minimal --no-self-update
           rustup target add --toolchain "$TOOLCHAIN" aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Clean Xcode derived data and Swift package caches
+        run: |
+          rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
+          rm -rf packages/swift-sdk/.build || true
+          rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
 
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |

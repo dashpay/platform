@@ -8,7 +8,7 @@ struct CoreContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var wallets: [HDWallet]
     @State private var showingCreateWallet = false
-    
+
     // Filter wallets by current network - show wallets that support the current network
     private var walletsForCurrentNetwork: [HDWallet] {
         return wallets
@@ -17,33 +17,34 @@ struct CoreContentView: View {
 
     // Display helpers
     private var headerHeightsDisplay: String? {
-        let cur = walletService.syncProgress.currentHeight
-        let tot = walletService.syncProgress.targetHeight
+        let headers = walletService.syncProgress.headers
+        let cur = (headers?.currentHeight ?? 0) + (headers?.buffered ?? 0)
+        let tot = headers?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var filterHeaderHeightsDisplay: String? {
-        let cur = walletService.syncProgress.filterHeaderHeight
-        let tot = walletService.syncProgress.targetHeight
+        let cur = walletService.syncProgress.filterHeaders?.currentHeight ?? 0
+        let tot = walletService.syncProgress.filterHeaders?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
 
     private var filterHeightsDisplay: String? {
-        let cur = walletService.syncProgress.filterHeight
-        let tot = walletService.syncProgress.targetHeight
+        let cur = walletService.syncProgress.filters?.currentHeight ?? 0
+        let tot = walletService.syncProgress.filters?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
-    
+
     private var masternodeHeightsDisplay: String? {
-        let cur = walletService.syncProgress.masternodeHeight
-        let tot = walletService.syncProgress.targetHeight
+        let cur = walletService.syncProgress.masternodes?.currentHeight ?? 0
+        let tot = walletService.syncProgress.masternodes?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
     }
-    
+
     private func heightDisplay(numerator: UInt32, denominator: UInt32) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -54,7 +55,7 @@ struct CoreContentView: View {
         let denominatorStr = formattedHeight(denominator)
         return "\(numeratorStr)/\(denominatorStr)"
     }
-    
+
 var body: some View {
     List {
             // Section 1: Core Sync Status (compact)
@@ -63,27 +64,27 @@ var body: some View {
                     // Compact progress rows
                     CompactSyncRow(
                         title: "Headers",
-                        progress: Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight),
+                        progress: walletService.syncProgress.headers?.percentage ?? 0.0,
                         value: headerHeightsDisplay
                     )
 
                     CompactSyncRow(
                         title: "Filter Headers",
-                        progress: Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight),
+                        progress: walletService.syncProgress.filterHeaders?.percentage ?? 0.0,
                         value: filterHeaderHeightsDisplay
                     )
 
                     if walletService.masternodesEnabled {
                         CompactSyncRow(
                             title: "Masternodes",
-                            progress: Double(walletService.syncProgress.masternodeHeight) / Double(walletService.syncProgress.targetHeight),
+                            progress: 0.0,
                             value: masternodeHeightsDisplay
                         )
                     }
 
                     CompactSyncRow(
                         title: "Filters",
-                        progress: Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight),
+                        progress: walletService.syncProgress.filters?.percentage ?? 0.0,
                         value: filterHeightsDisplay
                     )
 
@@ -96,12 +97,12 @@ var body: some View {
                         Spacer()
 
                         Button(action: toggleSync) {
-                            Text(walletService.isSyncing ? "Pause" : "Start")
+                            Text(walletService.syncProgress.state.isRunning() ? "Pause" : "Start")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(walletService.isSyncing ? .orange : .blue)
+                        .tint(walletService.syncProgress.state.isRunning() ? .orange : .blue)
                         .controlSize(.mini)
 
                         Button(action: clearSyncData) {
@@ -112,8 +113,8 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
-                        .disabled(walletService.isSyncing)
-                        .opacity((walletService.isSyncing) ? 0.5 : 1.0)
+                        .disabled(walletService.syncProgress.state.isRunning())
+                        .opacity((walletService.syncProgress.state.isRunning()) ? 0.5 : 1.0)
                     }
                 }
                 .padding(.vertical, 4)
@@ -232,7 +233,7 @@ var body: some View {
     // MARK: - Sync Methods
     
     private func toggleSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             pauseSync()
         } else {
             startSync()
@@ -250,28 +251,28 @@ var body: some View {
     }
     
     private func restartHeaderSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartHeaderSync() when implemented
             print("Restarting header sync...")
         }
     }
 
     private func restartFilterHeaderSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartFilterHeaderSync() when implemented
             print("Restarting filter header sync...")
         }
     }
 
     private func restartMasternodeSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartMasternodeSync() when implemented
             print("Restarting masternode sync...")
         }
     }
 
     private func restartTransactionSync() {
-        if walletService.isSyncing {
+        if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartTransactionSync() when implemented
             print("Restarting transaction sync...")
         }
@@ -279,7 +280,7 @@ var body: some View {
 
     private func clearSyncData() {
         // Button is disabled during sync
-        guard !walletService.isSyncing else {
+        guard !walletService.syncProgress.state.isRunning() else {
             print("⚠️ Clear button should be disabled during sync")
             return
         }
@@ -396,7 +397,7 @@ struct SyncProgressRow: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     private func progressColor(for value: Double) -> Color {
         if value >= 1.0 {
             return .green
@@ -413,22 +414,22 @@ struct SyncProgressRow: View {
 struct WalletRowView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
-    
+
     private func getNetworksList() -> String {
         // Wallets are now single-network, just return the wallet's network
         return wallet.dashNetwork.rawValue.capitalized
     }
-    
+
     var platformBalance: UInt64 {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
-        
+
         // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
         // don't show any platform balance
         guard let walletId = wallet.walletId else {
             return 0
         }
-        
+
         return unifiedAppState.platformState.identities
             .filter { identity in
                 // Check if identity belongs to this wallet and is on the same network
@@ -440,36 +441,36 @@ struct WalletRowView: View {
                 sum + identity.balance
             }
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(wallet.label)
                     .font(.headline)
-                
+
                 Spacer()
-                
+
                 if wallet.syncProgress < 1.0 {
                     ProgressView(value: min(max(wallet.syncProgress, 0.0), 1.0))
                         .frame(width: 50)
                 }
             }
-            
+
             HStack {
                 // Show all networks this wallet supports
                 HStack(spacing: 4) {
                     Image(systemName: "network")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     // Build the network list
                     Text(getNetworksList())
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 VStack(alignment: .trailing, spacing: 2) {
                     // Show wallet balance or "Empty"
                     if wallet.totalBalance == 0 {
@@ -481,7 +482,7 @@ struct WalletRowView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    
+
                     // Show platform balance if any
                     if platformBalance > 0 {
                         HStack(spacing: 3) {
@@ -497,15 +498,15 @@ struct WalletRowView: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        
+
         // Special case for zero
         if dash == 0 {
             return "0 DASH"
         }
-        
+
         // Format with up to 8 decimal places, removing trailing zeros
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
@@ -513,11 +514,11 @@ struct WalletRowView: View {
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        
+
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-        
+
         // Fallback formatting
         let formatted = String(format: "%.8f", dash)
         let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)

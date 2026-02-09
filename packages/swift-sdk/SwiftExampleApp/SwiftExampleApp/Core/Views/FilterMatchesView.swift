@@ -38,12 +38,12 @@ struct FilterMatchesView: View {
     // Wait for sync to complete before loading filters
     private func waitForSyncToComplete() async {
         // If sync is not running, return immediately
-        guard walletService.isSyncing else { return }
+        guard !walletService.syncProgress.state.isRunning() else { return }
 
         print("⏳ Waiting for sync to complete before loading filters...")
 
         // Poll until sync completes (check every 0.5 seconds)
-        while walletService.isSyncing {
+        while !walletService.syncProgress.state.isComplete() {
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         }
 
@@ -79,7 +79,7 @@ struct FilterMatchesView: View {
             await waitForSyncToComplete()
 
             // Initialize with current sync height
-            let currentHeight = UInt32(walletService.syncProgress.filterHeight)
+            let currentHeight = walletService.syncProgress.filters?.currentHeight ?? 0
             await service.initialize(endHeight: currentHeight)
         }
         .alert("Jump to Height", isPresented: $showJumpToAlert) {
@@ -229,7 +229,7 @@ struct FilterMatchesView: View {
             ProgressView()
                 .scaleEffect(1.5)
 
-            if walletService.isSyncing {
+            if !walletService.syncProgress.state.isComplete() {
                 VStack(spacing: 8) {
                     Text("Waiting for sync to complete...")
                         .font(.headline)

@@ -83,7 +83,7 @@ struct ContentView: View {
                     .tag(RootTab.settings)
             }
             .overlay(alignment: .top) {
-                if walletService.isSyncing {
+                if walletService.syncProgress.state.isSyncing() {
                     GlobalSyncIndicator(showDetails: selectedTab == .wallets && unifiedState.showWalletsSyncDetails)
                         .environmentObject(walletService)
                 }
@@ -98,31 +98,22 @@ struct GlobalSyncIndicator: View {
     
     // Helpers
     private var phaseTitle: String {
-        switch walletService.syncProgress.stage {
-        case .idle:
-            return "Idle"
-        case .downloading:
-            let h = Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight)
-            return "Block Headers (\(Int(h * 100))%)"
-        case .downloadingFilterHeaders:
-            let fh = Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight)
-            return "Filter Headers (\(Int(fh * 100))%)"
-        case .downloadingFilters:
-            let f = Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight)
-            return "Filters (\(Int(f * 100))%)"
-        case .complete:
-            return "Complete"
+        switch walletService.syncProgress.state {
+        case .initializing: return "Initializing"
+        case .waitingForConnections: return "Waiting for Connection"
+        case .waitForEvents: return "Waiting for Events"
+        case .syncing: return "Syncing"
+        case .synced: return "Synced"
+        case .error:
+            let errMsg = walletService.lastSyncError?.localizedDescription ?? "Unknown error"
+            return "Error occurred during sync \(errMsg)"
         default:
-            return "Unexpected stage (\(walletService.syncProgress.stage))"
+            return "Unexpected stage (\(walletService.syncProgress.state))"
         }
     }
 
     private var fillProgress: Double {
-        let h = Double(walletService.syncProgress.currentHeight) / Double(walletService.syncProgress.targetHeight)
-        let fh = Double(walletService.syncProgress.filterHeaderHeight) / Double(walletService.syncProgress.targetHeight)
-        let f = Double(walletService.syncProgress.filterHeight) / Double(walletService.syncProgress.targetHeight)
-        
-        return (h + fh + f) / 3.0
+        return walletService.syncProgress.percentage
     }
 
     var body: some View {
@@ -132,7 +123,7 @@ struct GlobalSyncIndicator: View {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.caption)
                         .symbolEffect(.pulse)
-                    Text("Syncing: \(phaseTitle)")
+                    Text(phaseTitle)
                         .font(.caption)
                     Spacer()
                     // No right-side numbers in the top bar per design
