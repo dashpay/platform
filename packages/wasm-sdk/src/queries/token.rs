@@ -609,7 +609,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenTotalSupplyWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<TokenTotalSupply | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<TokenTotalSupply | undefined>"
     )]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
@@ -828,7 +828,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<TokenLastClaim | undefined>"
+        unchecked_return_type = "ProofMetadataResponseTyped<RewardDistributionMoment | undefined>"
     )]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,

@@ -53,7 +53,8 @@ export class DpnsFacade {
     return w.getDpnsUsernamesWithProofInfo(query);
   }
 
-  async usernameWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<string | null>> {
+  async usernameWithProof(identityId: wasm.IdentifierLike):
+    Promise<wasm.ProofMetadataResponseTyped<string | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDpnsUsernameWithProofInfo(identityId);
   }
@@ -63,7 +64,9 @@ export class DpnsFacade {
     return w.getDpnsUsernameByName(username);
   }
 
-  async getUsernameByNameWithProof(username: string): Promise<wasm.ProofMetadataResponseTyped<wasm.DpnsUsernameInfo | null>> {
+  async getUsernameByNameWithProof(
+    username: string,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.DpnsUsernameInfo | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDpnsUsernameByNameWithProofInfo(username);
   }
