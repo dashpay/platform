@@ -9,7 +9,7 @@ use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -158,11 +158,6 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(getter = "signature")]
     pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        Ok(self.0.signable_bytes()?)
     }
 
     #[wasm_bindgen(setter = "signature")]

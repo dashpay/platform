@@ -23,7 +23,7 @@ describe('DocumentsFacade', () => {
 
   beforeEach(async function setup() {
     await init();
-    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnet();
     wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 

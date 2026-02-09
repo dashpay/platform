@@ -4,7 +4,7 @@ use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
-use dash_sdk::dpp::platform_value::{platform_value, Value};
+use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
@@ -286,22 +286,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
                 Err(WasmSdkError::invalid_argument("Unsupported number type"))
             }
         }
-        JsonValue::String(s) => {
-            // TODO: Should use Identifier::try_from and return text if failed
-            // Check if it's an identifier (base58 encoded)
-            if s.len() == 44 && s.chars().all(|c| c.is_alphanumeric()) {
-                // Try to parse as identifier
-                match Identifier::from_string(
-                    s,
-                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                ) {
-                    Ok(id) => Ok(platform_value!(id)),
-                    Err(_) => Ok(Value::Text(s.clone())),
-                }
-            } else {
-                Ok(Value::Text(s.clone()))
-            }
-        }
+        JsonValue::String(s) => Ok(Value::Text(s.clone())),
         JsonValue::Array(arr) => {
             let values: Result<Vec<Value>, WasmSdkError> =
                 arr.iter().map(json_to_platform_value).collect();

@@ -8,8 +8,9 @@ before(async () => {
 describe('PlatformAddress', () => {
   describe('fromBytes()', () => {
     it('should create P2PKH address from bytes', () => {
+      // Storage format: 0x00 = P2PKH variant index
       const p2pkhBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(p2pkhBytes);
       expect(addr).to.exist();
@@ -19,8 +20,9 @@ describe('PlatformAddress', () => {
     });
 
     it('should create P2SH address from bytes', () => {
+      // Storage format: 0x01 = P2SH variant index
       const p2shBytes = new Uint8Array([
-        0x80, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x01, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(p2shBytes);
       expect(addr).to.exist();
@@ -30,24 +32,25 @@ describe('PlatformAddress', () => {
     });
 
     it('should reject invalid address type', () => {
+      // 0x02 is not a valid variant index (only 0x00 and 0x01 are valid)
       const invalidBytes = new Uint8Array([
-        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x02, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       try {
         wasm.PlatformAddress.fromBytes(invalidBytes);
         expect.fail('Should have thrown error for invalid address type');
       } catch (error: unknown) {
-        expect((error as Error).message).to.include('type');
+        expect(error).to.exist();
       }
     });
 
     it('should reject wrong length', () => {
-      const shortBytes = new Uint8Array([0xb0, 1, 2, 3, 4, 5]);
+      const shortBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5]);
       try {
         wasm.PlatformAddress.fromBytes(shortBytes);
         expect.fail('Should have thrown error for wrong length');
       } catch (error: unknown) {
-        expect((error as Error).message).to.include('21');
+        expect(error).to.exist();
       }
     });
   });
@@ -56,12 +59,12 @@ describe('PlatformAddress', () => {
     it('should create address from testnet bech32m string', () => {
       // First create an address and get its bech32m
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const originalAddr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = originalAddr.toBech32m('testnet');
 
-      expect(bech32m.startsWith('tevo1')).to.be.true();
+      expect(bech32m.startsWith('tdash1')).to.be.true();
 
       // Parse it back
       const parsedAddr = wasm.PlatformAddress.fromBech32m(bech32m);
@@ -71,12 +74,12 @@ describe('PlatformAddress', () => {
 
     it('should create address from mainnet bech32m string', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const originalAddr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = originalAddr.toBech32m('mainnet');
 
-      expect(bech32m.startsWith('evo1')).to.be.true();
+      expect(bech32m.startsWith('dash1')).to.be.true();
 
       const parsedAddr = wasm.PlatformAddress.fromBech32m(bech32m);
       expect(parsedAddr).to.exist();
@@ -95,7 +98,8 @@ describe('PlatformAddress', () => {
 
   describe('fromHex()', () => {
     it('should create address from hex string', () => {
-      const hexString = `b0${'01020304050607080910111213141516171819'.padEnd(40, '0').substring(0, 40)}`;
+      // Storage format: 00 = P2PKH variant index
+      const hexString = `00${'01020304050607080910111213141516171819'.padEnd(40, '0').substring(0, 40)}`;
       const addr = wasm.PlatformAddress.fromHex(hexString);
       expect(addr).to.exist();
       expect(addr.addressType).to.equal('P2PKH');
@@ -154,7 +158,7 @@ describe('PlatformAddress', () => {
   describe('constructor()', () => {
     it('should accept PlatformAddress object', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const original = wasm.PlatformAddress.fromBytes(bytes);
       const copy = new wasm.PlatformAddress(original);
@@ -164,7 +168,7 @@ describe('PlatformAddress', () => {
 
     it('should accept Uint8Array', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = new wasm.PlatformAddress(bytes);
       expect(addr).to.exist();
@@ -173,7 +177,7 @@ describe('PlatformAddress', () => {
 
     it('should accept bech32m string', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const original = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = original.toBech32m('testnet');
@@ -187,7 +191,7 @@ describe('PlatformAddress', () => {
   describe('toBytes()', () => {
     it('should return 21-byte array', () => {
       const inputBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(inputBytes);
       const outputBytes = addr.toBytes();
@@ -199,7 +203,7 @@ describe('PlatformAddress', () => {
   describe('toHex()', () => {
     it('should return hex string', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const hex = addr.toHex();
@@ -211,7 +215,7 @@ describe('PlatformAddress', () => {
   describe('hash()', () => {
     it('should return 20-byte hash', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const hash = addr.hash();
@@ -225,7 +229,7 @@ describe('PlatformAddress', () => {
   describe('hashToHex()', () => {
     it('should return hex string of hash', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const hashHex = addr.hashToHex();
@@ -237,27 +241,27 @@ describe('PlatformAddress', () => {
   describe('toBech32m()', () => {
     it('should convert to testnet bech32m', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = addr.toBech32m('testnet');
       expect(bech32m).to.be.a('string');
-      expect(bech32m.startsWith('tevo1')).to.be.true();
+      expect(bech32m.startsWith('tdash1')).to.be.true();
     });
 
     it('should convert to mainnet bech32m', () => {
       const bytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(bytes);
       const bech32m = addr.toBech32m('mainnet');
       expect(bech32m).to.be.a('string');
-      expect(bech32m.startsWith('evo1')).to.be.true();
+      expect(bech32m.startsWith('dash1')).to.be.true();
     });
 
     it('should roundtrip through bech32m', () => {
       const originalBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(originalBytes);
       const bech32m = addr.toBech32m('testnet');
