@@ -88,6 +88,13 @@ pub trait ContextProvider: Send + Sync {
     /// * `Ok(CoreBlockHeight)`: On success, returns the platform activation height as defined by mn_rr
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError>;
+
+    /// Updates the cached data contract with a fresh version.
+    ///
+    /// Called when the SDK detects that a cached contract is stale (e.g., after a
+    /// document deserialization failure due to a contract schema update).
+    /// The default implementation is a no-op.
+    fn update_data_contract(&self, _contract: Arc<DataContract>) {}
 }
 
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
@@ -118,6 +125,10 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.as_ref().get_platform_activation_height()
+    }
+
+    fn update_data_contract(&self, contract: Arc<DataContract>) {
+        self.as_ref().update_data_contract(contract)
     }
 }
 
@@ -155,6 +166,11 @@ where
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_platform_activation_height()
+    }
+
+    fn update_data_contract(&self, contract: Arc<DataContract>) {
+        let lock = self.lock().expect("lock poisoned");
+        lock.update_data_contract(contract)
     }
 }
 

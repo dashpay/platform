@@ -242,8 +242,8 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(80)),
-        retries: Some(0),
+        timeout: Some(Duration::from_secs(30)),
+        retries: Some(3),
         ban_failed_address: None,
         connect_timeout: None,
         max_decoding_message_size: None,

@@ -881,27 +881,16 @@ impl WasmSdk {
         &self,
         token_id: Identifier,
     ) -> Result<(), WasmSdkError> {
-        use crate::sdk::{LOCAL_TRUSTED_CONTEXT, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
-        use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
 
-        // Step 1: Check trusted context is initialized before doing any network fetches
-        let network = self.network();
-        let context_initialized = match network {
-            Network::Dash => MAINNET_TRUSTED_CONTEXT.lock().unwrap().is_some(),
-            Network::Testnet => TESTNET_TRUSTED_CONTEXT.lock().unwrap().is_some(),
-            Network::Regtest => LOCAL_TRUSTED_CONTEXT.lock().unwrap().is_some(),
-            _ => false,
-        };
-
-        if !context_initialized {
-            return Err(WasmSdkError::generic(format!(
-                "Trusted context not initialized for network {:?}. Call prefetch methods first.",
-                network
-            )));
-        }
+        // Step 1: Verify trusted context is available
+        let trusted_context = self.trusted_context().ok_or_else(|| {
+            WasmSdkError::generic(
+                "Trusted context not initialized. Use a trusted builder with a prefetched cache.",
+            )
+        })?;
 
         // Step 2: Fetch TokenContractInfo to get contract_id and position
         let token_contract_info = TokenContractInfo::fetch(self.as_ref(), token_id)
@@ -931,31 +920,7 @@ impl WasmSdk {
             .clone();
 
         // Step 5: Add the token configuration to the trusted context cache
-        // We already verified the context is initialized above, so unwrap is safe
-        match network {
-            Network::Dash => {
-                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .add_known_token_configuration(token_id, token_configuration);
-            }
-            Network::Testnet => {
-                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .add_known_token_configuration(token_id, token_configuration);
-            }
-            Network::Regtest => {
-                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .add_known_token_configuration(token_id, token_configuration);
-            }
-            _ => unreachable!(), // Already checked above
-        }
+        trusted_context.add_known_token_configuration(token_id, token_configuration);
 
         Ok(())
     }
