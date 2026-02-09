@@ -151,8 +151,8 @@ impl Encode for DistributionFunction {
     }
 }
 
-impl Decode for DistributionFunction {
-    fn decode<D: bincode::de::Decoder>(
+impl<C> Decode<C> for DistributionFunction {
+    fn decode<D: bincode::de::Decoder<Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let variant = u8::decode(decoder)?;
@@ -301,8 +301,8 @@ impl Decode for DistributionFunction {
     }
 }
 
-impl<'de> BorrowDecode<'de> for DistributionFunction {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+impl<'de, C> BorrowDecode<'de, C> for DistributionFunction {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let variant = u8::borrow_decode(decoder)?;

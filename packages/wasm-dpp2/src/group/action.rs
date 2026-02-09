@@ -1,8 +1,42 @@
 use crate::group::action_event::GroupActionEventWasm;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::data_contract::TokenContractPosition;
 use dpp::group::group_action::{GroupAction, GroupActionAccessors};
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * GroupAction serialized as a plain object.
+ */
+export interface GroupActionObject {
+    contractId: Uint8Array;
+    proposerId: Uint8Array;
+    tokenContractPosition: number;
+    event: GroupActionEventObject;
+}
+
+/**
+ * GroupAction serialized as JSON.
+ */
+export interface GroupActionJSON {
+    contractId: string;
+    proposerId: string;
+    tokenContractPosition: number;
+    event: GroupActionEventJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionObject")]
+    pub type GroupActionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "GroupActionJSON")]
+    pub type GroupActionJSONJs;
+}
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "GroupAction")]
@@ -22,16 +56,6 @@ impl From<GroupActionWasm> for GroupAction {
 
 #[wasm_bindgen(js_class = GroupAction)]
 impl GroupActionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupAction".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "GroupAction".to_string()
-    }
-
     #[wasm_bindgen(getter = "contractId")]
     pub fn contract_id(&self) -> IdentifierWasm {
         self.0.contract_id().into()
@@ -52,3 +76,11 @@ impl GroupActionWasm {
         GroupActionEventWasm::from(self.0.event().clone())
     }
 }
+
+impl_wasm_conversions!(
+    GroupActionWasm,
+    GroupAction,
+    GroupActionObjectJs,
+    GroupActionJSONJs
+);
+impl_wasm_type_info!(GroupActionWasm, GroupAction);

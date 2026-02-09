@@ -124,7 +124,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -218,7 +218,11 @@ mod creation_tests {
             .expect("expected to commit transaction");
 
         let result = processing_result.into_execution_results().remove(0);
-        let PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
 
@@ -303,7 +307,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -364,10 +368,10 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::DocumentAlreadyPresentError { .. }),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentAlreadyPresentError { .. }),
+                ..
+            }]
         );
 
         platform
@@ -470,21 +474,21 @@ mod creation_tests {
             .expect("expected to process state transition");
         assert_eq!(
             processing_result.execution_results().first().unwrap(),
-            &PaidConsensusError(
-                ConsensusError::BasicError(BasicError::DocumentFieldMaxSizeExceededError(
+            &PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::DocumentFieldMaxSizeExceededError(
                     DocumentFieldMaxSizeExceededError::new(
                         "avatar".to_string(),
                         avatar_size as u64,
                         max_field_size as u64
                     )
                 )),
-                FeeResult {
+                actual_fees: FeeResult {
                     storage_fee: 11556000,
                     processing_fee: 526140,
                     fee_refunds: FeeRefunds::default(),
                     removed_bytes_from_system: 0
                 }
-            )
+            }
         );
 
         platform
@@ -1133,10 +1137,10 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::DocumentContestNotPaidForError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentContestNotPaidForError(_)),
+                ..
+            }]
         );
 
         // Now let's run a query for the vote totals
@@ -1404,7 +1408,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(..)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         // Now let's run a query for the vote totals
@@ -1844,12 +1848,12 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
                     StateError::DocumentContestDocumentWithSameIdAlreadyPresentError { .. }
                 ),
-                _
-            )]
+                ..
+            }]
         );
 
         // Now let's run a query for the vote totals
@@ -2231,7 +2235,11 @@ mod creation_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "An Identity with the id BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW is already a contestant for the vote_poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }");
@@ -2521,7 +2529,11 @@ mod creation_tests {
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "Document Creation on 86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e:card is not allowed because of the document type's creation restriction mode Owner Only");
@@ -2646,7 +2658,11 @@ mod creation_tests {
 
         // Check the returned consensus error
         let result = processing_result.into_execution_results().remove(0);
-        let PaidConsensusError(consensus_error, _) = result else {
+        let PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
             panic!("expected a paid consensus error");
         };
 
@@ -2765,7 +2781,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -2910,7 +2926,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -3053,7 +3069,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -3184,12 +3200,12 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
                     StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(_)
                 ),
-                _
-            )]
+                ..
+            }]
         );
 
         platform
@@ -3316,12 +3332,12 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
                     StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(_)
                 ),
-                _
-            )]
+                ..
+            }]
         );
 
         platform
@@ -3448,7 +3464,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -3569,10 +3585,12 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(
+                    _
+                )),
+                ..
+            }]
         );
 
         platform
@@ -3700,12 +3718,12 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
-                    _
-                )),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
         );
 
         platform
@@ -3865,7 +3883,7 @@ mod creation_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform

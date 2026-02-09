@@ -12,6 +12,8 @@ pub mod single_document;
 /// System components (Epoch info etc...) verification methods on proofs
 pub mod system;
 
+/// Address funds proof verification module
+pub mod address_funds;
 /// Group proof verification module
 pub mod group;
 /// Verifies that a state transition contents exist in the proof

@@ -6,6 +6,8 @@ compile_error!("tests require `mocks` feature to be enabled");
 compile_error!("network-testing or offline-testing must be enabled for tests");
 
 #[cfg(feature = "mocks")]
+mod address_funds;
+mod address_sync;
 mod broadcast;
 mod common;
 mod config;
@@ -22,6 +24,7 @@ mod generated_data;
 mod group_actions;
 mod identity;
 mod identity_contract_nonce;
+mod mock_document_contract_refresh;
 mod mock_fetch;
 mod mock_fetch_many;
 #[cfg(feature = "subscriptions")]

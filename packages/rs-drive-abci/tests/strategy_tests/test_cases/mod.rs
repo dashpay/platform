@@ -1,0 +1,14 @@
+mod address_tests;
+mod basic_tests;
+mod chain_lock_update_tests;
+mod core_height_increase;
+mod core_update_tests;
+mod data_contract_history_tests;
+mod identity_and_document_tests;
+mod identity_transfer_tests;
+mod token_tests;
+mod top_up_tests;
+mod update_identities_tests;
+mod upgrade_fork_tests;
+mod voting_tests;
+mod withdrawal_tests;

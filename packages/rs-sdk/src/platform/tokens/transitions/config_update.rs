@@ -48,7 +48,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - A group action result is missing the expected document
-    pub async fn token_update_contract_token_configuration<S: Signer>(
+    pub async fn token_update_contract_token_configuration<S: Signer<IdentityPublicKey>>(
         &self,
         config_update_transition_builder: TokenConfigUpdateTransitionBuilder,
         signing_key: &IdentityPublicKey,

@@ -10,6 +10,7 @@ mod public_key_is_disabled_error;
 mod public_key_security_level_not_met_error;
 mod signature_error;
 mod signature_should_not_be_present_error;
+mod uncompressed_public_key_not_allowed_error;
 mod wrong_public_key_purpose_error;
 
 pub use crate::consensus::signature::basic_bls_error::BasicBLSError;
@@ -24,4 +25,5 @@ pub use crate::consensus::signature::public_key_is_disabled_error::PublicKeyIsDi
 pub use crate::consensus::signature::public_key_security_level_not_met_error::PublicKeySecurityLevelNotMetError;
 pub use crate::consensus::signature::signature_error::SignatureError;
 pub use crate::consensus::signature::signature_should_not_be_present_error::SignatureShouldNotBePresentError;
+pub use crate::consensus::signature::uncompressed_public_key_not_allowed_error::UncompressedPublicKeyNotAllowedError;
 pub use crate::consensus::signature::wrong_public_key_purpose_error::WrongPublicKeyPurposeError;

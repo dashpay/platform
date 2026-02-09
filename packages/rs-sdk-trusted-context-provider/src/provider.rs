@@ -61,6 +61,9 @@ pub struct TrustedHttpContextProvider {
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
     known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
 
+    /// Known token configurations cache - token configs that are pre-loaded for proof verification
+    known_token_configurations: Arc<Mutex<HashMap<Identifier, TokenConfiguration>>>,
+
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
 }
@@ -71,6 +74,8 @@ struct MasternodeEntry {
     status: String,
     #[serde(rename = "versionCheck")]
     version_check: Option<String>,
+    #[serde(rename = "platformHTTPPort")]
+    platform_http_port: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +170,7 @@ impl TrustedHttpContextProvider {
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
             known_contracts: Arc::new(Mutex::new(HashMap::new())),
+            known_token_configurations: Arc::new(Mutex::new(HashMap::new())),
             refetch_if_not_found: true,
         })
     }
@@ -199,12 +205,40 @@ impl TrustedHttpContextProvider {
         known.insert(id, Arc::new(contract));
     }
 
+    /// Get a data contract from the known contracts cache
+    /// Returns None if the contract is not in the cache
+    pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        let known = self.known_contracts.lock().unwrap();
+        known.get(id).cloned()
+    }
+
+    /// Remove a data contract from the known contracts cache
+    /// Returns true if the contract was present and removed, false otherwise
+    pub fn remove_known_contract(&self, id: &Identifier) -> bool {
+        let mut known = self.known_contracts.lock().unwrap();
+        known.remove(id).is_some()
+    }
+
     /// Add multiple data contracts to the known contracts cache
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
         let mut known = self.known_contracts.lock().unwrap();
         for contract in contracts {
             let id = contract.id();
             known.insert(id, Arc::new(contract));
+        }
+    }
+
+    /// Add a token configuration to the known token configurations cache
+    pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
+        let mut known = self.known_token_configurations.lock().unwrap();
+        known.insert(token_id, config);
+    }
+
+    /// Add multiple token configurations to the known token configurations cache
+    pub fn add_known_token_configurations(&self, configs: Vec<(Identifier, TokenConfiguration)>) {
+        let mut known = self.known_token_configurations.lock().unwrap();
+        for (token_id, config) in configs {
+            known.insert(token_id, config);
         }
     }
 
@@ -271,7 +305,7 @@ impl TrustedHttpContextProvider {
             ));
         }
 
-        let dapi_port = match self.network {
+        let default_dapi_port = match self.network {
             Network::Dash => 443,
             Network::Testnet => 1443,
             _ => 443,
@@ -288,6 +322,8 @@ impl TrustedHttpContextProvider {
                 .rsplit_once(':')
                 .map(|(h, _)| h)
                 .unwrap_or(host_port.as_str());
+            // Use platformHTTPPort from the entry if available, otherwise use network default
+            let dapi_port = entry.platform_http_port.unwrap_or(default_dapi_port);
             let https_url = format!("https://{}:{}", host, dapi_port);
             let url = url::Url::parse(&https_url).map_err(|e| {
                 TrustedContextProviderError::NetworkError(format!(
@@ -747,6 +783,13 @@ impl ContextProvider for TrustedHttpContextProvider {
         &self,
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+        // First check known token configurations cache
+        let known = self.known_token_configurations.lock().unwrap();
+        if let Some(config) = known.get(token_id) {
+            return Ok(Some(config.clone()));
+        }
+        drop(known);
+
         // Delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
             provider.get_token_configuration(token_id)
@@ -766,6 +809,10 @@ impl ContextProvider for TrustedHttpContextProvider {
                 "Unsupported network".to_string(),
             )),
         }
+    }
+
+    fn update_data_contract(&self, contract: Arc<DataContract>) {
+        self.add_known_contract((*contract).clone());
     }
 }
 

@@ -59,24 +59,23 @@ dash-sdk = { path = "../rs-sdk", features = [
   "serde",
   "core_key_wallet",
 ], default-features = false }
-simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
 console_error_panic_hook = { version = "0.1.6" }
-thiserror = { version = "2.0.12" }
+thiserror = { version = "2.0.17" }
 wasm-bindgen = { version = "=0.2.103" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 tracing = { version = "0.1.41" }
-tracing-subscriber = { version = "0.3", default-features = false, features = [
+tracing-subscriber = { version = "0.3.22", default-features = false, features = [
   "env-filter",
   "registry",
 ] }
 tracing-wasm = { version = "0.2.1" }
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
-serde-wasm-bindgen = { version = "0.6.5" }
+serde-wasm-bindgen = { git = "https://github.com/dashpay/serde-wasm-bindgen", branch = "fix/uint8array-to-bytes" }
 serde_json = "1.0"
 hex = "0.4"
 base64 = "0.22"
@@ -105,4 +104,4 @@ lto = "fat"
 wasm-opt = false
 
 [package.metadata.cargo-machete]
-ignored = ["wasm-bindgen-futures"]
+ignored = ["wasm-bindgen-futures", "wasm-sdk"]

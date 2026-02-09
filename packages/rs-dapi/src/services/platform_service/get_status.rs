@@ -201,7 +201,7 @@ fn build_version_info(
         && let Some(protocol_info) = &version_info.protocol
         && let Some(drive_protocol) = &protocol_info.drive
     {
-        protocol.drive = Some(drive_protocol.clone());
+        protocol.drive = Some(*drive_protocol);
     }
 
     version.protocol = Some(protocol);
@@ -303,18 +303,7 @@ fn build_chain_info(
         let core_chain_locked_height = drive_status
             .chain
             .as_ref()
-            .and_then(|c| c.core_chain_locked_height)
-            .map(|h| {
-                h.try_into()
-                    .inspect_err(|error| {
-                        tracing::warn!(
-                            core_chain_locked_height = h,
-                            ?error,
-                            "Failed to convert core_chain_locked_height"
-                        )
-                    })
-                    .unwrap_or(u32::MIN)
-            });
+            .and_then(|c| c.core_chain_locked_height);
 
         let chain = get_status_response_v0::Chain {
             catching_up,

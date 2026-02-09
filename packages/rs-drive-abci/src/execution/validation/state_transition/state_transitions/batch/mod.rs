@@ -1,6 +1,5 @@
 mod action_validation;
 mod advanced_structure;
-mod balance;
 mod data_triggers;
 mod identity_contract_nonce;
 mod is_allowed;
@@ -10,14 +9,17 @@ mod transformer;
 #[cfg(test)]
 mod tests;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::fee::Credits;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
+use std::collections::BTreeMap;
 
 use drive::grovedb::TransactionArg;
 
@@ -31,12 +33,11 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::batch::advanced_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
-
-use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0,
-    StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
-};
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
@@ -52,11 +53,14 @@ impl ValidationMode {
     }
 }
 
-impl StateTransitionActionTransformerV0 for BatchTransition {
+impl StateTransitionActionTransformer for BatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -107,8 +111,8 @@ impl StateTransitionBasicStructureValidationV0 for BatchTransition {
     }
 }
 
-impl StateTransitionNonceValidationV0 for BatchTransition {
-    fn validate_nonces(
+impl StateTransitionIdentityNonceValidationV0 for BatchTransition {
+    fn validate_identity_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -193,7 +197,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
     }
 }
 
-impl StateTransitionStateValidationV0 for BatchTransition {
+impl StateTransitionStateValidation for BatchTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,

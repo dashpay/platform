@@ -131,7 +131,7 @@ impl DocumentReplaceTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -195,7 +195,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     /// - Document validation fails
     /// - Document not found or revision mismatch
-    pub async fn document_replace<S: Signer>(
+    pub async fn document_replace<S: Signer<IdentityPublicKey>>(
         &self,
         replace_document_transition_builder: DocumentReplaceTransitionBuilder,
         signing_key: &IdentityPublicKey,

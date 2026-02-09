@@ -1,13 +1,10 @@
 //! [DapiClient] definition.
 
-use backon::{ConstantBuilder, Retryable};
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use std::fmt::{Debug, Display};
-use std::sync::atomic::AtomicUsize;
-use std::sync::Arc;
 use std::time::Duration;
 use tracing::Instrument;
 
@@ -22,7 +19,7 @@ use crate::{
 };
 
 /// General DAPI request error type.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum DapiClientError {
     /// The error happened on transport layer
@@ -34,6 +31,13 @@ pub enum DapiClientError {
     /// There are no valid DAPI addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
+    /// All available addresses have been exhausted (banned due to errors).
+    /// Contains the last meaningful error that caused addresses to be banned.
+    #[error("no available addresses to retry, last error: {0}")]
+    NoAvailableAddressesToRetry(
+        #[cfg_attr(feature = "mocks", serde(with = "dapi_grpc::mock::serde_mockable"))]
+        Box<TransportError>,
+    ),
     /// [AddressListError] errors
     #[error("address list error: {0}")]
     AddressList(AddressListError),
@@ -49,11 +53,19 @@ impl CanRetry for DapiClientError {
         use DapiClientError::*;
         match self {
             NoAvailableAddresses => false,
+            NoAvailableAddressesToRetry(_) => false,
             Transport(transport_error) => transport_error.can_retry(),
             AddressList(_) => false,
             #[cfg(feature = "mocks")]
             Mock(_) => false,
         }
+    }
+
+    fn is_no_available_addresses(&self) -> bool {
+        matches!(
+            self,
+            DapiClientError::NoAvailableAddresses | DapiClientError::NoAvailableAddressesToRetry(_)
+        )
     }
 }
 
@@ -120,6 +132,28 @@ impl DapiClient {
     /// Return the [DapiClient] address list.
     pub fn address_list(&self) -> &AddressList {
         &self.address_list
+    }
+
+    /// Get all non-banned addresses from the address list.
+    ///
+    /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
+    /// This is useful for diagnostics, monitoring, or when you need to know which DAPI nodes are
+    /// currently available for making requests.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use rs_dapi_client::{DapiClient, AddressList, RequestSettings};
+    ///
+    /// let address_list = "http://127.0.0.1:3000,http://127.0.0.1:3001".parse().unwrap();
+    /// let client = DapiClient::new(address_list, RequestSettings::default());
+    ///
+    /// // Get all currently available (non-banned) addresses
+    /// let live_addresses = client.get_live_addresses();
+    /// println!("Available DAPI nodes: {}", live_addresses.len());
+    /// ```
+    pub fn get_live_addresses(&self) -> Vec<crate::Address> {
+        self.address_list.get_live_addresses()
     }
 }
 
@@ -208,136 +242,159 @@ impl DapiRequestExecutor for DapiClient {
         #[cfg(not(target_arch = "wasm32"))]
         let applied_settings = applied_settings.with_ca_certificate(self.ca_certificate.clone());
 
-        // Setup retry policy:
-        let retry_settings = ConstantBuilder::default()
-            .with_max_times(applied_settings.retries)
-            .with_delay(Duration::from_millis(10));
-
-        // Save dump dir for later use, as self is moved into routine
+        // Save dump dir for later use
         #[cfg(feature = "dump")]
         let dump_dir = self.dump_dir.clone();
         #[cfg(feature = "dump")]
         let dump_request = request.clone();
 
-        let retries_counter_arc = Arc::new(AtomicUsize::new(0));
-        let retries_counter_arc_ref = &retries_counter_arc;
+        let max_retries = applied_settings.retries;
+        let retry_delay = Duration::from_millis(10);
 
-        // We need reference so that the closure is FnMut
-        let applied_settings_ref = &applied_settings;
+        let mut retries: usize = 0;
+        // Track the last transport error for when all addresses get exhausted
+        let mut last_transport_error: Option<TransportError> = None;
 
-        // Setup DAPI request execution routine future. It's a closure that will be called
-        // more once to build new future on each retry.
-        let routine = move || {
-            let retries_counter = Arc::clone(retries_counter_arc_ref);
+        let result: ExecutionResult<R::Response, DapiClientError> = async {
+            loop {
+                // Try to get an address to initialize transport on:
+                let Some(address) = self.address_list.get_live_address() else {
+                    // No available addresses - wrap with last meaningful error if we have one
+                    let error = if let Some(transport_error) = last_transport_error.take() {
+                        tracing::debug!(
+                            "no addresses available, returning last transport error"
+                        );
+                        DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                            transport_error,
+                        ))
+                    } else {
+                        DapiClientError::NoAvailableAddresses
+                    };
 
-            // Try to get an address to initialize transport on:
-            let address_result = self
-                .address_list
-                .get_live_address()
-                .ok_or(DapiClientError::NoAvailableAddresses);
+                    return Err(ExecutionError {
+                        inner: error,
+                        retries,
+                        address: None,
+                    });
+                };
 
-            let _span = tracing::trace_span!(
-                "execute request",
-                address = ?address_result,
-                settings = ?applied_settings_ref,
-                method = request.method_name(),
-            )
-            .entered();
+                tracing::trace!(
+                    ?request,
+                    "calling {} with {} request",
+                    request.method_name(),
+                    request.request_name(),
+                );
 
-            tracing::trace!(
-                ?request,
-                "calling {} with {} request",
-                request.method_name(),
-                request.request_name(),
-            );
+                let transport_request = request.clone();
+                let response_name = request.response_name();
 
-            let transport_request = request.clone();
-            let response_name = request.response_name();
-
-            // Create a future using `async` block that will be returned from the closure on
-            // each retry. Could be just a request future, but need to unpack client first.
-            async move {
-                // It stays wrapped in `Result` since we want to return
-                // `impl Future<Output = Result<...>`, not a `Result` itself.
-                let address = address_result.map_err(|inner| ExecutionError {
-                    inner,
-                    retries: retries_counter.load(std::sync::atomic::Ordering::Relaxed),
-                    address: None,
-                })?;
-
-                let pool = self.pool.clone();
-
-                let mut transport_client = R::Client::with_uri_and_settings(
+                // Try to create transport client
+                let transport_client_result = R::Client::with_uri_and_settings(
                     address.uri().clone(),
-                    applied_settings_ref,
-                    &pool,
-                )
-                .map_err(|error| ExecutionError {
-                    inner: DapiClientError::Transport(error),
-                    retries: retries_counter.load(std::sync::atomic::Ordering::Relaxed),
-                    address: Some(address.clone()),
-                })?;
+                    &applied_settings,
+                    &self.pool,
+                );
 
-                let result = transport_request
-                    .execute_transport(&mut transport_client, applied_settings_ref)
-                    .await
-                    .map_err(DapiClientError::Transport);
+                let mut transport_client = match transport_client_result {
+                    Ok(client) => client,
+                    Err(transport_error) => {
+                        let can_retry_error = transport_error.can_retry();
 
-                let retries = retries_counter.load(std::sync::atomic::Ordering::Relaxed);
+                        // Clone error before moving it
+                        let cloned_error = transport_error.clone();
 
-                let execution_result = result
-                    .map(|inner| {
-                        tracing::trace!(response = ?inner, "received {} response", response_name);
-
-                        ExecutionResponse {
-                            inner,
-                            retries,
-                            address: address.clone(),
-                        }
-                    })
-                    .map_err(|inner| {
-                        tracing::debug!(error = ?inner, "received error: {inner}");
-
-                        ExecutionError {
-                            inner,
+                        let execution_error = ExecutionError {
+                            inner: DapiClientError::Transport(transport_error),
                             retries,
                             address: Some(address.clone()),
+                        };
+
+                        update_address_ban_status::<R::Response, DapiClientError>(
+                            &self.address_list,
+                            &Err(execution_error.clone()),
+                            &applied_settings,
+                        );
+
+                        if can_retry_error && retries < max_retries {
+                            // Store last transport error
+                            last_transport_error = Some(cloned_error);
+
+                            retries += 1;
+                            tracing::warn!(
+                                error = ?execution_error,
+                                "retrying error with sleeping {} secs",
+                                retry_delay.as_secs_f32()
+                            );
+                            transport::sleep(retry_delay).await;
+                            continue;
                         }
-                    });
+
+                        return Err(execution_error);
+                    }
+                };
+
+                // Execute the transport request
+                let result = transport_request
+                    .execute_transport(&mut transport_client, &applied_settings)
+                    .instrument(tracing::trace_span!(
+                        "execute_request",
+                        ?address,
+                        settings = ?applied_settings,
+                        method = request.method_name(),
+                    ))
+                    .await;
+
+                let execution_result = match result {
+                    Ok(response) => {
+                        tracing::trace!(response = ?response, "received {} response", response_name);
+                        Ok(ExecutionResponse {
+                            inner: response,
+                            retries,
+                            address: address.clone(),
+                        })
+                    }
+                    Err(transport_error) => {
+                        tracing::debug!(error = ?transport_error, "received error: {transport_error}");
+                        Err(ExecutionError {
+                            inner: DapiClientError::Transport(transport_error),
+                            retries,
+                            address: Some(address.clone()),
+                        })
+                    }
+                };
 
                 update_address_ban_status::<R::Response, DapiClientError>(
                     &self.address_list,
                     &execution_result,
-                    applied_settings_ref,
+                    &applied_settings,
                 );
 
-                execution_result
+                match execution_result {
+                    Ok(response) => return Ok(response),
+                    Err(error) => {
+                        if error.can_retry() && retries < max_retries {
+                            // Store last transport error
+                            if let DapiClientError::Transport(ref te) = error.inner {
+                                last_transport_error = Some(te.clone());
+                            }
+
+                            retries += 1;
+                            tracing::warn!(
+                                ?error,
+                                "retrying error with sleeping {} secs",
+                                retry_delay.as_secs_f32()
+                            );
+                            transport::sleep(retry_delay).await;
+                            continue;
+                        }
+
+                        return Err(error);
+                    }
+                }
             }
-        };
-
-        let sleeper = transport::BackonSleeper::default();
-
-        // Start the routine with retry policy applied:
-        // We allow let_and_return because `result` is used later if dump feature is enabled
-        let result: Result<
-            ExecutionResponse<<R as TransportRequest>::Response>,
-            ExecutionError<DapiClientError>,
-        > = routine
-            .retry(retry_settings)
-            .sleep(sleeper)
-            .notify(|error, duration| {
-                let retries_counter = Arc::clone(&retries_counter_arc);
-                retries_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                tracing::warn!(
-                    ?error,
-                    "retrying error with sleeping {} secs",
-                    duration.as_secs_f32()
-                );
-            })
-            .when(|e| e.can_retry())
-            .instrument(tracing::info_span!("request routine"))
-            .await;
+        }
+        .instrument(tracing::info_span!("request routine"))
+        .await;
 
         if let Err(error) = &result {
             if !error.can_retry() {

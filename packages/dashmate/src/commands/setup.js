@@ -141,7 +141,7 @@ export default class SetupCommand extends BaseCommand {
     );
 
     if (!isVerbose) { // TODO: We need to print it only with default renderer
-      // eslint-disable-next-line import/extensions
+      // eslint-disable-next-line import-x/extensions
       const { begoo } = await import('begoo/index.js'); // don't remove index!
 
       const welcomeText = begoo(

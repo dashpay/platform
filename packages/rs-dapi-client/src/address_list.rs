@@ -98,7 +98,7 @@ impl AddressStatus {
 }
 
 /// [AddressList] errors
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub enum AddressListError {
     /// A valid uri is required to create an Address
@@ -230,6 +230,42 @@ impl AddressList {
             .map(|(addr, _)| addr.clone())
     }
 
+    /// Get all not banned addresses.
+    ///
+    /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
+    /// The returned addresses use the same filtering logic as [get_live_address], checking if the
+    /// ban period has expired based on the current time.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rs_dapi_client::{AddressList, Address};
+    ///
+    /// let mut list = AddressList::new();
+    /// list.add("http://127.0.0.1:3000".parse().unwrap());
+    /// list.add("http://127.0.0.1:3001".parse().unwrap());
+    ///
+    /// // Get all non-banned addresses
+    /// let live_addresses = list.get_live_addresses();
+    /// assert_eq!(live_addresses.len(), 2);
+    /// ```
+    pub fn get_live_addresses(&self) -> Vec<Address> {
+        let guard = self.addresses.read().unwrap();
+
+        let now = chrono::Utc::now();
+
+        guard
+            .iter()
+            .filter(|(_, status)| {
+                status
+                    .banned_until
+                    .map(|banned_until| banned_until < now)
+                    .unwrap_or(true)
+            })
+            .map(|(addr, _)| addr.clone())
+            .collect()
+    }
+
     /// Get number of all addresses, both banned and not banned.
     pub fn len(&self) -> usize {
         self.addresses.read().unwrap().len()
@@ -278,5 +314,82 @@ impl FromIterator<Address> for AddressList {
         }
 
         address_list
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_live_addresses_empty_list() {
+        let list = AddressList::new();
+        let live_addresses = list.get_live_addresses();
+        assert_eq!(live_addresses.len(), 0);
+    }
+
+    #[test]
+    fn test_get_live_addresses_all_unbanned() {
+        let mut list = AddressList::new();
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        list.add("http://127.0.0.1:3001".parse().unwrap());
+        list.add("http://127.0.0.1:3002".parse().unwrap());
+
+        let live_addresses = list.get_live_addresses();
+        assert_eq!(live_addresses.len(), 3);
+    }
+
+    #[test]
+    fn test_get_live_addresses_some_banned() {
+        let mut list = AddressList::new();
+        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
+        let addr3: Address = "http://127.0.0.1:3002".parse().unwrap();
+
+        list.add(addr1.clone());
+        list.add(addr2.clone());
+        list.add(addr3.clone());
+
+        // Ban addr2
+        list.ban(&addr2);
+
+        let live_addresses = list.get_live_addresses();
+        assert_eq!(live_addresses.len(), 2);
+        assert!(live_addresses.contains(&addr1));
+        assert!(live_addresses.contains(&addr3));
+        assert!(!live_addresses.contains(&addr2));
+    }
+
+    #[test]
+    fn test_get_live_addresses_all_banned() {
+        let mut list = AddressList::new();
+        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
+
+        list.add(addr1.clone());
+        list.add(addr2.clone());
+
+        // Ban all addresses
+        list.ban(&addr1);
+        list.ban(&addr2);
+
+        let live_addresses = list.get_live_addresses();
+        assert_eq!(live_addresses.len(), 0);
+    }
+
+    #[test]
+    fn test_get_live_addresses_unbanned_after_ban() {
+        let mut list = AddressList::new();
+        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
+
+        list.add(addr1.clone());
+
+        // Ban and then unban
+        list.ban(&addr1);
+        list.unban(&addr1);
+
+        let live_addresses = list.get_live_addresses();
+        assert_eq!(live_addresses.len(), 1);
+        assert!(live_addresses.contains(&addr1));
     }
 }

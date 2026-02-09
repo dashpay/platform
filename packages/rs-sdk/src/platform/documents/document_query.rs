@@ -38,7 +38,7 @@ use crate::platform::Fetch;
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
 /// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
-#[derive(Debug, Clone, PartialEq, dapi_grpc_macros::Mockable)]
+#[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
     /// Data contract ID
@@ -128,6 +128,20 @@ impl DocumentQuery {
         self.order_by_clauses.push(clause);
 
         self
+    }
+
+    /// Create a clone of this query with a different data contract.
+    ///
+    /// Preserves all where/order_by/limit/start clauses.
+    pub fn clone_with_contract(&self, contract: Arc<DataContract>) -> Self {
+        Self {
+            data_contract: contract,
+            document_type_name: self.document_type_name.clone(),
+            where_clauses: self.where_clauses.clone(),
+            order_by_clauses: self.order_by_clauses.clone(),
+            limit: self.limit,
+            start: self.start.clone(),
+        }
     }
 }
 

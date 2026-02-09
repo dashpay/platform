@@ -22,6 +22,8 @@ use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_group_actions_v0(
@@ -107,11 +109,12 @@ impl<C> Platform<C> {
                 platform_version,
             ));
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetGroupActionsResponseV0 {
-                result: Some(get_group_actions_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_group_actions_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let group_actions = self
@@ -235,7 +238,7 @@ impl<C> Platform<C> {
                 result: Some(get_group_actions_response_v0::Result::GroupActions(
                     GroupActions { group_actions },
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

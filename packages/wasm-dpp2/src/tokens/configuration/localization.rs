@@ -1,16 +1,49 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{IntoWasm, JsValueExt};
+use crate::impl_wasm_type_info;
+use crate::serialization;
+use crate::utils::IntoWasm;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_configuration_localization::accessors::v0::{
     TokenConfigurationLocalizationV0Getters, TokenConfigurationLocalizationV0Setters,
 };
 use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
-use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * TokenConfigurationLocalization serialized as a plain object.
+ */
+export interface TokenConfigurationLocalizationObject {
+    $formatVersion: string;
+    shouldCapitalize: boolean;
+    singularForm: string;
+    pluralForm: string;
+}
+
+/**
+ * TokenConfigurationLocalization serialized as JSON.
+ */
+export interface TokenConfigurationLocalizationJSON {
+    $formatVersion: string;
+    shouldCapitalize: boolean;
+    singularForm: string;
+    pluralForm: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenConfigurationLocalizationObject")]
+    pub type TokenConfigurationLocalizationObjectJs;
+
+    #[wasm_bindgen(typescript_type = "TokenConfigurationLocalizationJSON")]
+    pub type TokenConfigurationLocalizationJSONJs;
+}
+
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = TokenConfigurationLocalization)]
+#[wasm_bindgen(js_name = "TokenConfigurationLocalization")]
 pub struct TokenConfigurationLocalizationWasm(TokenConfigurationLocalization);
 
 impl From<TokenConfigurationLocalization> for TokenConfigurationLocalizationWasm {
@@ -27,21 +60,11 @@ impl From<TokenConfigurationLocalizationWasm> for TokenConfigurationLocalization
 
 #[wasm_bindgen(js_class = TokenConfigurationLocalization)]
 impl TokenConfigurationLocalizationWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfigurationLocalization".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfigurationLocalization".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        should_capitalize: bool,
-        singular_form: String,
-        plural_form: String,
+    pub fn constructor(
+        #[wasm_bindgen(js_name = "shouldCapitalize")] should_capitalize: bool,
+        #[wasm_bindgen(js_name = "singularForm")] singular_form: String,
+        #[wasm_bindgen(js_name = "pluralForm")] plural_form: String,
     ) -> TokenConfigurationLocalizationWasm {
         TokenConfigurationLocalizationWasm(TokenConfigurationLocalization::V0(
             TokenConfigurationLocalizationV0 {
@@ -53,17 +76,17 @@ impl TokenConfigurationLocalizationWasm {
     }
 
     #[wasm_bindgen(getter = "shouldCapitalize")]
-    pub fn get_should_capitalize(&self) -> bool {
+    pub fn should_capitalize(&self) -> bool {
         self.0.should_capitalize()
     }
 
     #[wasm_bindgen(getter = "pluralForm")]
-    pub fn get_plural_form(&self) -> String {
+    pub fn plural_form(&self) -> String {
         self.0.plural_form().to_string()
     }
 
     #[wasm_bindgen(getter = "singularForm")]
-    pub fn get_singular_form(&self) -> String {
+    pub fn singular_form(&self) -> String {
         self.0.singular_form().to_string()
     }
 
@@ -83,127 +106,47 @@ impl TokenConfigurationLocalizationWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let object = Object::new();
+    pub fn to_json(&self) -> WasmDppResult<TokenConfigurationLocalizationJSONJs> {
+        serialization::to_json(&self.0).map(Into::into)
+    }
 
-        Reflect::set(
-            &object,
-            &JsValue::from("shouldCapitalize"),
-            &JsValue::from(self.0.should_capitalize()),
-        )
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to set 'shouldCapitalize' on TokenConfigurationLocalization: {}",
-                message
-            ))
-        })?;
-        Reflect::set(
-            &object,
-            &JsValue::from("pluralForm"),
-            &JsValue::from(self.0.plural_form()),
-        )
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to set 'pluralForm' on TokenConfigurationLocalization: {}",
-                message
-            ))
-        })?;
-        Reflect::set(
-            &object,
-            &JsValue::from("singularForm"),
-            &JsValue::from(self.0.singular_form()),
-        )
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to set 'singularForm' on TokenConfigurationLocalization: {}",
-                message
-            ))
-        })?;
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(
+        value: TokenConfigurationLocalizationJSONJs,
+    ) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+        serialization::from_json(value.into()).map(TokenConfigurationLocalizationWasm)
+    }
 
-        Ok(object.into())
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<TokenConfigurationLocalizationObjectJs> {
+        serialization::to_object(&self.0).map(Into::into)
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(
+        value: TokenConfigurationLocalizationObjectJs,
+    ) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+        serialization::from_object(value.into()).map(TokenConfigurationLocalizationWasm)
     }
 }
 
-impl TokenConfigurationLocalizationWasm {
-    pub(crate) fn from_js_value(
-        js_value: &JsValue,
-    ) -> WasmDppResult<TokenConfigurationLocalization> {
-        match js_value
-            .to_wasm::<TokenConfigurationLocalizationWasm>("TokenConfigurationLocalization")
+impl TryFrom<&JsValue> for TokenConfigurationLocalizationWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        // First, check if it's already a WASM wrapper
+        if let Ok(wasm_localization) =
+            value.to_wasm::<TokenConfigurationLocalizationWasm>("TokenConfigurationLocalization")
         {
-            Ok(wasm_localization) => Ok(TokenConfigurationLocalization::from(
-                wasm_localization.clone(),
-            )),
-            Err(err) => {
-                let message = err.message();
-
-                if message.contains("constructor name mismatch") {
-                    localization_from_plain_js_value(js_value)
-                } else {
-                    Err(err)
-                }
-            }
+            return Ok(wasm_localization.clone());
         }
+
+        // Deserialize as a versioned object (with $format_version)
+        serialization::from_object(value.clone()).map(TokenConfigurationLocalizationWasm)
     }
 }
 
-fn localization_from_plain_js_value(
-    js_value: &JsValue,
-) -> WasmDppResult<TokenConfigurationLocalization> {
-    if !js_value.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "TokenConfigurationLocalization must be an object",
-        ));
-    }
-
-    let should_capitalize_value = Reflect::get(js_value, &JsValue::from_str("shouldCapitalize"))
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "TokenConfigurationLocalization.shouldCapitalize could not be read: {}",
-                message
-            ))
-        })?;
-    let should_capitalize = should_capitalize_value.as_bool().ok_or_else(|| {
-        WasmDppError::invalid_argument(
-            "TokenConfigurationLocalization.shouldCapitalize must be a boolean",
-        )
-    })?;
-
-    let singular_form_value =
-        Reflect::get(js_value, &JsValue::from_str("singularForm")).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "TokenConfigurationLocalization.singularForm could not be read: {}",
-                message
-            ))
-        })?;
-    let singular_form = singular_form_value.as_string().ok_or_else(|| {
-        WasmDppError::invalid_argument(
-            "TokenConfigurationLocalization.singularForm must be a string",
-        )
-    })?;
-
-    let plural_form_value =
-        Reflect::get(js_value, &JsValue::from_str("pluralForm")).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::invalid_argument(format!(
-                "TokenConfigurationLocalization.pluralForm could not be read: {}",
-                message
-            ))
-        })?;
-    let plural_form = plural_form_value.as_string().ok_or_else(|| {
-        WasmDppError::invalid_argument("TokenConfigurationLocalization.pluralForm must be a string")
-    })?;
-
-    Ok(TokenConfigurationLocalization::V0(
-        TokenConfigurationLocalizationV0 {
-            should_capitalize,
-            singular_form,
-            plural_form,
-        },
-    ))
-}
+impl_wasm_type_info!(
+    TokenConfigurationLocalizationWasm,
+    TokenConfigurationLocalization
+);

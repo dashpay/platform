@@ -13,6 +13,10 @@ on:
         type: string
         description: Image target
         required: true
+      build_args:
+        type: string
+        description: Additional build arguments to pass to Docker build
+        default: ""
 
 jobs:
   build-image:
@@ -41,6 +45,7 @@ jobs:
           target: ${{ inputs.target }}
           platform: linux/amd64
           push_tags: true
+          build_args: ${{ inputs.build_args }}
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           cache_region: ${{ vars.CACHE_REGION }}

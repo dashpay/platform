@@ -48,7 +48,7 @@ class DriveMetricsCollector extends events.EventEmitter {
       let logData;
       try {
         logData = JSON.parse(line);
-      } catch (e) {
+      } catch {
         return;
       }
 

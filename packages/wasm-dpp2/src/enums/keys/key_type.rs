@@ -3,6 +3,38 @@ use dpp::identity::KeyType;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Flexible input type for KeyType - accepts the enum, string name, or numeric value.
+ */
+export type KeyTypeLike = KeyType | "ecdsa_secp256k1" | "bls12_381" | "ecdsa_hash160" | "bip13_script_hash" | "eddsa_25519_hash160" | 0 | 1 | 2 | 3 | 4;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "KeyTypeLike")]
+    pub type KeyTypeLikeJs;
+}
+
+impl TryFrom<KeyTypeLikeJs> for KeyTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: KeyTypeLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        KeyTypeWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<KeyTypeLikeJs> for KeyType {
+    type Error = WasmDppError;
+
+    fn try_from(value: KeyTypeLikeJs) -> Result<Self, Self::Error> {
+        let wasm: KeyTypeWasm = value.try_into()?;
+        Ok(KeyType::from(wasm))
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[wasm_bindgen(js_name = "KeyType")]
 pub enum KeyTypeWasm {
@@ -13,11 +45,12 @@ pub enum KeyTypeWasm {
     EDDSA_25519_HASH160 = 4,
 }
 
-impl TryFrom<JsValue> for KeyTypeWasm {
+impl TryFrom<&JsValue> for KeyTypeWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        if value.is_string() {
+            match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -32,8 +65,9 @@ impl TryFrom<JsValue> for KeyTypeWasm {
                         enum_val
                     ))),
                 },
-            },
-            false => match value.as_f64() {
+            }
+        } else {
+            match value.as_f64() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -48,8 +82,16 @@ impl TryFrom<JsValue> for KeyTypeWasm {
                         enum_val
                     ))),
                 },
-            },
+            }
         }
+    }
+}
+
+impl TryFrom<JsValue> for KeyTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

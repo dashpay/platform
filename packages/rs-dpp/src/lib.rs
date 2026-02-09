@@ -71,6 +71,7 @@ pub mod voting;
 #[cfg(feature = "core-types")]
 pub mod core_types;
 
+pub mod address_funds;
 pub mod group;
 pub mod withdrawal;
 
@@ -108,7 +109,12 @@ pub mod prelude {
 
     pub type TimestampIncluded = bool;
     pub type Revision = u64;
+
+    /// Identity nonces are split 24 bits are for the recent documents, 40 bits are for the identity.
     pub type IdentityNonce = u64;
+
+    /// The Key of type none is only 32 bits, which means an address can be used up to 4 billion times.
+    pub type AddressNonce = u32;
 
     pub type SenderKeyIndex = u32;
     pub type RecipientKeyIndex = u32;
@@ -125,6 +131,7 @@ pub mod prelude {
 }
 
 pub use bincode;
+pub use bincode::enc::Encode;
 #[cfg(feature = "bls-signatures")]
 pub use dashcore::blsful as bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
@@ -134,4 +141,5 @@ pub use data_contracts;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;
+pub use platform_serialization::de::{BorrowDecode, Decode, DefaultBorrowDecode, DefaultDecode};
 pub use platform_value;

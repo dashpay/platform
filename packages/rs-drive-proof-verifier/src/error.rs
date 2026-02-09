@@ -29,8 +29,8 @@ pub enum Error {
     },
 
     /// Dash Protocol error
-    #[error("dash protocol: {error}")]
-    ProtocolError { error: String },
+    #[error("protocol: {0}")]
+    ProtocolError(ProtocolError),
 
     /// Empty response metadata
     #[error("empty response metadata")]
@@ -99,17 +99,18 @@ pub enum Error {
 
 impl From<drive::error::Error> for Error {
     fn from(error: drive::error::Error) -> Self {
-        Self::DriveError {
-            error: error.to_string(),
+        match error {
+            drive::error::Error::Protocol(protocol_err) => Self::ProtocolError(*protocol_err),
+            other => Self::DriveError {
+                error: other.to_string(),
+            },
         }
     }
 }
 
 impl From<ProtocolError> for Error {
     fn from(error: ProtocolError) -> Self {
-        Self::ProtocolError {
-            error: error.to_string(),
-        }
+        Self::ProtocolError(error)
     }
 }
 
@@ -136,6 +137,10 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
                     time_ms: metadata.time_ms,
                     error: grove_err.to_string(),
                 })
+            }
+
+            Err(drive::error::Error::Protocol(protocol_err)) => {
+                Err(Error::ProtocolError(*protocol_err))
             }
 
             Err(other) => Err(other.into()),

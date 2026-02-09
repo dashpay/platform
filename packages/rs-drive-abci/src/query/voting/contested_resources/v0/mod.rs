@@ -2,6 +2,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use bincode::error::EncodeError;
 use dapi_grpc::platform::v0::get_contested_resources_request::GetContestedResourcesRequestV0;
@@ -16,6 +17,7 @@ use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::error::query::QuerySyntaxError;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_resources_v0(
@@ -192,11 +194,12 @@ impl<C> Platform<C> {
                     Err(e) => return Err(e.into()),
                 };
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetContestedResourcesResponseV0 {
-                result: Some(get_contested_resources_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_contested_resources_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let results =
@@ -226,7 +229,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

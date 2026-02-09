@@ -1,5 +1,6 @@
 import * as wasm from './wasm.js';
 import { ensureInitialized as initWasm } from './wasm.js';
+import { AddressesFacade } from './addresses/facade.js';
 import { DocumentsFacade } from './documents/facade.js';
 import { IdentitiesFacade } from './identities/facade.js';
 import { ContractsFacade } from './contracts/facade.js';
@@ -27,7 +28,7 @@ export interface ConnectionOptions {
 }
 
 export interface EvoSDKOptions extends ConnectionOptions {
-  network?: 'testnet' | 'mainnet';
+  network?: 'testnet' | 'mainnet' | 'local';
   trusted?: boolean;
   // Custom masternode addresses. When provided, network and trusted options are ignored.
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
@@ -38,6 +39,7 @@ export class EvoSDK {
   private wasmSdk?: wasm.WasmSdk;
   private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted'>> & ConnectionOptions & { addresses?: string[] };
 
+  public addresses!: AddressesFacade;
   public documents!: DocumentsFacade;
   public identities!: IdentitiesFacade;
   public contracts!: ContractsFacade;
@@ -53,6 +55,7 @@ export class EvoSDK {
     const { network = 'testnet', trusted = false, addresses, ...connection } = options;
     this.options = { network, trusted, addresses, ...connection };
 
+    this.addresses = new AddressesFacade(this);
     this.documents = new DocumentsFacade(this);
     this.identities = new IdentitiesFacade(this);
     this.contracts = new ContractsFacade(this);
@@ -66,7 +69,9 @@ export class EvoSDK {
   }
 
   get wasm(): wasm.WasmSdk {
-    if (!this.wasmSdk) throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
+    if (!this.wasmSdk) {
+      throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
+    }
     return this.wasmSdk;
   }
 
@@ -80,40 +85,63 @@ export class EvoSDK {
   }
 
   async connect(): Promise<void> {
-    if (this.wasmSdk) return; // idempotent
+    if (this.wasmSdk) {
+      return; // idempotent
+    }
     await initWasm();
 
     const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
 
+    // Prefetch trusted context only when trusted mode is requested
+    let context: wasm.WasmTrustedContext | undefined;
+    if (trusted) {
+      if (network === 'mainnet') {
+        context = await wasm.WasmTrustedContext.prefetchMainnet();
+      } else if (network === 'testnet') {
+        context = await wasm.WasmTrustedContext.prefetchTestnet();
+      } else if (network === 'local') {
+        context = await wasm.WasmTrustedContext.prefetchLocal();
+      } else {
+        throw new Error(`Unknown network: ${network}`);
+      }
+    }
+
     let builder: wasm.WasmSdkBuilder;
 
-    // If specific addresses are provided, use them instead of network presets
     if (addresses && addresses.length > 0) {
-      // Prefetch trusted quorums for the network before creating builder with addresses
-      if (network === 'mainnet') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
-      } else if (network === 'testnet') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
-      }
       builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
     } else if (network === 'mainnet') {
-      await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
-
-      builder = trusted ? wasm.WasmSdkBuilder.mainnetTrusted() : wasm.WasmSdkBuilder.mainnet();
+      builder = wasm.WasmSdkBuilder.mainnet();
     } else if (network === 'testnet') {
-      await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
-
-      builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
+      builder = wasm.WasmSdkBuilder.testnet();
+    } else if (network === 'local') {
+      builder = wasm.WasmSdkBuilder.local();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
 
-    if (version) builder = builder.withVersion(version);
-    if (typeof proofs === 'boolean') builder = builder.withProofs(proofs);
-    if (logs) builder = builder.withLogs(logs);
+    // Attach trusted context for proof verification and discovered addresses
+    if (context) {
+      builder = builder.withTrustedContext(context);
+    }
+
+    if (version) {
+      builder = builder.withVersion(version);
+    }
+    if (typeof proofs === 'boolean') {
+      builder = builder.withProofs(proofs);
+    }
+    if (logs) {
+      builder = builder.withLogs(logs);
+    }
     if (settings) {
       const { connectTimeoutMs, timeoutMs, retries, banFailedAddress } = settings;
-      builder = builder.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
+      builder = builder.withSettings(
+        connectTimeoutMs ?? null,
+        timeoutMs ?? null,
+        retries ?? null,
+        banFailedAddress ?? null,
+      );
     }
 
     this.wasmSdk = builder.build();
@@ -144,6 +172,8 @@ export class EvoSDK {
   static mainnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', ...options }); }
   static testnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', trusted: true, ...options }); }
   static mainnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', trusted: true, ...options }); }
+  static local(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', ...options }); }
+  static localTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
 
   /**
    * Create an EvoSDK instance configured with specific masternode addresses.
@@ -159,11 +189,12 @@ export class EvoSDK {
    * await sdk.connect();
    * ```
    */
-  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
+  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' | 'local' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
     return new EvoSDK({ addresses, network, ...options });
   }
 }
 
+export { AddressesFacade } from './addresses/facade.js';
 export { DocumentsFacade } from './documents/facade.js';
 export { IdentitiesFacade } from './identities/facade.js';
 export { ContractsFacade } from './contracts/facade.js';

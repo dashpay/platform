@@ -433,6 +433,60 @@ Platform.getGroupActionSigners = {
   responseType: platform_pb.GetGroupActionSignersResponse
 };
 
+Platform.getAddressInfo = {
+  methodName: "getAddressInfo",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetAddressInfoRequest,
+  responseType: platform_pb.GetAddressInfoResponse
+};
+
+Platform.getAddressesInfos = {
+  methodName: "getAddressesInfos",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetAddressesInfosRequest,
+  responseType: platform_pb.GetAddressesInfosResponse
+};
+
+Platform.getAddressesTrunkState = {
+  methodName: "getAddressesTrunkState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetAddressesTrunkStateRequest,
+  responseType: platform_pb.GetAddressesTrunkStateResponse
+};
+
+Platform.getAddressesBranchState = {
+  methodName: "getAddressesBranchState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetAddressesBranchStateRequest,
+  responseType: platform_pb.GetAddressesBranchStateResponse
+};
+
+Platform.getRecentAddressBalanceChanges = {
+  methodName: "getRecentAddressBalanceChanges",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetRecentAddressBalanceChangesRequest,
+  responseType: platform_pb.GetRecentAddressBalanceChangesResponse
+};
+
+Platform.getRecentCompactedAddressBalanceChanges = {
+  methodName: "getRecentCompactedAddressBalanceChanges",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetRecentCompactedAddressBalanceChangesRequest,
+  responseType: platform_pb.GetRecentCompactedAddressBalanceChangesResponse
+};
+
 Platform.subscribePlatformEvents = {
   methodName: "subscribePlatformEvents",
   service: Platform,
@@ -1880,6 +1934,192 @@ PlatformClient.prototype.getGroupActionSigners = function getGroupActionSigners(
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getGroupActionSigners, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getAddressInfo = function getAddressInfo(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getAddressInfo, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getAddressesInfos = function getAddressesInfos(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getAddressesInfos, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getAddressesTrunkState = function getAddressesTrunkState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getAddressesTrunkState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getAddressesBranchState = function getAddressesBranchState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getAddressesBranchState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getRecentAddressBalanceChanges = function getRecentAddressBalanceChanges(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getRecentAddressBalanceChanges, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getRecentCompactedAddressBalanceChanges = function getRecentCompactedAddressBalanceChanges(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getRecentCompactedAddressBalanceChanges, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

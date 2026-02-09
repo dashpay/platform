@@ -167,6 +167,8 @@ fn fuzz_unicode_and_special_characters() {
     let proof = fuzz_proof(100);
     let contract_id = fuzz_identifier(true);
 
+    #[allow(invalid_from_utf8_unchecked)]
+    let invalid_chars = unsafe { std::str::from_utf8_unchecked(&[0xFF, 0xFE, 0xFD]) };
     // Test with various Unicode and special characters
     let special_strings = vec![
         "",
@@ -178,10 +180,10 @@ fn fuzz_unicode_and_special_characters() {
         "\\x00\\x01\\x02",
         "<script>alert('xss')</script>",
         "'; DROP TABLE users; --",
-        std::str::from_utf8(&[0xFF, 0xFE, 0xFD]).unwrap_or("invalid"),
+        invalid_chars,
     ];
 
-    for doc_type in special_strings {
+    for doc_type in &special_strings {
         let query = Object::new();
         // Create a mock contract JS value (as CBOR bytes)
         let contract_js = JsValue::from(contract_id.clone());

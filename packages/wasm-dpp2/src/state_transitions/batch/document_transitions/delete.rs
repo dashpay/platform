@@ -1,16 +1,31 @@
+use crate::data_contract::document::DocumentWasm;
+use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_delete_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::data_contract::document::DocumentWasm;
-use crate::error::WasmDppResult;
-use crate::utils::IntoWasm;
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::DocumentDeleteTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_DELETE_OPTIONS_TS: &str = r#"
+export interface DocumentDeleteTransitionOptions {
+    document: Document;
+    identityContractNonce: bigint;
+    tokenPaymentInfo?: TokenPaymentInfo;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentDeleteTransitionOptions")]
+    pub type DocumentDeleteTransitionOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "DocumentDeleteTransition")]
 pub struct DocumentDeleteTransitionWasm(DocumentDeleteTransition);
@@ -23,36 +38,24 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
 
 #[wasm_bindgen(js_class = DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentDeleteTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentDeleteTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
-        js_token_payment_info: &JsValue,
+    pub fn constructor(
+        options: DocumentDeleteTransitionOptionsJs,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
-        let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
-                true => None,
-                false => Some(
-                    js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
-                        .clone(),
-                ),
-            };
+        let document: DocumentWasm = try_from_options(&options, "document")?;
+
+        let identity_contract_nonce: IdentityNonce =
+            try_from_options_with(&options, "identityContractNonce", |v| {
+                try_to_u64(v, "identityContractNonce")
+            })?;
+
+        let token_payment_info: Option<TokenPaymentInfoWasm> =
+            try_from_options_optional(&options, "tokenPaymentInfo")?;
 
         let rs_delete_transition = generate_delete_transition(
-            document.clone(),
+            &document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
+            document.document_type_name().to_string(),
             token_payment_info,
         );
 
@@ -60,7 +63,7 @@ impl DocumentDeleteTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -78,9 +81,9 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: &DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
-        js_transition.get_delete_transition()
+        transition.delete_transition()
     }
 }
 
@@ -89,3 +92,5 @@ impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
         document_delete_transition.0
     }
 }
+
+impl_wasm_type_info!(DocumentDeleteTransitionWasm, DocumentDeleteTransition);

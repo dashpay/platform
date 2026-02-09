@@ -1,11 +1,27 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_from_for_extern_type;
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
 use js_sys::Array;
 use std::collections::BTreeSet;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const ACTION_TAKER_TYPES_TS: &str = r#"
+export type ActionTakerValue = IdentifierLike | IdentifierLike[];
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ActionTakerValue")]
+    pub type ActionTakerValueJs;
+}
+
+impl_from_for_extern_type!(ActionTakerValueJs, IdentifierWasm, Array);
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ActionTaker")]
@@ -25,18 +41,9 @@ impl From<ActionTakerWasm> for ActionTaker {
 
 #[wasm_bindgen(js_class = ActionTaker)]
 impl ActionTakerWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ActionTaker".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ActionTaker".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
+    pub fn constructor(value: ActionTakerValueJs) -> WasmDppResult<ActionTakerWasm> {
+        let value: JsValue = value.into();
         if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
             return Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
                 identifier.into(),
@@ -49,7 +56,7 @@ impl ActionTakerWasm {
             ));
         }
 
-        let array = Array::from(value);
+        let array = Array::from(&value);
         let mut identifiers = BTreeSet::new();
 
         for js_value in array.to_vec() {
@@ -68,8 +75,8 @@ impl ActionTakerWasm {
         )))
     }
 
-    #[wasm_bindgen(js_name = "getType")]
-    pub fn get_type(&self) -> String {
+    #[wasm_bindgen(getter = "takerType")]
+    pub fn taker_type(&self) -> String {
         match &self.0 {
             ActionTaker::SpecifiedIdentities(_) => "SpecifiedIdentities".to_string(),
             ActionTaker::SingleIdentity(_) => "SingleIdentity".to_string(),
@@ -77,9 +84,9 @@ impl ActionTakerWasm {
     }
 
     #[wasm_bindgen(getter = "value")]
-    pub fn get_value(&self) -> JsValue {
+    pub fn value(&self) -> ActionTakerValueJs {
         match &self.0 {
-            ActionTaker::SingleIdentity(value) => JsValue::from(IdentifierWasm::from(*value)),
+            ActionTaker::SingleIdentity(value) => IdentifierWasm::from(*value).into(),
             ActionTaker::SpecifiedIdentities(value) => {
                 let array = Array::new();
                 for identifier in value.iter() {
@@ -91,9 +98,12 @@ impl ActionTakerWasm {
     }
 
     #[wasm_bindgen(setter = "value")]
-    pub fn set_value(&mut self, value: &JsValue) -> WasmDppResult<()> {
-        self.0 = Self::new(value)?.0;
+    pub fn set_value(&mut self, value: ActionTakerValueJs) -> WasmDppResult<()> {
+        self.0 = Self::constructor(value)?.0;
 
         Ok(())
     }
 }
+
+impl_try_from_js_value!(ActionTakerWasm, "ActionTaker");
+impl_wasm_type_info!(ActionTakerWasm, ActionTaker);

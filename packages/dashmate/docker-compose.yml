@@ -213,6 +213,34 @@ services:
     profiles:
       - platform
 
+  quorum_list:
+    image: ${PLATFORM_QUORUM_LIST_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Quorum List"
+      org.dashmate.config.name: "${CONFIG_NAME:?err}"
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - core
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - ${PLATFORM_QUORUM_LIST_API_HOST:?err}:${PLATFORM_QUORUM_LIST_API_PORT:?err}:${PLATFORM_QUORUM_LIST_API_PORT:?err}
+    expose:
+      - ${PLATFORM_QUORUM_LIST_API_PORT:?err}
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=${PLATFORM_QUORUM_LIST_API_PORT:?err}
+      - DASH_RPC_URL=http://core:${CORE_RPC_PORT:?err}
+      - DASH_RPC_USER=quorum_list
+      - DASH_RPC_PASSWORD=${CORE_RPC_USERS_QUORUM_LIST_PASSWORD:?err}
+      - QUORUM_PREVIOUS_BLOCKS_OFFSET=${PLATFORM_QUORUM_LIST_PREVIOUS_BLOCKS_OFFSET:?err}
+      - DASH_NETWORK=${DASH_CORE_NETWORK:?err}
+      - VERSION_CHECK_HOST=${PLATFORM_QUORUM_LIST_VERSION_CHECK_HOST:-}
+      - ADDRESS_HOST_OVERRIDE=${PLATFORM_QUORUM_LIST_ADDRESS_HOST_OVERRIDE:-}
+    profiles:
+      - platform-quorum
+
 volumes:
   core_data:
   drive_abci_data:

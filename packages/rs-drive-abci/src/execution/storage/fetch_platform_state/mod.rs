@@ -1,3 +1,5 @@
+//! Fetches execution state from grovedb storage
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
