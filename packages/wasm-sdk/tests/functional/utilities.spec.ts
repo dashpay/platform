@@ -6,9 +6,9 @@ describe('Utilities', function describeUtilities() {
 
   before(async () => { await init(); });
 
-  describe('prefetchTrustedQuorumsLocal()', () => {
+  describe('WasmTrustedContext.prefetchLocal()', () => {
     it('should prefetch trusted quorums for local', async () => {
-      await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+      await sdk.WasmTrustedContext.prefetchLocal();
     });
   });
 

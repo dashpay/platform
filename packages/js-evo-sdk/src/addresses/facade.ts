@@ -64,7 +64,7 @@ export class AddressesFacade {
    *
    * @example
    * ```typescript
-   * const recipientAddr = PlatformAddress.fromBech32m("tevo1...");
+   * const recipientAddr = PlatformAddress.fromBech32m("tdash1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    *
    * const signer = new PlatformAddressSigner();
@@ -156,7 +156,7 @@ export class AddressesFacade {
    * @example
    * ```typescript
    * const identityId = Identifier.from("...");
-   * const recipientAddr = PlatformAddress.fromBech32m("tevo1...");
+   * const recipientAddr = PlatformAddress.fromBech32m("tdash1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif..."); // Identity transfer key
    *
    * const output = new PlatformAddressOutput(recipientAddr, 100000n);

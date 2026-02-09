@@ -93,9 +93,9 @@ describe('PlatformAddressSigner', () => {
 
     it('should return false for unknown address', () => {
       const signer = new wasm.PlatformAddressSigner();
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const addr = wasm.PlatformAddress.fromBytes(addressBytes);
 

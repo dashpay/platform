@@ -65,10 +65,10 @@ describe('Document', () => {
         fromHexString(documentBytes),
         dataContract,
         'note',
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
 
-      const bytes = documentInstance.toBytes(dataContract, PlatformVersion.PLATFORM_V1);
+      const bytes = documentInstance.toBytes(dataContract, new PlatformVersion(1));
 
       expect(bytes).to.deep.equal(fromHexString(documentBytes));
     });
@@ -81,7 +81,7 @@ describe('Document', () => {
         fromHexString(documentBytes),
         dataContract,
         'note',
-        PlatformVersion.PLATFORM_V1,
+        new PlatformVersion(1),
       );
 
       expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());

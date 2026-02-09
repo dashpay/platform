@@ -159,4 +159,9 @@ export class TokensFacade {
     const w = await this.sdk.getWasmSdkConnected();
     return w.tokenClaim(options);
   }
+
+  async configUpdate(options: wasm.TokenConfigUpdateOptions): Promise<wasm.TokenConfigUpdateResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.tokenConfigUpdate(options);
+  }
 }

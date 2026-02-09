@@ -13,6 +13,7 @@ use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::tokens::builders::{
     burn::TokenBurnTransitionBuilder, claim::TokenClaimTransitionBuilder,
+    config_update::TokenConfigUpdateTransitionBuilder,
     destroy::TokenDestroyFrozenFundsTransitionBuilder,
     emergency_action::TokenEmergencyActionTransitionBuilder, freeze::TokenFreezeTransitionBuilder,
     mint::TokenMintTransitionBuilder, purchase::TokenDirectPurchaseTransitionBuilder,
@@ -20,8 +21,9 @@ use dash_sdk::platform::tokens::builders::{
     transfer::TokenTransferTransitionBuilder, unfreeze::TokenUnfreezeTransitionBuilder,
 };
 use dash_sdk::platform::tokens::transitions::{
-    BurnResult, ClaimResult, DestroyFrozenFundsResult, DirectPurchaseResult, EmergencyActionResult,
-    FreezeResult, MintResult, SetPriceResult, TransferResult, UnfreezeResult,
+    BurnResult, ClaimResult, ConfigUpdateResult, DestroyFrozenFundsResult, DirectPurchaseResult,
+    EmergencyActionResult, FreezeResult, MintResult, SetPriceResult, TransferResult,
+    UnfreezeResult,
 };
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use js_sys::BigInt;
@@ -33,6 +35,7 @@ use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
+use wasm_dpp2::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
 use wasm_dpp2::utils::{try_from_options, try_from_options_optional};
 use wasm_dpp2::IdentitySignerWasm;
 
@@ -2243,6 +2246,211 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::generic(format!("Failed to purchase tokens: {}", e)))?;
 
         Ok(TokenDirectPurchaseResultWasm::from_result(
+            result,
+            contract_id,
+        ))
+    }
+}
+
+// ============================================================================
+// Token Config Update
+// ============================================================================
+
+/// TypeScript interface for token config update options
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_CONFIG_UPDATE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for updating a token's configuration.
+ */
+export interface TokenConfigUpdateOptions {
+  /**
+   * The ID of the data contract containing the token.
+   */
+  dataContractId: Identifier;
+
+  /**
+   * The position of the token in the contract (0-indexed).
+   */
+  tokenPosition: number;
+
+  /**
+   * The identity ID of the token owner performing the update.
+   */
+  identityId: Identifier;
+
+  /**
+   * The configuration change to apply.
+   * Use TokenConfigurationChangeItem static methods to create this value.
+   */
+  configurationChangeItem: TokenConfigurationChangeItem;
+
+  /**
+   * Optional public note for the config update.
+   */
+  publicNote?: string;
+
+  /**
+   * The identity public key to use for signing the transition.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+
+  /**
+   * Optional group action info for group-managed config updates.
+   * Use GroupStateTransitionInfoStatus.proposer() to propose a new group action,
+   * or GroupStateTransitionInfoStatus.otherSigner() to vote on an existing action.
+   */
+  groupInfo?: GroupStateTransitionInfoStatus;
+
+  /**
+   * Optional settings for the broadcast operation.
+   * Includes retries, timeouts, userFeeIncrease, etc.
+   */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenConfigUpdateOptions")]
+    pub type TokenConfigUpdateOptionsJs;
+}
+
+/// Main input struct for token config update options (primitives only).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenConfigUpdateOptionsInput {
+    token_position: u16,
+    #[serde(default)]
+    public_note: Option<String>,
+}
+
+fn deserialize_token_config_update_options(
+    options: JsValue,
+) -> Result<TokenConfigUpdateOptionsInput, WasmSdkError> {
+    deserialize_required_query(
+        options,
+        "Options object is required",
+        "token config update options",
+    )
+}
+
+/// Result of updating token configuration.
+///
+/// The result type depends on token configuration:
+/// - Standard tokens: returns a document
+/// - Group-managed tokens: returns group power and document
+///
+/// Check which optional fields are present to determine the result type.
+#[wasm_bindgen(js_name = "TokenConfigUpdateResult")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenConfigUpdateResultWasm {
+    /// For group actions
+    #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
+    pub group_power: Option<u32>,
+    /// The document
+    #[wasm_bindgen(getter_with_clone)]
+    #[serde(skip)]
+    pub document: Option<DocumentWasm>,
+}
+
+impl_wasm_serde_conversions!(TokenConfigUpdateResultWasm, TokenConfigUpdateResult);
+
+impl TokenConfigUpdateResultWasm {
+    /// Convert from SDK ConfigUpdateResult with the required contract context
+    fn from_result(result: ConfigUpdateResult, contract_id: Identifier) -> Self {
+        match result {
+            ConfigUpdateResult::Document(doc) => TokenConfigUpdateResultWasm {
+                group_power: None,
+                document: Some(document_to_wasm(doc, contract_id, "configUpdate")),
+            },
+            ConfigUpdateResult::GroupActionWithDocument(power, doc) => {
+                TokenConfigUpdateResultWasm {
+                    group_power: Some(power),
+                    document: Some(document_to_wasm(doc, contract_id, "configUpdate")),
+                }
+            }
+        }
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Update a token's configuration.
+    ///
+    /// @param options - Config update options including contract ID, token position, change item, and signer
+    /// @returns Promise resolving to TokenConfigUpdateResult
+    #[wasm_bindgen(js_name = "tokenConfigUpdate")]
+    pub async fn token_config_update(
+        &self,
+        options: TokenConfigUpdateOptionsJs,
+    ) -> Result<TokenConfigUpdateResultWasm, WasmSdkError> {
+        // Extract complex types first (borrows &options)
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings: Option<PutSettings> =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let group_info =
+            GroupStateTransitionInfoStatusWasm::try_from_optional_options(&options, "groupInfo")?;
+        let config_change_item_wasm: TokenConfigurationChangeItemWasm =
+            try_from_options(&options, "configurationChangeItem")?;
+
+        // Extract identifier fields (borrows &options)
+        let contract_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "dataContractId")?.into();
+        let identity_id: Identifier =
+            try_from_options::<IdentifierWasm>(&options, "identityId")?.into();
+
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_config_update_options(options.into())?;
+
+        // Fetch and cache the data contract
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+
+        // Build the config update transition using rs-sdk builder
+        let mut builder = TokenConfigUpdateTransitionBuilder::new(
+            Arc::new(data_contract),
+            parsed.token_position,
+            identity_id,
+            config_change_item_wasm.into(),
+        );
+
+        // Add optional public note
+        if let Some(note) = parsed.public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        // Add optional group info
+        if let Some(group_info) = group_info {
+            builder = builder.with_using_group_info(group_info.into());
+        }
+
+        // Add settings and user fee increase
+        if let Some(ref settings) = settings {
+            builder = builder.with_settings(*settings);
+        }
+        let user_fee_increase = get_user_fee_increase(settings.as_ref());
+        if user_fee_increase > 0 {
+            builder = builder.with_user_fee_increase(user_fee_increase);
+        }
+
+        // Use the SDK's token_update_contract_token_configuration method
+        let result = self
+            .inner_sdk()
+            .token_update_contract_token_configuration(builder, &identity_key, &signer)
+            .await
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to update token configuration: {}", e))
+            })?;
+
+        Ok(TokenConfigUpdateResultWasm::from_result(
             result,
             contract_id,
         ))

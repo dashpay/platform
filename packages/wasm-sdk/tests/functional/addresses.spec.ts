@@ -13,8 +13,8 @@ describe('Platform Address Queries', function describePlatformAddressQueries() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
-    const builder = sdk.WasmSdkBuilder.localTrusted();
+    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
 
     // Use the test addresses created by SDK_TEST_DATA=true during genesis

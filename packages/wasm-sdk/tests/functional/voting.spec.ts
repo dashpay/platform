@@ -10,8 +10,8 @@ describe('Voting', function describeVoting() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
-    builder = sdk.WasmSdkBuilder.localTrusted();
+    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
   });
 
