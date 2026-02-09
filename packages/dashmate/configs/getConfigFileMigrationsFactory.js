@@ -1378,28 +1378,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete upstreams.dapiCoreStreams;
             }
 
-            if (!options.platform?.dapi) {
-              return;
-            }
-
-            // Ensure rsDapi section exists and start with defaults
-            if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
-            }
-
-            const { rsDapi } = options.platform.dapi;
-            const defaultTimeouts = defaultConfig.get('platform.dapi.rsDapi.timeouts');
-
-            let legacyWaitForStResultTimeout;
-            let legacyTimeouts;
-
-            if (options.platform.dapi.api) {
-              legacyWaitForStResultTimeout = options.platform.dapi.api.waitForStResultTimeout;
-              legacyTimeouts = options.platform.dapi.api.timeouts;
-
-              delete options.platform.dapi.api;
-            }
-
             // Align docker images with defaults
             if (options.platform?.drive?.abci?.docker
               && defaultConfig.has('platform.drive.abci.docker.image')) {
@@ -1411,30 +1389,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
 
-            // Normalize rsDapi timeout structure and remove redundant legacy fields
-            const existingTimeouts = options.platform.dapi.rsDapi.timeouts
-              ?? legacyTimeouts;
-            const waitForStateTransitionResult = existingTimeouts?.waitForStateTransitionResult
-              ?? legacyWaitForStResultTimeout
-              ?? defaultTimeouts.waitForStateTransitionResult;
-            const subscribePlatformEvents = existingTimeouts?.subscribePlatformEvents
-              ?? defaultTimeouts.subscribePlatformEvents;
-            const coreStreams = existingTimeouts?.coreStreams
-              ?? defaultTimeouts.coreStreams;
-
-            options.platform.dapi.rsDapi.timeouts = {
-              waitForStateTransitionResult,
-              subscribePlatformEvents,
-              coreStreams,
-            };
-
-            if (typeof rsDapi.waitForStResultTimeout !== 'undefined') {
-              delete rsDapi.waitForStResultTimeout;
-            }
-
-            if (options.platform?.gateway?.listeners?.dapiAndDrive) {
-              delete options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout;
-            }
 
             if (!options.platform.quorumList) {
               options.platform.quorumList = lodash.cloneDeep(defaultConfig.get('platform.quorumList'));
@@ -1481,7 +1435,55 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig
                 .get('platform.drive.tenderdash.p2p.allowlistOnly');
             }
+
+            if (!options.platform?.dapi) {
+              return;
+            }
+
+            // Ensure rsDapi section exists and start with defaults
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+            }
+
+            const { rsDapi } = options.platform.dapi;
+            const defaultTimeouts = defaultConfig.get('platform.dapi.rsDapi.timeouts');
+
+            let legacyWaitForStResultTimeout;
+            let legacyTimeouts;
+
+            if (options.platform.dapi.api) {
+              legacyWaitForStResultTimeout = options.platform.dapi.api.waitForStResultTimeout;
+              legacyTimeouts = options.platform.dapi.api.timeouts;
+
+              delete options.platform.dapi.api;
+            }
+
           });
+
+        // Normalize rsDapi timeout structure and remove redundant legacy fields
+        const existingTimeouts = options.platform.dapi.rsDapi.timeouts
+          ?? legacyTimeouts;
+        const waitForStateTransitionResult = existingTimeouts?.waitForStateTransitionResult
+          ?? legacyWaitForStResultTimeout
+          ?? defaultTimeouts.waitForStateTransitionResult;
+        const subscribePlatformEvents = existingTimeouts?.subscribePlatformEvents
+          ?? defaultTimeouts.subscribePlatformEvents;
+        const coreStreams = existingTimeouts?.coreStreams
+          ?? defaultTimeouts.coreStreams;
+
+        options.platform.dapi.rsDapi.timeouts = {
+          waitForStateTransitionResult,
+          subscribePlatformEvents,
+          coreStreams,
+        };
+
+        if (typeof rsDapi.waitForStResultTimeout !== 'undefined') {
+          delete rsDapi.waitForStResultTimeout;
+        }
+
+        if (options.platform?.gateway?.listeners?.dapiAndDrive) {
+          delete options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout;
+        }
 
         return configFile;
       },

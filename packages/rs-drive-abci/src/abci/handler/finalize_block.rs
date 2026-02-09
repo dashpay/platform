@@ -104,15 +104,15 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
-    let bus = app.event_bus().clone();
-
-    publish_block_committed_event(&bus, &request_finalize_block)?;
-    publish_state_transition_result_events(&bus, &request_finalize_block)?;
-
     // Create GroveDB checkpoint after the transaction is committed (so it captures committed state)
     if block_finalization_outcome.checkpoint_needed {
         app.platform().create_grovedb_checkpoint(platform_version)?;
     }
+
+    let bus = app.event_bus().clone();
+
+    publish_block_committed_event(&bus, &request_finalize_block)?;
+    publish_state_transition_result_events(&bus, &request_finalize_block)?;
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
