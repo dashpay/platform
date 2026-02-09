@@ -124,17 +124,8 @@ public class WalletService: ObservableObject {
         self.spvClient = spvClient
         
         // Create the SDK wallet manager by reusing the SPV client's shared manager
-        // TODO: Investigate this errors
-        let sdkWalletManager = try! spvClient.getWalletManager()
-        let wrapper = try! CoreWalletManager(sdkWalletManager: sdkWalletManager, modelContainer: modelContainer)
-        
-        wrapper.transactionService = TransactionService(
-            walletManager: wrapper,
-            modelContainer: modelContainer,
-            spvClient: spvClient
-        )
-        
-        self.walletManager = wrapper
+        // TODO: Investigate this error
+        self.walletManager = try! CoreWalletManager(spvClient: spvClient, modelContainer: modelContainer)
         
         spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
         spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
@@ -175,15 +166,9 @@ public class WalletService: ObservableObject {
       SDKLogger.log("✅ SPV Client initialized successfully for \(self.network.rawValue) (deferred start)", minimumLevel: .medium)
       
       // Create the SDK wallet manager by reusing the SPV client's shared manager
-      // TODO: Investigate this errors
-      let sdkWalletManager = try! spvClient.getWalletManager()
-      let wrapper = try! CoreWalletManager(sdkWalletManager: sdkWalletManager, modelContainer: modelContainer)
-      self.walletManager = wrapper
-      self.walletManager.transactionService = TransactionService(
-          walletManager: wrapper,
-          modelContainer: modelContainer,
-          spvClient: spvClient
-      )
+      // TODO: Investigate this error
+      self.walletManager = try! CoreWalletManager(spvClient: self.spvClient, modelContainer: self.modelContainer)
+      
       SDKLogger.log("✅ WalletManager wrapper initialized successfully", minimumLevel: .medium)
     }
     

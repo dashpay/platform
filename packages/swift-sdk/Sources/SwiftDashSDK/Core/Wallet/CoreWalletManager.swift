@@ -17,37 +17,20 @@ public class CoreWalletManager: ObservableObject {
     @Published public private(set) var error: WalletError?
 
     // SDK wallet manager - this is the real wallet manager from the SDK
-    private let sdkWalletManager: SwiftDashSDK.WalletManager
+    private let sdkWalletManager: WalletManager
     private let modelContainer: ModelContainer
     private let storage = WalletStorage()
-
-    // Services (initialize in WalletService when SPV is available)
-    var transactionService: TransactionService?
-
+    
     /// Initialize with an SDK wallet manager
     /// - Parameters:
     ///   - sdkWalletManager: The SDK wallet manager from SwiftDashSDK
     ///   - modelContainer: SwiftData model container for persistence
-    init(sdkWalletManager: SwiftDashSDK.WalletManager, modelContainer: ModelContainer? = nil) throws {
+    init(spvClient: SPVClient, modelContainer: ModelContainer) throws {
         print("=== WalletManager.init START ===")
+        
+        self.sdkWalletManager = try spvClient.getWalletManager()
+        self.modelContainer = modelContainer
 
-        self.sdkWalletManager = sdkWalletManager
-
-        if let container = modelContainer {
-            print("Using provided ModelContainer")
-            self.modelContainer = container
-        } else {
-            do {
-                print("Creating ModelContainer...")
-                self.modelContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
-                print("✅ ModelContainer created")
-            } catch {
-                print("❌ Failed to create ModelContainer: \(error)")
-                throw error
-            }
-        }
-
-        // Note: TransactionService is created in WalletService once SPV/UTXO context exists
         print("=== WalletManager.init SUCCESS ===")
 
         Task {
