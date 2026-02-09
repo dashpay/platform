@@ -96,8 +96,8 @@ impl<'de> Deserialize<'de> for Epoch {
     }
 }
 
-impl Decode for Epoch {
-    fn decode<D: bincode::de::Decoder>(
+impl<C> Decode<C> for Epoch {
+    fn decode<D: bincode::de::Decoder<Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let index = EpochIndex::decode(decoder)?;
@@ -105,8 +105,8 @@ impl Decode for Epoch {
     }
 }
 
-impl<'de> BorrowDecode<'de> for Epoch {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+impl<'de, C> BorrowDecode<'de, C> for Epoch {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let index = EpochIndex::borrow_decode(decoder)?;

@@ -22,6 +22,8 @@ use drive::error::query::QuerySyntaxError;
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery,
 };
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 
 impl<C> Platform<C> {
     pub(super) fn query_contested_resource_vote_state_v0(
@@ -168,13 +170,12 @@ impl<C> Platform<C> {
                 Err(e) => return Err(e.into()),
             };
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetContestedResourceVoteStateResponseV0 {
-                result: Some(
-                    get_contested_resource_vote_state_response_v0::Result::Proof(
-                        self.response_proof_v0(platform_state, proof),
-                    ),
-                ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_contested_resource_vote_state_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let results =
@@ -249,7 +250,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

@@ -53,7 +53,7 @@ export default function getBaseConfigFactory() {
           port: 3001,
         },
         docker: {
-          image: 'dashpay/dashd:22',
+          image: 'dashpay/dashd:23',
           commandArgs: [],
         },
         p2p: {
@@ -69,6 +69,13 @@ export default function getBaseConfigFactory() {
               password: 'rpcpassword',
               whitelist: null,
               lowPriority: false,
+            },
+            quorum_list: {
+              password: 'rpcpassword',
+              whitelist: [
+                'quorum', 'masternode', 'getblockcount',
+              ],
+              lowPriority: true,
             },
             dapi: {
               password: 'rpcpassword',
@@ -150,6 +157,19 @@ export default function getBaseConfigFactory() {
         indexes: [],
       },
       platform: {
+        quorumList: {
+          enabled: false,
+          docker: {
+            image: 'dashpay/quorum-list-server:latest',
+          },
+          api: {
+            host: '127.0.0.1',
+            port: 2444,
+          },
+          previousBlocksOffset: 8,
+          versionCheckHost: '',
+          addressHostOverride: '',
+        },
         gateway: {
           docker: {
             image: 'dashpay/envoy:1.30.2-impr.1',
@@ -221,6 +241,9 @@ export default function getBaseConfigFactory() {
               zerossl: {
                 apiKey: null,
                 id: null,
+              },
+              letsencrypt: {
+                email: null,
               },
             },
           },
@@ -324,13 +347,14 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.5',
+              image: 'dashpay/tenderdash:1.6-dev.1',
             },
             p2p: {
               host: '0.0.0.0',
               port: 26656,
               persistentPeers: [],
               seeds: [],
+              allowlistOnly: false,
               flushThrottleTimeout: '100ms',
               maxPacketMsgPayloadSize: 10240,
               sendRate: 5120000,

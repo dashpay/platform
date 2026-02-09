@@ -10,6 +10,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
+use drive::util::grove_operations::GroveDBToUse;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::platform_types::platform_state::PlatformState;
 
 impl<C> Platform<C> {
@@ -58,9 +60,10 @@ impl<C> Platform<C> {
 
             GetDataContractHistoryResponseV0 {
                 result: Some(get_data_contract_history_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                        .map(|(_, proof)| proof)?,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let contracts = self.drive.fetch_contract_with_history(
@@ -97,7 +100,7 @@ impl<C> Platform<C> {
                         },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

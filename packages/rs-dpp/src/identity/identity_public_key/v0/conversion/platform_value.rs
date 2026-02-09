@@ -27,7 +27,7 @@ impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {
     fn from_object(
         value: Value,
         _platform_version: &PlatformVersion,
-    ) -> Result<IdentityPublicKeyV0, ProtocolError> {
+    ) -> Result<Self, ProtocolError> {
         value.try_into().map_err(ProtocolError::ValueError)
     }
 }

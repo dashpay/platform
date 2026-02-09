@@ -141,21 +141,21 @@ impl PlatformServiceImpl {
         }
 
         // No error; generate proof if requested
-        if prove && !tx_response.tx.is_empty()
+        if prove
+            && !tx_response.tx.is_empty()
             && let Ok(tx_data) =
                 base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_response.tx)
-            {
-                match self.fetch_proof_for_state_transition(tx_data).await {
-                    Ok((proof, metadata)) => {
-                        response_v0.result = Some(
-                            wait_for_state_transition_result_response_v0::Result::Proof(proof),
-                        );
-                        response_v0.metadata = Some(metadata);
-                    }
-                    Err(e) => {
-                        debug!("Failed to fetch proof: {}", e);
-                        // Continue without proof
-                    }
+        {
+            match self.fetch_proof_for_state_transition(tx_data).await {
+                Ok((proof, metadata)) => {
+                    response_v0.result = Some(
+                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                    );
+                    response_v0.metadata = Some(metadata);
+                }
+                Err(e) => {
+                    debug!("Failed to fetch proof: {}", e);
+                    // Continue without proof
                 }
             }
 

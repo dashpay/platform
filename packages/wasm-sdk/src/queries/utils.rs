@@ -1,10 +1,10 @@
-use dash_sdk::dpp::platform_value::{Identifier, Value as PlatformValue};
+use dash_sdk::dpp::platform_value::Value as PlatformValue;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::serialization::conversions::{from_object, js_value_to_platform_value};
 
-use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
 
 pub(crate) fn deserialize_required_query<T, Q>(
@@ -22,8 +22,8 @@ where
         return Err(WasmSdkError::invalid_argument(missing_error.to_string()));
     }
 
-    serde_wasm_bindgen::from_value(value)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
+    from_object(value)
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, e)))
 }
 
 pub(crate) fn deserialize_query_with_default<T, Q>(
@@ -40,8 +40,8 @@ where
         return Ok(T::default());
     }
 
-    serde_wasm_bindgen::from_value(value)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, err)))
+    from_object(value)
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid {}: {}", context, e)))
 }
 
 pub(crate) fn convert_optional_limit(
@@ -70,31 +70,18 @@ pub(crate) fn convert_json_values_to_platform_values(
     values: Option<Vec<JsonValue>>,
     field_name: &str,
 ) -> Result<Vec<PlatformValue>, WasmSdkError> {
-    let js_values = values
+    values
         .unwrap_or_default()
         .into_iter()
         .map(|value| {
-            serde_wasm_bindgen::to_value(&value).map_err(|err| {
+            // Use json_compatible() to ensure objects become plain JS objects (not Maps)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            let js_value = value.serialize(&serializer).map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
+            })?;
+            js_value_to_platform_value(&js_value).map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
             })
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    js_values_to_platform_values(js_values)
-}
-
-pub(crate) fn identifier_from_js(value: &JsValue, field: &str) -> Result<Identifier, WasmSdkError> {
-    IdentifierWasm::try_from(value)
-        .map(Identifier::from)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", field, err)))
-}
-
-pub(crate) fn identifiers_from_js(
-    values: Vec<JsValue>,
-    field: &str,
-) -> Result<Vec<Identifier>, WasmSdkError> {
-    values
-        .into_iter()
-        .map(|value| identifier_from_js(&value, field))
         .collect()
 }

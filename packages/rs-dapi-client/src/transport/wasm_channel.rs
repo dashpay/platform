@@ -102,6 +102,13 @@ impl backon::Sleeper for WasmBackonSleeper {
     }
 }
 
+/// Sleep for the given duration, wrapped to be Send-compatible.
+///
+/// This uses [into_send] to convert the non-Send gloo_timers future into a Send future.
+pub fn into_send_sleep(dur: Duration) -> BoxFuture<'static, ()> {
+    into_send(gloo_timers::future::sleep(dur)).boxed()
+}
+
 /// Convert a future into a boxed future that can be sent between threads.
 ///
 /// This is a workaround using oneshot channel to synchronize.

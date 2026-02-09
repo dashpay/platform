@@ -1,7 +1,8 @@
 use std::{
     collections::HashSet,
+    env,
     fs::{create_dir_all, remove_dir_all},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use tonic_prost_build::Builder;
@@ -13,23 +14,32 @@ const SERDE_WITH_STRING: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
 
 fn main() {
+    let output_base = resolve_output_base().unwrap_or_else(|e| {
+        eprintln!("[error] => resolve output base failed: {e}");
+        std::process::exit(1);
+    });
+    println!(
+        "cargo:rustc-env=DAPI_GRPC_OUT_DIR={}",
+        output_base.display()
+    );
+
     #[cfg(feature = "server")]
-    generate_code(ImplType::Server);
+    generate_code(ImplType::Server, &output_base);
     #[cfg(feature = "client")]
-    generate_code(ImplType::Client);
+    generate_code(ImplType::Client, &output_base);
 
     if std::env::var("CARGO_CFG_TARGET_ARCH")
         .unwrap_or_default()
         .eq("wasm32")
     {
-        generate_code(ImplType::Wasm);
+        generate_code(ImplType::Wasm, &output_base);
     }
 }
 
-fn generate_code(typ: ImplType) {
+fn generate_code(typ: ImplType, output_base: &Path) {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
-        PathBuf::from("src/core"),
+        output_base.join("core"),
         &typ,
     );
 
@@ -39,7 +49,7 @@ fn generate_code(typ: ImplType) {
 
     let platform = MappingConfig::new(
         PathBuf::from("protos/platform/v0/platform.proto"),
-        PathBuf::from("src/platform"),
+        output_base.join("platform"),
         &typ,
     );
 
@@ -49,7 +59,7 @@ fn generate_code(typ: ImplType) {
 
     let drive = MappingConfig::new(
         PathBuf::from("protos/drive/v0/drive.proto"),
-        PathBuf::from("src/drive"),
+        output_base.join("drive"),
         &typ,
     );
 
@@ -60,6 +70,7 @@ fn generate_code(typ: ImplType) {
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
+    println!("cargo:rerun-if-env-changed=DAPI_GRPC_OUT_DIR");
 }
 
 struct MappingConfig {
@@ -73,7 +84,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 44] = [
+    const VERSIONED_REQUESTS: [&str; 48] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -118,7 +129,15 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetGroupActionsRequest",
         "GetGroupActionSignersRequest",
         "GetFinalizedEpochInfosRequest",
+        "GetAddressInfoRequest",
+        "GetAddressesInfosRequest",
+        "GetRecentAddressBalanceChangesRequest",
+        "GetRecentCompactedAddressBalanceChangesRequest",
     ];
+
+    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
+
+    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesBranchStateRequest"];
 
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
@@ -128,7 +147,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 42] = [
+    const VERSIONED_RESPONSES: [&str; 46] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -171,17 +190,39 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetGroupActionsResponse",
         "GetGroupActionSignersResponse",
         "GetFinalizedEpochInfosResponse",
+        "GetAddressInfoResponse",
+        "GetAddressesInfosResponse",
+        "GetRecentAddressBalanceChangesResponse",
+        "GetRecentCompactedAddressBalanceChangesResponse",
     ];
+
+    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
+
+    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesBranchStateResponse"];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
     check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
+    check_unique(&PROOF_ONLY_VERSIONED_REQUESTS).expect("PROOF_ONLY_VERSIONED_REQUESTS");
+    check_unique(&PROOF_ONLY_VERSIONED_RESPONSES).expect("PROOF_ONLY_VERSIONED_RESPONSES");
+    check_unique(&MERK_PROOF_VERSIONED_REQUESTS).expect("MERK_PROOF_VERSIONED_REQUESTS");
+    check_unique(&MERK_PROOF_VERSIONED_RESPONSES).expect("MERK_PROOF_VERSIONED_RESPONSES");
 
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]"#,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive ProofOnlyVersionedGrpcMessage on requests
+    for msg in PROOF_ONLY_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::ProofOnlyVersionedGrpcMessage)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
@@ -191,13 +232,44 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage,::dapi_grpc_macros::VersionedGrpcResponse)]"#,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and ProofOnlyVersionedGrpcResponse on responses
+    for msg in PROOF_ONLY_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::ProofOnlyVersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage on merk proof requests
+    for msg in MERK_PROOF_VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and MerkProofVersionedGrpcResponse on responses
+    for msg in MERK_PROOF_VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::MerkProofVersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
     // All messages can be mocked.
-    let platform = platform.message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#);
+    let platform =
+        platform.message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#);
 
     let platform = platform
         .type_attribute(
@@ -232,7 +304,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
 fn configure_drive(drive: MappingConfig) -> MappingConfig {
     drive
-        .message_attribute(".", r#"#[derive( ::dapi_grpc_macros::Mockable)]"#)
+        .message_attribute(".", r#"#[derive( ::dash_platform_macros::Mockable)]"#)
         .type_attribute(
             ".",
             r#"#[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]"#,
@@ -267,7 +339,7 @@ fn check_unique(messages: &[&'static str]) -> Result<(), String> {
 
 fn configure_core(core: MappingConfig) -> MappingConfig {
     // All messages can be mocked.
-    let core = core.message_attribute(".", r#"#[derive(::dapi_grpc_macros::Mockable)]"#);
+    let core = core.message_attribute(".", r#"#[derive(::dash_platform_macros::Mockable)]"#);
 
     // Serde support
     let core = core.type_attribute(
@@ -400,4 +472,14 @@ fn abs_path(path: &PathBuf) -> PathBuf {
     }
 
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+}
+
+/// Resolve output base directory for generated files.
+fn resolve_output_base() -> Result<PathBuf, String> {
+    env::var("DAPI_GRPC_OUT_DIR")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("OUT_DIR").map(|out_dir| PathBuf::from(out_dir).join("dapi_grpc")))
+        .map_err(|_| {
+            "OUT_DIR should be provided by Cargo; set DAPI_GRPC_OUT_DIR to override it".to_string()
+        })
 }

@@ -1,15 +1,19 @@
 use crate::error::WasmSdkError;
-use crate::queries::utils::identifier_from_js;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::platform::Identifier;
 use js_sys::{Array, BigInt};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::ProTxHashWasm;
 
 #[wasm_bindgen(js_name = "StatusSoftware")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusSoftwareWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub dapi: String,
@@ -30,7 +34,8 @@ impl StatusSoftwareWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusTenderdashProtocol")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusTenderdashProtocolWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub p2p: u32,
@@ -45,7 +50,8 @@ impl StatusTenderdashProtocolWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusDriveProtocol")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusDriveProtocolWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub latest: u32,
@@ -60,7 +66,8 @@ impl StatusDriveProtocolWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusProtocol")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusProtocolWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub tenderdash: StatusTenderdashProtocolWasm,
@@ -75,7 +82,8 @@ impl StatusProtocolWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusVersion")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusVersionWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub software: StatusSoftwareWasm,
@@ -90,12 +98,11 @@ impl StatusVersionWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusNode")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusNodeWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub id: String,
-    #[wasm_bindgen(getter_with_clone)]
-    pub pro_tx_hash: Option<String>,
+    pub(crate) id: String,
+    pub(crate) pro_tx_hash: Option<String>,
 }
 
 impl StatusNodeWasm {
@@ -104,11 +111,27 @@ impl StatusNodeWasm {
     }
 }
 
+#[wasm_bindgen(js_class = StatusNode)]
+impl StatusNodeWasm {
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    #[wasm_bindgen(getter = "proTxHash")]
+    pub fn pro_tx_hash(&self) -> Option<ProTxHashWasm> {
+        self.pro_tx_hash
+            .as_ref()
+            .and_then(|hex| ProTxHashWasm::from_hex(hex).ok())
+    }
+}
+
 #[wasm_bindgen(js_name = "StatusChain")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusChainWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub catching_up: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "isCatchingUp")]
+    pub is_catching_up: bool,
     #[wasm_bindgen(getter_with_clone)]
     pub latest_block_hash: String,
     #[wasm_bindgen(getter_with_clone)]
@@ -130,7 +153,7 @@ pub struct StatusChainWasm {
 impl StatusChainWasm {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        catching_up: bool,
+        is_catching_up: bool,
         latest_block_hash: String,
         latest_app_hash: String,
         latest_block_height: String,
@@ -141,7 +164,7 @@ impl StatusChainWasm {
         core_chain_locked_height: Option<u32>,
     ) -> Self {
         Self {
-            catching_up,
+            is_catching_up,
             latest_block_hash,
             latest_app_hash,
             latest_block_height,
@@ -155,28 +178,30 @@ impl StatusChainWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusNetwork")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusNetworkWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub chain_id: String,
     #[wasm_bindgen(getter_with_clone)]
     pub peers_count: u32,
-    #[wasm_bindgen(getter_with_clone)]
-    pub listening: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "isListening")]
+    pub is_listening: bool,
 }
 
 impl StatusNetworkWasm {
-    fn new(chain_id: String, peers_count: u32, listening: bool) -> Self {
+    fn new(chain_id: String, peers_count: u32, is_listening: bool) -> Self {
         Self {
             chain_id,
             peers_count,
-            listening,
+            is_listening,
         }
     }
 }
 
 #[wasm_bindgen(js_name = "StatusStateSync")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusStateSyncWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub total_synced_time: String,
@@ -197,7 +222,8 @@ pub struct StatusStateSyncWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusTime")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusTimeWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub local: String,
@@ -226,7 +252,8 @@ impl StatusTimeWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusResponse")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusResponseWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub version: StatusVersionWasm,
@@ -262,18 +289,41 @@ impl StatusResponseWasm {
     }
 }
 
+impl_wasm_serde_conversions!(StatusSoftwareWasm, StatusSoftware);
+impl_wasm_serde_conversions!(StatusTenderdashProtocolWasm, StatusTenderdashProtocol);
+impl_wasm_serde_conversions!(StatusDriveProtocolWasm, StatusDriveProtocol);
+impl_wasm_serde_conversions!(StatusProtocolWasm, StatusProtocol);
+impl_wasm_serde_conversions!(StatusVersionWasm, StatusVersion);
+impl_wasm_serde_conversions!(StatusNodeWasm, StatusNode);
+impl_wasm_serde_conversions!(StatusChainWasm, StatusChain);
+impl_wasm_serde_conversions!(StatusNetworkWasm, StatusNetwork);
+impl_wasm_serde_conversions!(StatusStateSyncWasm, StatusStateSync);
+impl_wasm_serde_conversions!(StatusTimeWasm, StatusTime);
+impl_wasm_serde_conversions!(StatusResponseWasm, StatusResponse);
+impl_wasm_serde_conversions!(QuorumInfoWasm, QuorumInfo);
+impl_wasm_serde_conversions!(CurrentQuorumsInfoWasm, CurrentQuorumsInfo);
+impl_wasm_serde_conversions!(PrefundedSpecializedBalanceWasm, PrefundedSpecializedBalance);
+impl_wasm_serde_conversions!(PathElementWasm, PathElement);
+impl_wasm_serde_conversions!(StateTransitionResultWasm, StateTransitionResult);
+
 #[wasm_bindgen(js_name = "QuorumInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuorumInfoWasm {
-    quorum_hash: String,
-    quorum_type: String,
-    member_count: u32,
-    threshold: u32,
-    is_verified: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "quorumHash")]
+    pub quorum_hash: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "quorumType")]
+    pub quorum_type: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "memberCount")]
+    pub member_count: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub threshold: u32,
+    #[wasm_bindgen(getter_with_clone, js_name = "isVerified")]
+    pub is_verified: bool,
 }
 
 impl QuorumInfoWasm {
-    fn new(
+    pub(crate) fn new(
         quorum_hash: String,
         quorum_type: String,
         member_count: u32,
@@ -290,36 +340,9 @@ impl QuorumInfoWasm {
     }
 }
 
-#[wasm_bindgen(js_class = QuorumInfo)]
-impl QuorumInfoWasm {
-    #[wasm_bindgen(getter = "quorumHash")]
-    pub fn quorum_hash(&self) -> String {
-        self.quorum_hash.clone()
-    }
-
-    #[wasm_bindgen(getter = "quorumType")]
-    pub fn quorum_type(&self) -> String {
-        self.quorum_type.clone()
-    }
-
-    #[wasm_bindgen(getter = "memberCount")]
-    pub fn member_count(&self) -> u32 {
-        self.member_count
-    }
-
-    #[wasm_bindgen(getter = "threshold")]
-    pub fn threshold(&self) -> u32 {
-        self.threshold
-    }
-
-    #[wasm_bindgen(getter = "isVerified")]
-    pub fn is_verified(&self) -> bool {
-        self.is_verified
-    }
-}
-
 #[wasm_bindgen(js_name = "CurrentQuorumsInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CurrentQuorumsInfoWasm {
     quorums: Vec<QuorumInfoWasm>,
     height: u64,
@@ -349,15 +372,15 @@ impl CurrentQuorumsInfoWasm {
 }
 
 #[wasm_bindgen(js_name = "PrefundedSpecializedBalance")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PrefundedSpecializedBalanceWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub identity_id: String,
+    identity_id: IdentifierWasm,
     balance: u64,
 }
 
 impl PrefundedSpecializedBalanceWasm {
-    fn new(identity_id: String, balance: u64) -> Self {
+    fn new(identity_id: IdentifierWasm, balance: u64) -> Self {
         Self {
             identity_id,
             balance,
@@ -367,6 +390,11 @@ impl PrefundedSpecializedBalanceWasm {
 
 #[wasm_bindgen(js_class = PrefundedSpecializedBalance)]
 impl PrefundedSpecializedBalanceWasm {
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> IdentifierWasm {
+        self.identity_id
+    }
+
     #[wasm_bindgen(getter = "balance")]
     pub fn balance(&self) -> BigInt {
         BigInt::from(self.balance)
@@ -374,21 +402,23 @@ impl PrefundedSpecializedBalanceWasm {
 }
 
 #[wasm_bindgen(js_name = "PathElement")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PathElementWasm {
     path: Vec<String>,
-    value: Option<String>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub value: Option<String>,
 }
 
 impl PathElementWasm {
-    fn new(path: Vec<String>, value: Option<String>) -> Self {
+    pub(crate) fn new(path: Vec<String>, value: Option<String>) -> Self {
         Self { path, value }
     }
 }
 
 #[wasm_bindgen(js_class = PathElement)]
 impl PathElementWasm {
-    #[wasm_bindgen(getter = "path")]
+    #[wasm_bindgen(getter)]
     pub fn path(&self) -> Array {
         let array = Array::new();
         for segment in &self.path {
@@ -396,15 +426,11 @@ impl PathElementWasm {
         }
         array
     }
-
-    #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> Option<String> {
-        self.value.clone()
-    }
 }
 
 #[wasm_bindgen(js_name = "StateTransitionResult")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StateTransitionResultWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub state_transition_hash: String,
@@ -757,15 +783,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
-        let identity_id_base58 = identity_identifier.to_string(Encoding::Base58);
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
@@ -773,7 +798,7 @@ impl WasmSdk {
         let balance_value = balance_result.map(|b| b.0).unwrap_or(0);
 
         Ok(PrefundedSpecializedBalanceWasm::new(
-            identity_id_base58,
+            IdentifierWasm::from(identity_identifier),
             balance_value,
         ))
     }
@@ -939,15 +964,14 @@ impl WasmSdk {
     )]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
-        let identity_id_base58 = identity_identifier.to_string(Encoding::Base58);
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Fetch prefunded specialized balance with proof
         let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(
@@ -960,7 +984,7 @@ impl WasmSdk {
         let data = balance_result
             .map(|balance| {
                 JsValue::from(PrefundedSpecializedBalanceWasm::new(
-                    identity_id_base58.clone(),
+                    IdentifierWasm::from(identity_identifier),
                     balance.0,
                 ))
             })

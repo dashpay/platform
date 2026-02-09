@@ -15,7 +15,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::{bincode, ProtocolError};
-use grovedb::reference_path::ReferencePathType;
+use grovedb::element::reference_path::ReferencePathType;
 use grovedb::{Element, MaybeTree, TransactionArg, TreeType};
 use platform_version::version::PlatformVersion;
 

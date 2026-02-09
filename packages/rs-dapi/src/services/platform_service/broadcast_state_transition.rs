@@ -10,6 +10,7 @@ use crate::error::DapiError;
 use crate::services::PlatformServiceImpl;
 use crate::services::platform_service::TenderdashStatus;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
+use crate::services::platform_service::error_mapping::map_tenderdash_message;
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use sha2::{Digest, Sha256};
@@ -217,34 +218,11 @@ fn map_broadcast_error(code: u32, error_message: &str, info: Option<&str>) -> Da
         code,
         error_message
     );
-    if error_message == "tx already exists in cache" {
-        return DapiError::AlreadyExists(error_message.to_string());
+
+    if let Some(mapped_error) = map_tenderdash_message(error_message) {
+        return mapped_error;
     }
 
-    if error_message.starts_with("Tx too large.") {
-        let message = error_message.replace("Tx too large. ", "");
-        return DapiError::InvalidArgument(
-            "state transition is too large. ".to_string() + &message,
-        );
-    }
-
-    if error_message.starts_with("mempool is full") {
-        return DapiError::ResourceExhausted(error_message.to_string());
-    }
-
-    if error_message.contains("context deadline exceeded") {
-        return DapiError::Timeout("broadcasting state transition is timed out".to_string());
-    }
-
-    if error_message.contains("too_many_requests") {
-        return DapiError::ResourceExhausted(
-            "tenderdash is not responding: too many requests".to_string(),
-        );
-    }
-
-    if error_message.starts_with("broadcast confirmation not received:") {
-        return DapiError::Timeout(error_message.to_string());
-    }
     let consensus_error = info.and_then(|x| decode_consensus_error(x.to_string()));
     let message = if error_message.is_empty() {
         None

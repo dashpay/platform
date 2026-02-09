@@ -47,7 +47,6 @@ fn test_verify_proof_invalid_contract_id() {
 #[wasm_bindgen_test]
 fn test_verify_proof_empty_document_type() {
     let proof = Uint8Array::from(&mock_proof(100)[..]);
-    let contract_id = Uint8Array::from(&mock_identifier()[..]);
     let document_type = "";
     let query = Object::new();
     let platform_version = test_platform_version();
@@ -75,11 +74,9 @@ fn test_verify_proof_empty_document_type() {
 
 #[wasm_bindgen_test]
 fn test_verify_single_document_invalid_document_id() {
-    let proof = Uint8Array::from(&mock_proof(100)[..]);
     let invalid_document_id = vec![0u8; 16]; // Too short
     let contract_id = mock_identifier();
     let document_type = "test_doc".to_string();
-    let platform_version = test_platform_version();
 
     // This should fail when creating the query due to invalid document_id length
     let query_result = SingleDocumentDriveQueryWasm::new(
@@ -101,7 +98,6 @@ fn test_verify_single_document_invalid_document_id() {
 #[wasm_bindgen_test]
 fn test_verify_start_at_document_bounds_check() {
     let proof = Uint8Array::from(&mock_proof(100)[..]);
-    let contract_id = Uint8Array::from(&mock_identifier()[..]);
     let document_type = "test_doc";
 
     // Create a query with nested arrays that might overflow

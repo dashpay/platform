@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
-    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyAddressFundsMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyGroupMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
     DriveVerifySystemMethodVersions, DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
 };
@@ -22,6 +23,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_full_identity_by_public_key_hash: 0,
         verify_identity_balance_for_identity_id: 0,
         verify_identity_balances_for_identity_ids: 0,
+        verify_identity_balance_revision_and_addresses_from_inputs: 0,
         verify_identity_id_by_unique_public_key_hash: 0,
         verify_identity_ids_by_unique_public_key_hashes: 0,
         verify_identity_keys_by_identity_id: 0,
@@ -76,6 +78,14 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_contests_proof: 0,
         verify_vote_polls_by_end_date_proof: 0,
         verify_specialized_balance: 0,
+    },
+    address_funds: DriveVerifyAddressFundsMethodVersions {
+        verify_address_info: 0,
+        verify_addresses_infos: 0,
+        verify_address_funds_trunk_query: 0,
+        verify_address_funds_branch_query: 0,
+        verify_recent_address_balance_changes: 0,
+        verify_compacted_address_balance_changes: 0,
     },
     state_transition: DriveVerifyStateTransitionMethodVersions {
         verify_state_transition_was_executed_with_proof: 0,

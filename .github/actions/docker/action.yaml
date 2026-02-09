@@ -32,6 +32,9 @@ inputs:
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
+  build_args:
+    description: Additional build arguments to pass to Docker build (one per line)
+    default: ""
   cache_bucket:
     description: S3 bucket to use for caching (both sccache and layer cache)
     required: true
@@ -50,6 +53,9 @@ inputs:
   cache_to_name:
     description: "Save cache to name manifest (should be used only on default branch)"
     default: "false"
+  additional_features:
+    description: Extra Cargo features to enable (comma-separated)
+    default: ""
 outputs:
   digest:
     value: ${{ steps.docker_build.outputs.digest }}
@@ -192,6 +198,8 @@ runs:
           AWS=${{ env.HOME }}/.aws/credentials
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
+          ADDITIONAL_FEATURES=${{ inputs.additional_features }}
+          ${{ inputs.build_args }}
           ${{ steps.sccache.outputs.env_vars }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}

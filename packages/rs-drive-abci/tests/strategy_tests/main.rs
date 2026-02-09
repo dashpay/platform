@@ -2,33 +2,15 @@
 //!
 
 extern crate core;
-
 use dpp::bls_signatures::SecretKey as BlsPrivateKey;
-
-use drive_abci::test::helpers::setup::TestPlatformBuilder;
-use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use strategy_tests::frequency::Frequency;
-
-use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dpp::dashcore::Transaction;
-use std::collections::BTreeMap;
-
-use strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
-};
-use strategy_tests::Strategy;
-
-mod chain_lock_update;
-mod core_update_tests;
+mod addresses_with_balance;
 mod execution;
 mod failures;
 mod masternode_list_item_helpers;
 mod masternodes;
-mod patch_platform_tests;
 mod query;
 mod strategy;
-mod token_tests;
-mod upgrade_fork_tests;
+mod test_cases;
 mod verify_state_transitions;
 mod voting_tests;
 mod withdrawal_tests;

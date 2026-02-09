@@ -1,5 +1,4 @@
 import * as wasm from '../wasm.js';
-import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
 export class ContractsFacade {
@@ -14,7 +13,8 @@ export class ContractsFacade {
     return w.getDataContract(contractId);
   }
 
-  async fetchWithProof(contractId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.DataContract>> {
+  async fetchWithProof(contractId: wasm.IdentifierLike):
+    Promise<wasm.ProofMetadataResponseTyped<wasm.DataContract>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractWithProofInfo(contractId);
   }
@@ -24,30 +24,34 @@ export class ContractsFacade {
     return w.getDataContractHistory(query);
   }
 
-  async getHistoryWithProof(query: wasm.DataContractHistoryQuery): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.DataContract>>> {
+  async getHistoryWithProof(
+    query: wasm.DataContractHistoryQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.DataContract>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractHistoryWithProofInfo(query);
   }
 
-  async getMany(contractIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, wasm.DataContract | undefined>> {
+  async getMany(contractIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.DataContract | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContracts(contractIds);
   }
 
-  async getManyWithProof(contractIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.DataContract | undefined>>> {
+  async getManyWithProof(
+    contractIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.DataContract | undefined>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractsWithProofInfo(contractIds);
   }
 
-  async create(args: { ownerId: wasm.IdentifierLike; definition: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
-    const { ownerId, definition, privateKeyWif, keyId } = args;
+  async publish(options: wasm.ContractPublishOptions): Promise<wasm.DataContract> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.contractCreate(ownerId, asJsonString(definition)!, privateKeyWif, keyId ?? null);
+    return w.contractPublish(options);
   }
 
-  async update(args: { contractId: wasm.IdentifierLike; ownerId: wasm.IdentifierLike; updates: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
-    const { contractId, ownerId, updates, privateKeyWif, keyId } = args;
+  async update(options: wasm.ContractUpdateOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.contractUpdate(contractId, ownerId, asJsonString(updates)!, privateKeyWif, keyId ?? null);
+    return w.contractUpdate(options);
   }
 }

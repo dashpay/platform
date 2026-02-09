@@ -130,37 +130,36 @@ impl Cli {
                     }
                 };
 
-                if let Some(result) = outcome
-                    && let Err(e) = result {
-                        error!("Server error: {}", e);
+                if let Some(Err(e)) = outcome {
+                    error!("Server error: {}", e);
 
-                        // Check if this is a connection-related error and set appropriate exit code
-                        match &e {
-                            DapiError::ServerUnavailable(_, _) => {
-                                error!(error = %e,
-                                    "Upstream service connection failed. Check drive-abci and tenderdash and try again."
-                                );
-                                return Err(format!("Connection error: {}", e));
-                            }
-                            DapiError::Client(msg) if msg.contains("Failed to connect") => {
-                                error!(error = %msg,
-                                    "Client connection failed.  Check drive-abci and tenderdash and try again."
-                                );
-                                return Err(format!("Connection error: {}", e));
-                            }
-                            DapiError::Transport(_) => {
-                                error!(
-                                    error = %e,
-                                    "Transport error occurred. Check drive-abci and tenderdash and try again."
-                                );
-                                return Err(format!("Connection error: {}", e));
-                            }
-                            _ => {
-                                error!(error = %e, "Cannot start server.");
-                                return Err(e.to_string());
-                            }
+                    // Check if this is a connection-related error and set appropriate exit code
+                    match &e {
+                        DapiError::ServerUnavailable(_, _) => {
+                            error!(error = %e,
+                                "Upstream service connection failed. Check drive-abci and tenderdash and try again."
+                            );
+                            return Err(format!("Connection error: {}", e));
+                        }
+                        DapiError::Client(msg) if msg.contains("Failed to connect") => {
+                            error!(error = %msg,
+                                "Client connection failed.  Check drive-abci and tenderdash and try again."
+                            );
+                            return Err(format!("Connection error: {}", e));
+                        }
+                        DapiError::Transport(_) => {
+                            error!(
+                                error = %e,
+                                "Transport error occurred. Check drive-abci and tenderdash and try again."
+                            );
+                            return Err(format!("Connection error: {}", e));
+                        }
+                        _ => {
+                            error!(error = %e, "Cannot start server.");
+                            return Err(e.to_string());
                         }
                     }
+                }
                 Ok(())
             }
             Commands::Config => dump_config(&config),

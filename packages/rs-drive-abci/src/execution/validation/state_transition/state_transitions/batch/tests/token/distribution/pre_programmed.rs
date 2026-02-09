@@ -95,7 +95,7 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -160,7 +160,7 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -262,7 +262,7 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -327,10 +327,10 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                ..
+            }]
         );
 
         platform
@@ -432,10 +432,10 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                ..
+            }]
         );
 
         platform
@@ -541,7 +541,7 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -606,10 +606,10 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                ..
+            }]
         );
 
         platform
@@ -711,10 +711,10 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                ..
+            }]
         );
 
         platform
@@ -831,10 +831,10 @@ mod pre_programmed_distribution {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
-                _
-            )]
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::InvalidTokenClaimNoCurrentRewards(_)),
+                ..
+            }]
         );
 
         platform

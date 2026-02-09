@@ -1,11 +1,13 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
 use js_sys::Uint8Array;
 use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use std::fmt;
 use wasm_bindgen::prelude::*;
@@ -15,9 +17,58 @@ use wasm_bindgen::prelude::*;
 pub struct IdentifierWasm(Identifier);
 
 #[wasm_bindgen(typescript_custom_section)]
-const IDENTIFIER_TS_HELPERS: &'static str = r#"
+const IDENTIFIER_TS_HELPERS: &str = r#"
 export type IdentifierLike = Identifier | Uint8Array | string;
+export type IdentifierLikeArray = Array<IdentifierLike>;
+export type IdentifierLikeOrUndefined = Identifier | Uint8Array | string | undefined;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentifierLike")]
+    pub type IdentifierLikeJs;
+
+    #[wasm_bindgen(typescript_type = "IdentifierLikeArray")]
+    pub type IdentifierLikeArrayJs;
+
+    #[wasm_bindgen(typescript_type = "IdentifierLikeOrUndefined")]
+    pub type IdentifierLikeOrUndefinedJs;
+}
+
+impl TryFrom<IdentifierLikeJs> for IdentifierWasm {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        IdentifierWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<IdentifierLikeJs> for Identifier {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeJs) -> Result<Self, Self::Error> {
+        Ok(IdentifierWasm::try_from(value)?.into())
+    }
+}
+
+impl TryFrom<IdentifierLikeOrUndefinedJs> for Option<IdentifierWasm> {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeOrUndefinedJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        if js_value.is_undefined() || js_value.is_null() {
+            Ok(None)
+        } else {
+            IdentifierWasm::try_from(js_value).map(Some)
+        }
+    }
+}
+
+impl TryFrom<IdentifierLikeOrUndefinedJs> for Option<Identifier> {
+    type Error = WasmDppError;
+    fn try_from(value: IdentifierLikeOrUndefinedJs) -> Result<Self, Self::Error> {
+        let opt: Option<IdentifierWasm> = value.try_into()?;
+        Ok(opt.map(Identifier::from))
+    }
+}
 
 impl From<IdentifierWasm> for Identifier {
     fn from(identifier: IdentifierWasm) -> Self {
@@ -77,7 +128,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
             return IdentifierWasm::try_from(string.as_str());
         }
 
-        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
+        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() {
             let uint8_array = Uint8Array::from(value.clone());
             let bytes = uint8_array.to_vec();
 
@@ -87,7 +138,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         }
 
         Err(WasmDppError::invalid_argument(
-            "Invalid identifier. Expected Identifier, Uint8Array or string",
+            "Invalid identifier. Expected Identifier, Uint8Array, array or string",
         ))
     }
 }
@@ -176,37 +227,60 @@ impl<'de> Deserialize<'de> for IdentifierWasm {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(IdentifierWasmVisitor)
+        if deserializer.is_human_readable() {
+            // JSON/human-readable: expect Base58 string
+            let s = String::deserialize(deserializer)?;
+            IdentifierWasm::try_from(s.as_str()).map_err(D::Error::custom)
+        } else {
+            // Binary/WASM: expect bytes or any compatible representation
+            deserializer.deserialize_any(IdentifierWasmVisitor)
+        }
+    }
+}
+
+impl Serialize for IdentifierWasm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            // JSON/human-readable: serialize as Base58 string
+            serializer.serialize_str(&self.to_base58())
+        } else {
+            // Binary/WASM: serialize as bytes (becomes Uint8Array)
+            serializer.serialize_bytes(&self.0.to_vec())
+        }
     }
 }
 
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Identifier".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Identifier".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
-    ) -> WasmDppResult<IdentifierWasm> {
-        IdentifierWasm::try_from(js_identifier)
+    pub fn constructor(identifier: IdentifierLikeJs) -> WasmDppResult<IdentifierWasm> {
+        identifier.try_into()
     }
 
-    #[wasm_bindgen(js_name = "base58")]
-    pub fn get_base58(&self) -> String {
+    #[wasm_bindgen(js_name = "toBase58")]
+    pub fn to_base58(&self) -> String {
         self.0.to_string(Base58)
     }
 
-    #[wasm_bindgen(js_name = "base64")]
-    pub fn get_base64(&self) -> String {
+    /// Returns the identifier as a Base58 string.
+    /// This is the default string representation for JavaScript.
+    #[wasm_bindgen(js_name = "toString")]
+    pub fn to_string_js(&self) -> String {
+        self.to_base58()
+    }
+
+    /// Returns the identifier as a Base58 string for JSON serialization.
+    /// This method is called automatically when the object is serialized to JSON.
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> String {
+        self.to_base58()
+    }
+
+    #[wasm_bindgen(js_name = "toBase64")]
+    pub fn to_base64(&self) -> String {
         self.0.to_string(Base64)
     }
 
@@ -258,3 +332,6 @@ impl IdentifierWasm {
         *self.0.as_bytes()
     }
 }
+
+impl_try_from_options!(IdentifierWasm);
+impl_wasm_type_info!(IdentifierWasm, Identifier);

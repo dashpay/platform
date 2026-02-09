@@ -8,14 +8,23 @@ use dash_sdk::{
 };
 use wasm_bindgen::prelude::wasm_bindgen;
 
+use crate::error::WasmSdkError;
+
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmContext {}
 
-/// A wrapper for TrustedHttpContextProvider that works in WASM
+/// A wrapper for TrustedHttpContextProvider that works in WASM.
+///
+/// Holds pre-fetched quorum keys and discovered masternode addresses for
+/// proof verification and network connectivity. Create one via the async
+/// `prefetchMainnet()`, `prefetchTestnet()`, or `prefetchLocal()` factory
+/// methods, then pass it to a builder via `withTrustedContext()`.
+#[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmTrustedContext {
     inner: std::sync::Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>,
+    discovered_addresses: Vec<rs_dapi_client::Address>,
 }
 
 impl ContextProvider for WasmContext {
@@ -46,11 +55,9 @@ impl ContextProvider for WasmContext {
         // For WASM context without trusted provider, we need to fetch token configuration
         // from the network. This is a simplified implementation that would need to be
         // enhanced with actual network fetching logic in a production environment.
-
         // TODO: Implement actual token configuration fetching from network
         // For now, we'll return None which will cause the proof verification to fail
         // with a clearer error message indicating missing token configuration
-
         tracing::warn!(
             token_id = %token_id,
             "Token configuration not available in WASM context - this will cause proof verification to fail. Use trusted context builders for proof verification."
@@ -96,70 +103,160 @@ impl ContextProvider for WasmTrustedContext {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.inner.get_platform_activation_height()
     }
+
+    fn update_data_contract(&self, contract: Arc<DataContract>) {
+        self.inner.update_data_contract(contract)
+    }
 }
 
+// JS-exported async factory methods
+#[wasm_bindgen]
 impl WasmTrustedContext {
-    pub fn new_mainnet() -> Result<Self, ContextProviderError> {
+    /// Pre-fetch quorum keys and masternode addresses for mainnet.
+    ///
+    /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
+    /// `WasmSdkBuilder.mainnet().withTrustedContext(context)`.
+    #[wasm_bindgen(js_name = "prefetchMainnet")]
+    pub async fn prefetch_mainnet() -> Result<WasmTrustedContext, WasmSdkError> {
         let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
             dash_sdk::dpp::dashcore::Network::Dash,
             None,
             std::num::NonZeroUsize::new(100).unwrap(),
         )
-        .map_err(|e| ContextProviderError::Generic(e.to_string()))?
-        .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?
+        .with_refetch_if_not_found(false);
 
-        Ok(Self {
-            inner: std::sync::Arc::new(inner),
+        let inner = Arc::new(inner);
+
+        inner
+            .update_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
+
+        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+
+        Ok(WasmTrustedContext {
+            inner,
+            discovered_addresses,
         })
     }
 
-    pub fn new_testnet() -> Result<Self, ContextProviderError> {
+    /// Pre-fetch quorum keys and masternode addresses for testnet.
+    ///
+    /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
+    /// `WasmSdkBuilder.testnet().withTrustedContext(context)`.
+    #[wasm_bindgen(js_name = "prefetchTestnet")]
+    pub async fn prefetch_testnet() -> Result<WasmTrustedContext, WasmSdkError> {
         let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
             dash_sdk::dpp::dashcore::Network::Testnet,
             None,
             std::num::NonZeroUsize::new(100).unwrap(),
         )
-        .map_err(|e| ContextProviderError::Generic(e.to_string()))?
-        .with_refetch_if_not_found(false); // Disable refetch since we'll pre-fetch
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?
+        .with_refetch_if_not_found(false);
 
-        Ok(Self {
-            inner: std::sync::Arc::new(inner),
+        let inner = Arc::new(inner);
+
+        inner
+            .update_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
+
+        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+
+        Ok(WasmTrustedContext {
+            inner,
+            discovered_addresses,
         })
     }
 
-    /// Pre-fetch quorum information to populate the cache
-    pub async fn prefetch_quorums(&self) -> Result<(), ContextProviderError> {
-        self.inner.update_quorum_caches().await.map_err(|e| {
-            ContextProviderError::Generic(format!("Failed to prefetch quorums: {}", e))
-        })
+    /// Pre-fetch quorum keys and masternode addresses for a local network.
+    ///
+    /// Uses the default local quorum sidecar URL (`http://127.0.0.1:2444`).
+    ///
+    /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
+    /// `WasmSdkBuilder.local().withTrustedContext(context)`.
+    #[wasm_bindgen(js_name = "prefetchLocal")]
+    pub async fn prefetch_local() -> Result<WasmTrustedContext, WasmSdkError> {
+        Self::prefetch_local_with_url("http://127.0.0.1:2444").await
     }
 
-    pub async fn fetch_masternode_addresses(
-        &self,
-    ) -> Result<rs_dapi_client::AddressList, ContextProviderError> {
-        let urls = self.inner.fetch_masternode_addresses().await.map_err(|e| {
-            ContextProviderError::Generic(format!("Failed to fetch masternodes: {}", e))
-        })?;
+    /// Pre-fetch quorum keys and masternode addresses for a local network
+    /// using a custom quorum sidecar URL.
+    #[wasm_bindgen(js_name = "prefetchLocalWithUrl")]
+    pub async fn prefetch_local_with_url(
+        base_url: &str,
+    ) -> Result<WasmTrustedContext, WasmSdkError> {
+        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            dash_sdk::dpp::dashcore::Network::Regtest,
+            base_url.to_string(),
+            std::num::NonZeroUsize::new(100).unwrap(),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?
+        .with_refetch_if_not_found(false);
+
+        let inner = Arc::new(inner);
+
+        inner
+            .update_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
+
+        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+
+        Ok(WasmTrustedContext {
+            inner,
+            discovered_addresses,
+        })
+    }
+}
+
+impl WasmTrustedContext {
+    /// Fetch masternode addresses from the trusted provider and convert to `Vec<Address>`.
+    async fn fetch_addresses_from(
+        inner: &rs_sdk_trusted_context_provider::TrustedHttpContextProvider,
+    ) -> Result<Vec<rs_dapi_client::Address>, WasmSdkError> {
+        let urls = inner
+            .fetch_masternode_addresses()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to fetch masternodes: {}", e)))?;
 
         let mut addresses = Vec::new();
         for url in urls {
             let uri = dash_sdk::sdk::Uri::from_maybe_shared(url.to_string()).map_err(|e| {
-                ContextProviderError::Generic(format!("Invalid masternode URI '{}': {}", url, e))
+                WasmSdkError::generic(format!("Invalid masternode URI '{}': {}", url, e))
             })?;
             let address = rs_dapi_client::Address::try_from(uri).map_err(|e| {
-                ContextProviderError::Generic(format!(
-                    "Invalid masternode address '{}': {}",
-                    url, e
-                ))
+                WasmSdkError::generic(format!("Invalid masternode address '{}': {}", url, e))
             })?;
             addresses.push(address);
         }
 
-        Ok(rs_dapi_client::AddressList::from_iter(addresses))
+        Ok(addresses)
+    }
+
+    /// Get the discovered addresses (for use by the builder).
+    pub(crate) fn discovered_addresses(&self) -> &[rs_dapi_client::Address] {
+        &self.discovered_addresses
     }
 
     /// Add a data contract to the known contracts cache
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
+    }
+
+    /// Get a data contract from the known contracts cache
+    pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        self.inner.get_known_contract(id)
+    }
+
+    /// Remove a data contract from the known contracts cache
+    pub fn remove_known_contract(&self, id: &Identifier) -> bool {
+        self.inner.remove_known_contract(id)
+    }
+
+    /// Add a token configuration to the known token configurations cache
+    pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
+        self.inner.add_known_token_configuration(token_id, config);
     }
 }

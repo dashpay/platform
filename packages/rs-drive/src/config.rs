@@ -154,32 +154,31 @@ where
     s.parse().map_err(serde::de::Error::custom)
 }
 
-// Define default functions for serde
-fn default_batching_consistency_verification() -> bool {
+const fn default_batching_consistency_verification() -> bool {
     DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED
 }
 
-fn default_has_raw_enabled() -> bool {
+const fn default_has_raw_enabled() -> bool {
     DEFAULT_GROVE_HAS_RAW_ENABLED
 }
 
-fn default_grove_verify_on_startup_enabled() -> bool {
+const fn default_grove_verify_on_startup_enabled() -> bool {
     DEFAULT_VERIFY_GROVE_ON_STARTUP
 }
 
-fn default_default_query_limit() -> u16 {
+const fn default_default_query_limit() -> u16 {
     DEFAULT_QUERY_LIMIT
 }
 
-fn default_epochs_per_era() -> u16 {
+const fn default_epochs_per_era() -> u16 {
     DEFAULT_EPOCHS_PER_ERA
 }
 
-fn default_max_query_limit() -> u16 {
+const fn default_max_query_limit() -> u16 {
     DEFAULT_MAX_QUERY_LIMIT
 }
 
-fn default_data_contracts_cache_size() -> u64 {
+const fn default_data_contracts_cache_size() -> u64 {
     DEFAULT_DATA_CONTRACTS_CACHE_SIZE
 }
 
@@ -191,16 +190,15 @@ pub fn default_grovedb_visualizer_address() -> std::net::SocketAddr {
 impl Default for DriveConfig {
     fn default() -> Self {
         DriveConfig {
-            batching_consistency_verification:
-                DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED,
-            has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
-            grovedb_verify_on_startup: DEFAULT_VERIFY_GROVE_ON_STARTUP,
-            default_query_limit: DEFAULT_QUERY_LIMIT,
-            epochs_per_era: DEFAULT_EPOCHS_PER_ERA,
-            max_query_limit: DEFAULT_MAX_QUERY_LIMIT,
+            batching_consistency_verification: default_batching_consistency_verification(),
+            has_raw_enabled: default_has_raw_enabled(),
+            grovedb_verify_on_startup: default_grove_verify_on_startup_enabled(),
+            default_query_limit: default_default_query_limit(),
+            epochs_per_era: default_epochs_per_era(),
+            max_query_limit: default_max_query_limit(),
             default_genesis_time: None,
-            data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
-            data_contracts_block_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
+            data_contracts_global_cache_size: default_data_contracts_cache_size(),
+            data_contracts_block_cache_size: default_data_contracts_cache_size(),
             #[cfg(feature = "grovedbg")]
             grovedb_visualizer_address: default_grovedb_visualizer_address(),
             #[cfg(feature = "grovedbg")]
@@ -211,7 +209,8 @@ impl Default for DriveConfig {
 }
 
 impl DriveConfig {
-    fn default_network() -> Network {
+    /// The default network type for mainnet
+    pub fn default_network() -> Network {
         Network::Dash
     }
 

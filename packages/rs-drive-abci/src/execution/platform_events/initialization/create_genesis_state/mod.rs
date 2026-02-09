@@ -27,12 +27,14 @@ impl<C> Platform<C> {
             .initialization
             .create_genesis_state
         {
+            // Used for mainnet and testnet
             0 => self.create_genesis_state_v0(
                 genesis_core_height,
                 genesis_time,
                 transaction,
                 platform_version,
             ),
+            // V1 is used for all devnets, since mainnet and testnet are stuck on v0
             1 => self.create_genesis_state_v1(
                 genesis_core_height,
                 genesis_time,

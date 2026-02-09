@@ -1,5 +1,33 @@
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
 use dpp::fee::Credits;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PrefundedVotingBalanceOptions {
+    index_name: String,
+    credits: Credits,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Options for creating a PrefundedVotingBalance instance.
+ */
+export interface PrefundedVotingBalanceOptions {
+    indexName: string;
+    credits: bigint;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PrefundedVotingBalanceOptions")]
+    pub type PrefundedVotingBalanceOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "PrefundedVotingBalance")]
 #[derive(Clone)]
@@ -25,22 +53,17 @@ impl From<PrefundedVotingBalanceWasm> for (String, Credits) {
 
 #[wasm_bindgen(js_class = PrefundedVotingBalance)]
 impl PrefundedVotingBalanceWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PrefundedVotingBalance".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PrefundedVotingBalance".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(index_name: String, credits: Credits) -> PrefundedVotingBalanceWasm {
-        PrefundedVotingBalanceWasm {
-            index_name,
-            credits,
-        }
+    pub fn constructor(
+        options: PrefundedVotingBalanceOptionsJs,
+    ) -> WasmDppResult<PrefundedVotingBalanceWasm> {
+        let opts: PrefundedVotingBalanceOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        Ok(PrefundedVotingBalanceWasm {
+            index_name: opts.index_name,
+            credits: opts.credits,
+        })
     }
 
     #[wasm_bindgen(getter, js_name = "indexName")]
@@ -53,3 +76,6 @@ impl PrefundedVotingBalanceWasm {
         self.credits
     }
 }
+
+impl_try_from_js_value!(PrefundedVotingBalanceWasm, "PrefundedVotingBalance");
+impl_wasm_type_info!(PrefundedVotingBalanceWasm, PrefundedVotingBalance);

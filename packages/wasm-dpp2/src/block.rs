@@ -1,45 +1,126 @@
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::block::block_info::BlockInfo;
-use wasm_bindgen::prelude::wasm_bindgen;
+use dpp::block::epoch::Epoch;
+use serde::Deserialize;
+use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name = "BlockInfo")]
-#[derive(Clone)]
-pub struct BlockInfoWasm {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BlockInfoOptions {
     time_ms: u64,
     height: u64,
-    core_height: u64,
+    core_height: u32,
     epoch_index: u16,
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Options for creating a BlockInfo instance.
+ */
+export interface BlockInfoOptions {
+    timeMs: bigint;
+    height: bigint;
+    coreHeight: number;
+    epochIndex: number;
+}
+
+/**
+ * BlockInfo serialized as a plain object.
+ */
+export interface BlockInfoObject {
+    timeMs: bigint;
+    height: bigint;
+    coreHeight: number;
+    epochIndex: number;
+}
+
+/**
+ * BlockInfo serialized as JSON.
+ */
+export interface BlockInfoJSON {
+    timeMs: string;
+    height: string;
+    coreHeight: number;
+    epochIndex: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "BlockInfoOptions")]
+    pub type BlockInfoOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "BlockInfoObject")]
+    pub type BlockInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "BlockInfoJSON")]
+    pub type BlockInfoJSONJs;
+}
+
+#[wasm_bindgen(js_name = "BlockInfo")]
+#[derive(Clone)]
+pub struct BlockInfoWasm(BlockInfo);
+
 #[wasm_bindgen(js_class = BlockInfo)]
 impl BlockInfoWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn constructor(options: BlockInfoOptionsJs) -> WasmDppResult<BlockInfoWasm> {
+        let opts: BlockInfoOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        let epoch = Epoch::new(opts.epoch_index)
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        Ok(BlockInfoWasm(BlockInfo {
+            time_ms: opts.time_ms,
+            height: opts.height,
+            core_height: opts.core_height,
+            epoch,
+        }))
+    }
+
     #[wasm_bindgen(getter = timeMs)]
     pub fn time_ms(&self) -> u64 {
-        self.time_ms
+        self.0.time_ms
     }
 
     #[wasm_bindgen(getter)]
     pub fn height(&self) -> u64 {
-        self.height
+        self.0.height
     }
 
     #[wasm_bindgen(getter = coreHeight)]
-    pub fn core_height(&self) -> u64 {
-        self.core_height
+    pub fn core_height(&self) -> u32 {
+        self.0.core_height
     }
 
     #[wasm_bindgen(getter = epochIndex)]
     pub fn epoch_index(&self) -> u16 {
-        self.epoch_index
+        self.0.epoch.index
     }
 }
 
 impl From<BlockInfo> for BlockInfoWasm {
     fn from(block: BlockInfo) -> Self {
-        Self {
-            time_ms: block.time_ms,
-            height: block.height,
-            core_height: block.core_height as u64,
-            epoch_index: block.epoch.index,
-        }
+        BlockInfoWasm(block)
     }
 }
+
+impl From<BlockInfoWasm> for BlockInfo {
+    fn from(wasm: BlockInfoWasm) -> Self {
+        wasm.0
+    }
+}
+
+impl From<&BlockInfoWasm> for BlockInfo {
+    fn from(wasm: &BlockInfoWasm) -> Self {
+        wasm.0
+    }
+}
+
+impl_wasm_conversions!(BlockInfoWasm, BlockInfo, BlockInfoObjectJs, BlockInfoJSONJs);
+
+impl_wasm_type_info!(BlockInfoWasm, BlockInfo);

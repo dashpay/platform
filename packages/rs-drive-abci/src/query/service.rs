@@ -13,21 +13,23 @@ use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::v0::platform_event_v0::Keepalive;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
-    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
-    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
-    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
-    GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
-    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
-    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
-    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
-    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
-    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
-    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
-    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
-    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
+    GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
+    GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
+    GetAddressesTrunkStateResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
+    GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
+    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
+    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
+    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
+    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
+    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
+    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
+    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
+    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
+    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -41,7 +43,9 @@ use dapi_grpc::platform::v0::{
     GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
     GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetStatusRequest, GetStatusResponse,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
+    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
+    GetRecentCompactedAddressBalanceChangesResponse, GetStatusRequest, GetStatusResponse,
     GetTokenContractInfoRequest, GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
     GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
     GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
@@ -869,6 +873,79 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    async fn get_address_info(
+        &self,
+        request: Request<GetAddressInfoRequest>,
+    ) -> Result<Response<GetAddressInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_address_info,
+            "get_address_info",
+        )
+        .await
+    }
+
+    async fn get_addresses_infos(
+        &self,
+        request: Request<GetAddressesInfosRequest>,
+    ) -> Result<Response<GetAddressesInfosResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_addresses_infos,
+            "get_addresses_infos",
+        )
+        .await
+    }
+
+    async fn get_addresses_trunk_state(
+        &self,
+        request: Request<GetAddressesTrunkStateRequest>,
+    ) -> Result<Response<GetAddressesTrunkStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_addresses_trunk_state,
+            "get_addresses_trunk_state",
+        )
+        .await
+    }
+
+    async fn get_addresses_branch_state(
+        &self,
+        request: Request<GetAddressesBranchStateRequest>,
+    ) -> Result<Response<GetAddressesBranchStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_addresses_branch_state,
+            "get_addresses_branch_state",
+        )
+        .await
+    }
+
+    async fn get_recent_address_balance_changes(
+        &self,
+        request: Request<GetRecentAddressBalanceChangesRequest>,
+    ) -> Result<Response<GetRecentAddressBalanceChangesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_recent_address_balance_changes,
+            "get_recent_address_balance_changes",
+        )
+        .await
+    }
+
+    async fn get_recent_compacted_address_balance_changes(
+        &self,
+        request: Request<GetRecentCompactedAddressBalanceChangesRequest>,
+    ) -> Result<Response<GetRecentCompactedAddressBalanceChangesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_recent_compacted_address_balance_changes,
+            "get_recent_compacted_address_balance_changes",
+        )
+        .await
+    }
+}
 
     type subscribePlatformEventsStream =
         ReceiverStream<Result<PlatformSubscriptionResponse, Status>>;

@@ -138,7 +138,8 @@ impl Drive {
                 deletion_batch,
                 &mut vec![],
                 &platform_version.drive,
-            )?;
+            )
+            .inspect_err(|err| tracing::error!(?err, "vote deletion batch failed"))?;
         }
 
         Ok(())

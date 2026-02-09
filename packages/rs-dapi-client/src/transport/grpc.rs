@@ -38,7 +38,13 @@ impl TransportClient for PlatformGrpcClient {
                 &uri,
                 Some(settings),
                 || match create_channel(uri.clone(), Some(settings)) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => {
+                        let mut client = Self::new(channel);
+                        if let Some(max_size) = settings.max_decoding_message_size {
+                            client = client.max_decoding_message_size(max_size);
+                        }
+                        Ok(client.into())
+                    }
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
@@ -75,7 +81,13 @@ impl TransportClient for CoreGrpcClient {
                 &uri,
                 Some(settings),
                 || match create_channel(uri.clone(), Some(settings)) {
-                    Ok(channel) => Ok(Self::new(channel).into()),
+                    Ok(channel) => {
+                        let mut client = Self::new(channel);
+                        if let Some(max_size) = settings.max_decoding_message_size {
+                            client = client.max_decoding_message_size(max_size);
+                        }
+                        Ok(client.into())
+                    }
                     Err(e) => Err(dapi_grpc::tonic::Status::invalid_argument(format!(
                         "Channel creation failed: {}",
                         e
@@ -230,10 +242,11 @@ impl_transport_request_grpc!(
     platform_proto::WaitForStateTransitionResultResponse,
     PlatformGrpcClient,
     RequestSettings {
-        timeout: Some(Duration::from_secs(80)),
-        retries: Some(0),
+        timeout: Some(Duration::from_secs(30)),
+        retries: Some(3),
         ban_failed_address: None,
         connect_timeout: None,
+        max_decoding_message_size: None,
     },
     wait_for_state_transition_result
 );
@@ -474,6 +487,7 @@ impl_transport_request_grpc!(
         ban_failed_address: None,
         connect_timeout: None,
         retries: None,
+        max_decoding_message_size: None,
     },
     subscribe_to_transactions_with_proofs
 );
@@ -622,4 +636,63 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_token_perpetual_distribution_last_claim
+);
+
+// rpc getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressInfoRequest,
+    platform_proto::GetAddressInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_address_info
+);
+
+// rpc getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesInfosRequest,
+    platform_proto::GetAddressesInfosResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_infos
+);
+
+// rpc getAddressesTrunkState(GetAddressesTrunkStateRequest) returns (GetAddressesTrunkStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesTrunkStateRequest,
+    platform_proto::GetAddressesTrunkStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_trunk_state
+);
+
+// rpc getAddressesBranchState(GetAddressesBranchStateRequest) returns (GetAddressesBranchStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetAddressesBranchStateRequest,
+    platform_proto::GetAddressesBranchStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_addresses_branch_state
+);
+
+// rpc getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest) returns (GetRecentAddressBalanceChangesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetRecentAddressBalanceChangesRequest,
+    platform_proto::GetRecentAddressBalanceChangesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_address_balance_changes
+);
+
+// rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetRecentCompactedAddressBalanceChangesRequest,
+    platform_proto::GetRecentCompactedAddressBalanceChangesResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        // GetRecentCompactedAddressBalanceChangesResponse can have 100 values * 2048 addresses * ~44  bytes each = ~9MB
+        // We set it to 16MB to be safe
+        max_decoding_message_size: Some(16 * 1024 * 1024),
+        ..RequestSettings::default()
+    },
+    get_recent_compacted_address_balance_changes
 );

@@ -8,21 +8,12 @@ pub enum AssetLockProofTypeWasm {
     Chain = 1,
 }
 
-impl From<AssetLockProofTypeWasm> for String {
-    fn from(value: AssetLockProofTypeWasm) -> Self {
-        match value {
-            AssetLockProofTypeWasm::Instant => String::from("Instant"),
-            AssetLockProofTypeWasm::Chain => String::from("Chain"),
-        }
-    }
-}
-
-impl TryFrom<JsValue> for AssetLockProofTypeWasm {
+impl TryFrom<&JsValue> for AssetLockProofTypeWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        if value.is_string() {
+            match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -34,8 +25,9 @@ impl TryFrom<JsValue> for AssetLockProofTypeWasm {
                         enum_val
                     ))),
                 },
-            },
-            false => match value.as_f64() {
+            }
+        } else {
+            match value.as_f64() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -47,7 +39,24 @@ impl TryFrom<JsValue> for AssetLockProofTypeWasm {
                         enum_val
                     ))),
                 },
-            },
+            }
+        }
+    }
+}
+
+impl TryFrom<JsValue> for AssetLockProofTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
+impl From<AssetLockProofTypeWasm> for String {
+    fn from(value: AssetLockProofTypeWasm) -> Self {
+        match value {
+            AssetLockProofTypeWasm::Instant => String::from("Instant"),
+            AssetLockProofTypeWasm::Chain => String::from("Chain"),
         }
     }
 }

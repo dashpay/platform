@@ -202,7 +202,7 @@ pub fn generate_test_masternodes(
             let (identity_public_key, private_key) =
                 IdentityPublicKey::random_voting_key_with_rng(0, rng, PlatformVersion::latest())
                     .expect("expected a random voting key");
-            simple_signer.add_key(identity_public_key.clone(), private_key);
+            simple_signer.add_identity_public_key(identity_public_key.clone(), private_key);
             identity_public_key.public_key_hash().unwrap()
         } else {
             rng.gen()
@@ -221,7 +221,7 @@ pub fn generate_test_masternodes(
                     PlatformVersion::latest(),
                 )
                 .expect("expected a random voting key");
-            simple_signer.add_key(identity_public_key.clone(), private_key);
+            simple_signer.add_identity_public_key(identity_public_key.clone(), private_key);
             identity_public_key.public_key_hash().unwrap()
         } else {
             rng.gen()

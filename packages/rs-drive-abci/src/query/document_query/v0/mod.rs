@@ -2,6 +2,7 @@ use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
@@ -16,6 +17,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::DriveDocumentQuery;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_documents_v0(
@@ -143,11 +145,12 @@ impl<C> Platform<C> {
                     Err(e) => return Err(e.into()),
                 };
 
+            let (grovedb_used, proof) =
+                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
             GetDocumentsResponseV0 {
-                result: Some(get_documents_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                result: Some(get_documents_response_v0::Result::Proof(proof)),
+                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
             let results = match drive_query.execute_raw_results_no_proof(
@@ -169,7 +172,7 @@ impl<C> Platform<C> {
                 result: Some(get_documents_response_v0::Result::Documents(
                     get_documents_response_v0::Documents { documents: results },
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

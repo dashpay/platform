@@ -16,6 +16,7 @@ pub struct DriveAbciQueryVersions {
     pub voting_based_queries: DriveAbciQueryVotingVersions,
     pub system: DriveAbciQuerySystemVersions,
     pub group_queries: DriveAbciQueryGroupVersions,
+    pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -43,6 +44,16 @@ pub struct DriveAbciQueryGroupVersions {
     pub group_infos: FeatureVersionBounds,
     pub group_actions: FeatureVersionBounds,
     pub group_action_signers: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryAddressFundsVersions {
+    pub addresses_infos: FeatureVersionBounds,
+    pub address_info: FeatureVersionBounds,
+    pub addresses_trunk_state: FeatureVersionBounds,
+    pub addresses_branch_state: FeatureVersionBounds,
+    pub recent_address_balance_changes: FeatureVersionBounds,
+    pub recent_compacted_address_balance_changes: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

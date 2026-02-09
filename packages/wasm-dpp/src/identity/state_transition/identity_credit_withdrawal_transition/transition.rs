@@ -19,8 +19,8 @@ use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use dpp::state_transition::StateTransitionLike;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::{StateTransitionLike, StateTransitionSingleSigned};
 use dpp::withdrawal::Pooling;
 
 #[wasm_bindgen(js_name=IdentityCreditWithdrawalTransition)]
@@ -394,7 +394,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
             .with_js_error()?;
 
-        self.0.set_signature(wrapper.signature().to_owned());
+        self.0
+            .set_signature(wrapper.signature().unwrap().to_owned());
 
         Ok(())
     }
@@ -434,7 +435,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
             )
             .with_js_error()?;
 
-        let signature = state_transition.signature().to_owned();
+        let signature = state_transition.signature().unwrap().to_owned();
         let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
 
         self.0.set_signature(signature);

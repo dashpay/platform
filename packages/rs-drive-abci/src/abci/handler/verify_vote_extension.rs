@@ -84,7 +84,7 @@ where
         });
     }
 
-    tracing::debug!(
+    tracing::trace!(
         "votes extensions for height: {}, round: {} are successfully verified",
         height,
         round,

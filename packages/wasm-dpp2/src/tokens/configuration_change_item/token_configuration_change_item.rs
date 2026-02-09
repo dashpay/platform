@@ -1,4 +1,6 @@
 use crate::identifier::IdentifierWasm;
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::configuration_convention::TokenConfigurationConventionWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
@@ -6,6 +8,31 @@ use crate::tokens::configuration::trade_mode::TokenTradeModeWasm;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_CONFIGURATION_CHANGE_ITEM_TS: &str = r#"
+/**
+ * Union type for token configuration change item values.
+ * Use `itemName` getter to determine which variant it is.
+ */
+export type TokenConfigurationChangeItemValue =
+    | "TokenConfigurationNoChange"
+    | TokenConfigurationConvention
+    | AuthorizedActionTakers
+    | bigint
+    | TokenPerpetualDistribution
+    | Identifier
+    | boolean
+    | TokenTradeMode
+    | number
+    | null;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenConfigurationChangeItemValue")]
+    pub type TokenConfigurationChangeItemValueJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenConfigurationChangeItem")]
@@ -25,18 +52,8 @@ impl From<TokenConfigurationChangeItem> for TokenConfigurationChangeItemWasm {
 
 #[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
 impl TokenConfigurationChangeItemWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfigurationChangeItem".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfigurationChangeItem".to_string()
-    }
-
-    #[wasm_bindgen(js_name = "getItemName")]
-    pub fn get_item_name(&self) -> String {
+    #[wasm_bindgen(getter = "itemName")]
+    pub fn item_name(&self) -> String {
         match self.0.clone() {
             TokenConfigurationChangeItem::TokenConfigurationNoChange => {
                 String::from("TokenConfigurationNoChange")
@@ -119,9 +136,9 @@ impl TokenConfigurationChangeItemWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getItem")]
-    pub fn get_item(&self) -> JsValue {
-        match self.0.clone() {
+    #[wasm_bindgen(getter = "item")]
+    pub fn item(&self) -> TokenConfigurationChangeItemValueJs {
+        let js_value: JsValue = match self.0.clone() {
             TokenConfigurationChangeItem::TokenConfigurationNoChange => {
                 JsValue::from_str("TokenConfigurationNoChange")
             }
@@ -224,6 +241,16 @@ impl TokenConfigurationChangeItemWasm {
             TokenConfigurationChangeItem::MainControlGroup(group_contract_position) => {
                 JsValue::from(group_contract_position)
             }
-        }
+        };
+        js_value.into()
     }
 }
+
+impl_try_from_js_value!(
+    TokenConfigurationChangeItemWasm,
+    "TokenConfigurationChangeItem"
+);
+impl_wasm_type_info!(
+    TokenConfigurationChangeItemWasm,
+    TokenConfigurationChangeItem
+);

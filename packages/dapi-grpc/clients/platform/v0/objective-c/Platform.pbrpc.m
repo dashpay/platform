@@ -1075,6 +1075,126 @@
              responseClass:[GetGroupActionSignersResponse class]];
 }
 
+#pragma mark getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse)
+
+- (void)getAddressInfoWithRequest:(GetAddressInfoRequest *)request handler:(void(^)(GetAddressInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetAddressInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetAddressInfoWithRequest:(GetAddressInfoRequest *)request handler:(void(^)(GetAddressInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getAddressInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetAddressInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getAddressInfoWithMessage:(GetAddressInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getAddressInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetAddressInfoResponse class]];
+}
+
+#pragma mark getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse)
+
+- (void)getAddressesInfosWithRequest:(GetAddressesInfosRequest *)request handler:(void(^)(GetAddressesInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetAddressesInfosWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetAddressesInfosWithRequest:(GetAddressesInfosRequest *)request handler:(void(^)(GetAddressesInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getAddressesInfos"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetAddressesInfosResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getAddressesInfosWithMessage:(GetAddressesInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getAddressesInfos"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetAddressesInfosResponse class]];
+}
+
+#pragma mark getAddressesTrunkState(GetAddressesTrunkStateRequest) returns (GetAddressesTrunkStateResponse)
+
+- (void)getAddressesTrunkStateWithRequest:(GetAddressesTrunkStateRequest *)request handler:(void(^)(GetAddressesTrunkStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetAddressesTrunkStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetAddressesTrunkStateWithRequest:(GetAddressesTrunkStateRequest *)request handler:(void(^)(GetAddressesTrunkStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getAddressesTrunkState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetAddressesTrunkStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getAddressesTrunkStateWithMessage:(GetAddressesTrunkStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getAddressesTrunkState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetAddressesTrunkStateResponse class]];
+}
+
+#pragma mark getAddressesBranchState(GetAddressesBranchStateRequest) returns (GetAddressesBranchStateResponse)
+
+- (void)getAddressesBranchStateWithRequest:(GetAddressesBranchStateRequest *)request handler:(void(^)(GetAddressesBranchStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetAddressesBranchStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetAddressesBranchStateWithRequest:(GetAddressesBranchStateRequest *)request handler:(void(^)(GetAddressesBranchStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getAddressesBranchState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetAddressesBranchStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getAddressesBranchStateWithMessage:(GetAddressesBranchStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getAddressesBranchState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetAddressesBranchStateResponse class]];
+}
+
+#pragma mark getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest) returns (GetRecentAddressBalanceChangesResponse)
+
+- (void)getRecentAddressBalanceChangesWithRequest:(GetRecentAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentAddressBalanceChangesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetRecentAddressBalanceChangesWithRequest:(GetRecentAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentAddressBalanceChanges"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentAddressBalanceChangesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getRecentAddressBalanceChangesWithMessage:(GetRecentAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentAddressBalanceChanges"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentAddressBalanceChangesResponse class]];
+}
+
+#pragma mark getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse)
+
+- (void)getRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentCompactedAddressBalanceChangesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentCompactedAddressBalanceChanges"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentCompactedAddressBalanceChangesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getRecentCompactedAddressBalanceChangesWithMessage:(GetRecentCompactedAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentCompactedAddressBalanceChanges"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentCompactedAddressBalanceChangesResponse class]];
+}
+
 #pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**

@@ -15,12 +15,12 @@ use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
+use grovedb::{Element, TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub(super) fn create_initial_state_structure_1(
+    pub(super) fn create_initial_state_structure_v1(
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -31,6 +31,7 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::GroupActions as u8],
+            TreeType::NormalTree,
             transaction,
             None,
             &mut vec![],

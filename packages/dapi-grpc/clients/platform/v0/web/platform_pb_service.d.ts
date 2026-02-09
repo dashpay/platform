@@ -427,6 +427,60 @@ type PlatformgetGroupActionSigners = {
   readonly responseType: typeof platform_pb.GetGroupActionSignersResponse;
 };
 
+type PlatformgetAddressInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressInfoRequest;
+  readonly responseType: typeof platform_pb.GetAddressInfoResponse;
+};
+
+type PlatformgetAddressesInfos = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesInfosRequest;
+  readonly responseType: typeof platform_pb.GetAddressesInfosResponse;
+};
+
+type PlatformgetAddressesTrunkState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesTrunkStateRequest;
+  readonly responseType: typeof platform_pb.GetAddressesTrunkStateResponse;
+};
+
+type PlatformgetAddressesBranchState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetAddressesBranchStateRequest;
+  readonly responseType: typeof platform_pb.GetAddressesBranchStateResponse;
+};
+
+type PlatformgetRecentAddressBalanceChanges = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentAddressBalanceChangesRequest;
+  readonly responseType: typeof platform_pb.GetRecentAddressBalanceChangesResponse;
+};
+
+type PlatformgetRecentCompactedAddressBalanceChanges = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentCompactedAddressBalanceChangesRequest;
+  readonly responseType: typeof platform_pb.GetRecentCompactedAddressBalanceChangesResponse;
+};
+
 type PlatformsubscribePlatformEvents = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -485,6 +539,12 @@ export class Platform {
   static readonly getGroupInfos: PlatformgetGroupInfos;
   static readonly getGroupActions: PlatformgetGroupActions;
   static readonly getGroupActionSigners: PlatformgetGroupActionSigners;
+  static readonly getAddressInfo: PlatformgetAddressInfo;
+  static readonly getAddressesInfos: PlatformgetAddressesInfos;
+  static readonly getAddressesTrunkState: PlatformgetAddressesTrunkState;
+  static readonly getAddressesBranchState: PlatformgetAddressesBranchState;
+  static readonly getRecentAddressBalanceChanges: PlatformgetRecentAddressBalanceChanges;
+  static readonly getRecentCompactedAddressBalanceChanges: PlatformgetRecentCompactedAddressBalanceChanges;
   static readonly subscribePlatformEvents: PlatformsubscribePlatformEvents;
 }
 
@@ -942,6 +1002,60 @@ export class PlatformClient {
   getGroupActionSigners(
     requestMessage: platform_pb.GetGroupActionSignersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionSignersResponse|null) => void
+  ): UnaryResponse;
+  getAddressInfo(
+    requestMessage: platform_pb.GetAddressInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressInfoResponse|null) => void
+  ): UnaryResponse;
+  getAddressInfo(
+    requestMessage: platform_pb.GetAddressInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressInfoResponse|null) => void
+  ): UnaryResponse;
+  getAddressesInfos(
+    requestMessage: platform_pb.GetAddressesInfosRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesInfosResponse|null) => void
+  ): UnaryResponse;
+  getAddressesInfos(
+    requestMessage: platform_pb.GetAddressesInfosRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesInfosResponse|null) => void
+  ): UnaryResponse;
+  getAddressesTrunkState(
+    requestMessage: platform_pb.GetAddressesTrunkStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesTrunkStateResponse|null) => void
+  ): UnaryResponse;
+  getAddressesTrunkState(
+    requestMessage: platform_pb.GetAddressesTrunkStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesTrunkStateResponse|null) => void
+  ): UnaryResponse;
+  getAddressesBranchState(
+    requestMessage: platform_pb.GetAddressesBranchStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesBranchStateResponse|null) => void
+  ): UnaryResponse;
+  getAddressesBranchState(
+    requestMessage: platform_pb.GetAddressesBranchStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetAddressesBranchStateResponse|null) => void
+  ): UnaryResponse;
+  getRecentAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentAddressBalanceChangesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentAddressBalanceChangesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentCompactedAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentCompactedAddressBalanceChangesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentCompactedAddressBalanceChanges(
+    requestMessage: platform_pb.GetRecentCompactedAddressBalanceChangesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedAddressBalanceChangesResponse|null) => void
   ): UnaryResponse;
   subscribePlatformEvents(requestMessage: platform_pb.PlatformSubscriptionRequest, metadata?: grpc.Metadata): ResponseStream<platform_pb.PlatformSubscriptionResponse>;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "2.2.0-dev.2",
+  "version": "3.0.1",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "browser.js",
   "main": "node.js",
@@ -47,7 +47,7 @@
   "dependencies": {
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/protobufjs": "6.10.5",
-    "@grpc/grpc-js": "1.4.4",
+    "@grpc/grpc-js": "^1.14.3",
     "@improbable-eng/grpc-web": "^0.15.0",
     "google-protobuf": "^3.12.2",
     "long": "^5.2.0"
@@ -56,9 +56,7 @@
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
-    "eslint": "^8.53.0",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-plugin-import": "^2.29.0",
+    "eslint": "^9.18.0",
     "mocha": "^11.1.0",
     "mocha-sinon": "^2.1.2",
     "sinon": "^17.0.1",

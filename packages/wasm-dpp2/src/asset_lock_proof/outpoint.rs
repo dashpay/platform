@@ -1,10 +1,39 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
 use dpp::dashcore::{OutPoint, Txid};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * OutPoint serialized as a plain object.
+ */
+export interface OutPointObject {
+    txid: string;
+    vout: number;
+}
+
+/**
+ * OutPoint serialized as JSON.
+ */
+export interface OutPointJSON {
+    txid: string;
+    vout: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "OutPointObject")]
+    pub type OutPointObjectJs;
+
+    #[wasm_bindgen(typescript_type = "OutPointJSON")]
+    pub type OutPointJSONJs;
+}
 
 #[wasm_bindgen(js_name = "OutPoint")]
 #[derive(Clone)]
@@ -22,29 +51,31 @@ impl From<OutPointWasm> for OutPoint {
     }
 }
 
-impl TryFrom<JsValue> for OutPointWasm {
+impl TryFrom<&JsValue> for OutPointWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         let value = value.to_wasm::<OutPointWasm>("OutPoint")?;
 
         Ok(value.clone())
     }
 }
 
+impl TryFrom<JsValue> for OutPointWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
+    }
+}
+
 #[wasm_bindgen(js_class = OutPoint)]
 impl OutPointWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "OutPoint".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "OutPoint".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(txid_hex: String, vout: u32) -> WasmDppResult<OutPointWasm> {
+    pub fn constructor(
+        #[wasm_bindgen(js_name = "txidHex")] txid_hex: String,
+        vout: u32,
+    ) -> WasmDppResult<OutPointWasm> {
         let out_point = Txid::from_hex(&txid_hex)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
@@ -54,13 +85,13 @@ impl OutPointWasm {
         }))
     }
 
-    #[wasm_bindgen(js_name = "getVOUT")]
-    pub fn get_vout(&self) -> u32 {
+    #[wasm_bindgen(getter = "vout")]
+    pub fn vout(&self) -> u32 {
         self.0.vout
     }
 
-    #[wasm_bindgen(js_name = "getTXID")]
-    pub fn get_tx_id(&self) -> String {
+    #[wasm_bindgen(getter = "txid")]
+    pub fn txid(&self) -> String {
         self.0.txid.to_hex()
     }
 
@@ -77,7 +108,7 @@ impl OutPointWasm {
         encode(slice.as_slice(), Hex)
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> String {
         let slice: [u8; 36] = self.0.into();
 
@@ -85,33 +116,37 @@ impl OutPointWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(js_buffer: Vec<u8>) -> OutPointWasm {
-        let mut buffer = [0u8; 36];
-        let bytes = js_buffer.as_slice();
-        let len = bytes.len();
-        buffer[..len].copy_from_slice(bytes);
+    pub fn from_bytes(buffer: Vec<u8>) -> WasmDppResult<OutPointWasm> {
+        if buffer.len() != 36 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "OutPoint must be exactly 36 bytes, got {}",
+                buffer.len()
+            )));
+        }
 
-        OutPointWasm(OutPoint::from(buffer))
+        let out_buffer: [u8; 36] = buffer.try_into().expect("length already validated");
+
+        Ok(OutPointWasm(OutPoint::from(out_buffer)))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(hex: String) -> WasmDppResult<OutPointWasm> {
         let bytes =
             decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(OutPointWasm::from_bytes(bytes))
+        OutPointWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
     pub fn from_base64(base64: String) -> WasmDppResult<OutPointWasm> {
         let bytes = decode(base64.as_str(), Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(OutPointWasm::from_bytes(bytes))
+        OutPointWasm::from_bytes(bytes)
     }
 }
 
 impl OutPointWasm {
-    pub fn vec_from_js_value(js_outpoints: &js_sys::Array) -> WasmDppResult<Vec<OutPointWasm>> {
-        let outpoints: Vec<OutPointWasm> = js_outpoints
+    pub fn vec_from_js_value(outpoints: &js_sys::Array) -> WasmDppResult<Vec<OutPointWasm>> {
+        let outpoints: Vec<OutPointWasm> = outpoints
             .iter()
             .map(OutPointWasm::try_from)
             .collect::<Result<Vec<OutPointWasm>, WasmDppError>>()?;
@@ -119,3 +154,5 @@ impl OutPointWasm {
         Ok(outpoints)
     }
 }
+
+impl_wasm_type_info!(OutPointWasm, OutPoint);

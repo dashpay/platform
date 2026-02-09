@@ -14,12 +14,16 @@ export class ProtocolFacade {
     return w.getProtocolVersionUpgradeStateWithProofInfo();
   }
 
-  async versionUpgradeVoteStatus(startProTxHash: string | Uint8Array, count: number): Promise<Map<string, wasm.ProtocolVersionUpgradeVoteStatus>> {
+  async versionUpgradeVoteStatus(startProTxHash: wasm.ProTxHashLike | undefined, count: number):
+    Promise<Map<string, wasm.ProtocolVersionUpgradeVoteStatus>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getProtocolVersionUpgradeVoteStatus(startProTxHash, count);
   }
 
-  async versionUpgradeVoteStatusWithProof(startProTxHash: string | Uint8Array, count: number): Promise<wasm.ProofMetadataResponseTyped<unknown>> {
+  async versionUpgradeVoteStatusWithProof(startProTxHash: wasm.ProTxHashLike | undefined, count: number):
+    Promise<wasm.ProofMetadataResponseTyped<
+      Map<string, wasm.ProtocolVersionUpgradeVoteStatus>
+    >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getProtocolVersionUpgradeVoteStatusWithProofInfo(startProTxHash, count);
   }

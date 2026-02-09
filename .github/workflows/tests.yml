@@ -78,6 +78,8 @@ jobs:
           - name: Drive
             image_name: drive
             target: drive-abci
+            build_args: |
+              SDK_TEST_DATA=true
           - name: RS-DAPI
             image_name: rs-dapi
             target: rs-dapi
@@ -89,6 +91,7 @@ jobs:
       name: ${{ matrix.name }}
       image_name: ${{ matrix.image_name }}
       target: ${{ matrix.target }}
+      build_args: ${{ matrix.build_args }}
 
   rs-packages:
     name: Rust packages
@@ -155,7 +158,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Enable corepack
         run: corepack enable

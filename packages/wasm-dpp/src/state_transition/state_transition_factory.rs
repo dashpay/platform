@@ -61,6 +61,24 @@ impl StateTransitionFactoryWasm {
                 StateTransition::MasternodeVote(st) => {
                     Ok(MasternodeVoteTransitionWasm::from(st).into())
                 }
+                StateTransition::IdentityCreditTransferToAddresses(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::IdentityCreateFromAddresses(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::IdentityTopUpFromAddresses(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::AddressFundsTransfer(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::AddressFundingFromAssetLock(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::AddressCreditWithdrawal(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

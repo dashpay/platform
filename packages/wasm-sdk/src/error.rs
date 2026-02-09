@@ -2,6 +2,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_dpp2::error::WasmDppError;
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -24,6 +25,7 @@ pub enum WasmSdkErrorKind {
     EpochNotFound,
     TimeoutReached,
     AlreadyExists,
+    InvalidCreditTransfer,
     Generic,
     ContextProviderError,
     Cancelled,
@@ -46,7 +48,7 @@ pub struct WasmSdkError {
     /// Optional numeric code for some errors (e.g., broadcast error code).
     code: i32,
     /// Indicates if the operation can be retried safely.
-    retriable: bool,
+    is_retriable: bool,
 }
 
 // wasm-bindgen getters defined below in the second impl block
@@ -56,13 +58,13 @@ impl WasmSdkError {
         kind: WasmSdkErrorKind,
         message: M,
         code: Option<i32>,
-        retriable: bool,
+        is_retriable: bool,
     ) -> Self {
         Self {
             kind,
             message: message.into(),
             code: code.unwrap_or(-1),
-            retriable,
+            is_retriable,
         }
     }
 
@@ -137,6 +139,12 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            InvalidCreditTransfer(msg) => Self::new(
+                WasmSdkErrorKind::InvalidCreditTransfer,
+                msg,
+                None,
+                retriable,
+            ),
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),
@@ -175,6 +183,12 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            NoAvailableAddressesToRetry(inner) => Self::new(
+                WasmSdkErrorKind::DapiClientError,
+                format!("no available addresses to retry, last error: {}", inner),
+                None,
+                retriable,
+            ),
         }
     }
 }
@@ -192,6 +206,21 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
             Some(err.code as i32),
             false,
         )
+    }
+}
+
+impl From<WasmDppError> for WasmSdkError {
+    fn from(err: WasmDppError) -> Self {
+        use wasm_dpp2::error::WasmDppErrorKind;
+        // Map WasmDppError kind to appropriate WasmSdkError kind
+        let kind = match err.kind() {
+            WasmDppErrorKind::Protocol => WasmSdkErrorKind::Protocol,
+            WasmDppErrorKind::InvalidArgument => WasmSdkErrorKind::InvalidArgument,
+            WasmDppErrorKind::Serialization => WasmSdkErrorKind::SerializationError,
+            WasmDppErrorKind::Conversion => WasmSdkErrorKind::SerializationError,
+            WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
+        };
+        Self::new(kind, err.to_string(), None, false)
     }
 }
 
@@ -224,6 +253,7 @@ impl WasmSdkError {
             K::EpochNotFound => "EpochNotFound",
             K::TimeoutReached => "TimeoutReached",
             K::AlreadyExists => "AlreadyExists",
+            K::InvalidCreditTransfer => "InvalidCreditTransfer",
             K::Generic => "Generic",
             K::ContextProviderError => "ContextProviderError",
             K::Cancelled => "Cancelled",
@@ -249,8 +279,8 @@ impl WasmSdkError {
     }
 
     /// Whether the error is retryable
-    #[wasm_bindgen(getter)]
-    pub fn retriable(&self) -> bool {
-        self.retriable
+    #[wasm_bindgen(getter = "isRetriable")]
+    pub fn is_retriable(&self) -> bool {
+        self.is_retriable
     }
 }

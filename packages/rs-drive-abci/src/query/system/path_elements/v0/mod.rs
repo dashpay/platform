@@ -10,9 +10,11 @@ use dpp::check_validation_result_with_data;
 
 use crate::error::query::QueryError;
 use crate::platform_types::platform_state::PlatformState;
+use crate::query::response_metadata::CheckpointUsed;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_path_elements_v0(
@@ -40,9 +42,10 @@ impl<C> Platform<C> {
 
             GetPathElementsResponseV0 {
                 result: Some(get_path_elements_response_v0::Result::Proof(
-                    self.response_proof_v0(platform_state, proof),
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                        .map(|(_, proof)| proof)?,
                 )),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         } else {
             let result = check_validation_result_with_data!(self.drive.fetch_elements(
@@ -65,7 +68,7 @@ impl<C> Platform<C> {
                 result: Some(get_path_elements_response_v0::Result::Elements(Elements {
                     elements: serialized,
                 })),
-                metadata: Some(self.response_metadata_v0(platform_state)),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

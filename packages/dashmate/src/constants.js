@@ -56,6 +56,7 @@ export const OUTPUT_FORMATS = {
 
 export const SSL_PROVIDERS = {
   ZEROSSL: 'zerossl',
+  LETSENCRYPT: 'letsencrypt',
   FILE: 'file',
   SELF_SIGNED: 'self-signed',
 };

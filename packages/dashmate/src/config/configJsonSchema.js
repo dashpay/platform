@@ -495,6 +495,44 @@ export default {
     platform: {
       type: 'object',
       properties: {
+        quorumList: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            api: {
+              type: 'object',
+              properties: {
+                host: {
+                  $ref: '#/definitions/host',
+                },
+                port: {
+                  $ref: '#/definitions/port',
+                },
+              },
+              required: ['host', 'port'],
+              additionalProperties: false,
+            },
+            previousBlocksOffset: {
+              type: 'integer',
+              minimum: 0,
+            },
+            versionCheckHost: {
+              type: 'string',
+              description: 'Host to use for version checking (used in local networks)',
+            },
+            addressHostOverride: {
+              type: 'string',
+              description: 'Override for address host (used in local networks)',
+            },
+          },
+          required: ['enabled', 'docker', 'api', 'previousBlocksOffset', 'versionCheckHost', 'addressHostOverride'],
+          additionalProperties: false,
+        },
         gateway: {
           type: 'object',
           properties: {
@@ -639,7 +677,7 @@ export default {
                 },
                 provider: {
                   type: 'string',
-                  enum: ['zerossl', 'self-signed', 'file'],
+                  enum: ['zerossl', 'letsencrypt', 'self-signed', 'file'],
                 },
                 providerConfigs: {
                   type: 'object',
@@ -657,6 +695,16 @@ export default {
                         },
                       },
                       required: ['apiKey', 'id'],
+                      additionalProperties: false,
+                    },
+                    letsencrypt: {
+                      type: ['object'],
+                      properties: {
+                        email: {
+                          type: ['string', 'null'],
+                        },
+                      },
+                      required: ['email'],
                       additionalProperties: false,
                     },
                   },
@@ -1043,6 +1091,9 @@ export default {
                         $ref: '#/definitions/tenderdashNodeAddress',
                       },
                     },
+                    allowlistOnly: {
+                      type: 'boolean',
+                    },
                     flushThrottleTimeout: {
                       $ref: '#/definitions/duration',
                     },
@@ -1067,7 +1118,7 @@ export default {
                       minimum: 1,
                     },
                   },
-                  required: ['host', 'port', 'persistentPeers', 'seeds', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
+                  required: ['host', 'port', 'persistentPeers', 'seeds', 'allowlistOnly', 'flushThrottleTimeout', 'maxPacketMsgPayloadSize', 'sendRate', 'recvRate', 'maxConnections', 'maxOutgoingConnections'],
                   additionalProperties: false,
                 },
                 mempool: {

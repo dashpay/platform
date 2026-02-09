@@ -1,15 +1,109 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{JsValueExt, try_to_u64};
+use crate::impl_from_for_extern_type;
+use crate::impl_wasm_type_info;
+use crate::utils::{JsMapExt, try_from_options_with, try_to_map, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
 use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
 use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::Identifier;
-use js_sys::{BigInt, Object, Reflect};
+use js_sys::{BigInt, Map};
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FinalizedEpochInfoOptions {
+    first_block_time: u64,
+    first_block_height: u64,
+    total_blocks_in_epoch: u64,
+    first_core_block_height: u32,
+    next_epoch_start_core_block_height: u32,
+    total_processing_fees: u64,
+    total_distributed_storage_fees: u64,
+    total_created_storage_fees: u64,
+    core_block_rewards: u64,
+    fee_multiplier_permille: u64,
+    protocol_version: u32,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const FINALIZED_EPOCH_INFO_OPTIONS_TS: &str = r#"
+/**
+ * Block proposers mapping: base58 Identifier string -> block count (bigint).
+ */
+export type BlockProposersMap = Map<string, bigint>;
+
+export interface FinalizedEpochInfoOptions {
+    firstBlockTime: bigint;
+    firstBlockHeight: bigint;
+    totalBlocksInEpoch: bigint;
+    firstCoreBlockHeight: number;
+    nextEpochStartCoreBlockHeight: number;
+    totalProcessingFees: bigint;
+    totalDistributedStorageFees: bigint;
+    totalCreatedStorageFees: bigint;
+    coreBlockRewards: bigint;
+    blockProposers: BlockProposersMap;
+    feeMultiplierPermille: bigint;
+    protocolVersion: number;
+}
+
+/**
+ * FinalizedEpochInfo serialized as a plain object.
+ */
+export interface FinalizedEpochInfoObject {
+    firstBlockTime: bigint;
+    firstBlockHeight: bigint;
+    totalBlocksInEpoch: bigint;
+    firstCoreBlockHeight: number;
+    nextEpochStartCoreBlockHeight: number;
+    totalProcessingFees: bigint;
+    totalDistributedStorageFees: bigint;
+    totalCreatedStorageFees: bigint;
+    coreBlockRewards: bigint;
+    blockProposers: BlockProposersMap;
+    feeMultiplierPermille: bigint;
+    protocolVersion: number;
+}
+
+/**
+ * FinalizedEpochInfo serialized as JSON.
+ */
+export interface FinalizedEpochInfoJSON {
+    firstBlockTime: string;
+    firstBlockHeight: string;
+    totalBlocksInEpoch: string;
+    firstCoreBlockHeight: number;
+    nextEpochStartCoreBlockHeight: number;
+    totalProcessingFees: string;
+    totalDistributedStorageFees: string;
+    totalCreatedStorageFees: string;
+    coreBlockRewards: string;
+    blockProposers: Record<string, string>;
+    feeMultiplierPermille: string;
+    protocolVersion: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "FinalizedEpochInfoOptions")]
+    pub type FinalizedEpochInfoOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "BlockProposersMap")]
+    pub type BlockProposersMapJs;
+
+    #[wasm_bindgen(typescript_type = "FinalizedEpochInfoObject")]
+    pub type FinalizedEpochInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "FinalizedEpochInfoJSON")]
+    pub type FinalizedEpochInfoJSONJs;
+}
+
+impl_from_for_extern_type!(BlockProposersMapJs, Map);
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "FinalizedEpochInfo")]
@@ -41,46 +135,25 @@ impl FinalizedEpochInfoWasm {
     }
 }
 
-fn block_proposers_from_js(js_value: &JsValue) -> WasmDppResult<BTreeMap<Identifier, u64>> {
-    if js_value.is_undefined() || js_value.is_null() {
-        return Ok(BTreeMap::new());
-    }
-
-    if !js_value.is_object() {
-        return Err(WasmDppError::invalid_argument(
-            "blockProposers must be an object",
-        ));
-    }
-
-    let object = Object::from(js_value.clone());
-    let keys = Object::keys(&object);
+fn block_proposers_from_map(js_map: &Map) -> WasmDppResult<BTreeMap<Identifier, u64>> {
     let mut map = BTreeMap::new();
 
-    for key in keys.iter() {
-        let identifier =
-            Identifier::from(IdentifierWasm::try_from(key.clone()).map_err(|err| {
-                WasmDppError::invalid_argument(format!(
-                    "invalid block proposer identifier: {}",
-                    err
-                ))
-            })?);
-
-        let value = Reflect::get(&object, &key).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to read block proposer '{}': {}",
-                identifier.to_string(Encoding::Base58),
-                message
-            ))
+    for entry in js_map.entries().into_iter() {
+        let entry = entry.map_err(|e| {
+            WasmDppError::invalid_argument(format!("Failed to iterate map entries: {:?}", e))
         })?;
 
-        let credits = try_to_u64(value.clone()).map_err(|err| {
-            WasmDppError::invalid_argument(format!(
-                "block proposer value for '{}' is not a valid u64: {:#}",
-                identifier.to_string(Encoding::Base58),
-                err
-            ))
-        })?;
+        let entry_array = js_sys::Array::from(&entry);
+        let key = entry_array.get(0);
+        let value = entry_array.get(1);
+
+        let identifier: Identifier = IdentifierWasm::try_from(key)
+            .map_err(|e| {
+                WasmDppError::invalid_argument(format!("Invalid block proposer identifier: {}", e))
+            })?
+            .into();
+
+        let credits = try_to_u64(&value, "blockProposerCredits")?;
 
         map.insert(identifier, credits);
     }
@@ -88,72 +161,44 @@ fn block_proposers_from_js(js_value: &JsValue) -> WasmDppResult<BTreeMap<Identif
     Ok(map)
 }
 
-fn block_proposers_to_js(map: &BTreeMap<Identifier, u64>) -> WasmDppResult<JsValue> {
-    let object = Object::new();
-
-    for (identifier, value) in map {
-        Reflect::set(
-            &object,
-            &JsValue::from(identifier.to_string(Encoding::Base58)),
-            &BigInt::from(*value).into(),
-        )
-        .map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "unable to serialize block proposer '{}': {}",
-                identifier.to_string(Encoding::Base58),
-                message
-            ))
-        })?;
-    }
-
-    Ok(object.into())
+fn block_proposers_to_map(map: &BTreeMap<Identifier, u64>) -> BlockProposersMapJs {
+    Map::from_entries(map.iter().map(|(identifier, value)| {
+        let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
+        let value: JsValue = BigInt::from(*value).into();
+        (key, value)
+    }))
+    .into()
 }
 
 #[wasm_bindgen(js_class = FinalizedEpochInfo)]
 impl FinalizedEpochInfoWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "FinalizedEpochInfo".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name(&self) -> String {
-        "FinalizedEpochInfo".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        first_block_time: u64,
-        first_block_height: u64,
-        total_blocks_in_epoch: u64,
-        first_core_block_height: u32,
-        next_epoch_start_core_block_height: u32,
-        total_processing_fees: u64,
-        total_distributed_storage_fees: u64,
-        total_created_storage_fees: u64,
-        core_block_rewards: u64,
-        block_proposers: &JsValue,
-        fee_multiplier_permille: u64,
-        protocol_version: u32,
+    pub fn constructor(
+        options: FinalizedEpochInfoOptionsJs,
     ) -> WasmDppResult<FinalizedEpochInfoWasm> {
-        let block_proposers = block_proposers_from_js(block_proposers)?;
+        // Extract complex types first (borrows &options)
+        let block_proposers = try_from_options_with(&options, "blockProposers", |v| {
+            block_proposers_from_map(&try_to_map(v.clone(), "blockProposers")?)
+        })?;
+
+        // Deserialize primitive fields via serde last (consumes options)
+        let opts: FinalizedEpochInfoOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(FinalizedEpochInfoWasm(FinalizedEpochInfo::V0(
             FinalizedEpochInfoV0 {
-                first_block_time,
-                first_block_height,
-                total_blocks_in_epoch,
-                first_core_block_height,
-                next_epoch_start_core_block_height,
-                total_processing_fees,
-                total_distributed_storage_fees,
-                total_created_storage_fees,
-                core_block_rewards,
+                first_block_time: opts.first_block_time,
+                first_block_height: opts.first_block_height,
+                total_blocks_in_epoch: opts.total_blocks_in_epoch,
+                first_core_block_height: opts.first_core_block_height,
+                next_epoch_start_core_block_height: opts.next_epoch_start_core_block_height,
+                total_processing_fees: opts.total_processing_fees,
+                total_distributed_storage_fees: opts.total_distributed_storage_fees,
+                total_created_storage_fees: opts.total_created_storage_fees,
+                core_block_rewards: opts.core_block_rewards,
                 block_proposers,
-                fee_multiplier_permille,
-                protocol_version,
+                fee_multiplier_permille: opts.fee_multiplier_permille,
+                protocol_version: opts.protocol_version,
             },
         )))
     }
@@ -204,8 +249,8 @@ impl FinalizedEpochInfoWasm {
     }
 
     #[wasm_bindgen(getter = "blockProposers")]
-    pub fn block_proposers(&self) -> WasmDppResult<JsValue> {
-        block_proposers_to_js(self.v0().block_proposers())
+    pub fn block_proposers(&self) -> BlockProposersMapJs {
+        block_proposers_to_map(self.v0().block_proposers())
     }
 
     #[wasm_bindgen(getter = "feeMultiplierPermille")]
@@ -224,67 +269,111 @@ impl FinalizedEpochInfoWasm {
     }
 
     #[wasm_bindgen(setter = "firstBlockTime")]
-    pub fn set_first_block_time(&mut self, first_block_time: u64) {
+    pub fn set_first_block_time(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstBlockTime")] first_block_time: u64,
+    ) {
         self.v0_mut().first_block_time = first_block_time;
     }
 
     #[wasm_bindgen(setter = "firstBlockHeight")]
-    pub fn set_first_block_height(&mut self, first_block_height: u64) {
+    pub fn set_first_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstBlockHeight")] first_block_height: u64,
+    ) {
         self.v0_mut().first_block_height = first_block_height;
     }
 
     #[wasm_bindgen(setter = "totalBlocksInEpoch")]
-    pub fn set_total_blocks_in_epoch(&mut self, total_blocks_in_epoch: u64) {
+    pub fn set_total_blocks_in_epoch(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalBlocksInEpoch")] total_blocks_in_epoch: u64,
+    ) {
         self.v0_mut().total_blocks_in_epoch = total_blocks_in_epoch;
     }
 
     #[wasm_bindgen(setter = "firstCoreBlockHeight")]
-    pub fn set_first_core_block_height(&mut self, first_core_block_height: u32) {
+    pub fn set_first_core_block_height(
+        &mut self,
+        #[wasm_bindgen(js_name = "firstCoreBlockHeight")] first_core_block_height: u32,
+    ) {
         self.v0_mut().first_core_block_height = first_core_block_height;
     }
 
     #[wasm_bindgen(setter = "nextEpochStartCoreBlockHeight")]
     pub fn set_next_epoch_start_core_block_height(
         &mut self,
+        #[wasm_bindgen(js_name = "nextEpochStartCoreBlockHeight")]
         next_epoch_start_core_block_height: u32,
     ) {
         self.v0_mut().next_epoch_start_core_block_height = next_epoch_start_core_block_height;
     }
 
     #[wasm_bindgen(setter = "totalProcessingFees")]
-    pub fn set_total_processing_fees(&mut self, total_processing_fees: u64) {
+    pub fn set_total_processing_fees(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalProcessingFees")] total_processing_fees: u64,
+    ) {
         self.v0_mut().total_processing_fees = total_processing_fees;
     }
 
     #[wasm_bindgen(setter = "totalDistributedStorageFees")]
-    pub fn set_total_distributed_storage_fees(&mut self, total_distributed_storage_fees: u64) {
+    pub fn set_total_distributed_storage_fees(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalDistributedStorageFees")]
+        total_distributed_storage_fees: u64,
+    ) {
         self.v0_mut().total_distributed_storage_fees = total_distributed_storage_fees;
     }
 
     #[wasm_bindgen(setter = "totalCreatedStorageFees")]
-    pub fn set_total_created_storage_fees(&mut self, total_created_storage_fees: u64) {
+    pub fn set_total_created_storage_fees(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalCreatedStorageFees")] total_created_storage_fees: u64,
+    ) {
         self.v0_mut().total_created_storage_fees = total_created_storage_fees;
     }
 
     #[wasm_bindgen(setter = "coreBlockRewards")]
-    pub fn set_core_block_rewards(&mut self, core_block_rewards: u64) {
+    pub fn set_core_block_rewards(
+        &mut self,
+        #[wasm_bindgen(js_name = "coreBlockRewards")] core_block_rewards: u64,
+    ) {
         self.v0_mut().core_block_rewards = core_block_rewards;
     }
 
     #[wasm_bindgen(setter = "blockProposers")]
-    pub fn set_block_proposers(&mut self, js_block_proposers: &JsValue) -> WasmDppResult<()> {
-        let block_proposers = block_proposers_from_js(js_block_proposers)?;
-        self.v0_mut().block_proposers = block_proposers;
+    pub fn set_block_proposers(
+        &mut self,
+        #[wasm_bindgen(js_name = "blockProposers")] block_proposers: BlockProposersMapJs,
+    ) -> WasmDppResult<()> {
+        let block_proposers_map =
+            block_proposers_from_map(&try_to_map(block_proposers, "blockProposers")?)?;
+        self.v0_mut().block_proposers = block_proposers_map;
         Ok(())
     }
 
     #[wasm_bindgen(setter = "feeMultiplierPermille")]
-    pub fn set_fee_multiplier_permille(&mut self, fee_multiplier_permille: u64) {
+    pub fn set_fee_multiplier_permille(
+        &mut self,
+        #[wasm_bindgen(js_name = "feeMultiplierPermille")] fee_multiplier_permille: u64,
+    ) {
         self.v0_mut().fee_multiplier_permille = fee_multiplier_permille;
     }
 
     #[wasm_bindgen(setter = "protocolVersion")]
-    pub fn set_protocol_version(&mut self, protocol_version: u32) {
+    pub fn set_protocol_version(
+        &mut self,
+        #[wasm_bindgen(js_name = "protocolVersion")] protocol_version: u32,
+    ) {
         self.v0_mut().protocol_version = protocol_version;
     }
 }
+
+crate::impl_wasm_conversions!(
+    FinalizedEpochInfoWasm,
+    FinalizedEpochInfo,
+    FinalizedEpochInfoObjectJs,
+    FinalizedEpochInfoJSONJs
+);
+impl_wasm_type_info!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

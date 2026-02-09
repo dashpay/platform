@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.7-labs
+# syntax = docker/dockerfile:1.21
 
 # Docker image for rs-drive-abci
 #
@@ -46,7 +46,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.21
+ARG ALPINE_VERSION=3.23
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
@@ -171,6 +171,10 @@ ENV NODE_ENV=${NODE_ENV}
 # Note that, due to security concerns, each stage needs to declare variables containing authentication secrets, like
 # ACTIONS_RUNTIME_TOKEN, AWS_SECRET_ACCESS_KEY. This is to prevent leaking secrets to the final image. The secrets are
 # loaded using docker buildx `--secret` flag and need to be explicitly mounted with `--mount=type=secret,id=SECRET_ID`.
+#
+# Available secrets:
+#   - AWS: AWS credentials for sccache S3 backend
+#   - GITHUB_TOKEN: GitHub token to increase API rate limit from 60 to 5000 req/hour (optional, for local builds)
 
 FROM deps-base AS deps-sccache
 
@@ -363,7 +367,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/dapi-grpc \
-    packages/rs-dapi-grpc-macros \
+    packages/rs-dash-platform-macros \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
@@ -417,6 +421,7 @@ FROM deps AS build-drive-abci
 # This is only for testing purpose and should be used only for
 # local development environment
 ARG SDK_TEST_DATA
+ARG ADDITIONAL_FEATURES=""
 
 SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
 
@@ -427,14 +432,21 @@ COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
+    --mount=type=secret,id=GITHUB_TOKEN \
     set -ex; \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     source /root/env && \
+    export FEATURES_FLAG=""; \
+    ADDITIONAL_FEATURES_TRIMMED="$(echo "${ADDITIONAL_FEATURES}" | tr -d '[:space:]')"; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
-    else \
-    export FEATURES_FLAG="--features=console,grovedbg"; \
+    fi && \
+    if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
+    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
@@ -445,7 +457,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package drive-abci \
     ${FEATURES_FLAG} \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    rm -f ~/.gitconfig || true
 
 COPY --parents \
     Cargo.lock \
@@ -453,7 +466,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/dapi-grpc \
-    packages/rs-dapi-grpc-macros \
+    packages/rs-dash-platform-macros \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
@@ -500,16 +513,20 @@ RUN mkdir /artifacts
 # Build Drive ABCI
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
+    export FEATURES_FLAG=""; \
+    ADDITIONAL_FEATURES_TRIMMED="$(echo "${ADDITIONAL_FEATURES}" | tr -d '[:space:]')"; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
     export OUT_DIRECTORY=release; \
     else \
-    export FEATURES_FLAG="--features=console,grovedbg"; \
     export OUT_DIRECTORY=debug; \
+    fi && \
+    if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
+    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
     if [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
@@ -540,8 +557,12 @@ COPY --from=build-planner /platform/recipe.json recipe.json
 # Note we unset CFLAGS and CXXFLAGS as they have `-march` included, which breaks wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
+    --mount=type=secret,id=GITHUB_TOKEN \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
     cargo chef cook \
@@ -550,7 +571,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package wasm-dpp \
     --target wasm32-unknown-unknown \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    rm -f ~/.gitconfig || true
 
 
 # Rust deps
@@ -598,7 +620,7 @@ COPY --parents \
 # We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
     --mount=type=secret,id=AWS \
     source /root/env && \
@@ -761,9 +783,13 @@ COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
 # Build dependencies - this is the caching Docker layer!
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
+    --mount=type=secret,id=GITHUB_TOKEN \
     set -ex; \
+    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
@@ -773,7 +799,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --profile "$CARGO_BUILD_PROFILE" \
     --package rs-dapi \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    rm -f ~/.gitconfig || true
 
 COPY --parents \
     Cargo.lock \
@@ -781,7 +808,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/dapi-grpc \
-    packages/rs-dapi-grpc-macros \
+    packages/rs-dash-platform-macros \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
@@ -826,7 +853,7 @@ RUN mkdir /artifacts
 # Build rs-dapi
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \

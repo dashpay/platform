@@ -85,7 +85,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -186,12 +186,12 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
                     StateError::TokenTransferRecipientIdentityNotExistError(_)
                 ),
-                _
-            )]
+                ..
+            }]
         );
 
         platform
@@ -302,10 +302,10 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::TokenIsPausedError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                ..
+            }]
         );
 
         platform
@@ -386,7 +386,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -447,7 +447,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -558,7 +558,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -617,10 +617,10 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::TokenIsPausedError(_)),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                ..
+            }]
         );
 
         platform
@@ -692,7 +692,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -753,7 +753,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform
@@ -944,12 +944,12 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [PaidConsensusError(
-                ConsensusError::StateError(StateError::IdentityDoesNotHaveEnoughTokenBalanceError(
-                    _
-                )),
-                _
-            )]
+            [PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::IdentityDoesNotHaveEnoughTokenBalanceError(_)
+                ),
+                ..
+            }]
         );
 
         platform
@@ -1070,7 +1070,7 @@ mod token_transfer_tests {
 
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
         );
 
         platform

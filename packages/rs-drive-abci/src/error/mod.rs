@@ -10,7 +10,6 @@ use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
-use tracing::error;
 
 /// Execution errors module
 pub mod execution;
