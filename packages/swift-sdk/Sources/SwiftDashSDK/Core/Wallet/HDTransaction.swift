@@ -91,177 +91,6 @@ public struct TransactionOutput: Codable {
     }
 }
 
-// TransactionBuilder is now defined in TransactionBuilder.swift
-
-/*
-public class TransactionBuilder {
-    private var inputs: [TransactionInput] = []
-    private var outputs: [TransactionOutput] = []
-    private let network: DashNetwork
-    private let feePerKB: UInt64
-    
-    public init(network: DashNetwork, feePerKB: UInt64 = 1000) {
-        self.network = network
-        self.feePerKB = feePerKB
-    }
-    
-    // MARK: - Building Transaction
-    
-    public func addInput(utxo: HDUTXO, address: HDAddress) {
-        let input = TransactionInput(
-            txHash: utxo.txHash,
-            outputIndex: utxo.outputIndex,
-            script: Data(), // Will be filled during signing
-            amount: utxo.amount,
-            address: address.address
-        )
-        inputs.append(input)
-    }
-    
-    public func addOutput(address: String, amount: UInt64) throws {
-        guard CoreSDKWrapper.shared.validateAddress(address, network: network) else {
-            throw TransactionError.invalidAddress
-        }
-        
-        let scriptPubKey = try createScriptPubKey(for: address)
-        let output = TransactionOutput(
-            amount: amount,
-            script: scriptPubKey,
-            address: address,
-            isChange: false
-        )
-        outputs.append(output)
-    }
-    
-    public func addChangeOutput(address: String, amount: UInt64) throws {
-        guard CoreSDKWrapper.shared.validateAddress(address, network: network) else {
-            throw TransactionError.invalidAddress
-        }
-        
-        let scriptPubKey = try createScriptPubKey(for: address)
-        let output = TransactionOutput(
-            amount: amount,
-            script: scriptPubKey,
-            address: address,
-            isChange: true
-        )
-        outputs.append(output)
-    }
-    
-    public func calculateFee() -> UInt64 {
-        // Estimate transaction size
-        let baseSize = 10 // Version (4) + locktime (4) + marker (2)
-        let inputSize = inputs.count * 148 // Approximate size per input with signature
-        let outputSize = outputs.count * 34 // Approximate size per output
-        let estimatedSize = baseSize + inputSize + outputSize
-        
-        // Calculate fee based on size
-        let fee = UInt64(estimatedSize) * feePerKB / 1000
-        return max(fee, 1000) // Minimum fee of 1000 duffs
-    }
-    
-    public func build() throws -> RawTransaction {
-        guard !inputs.isEmpty else {
-            throw TransactionError.noInputs
-        }
-        
-        guard !outputs.isEmpty else {
-            throw TransactionError.noOutputs
-        }
-        
-        // Calculate total input and output amounts
-        let totalInput = inputs.compactMap { $0.amount }.reduce(0, +)
-        let totalOutput = outputs.reduce(0) { $0 + $1.amount }
-        let fee = calculateFee()
-        
-        guard totalInput >= totalOutput + fee else {
-            throw TransactionError.insufficientFunds
-        }
-        
-        // Create raw transaction
-        return RawTransaction(
-            version: 2,
-            inputs: inputs,
-            outputs: outputs,
-            lockTime: 0
-        )
-    }
-    
-    // MARK: - Signing
-    
-    public func sign(transaction: RawTransaction, with privateKeys: [String: Data]) throws -> Data {
-        // This should use actual transaction signing logic
-        // For now, return mock signed transaction
-        var signedInputs: [TransactionInput] = []
-        
-        for (index, input) in transaction.inputs.enumerated() {
-            guard let address = input.address,
-                  let privateKey = privateKeys[address] else {
-                throw TransactionError.missingPrivateKey
-            }
-            
-            // Create signature script
-            let signatureScript = try createSignatureScript(
-                for: transaction,
-                inputIndex: index,
-                privateKey: privateKey
-            )
-            
-            let signedInput = TransactionInput(
-                txHash: input.txHash,
-                outputIndex: input.outputIndex,
-                script: signatureScript,
-                sequence: input.sequence,
-                amount: input.amount,
-                address: input.address
-            )
-            signedInputs.append(signedInput)
-        }
-        
-        // Serialize signed transaction
-        let signedTx = RawTransaction(
-            version: transaction.version,
-            inputs: signedInputs,
-            outputs: transaction.outputs,
-            lockTime: transaction.lockTime
-        )
-        
-        return try signedTx.serialize()
-    }
-    
-    // MARK: - Private Methods
-    
-    private func createScriptPubKey(for address: String) throws -> Data {
-        // This should create actual P2PKH script
-        // For now, return mock script
-        var script = Data()
-        script.append(0x76) // OP_DUP
-        script.append(0xa9) // OP_HASH160
-        script.append(0x14) // Push 20 bytes
-        script.append(Data(repeating: 0, count: 20)) // Mock pubkey hash
-        script.append(0x88) // OP_EQUALVERIFY
-        script.append(0xac) // OP_CHECKSIG
-        return script
-    }
-    
-    private func createSignatureScript(for transaction: RawTransaction, inputIndex: Int, privateKey: Data) throws -> Data {
-        // This should create actual signature script
-        // For now, return mock script
-        let signature = CoreSDKWrapper.shared.signTransaction(Data(), with: privateKey) ?? Data()
-        let publicKey = CoreSDKWrapper.shared.derivePublicKey(from: privateKey) ?? Data()
-        
-        var script = Data()
-        script.append(UInt8(signature.count + 1)) // Signature length + hash type
-        script.append(signature)
-        script.append(0x01) // SIGHASH_ALL
-        script.append(UInt8(publicKey.count)) // Public key length
-        script.append(publicKey)
-        
-        return script
-    }
-}
-*/
-
 // MARK: - Raw Transaction
 
 public struct RawTransaction {
@@ -341,6 +170,21 @@ public struct RawTransaction {
     }
 }
 
-// TransactionError is now defined in TransactionBuilder.swift
-
-// Data hex extension is now defined in TransactionBuilder.swift
+// Common hex initializer used by transaction code
+extension Data {
+    init?(hex: String) {
+        let hex = hex.replacingOccurrences(of: " ", with: "")
+        guard hex.count % 2 == 0 else { return nil }
+        var data = Data(capacity: hex.count / 2)
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard next <= hex.endIndex else { return nil }
+            let byteString = String(hex[index..<next])
+            guard let num = UInt8(byteString, radix: 16) else { return nil }
+            data.append(num)
+            index = next
+        }
+        self = data
+    }
+}
