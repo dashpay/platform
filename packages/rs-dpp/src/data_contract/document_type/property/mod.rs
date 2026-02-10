@@ -2390,7 +2390,7 @@ fn get_field_type_matching_error(value: &Value) -> DataContractError {
     ))
 }
 
-pub(in crate::data_contract) fn find_integer_type_for_subschema_value(
+fn find_integer_type_for_subschema_value(
     value: &BTreeMap<String, &Value>,
 ) -> Result<DocumentPropertyType, DataContractError> {
     let minimum = value.get_optional_integer::<i64>(property_names::MINIMUM)?;

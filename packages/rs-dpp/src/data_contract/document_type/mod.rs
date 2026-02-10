@@ -26,14 +26,11 @@ use crate::data_contract::document_type::methods::{
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
-use crate::data_contract::errors::DataContractError;
 use crate::document::Document;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
-use indexmap::IndexMap;
-use platform_value::Value;
 
 pub const DEFAULT_HASH_SIZE: usize = 32;
 pub const DEFAULT_FLOAT_SIZE: usize = 8;
@@ -113,27 +110,6 @@ impl DocumentType {
         }
     }
 
-    /// Recalculates I64 integer properties to their sized types based on schema min/max.
-    fn recalculate_integer_types_from_schema(&mut self) -> Result<(), DataContractError> {
-        match self {
-            DocumentType::V0(v0) => {
-                recalculate_integer_types_from_schema(&mut v0.properties, &v0.schema)?;
-                recalculate_flattened_integer_types_from_schema(
-                    &mut v0.flattened_properties,
-                    &v0.schema,
-                )?;
-            }
-            DocumentType::V1(v1) => {
-                recalculate_integer_types_from_schema(&mut v1.properties, &v1.schema)?;
-                recalculate_flattened_integer_types_from_schema(
-                    &mut v1.flattened_properties,
-                    &v1.schema,
-                )?;
-            }
-        }
-        Ok(())
-    }
-
     pub fn prefunded_voting_balances_for_document(
         &self,
         document: &Document,
@@ -157,137 +133,6 @@ impl DocumentTypeRef<'_> {
             DocumentTypeRef::V1(v1) => DocumentType::V1((*v1).to_owned()),
         }
     }
-
-    /// Creates a clone of this document type with integer properties recalculated
-    /// to use sized types (U8/U16/U32/U64) based on the schema's min/max constraints.
-    ///
-    /// This is used as a fallback when deserializing documents that were serialized with
-    /// sized integer types (version byte 1/2) but whose contract config was later
-    /// downgraded to V0 (all I64). The downgrade causes property types to become I64,
-    /// but the binary data still has sized integers. This method reconstructs the
-    /// correct sized types from the schema so deserialization can succeed.
-    pub fn clone_with_sized_integer_types(&self) -> Result<DocumentType, DataContractError> {
-        let mut owned = self.to_owned_document_type();
-        owned.recalculate_integer_types_from_schema()?;
-        Ok(owned)
-    }
-}
-
-/// Recalculates integer property types from schema min/max constraints.
-///
-/// Walks the properties IndexMap and for each I64 property, looks up the
-/// corresponding schema definition to derive the correct sized type
-/// (U8/U16/U32/U64/I8/I16/I32/I64) based on min/max constraints.
-fn recalculate_integer_types_from_schema(
-    properties: &mut IndexMap<String, DocumentProperty>,
-    schema: &Value,
-) -> Result<(), DataContractError> {
-    use crate::data_contract::document_type::property::find_integer_type_for_subschema_value;
-    use platform_value::btreemap_extensions::BTreeValueMapHelper;
-    use platform_value::ValueMapHelper;
-
-    let schema_props = schema
-        .as_map()
-        .and_then(|map| map.get_optional_key(property_names::PROPERTIES))
-        .and_then(|v| v.as_map());
-
-    let schema_props = match schema_props {
-        Some(props) => props,
-        None => return Ok(()), // No properties in schema, nothing to do
-    };
-
-    for (name, prop) in properties.iter_mut() {
-        match &prop.property_type {
-            DocumentPropertyType::I64 => {
-                // Look up this property in the schema
-                let prop_schema = schema_props.get_optional_key(name.as_str());
-                if let Some(schema_val) = prop_schema {
-                    if let Ok(value_map) = schema_val.to_btree_ref_string_map() {
-                        if let Ok(Some(type_str)) = value_map.get_optional_str(property_names::TYPE)
-                        {
-                            if type_str == "integer" {
-                                if let Ok(sized_type) =
-                                    find_integer_type_for_subschema_value(&value_map)
-                                {
-                                    prop.property_type = sized_type;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            DocumentPropertyType::Object(ref inner_fields) => {
-                // For object properties, recurse into their sub-properties
-                let prop_schema = schema_props.get_optional_key(name.as_str());
-                if let Some(schema_val) = prop_schema {
-                    let mut inner_clone = inner_fields.clone();
-                    recalculate_integer_types_from_schema(&mut inner_clone, schema_val)?;
-                    prop.property_type = DocumentPropertyType::Object(inner_clone);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-/// Resolves a dotted property key (e.g. "parent.child.field") to its schema definition
-/// by walking through nested "properties" objects in the JSON Schema.
-fn resolve_schema_for_dotted_key<'a>(schema: &'a Value, dotted_key: &str) -> Option<&'a Value> {
-    use platform_value::ValueMapHelper;
-
-    let segments: Vec<&str> = dotted_key.split('.').collect();
-    let mut current = schema;
-
-    for segment in &segments {
-        // Enter "properties" at this level, then look up the segment
-        let props = current
-            .as_map()
-            .and_then(|map| map.get_optional_key(property_names::PROPERTIES))?;
-
-        current = props
-            .as_map()
-            .and_then(|map| map.get_optional_key(segment))?;
-    }
-
-    Some(current)
-}
-
-/// Recalculates integer property types for flattened properties (dotted keys).
-///
-/// Unlike `recalculate_integer_types_from_schema` which handles nested properties
-/// via Object recursion, this function resolves dotted keys (e.g. "parent.child")
-/// by walking through the schema's nested "properties" objects.
-fn recalculate_flattened_integer_types_from_schema(
-    properties: &mut IndexMap<String, DocumentProperty>,
-    schema: &Value,
-) -> Result<(), DataContractError> {
-    use crate::data_contract::document_type::property::find_integer_type_for_subschema_value;
-    use platform_value::btreemap_extensions::BTreeValueMapHelper;
-
-    for (name, prop) in properties.iter_mut() {
-        if !matches!(&prop.property_type, DocumentPropertyType::I64) {
-            continue;
-        }
-
-        let schema_val = match resolve_schema_for_dotted_key(schema, name) {
-            Some(val) => val,
-            None => continue,
-        };
-
-        if let Ok(value_map) = schema_val.to_btree_ref_string_map() {
-            if let Ok(Some(type_str)) = value_map.get_optional_str(property_names::TYPE) {
-                if type_str == "integer" {
-                    if let Ok(sized_type) = find_integer_type_for_subschema_value(&value_map) {
-                        prop.property_type = sized_type;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 impl DocumentTypeBasicMethods for DocumentType {}

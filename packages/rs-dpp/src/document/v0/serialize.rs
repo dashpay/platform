@@ -1506,51 +1506,10 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                     }
                 }
             }
-            1 => {
-                match DocumentV0::from_bytes_v1(
-                    serialized_document,
-                    document_type,
-                    platform_version,
-                ) {
-                    Ok(document) => Ok(document),
-                    Err(first_err) => {
-                        // Version byte 1 means document was serialized with sized integer types.
-                        // If deserialization fails, it might be due to the config downgrade (V1→V0) bug
-                        // where all integer properties became I64 instead of their sized types.
-                        // Fallback: reconstruct document type with sized types from schema and retry.
-                        match document_type.clone_with_sized_integer_types() {
-                            Ok(sized_doc_type) => DocumentV0::from_bytes_v1(
-                                serialized_document,
-                                sized_doc_type.as_ref(),
-                                platform_version,
-                            )
-                            .map_err(|_| ProtocolError::DataContractError(first_err)),
-                            Err(_) => Err(ProtocolError::DataContractError(first_err)),
-                        }
-                    }
-                }
-            }
-            2 => {
-                match DocumentV0::from_bytes_v2(
-                    serialized_document,
-                    document_type,
-                    platform_version,
-                ) {
-                    Ok(document) => Ok(document),
-                    Err(first_err) => {
-                        // Same fallback logic as version byte 1
-                        match document_type.clone_with_sized_integer_types() {
-                            Ok(sized_doc_type) => DocumentV0::from_bytes_v2(
-                                serialized_document,
-                                sized_doc_type.as_ref(),
-                                platform_version,
-                            )
-                            .map_err(|_| ProtocolError::DataContractError(first_err)),
-                            Err(_) => Err(ProtocolError::DataContractError(first_err)),
-                        }
-                    }
-                }
-            }
+            1 => DocumentV0::from_bytes_v1(serialized_document, document_type, platform_version)
+                .map_err(ProtocolError::DataContractError),
+            2 => DocumentV0::from_bytes_v2(serialized_document, document_type, platform_version)
+                .map_err(ProtocolError::DataContractError),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0, 1, 2],
@@ -1609,30 +1568,9 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                     platform_version,
                 ) {
                     Ok(document) => Ok(ConsensusValidationResult::new_with_data(document)),
-                    Err(first_err) => {
-                        // Fallback: reconstruct sized types from schema and retry
-                        match document_type.clone_with_sized_integer_types() {
-                            Ok(sized_doc_type) => {
-                                match DocumentV0::from_bytes_v1(
-                                    serialized_document,
-                                    sized_doc_type.as_ref(),
-                                    platform_version,
-                                ) {
-                                    Ok(document) => {
-                                        Ok(ConsensusValidationResult::new_with_data(document))
-                                    }
-                                    Err(_) => Ok(ConsensusValidationResult::new_with_error(
-                                        ConsensusError::BasicError(BasicError::ContractError(
-                                            first_err,
-                                        )),
-                                    )),
-                                }
-                            }
-                            Err(_) => Ok(ConsensusValidationResult::new_with_error(
-                                ConsensusError::BasicError(BasicError::ContractError(first_err)),
-                            )),
-                        }
-                    }
+                    Err(err) => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::ContractError(err)),
+                    )),
                 }
             }
             2 => {
@@ -1642,30 +1580,9 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                     platform_version,
                 ) {
                     Ok(document) => Ok(ConsensusValidationResult::new_with_data(document)),
-                    Err(first_err) => {
-                        // Fallback: reconstruct sized types from schema and retry
-                        match document_type.clone_with_sized_integer_types() {
-                            Ok(sized_doc_type) => {
-                                match DocumentV0::from_bytes_v2(
-                                    serialized_document,
-                                    sized_doc_type.as_ref(),
-                                    platform_version,
-                                ) {
-                                    Ok(document) => {
-                                        Ok(ConsensusValidationResult::new_with_data(document))
-                                    }
-                                    Err(_) => Ok(ConsensusValidationResult::new_with_error(
-                                        ConsensusError::BasicError(BasicError::ContractError(
-                                            first_err,
-                                        )),
-                                    )),
-                                }
-                            }
-                            Err(_) => Ok(ConsensusValidationResult::new_with_error(
-                                ConsensusError::BasicError(BasicError::ContractError(first_err)),
-                            )),
-                        }
-                    }
+                    Err(err) => Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::ContractError(err)),
+                    )),
                 }
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -1674,162 +1591,5 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
                 received: version,
             }),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::data_contract::config::v0::DataContractConfigV0;
-    use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-    use crate::data_contract::DataContract;
-    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use crate::identity::accessors::IdentityGettersV0;
-    use crate::identity::Identity;
-    use crate::tests::fixtures::{get_data_contract_fixture, get_documents_fixture};
-    use platform_version::version::PlatformVersion;
-    use platform_version::TryIntoPlatformVersioned;
-
-    #[test]
-    fn test_version_byte_1_fallback_with_config_downgrade() {
-        let platform_version = PlatformVersion::latest();
-        let identity = Identity::random_identity(5, Some(100), platform_version)
-            .expect("expected a random identity");
-        let owner_id = identity.id();
-
-        // Create contract with ConfigV1 (sized_integer_types=true)
-        let data_contract =
-            get_data_contract_fixture(Some(owner_id), 1, platform_version.protocol_version)
-                .data_contract_owned();
-
-        let document_type = data_contract
-            .document_type_for_name("niceDocument")
-            .expect("expected document type");
-
-        let documents = get_documents_fixture(&data_contract, platform_version.protocol_version)
-            .expect("expected documents");
-
-        // Get the first niceDocument
-        let document = &documents[0];
-
-        // Serialize with current config (version byte 1 for sized types)
-        let serialized = document
-            .serialize(document_type, &data_contract, platform_version)
-            .expect("expected to serialize");
-
-        // Verify version byte is 1 or 2 (sized integer serialization)
-        assert!(
-            serialized[0] == 1 || serialized[0] == 2,
-            "Expected version byte 1 or 2 for sized integer serialization, got {}",
-            serialized[0]
-        );
-
-        // Now simulate config downgrade by creating a document type with all I64 properties
-        // This is what happens when config changes from V1 to V0
-        let mut contract_in_format: DataContractInSerializationFormat = (&data_contract)
-            .try_into_platform_versioned(platform_version)
-            .expect("expected to convert");
-
-        // Change config to V0 (sized_integer_types=false, all integers become I64)
-        match &mut contract_in_format {
-            DataContractInSerializationFormat::V0(ref mut v0) => {
-                v0.config = DataContractConfig::V0(DataContractConfigV0::default());
-            }
-            DataContractInSerializationFormat::V1(ref mut v1) => {
-                v1.config = DataContractConfig::V0(DataContractConfigV0::default());
-            }
-        }
-
-        let downgraded_contract = DataContract::try_from_platform_versioned(
-            contract_in_format,
-            true,
-            &mut vec![],
-            platform_version,
-        )
-        .expect("expected to create downgraded contract");
-
-        let downgraded_doc_type = downgraded_contract
-            .document_type_for_name("niceDocument")
-            .expect("expected document type");
-
-        // Deserialize with downgraded document type — should succeed via fallback
-        let result =
-            DocumentV0::from_bytes(serialized.as_slice(), downgraded_doc_type, platform_version);
-
-        assert!(
-            result.is_ok(),
-            "Deserialization with config-downgraded doc type should succeed via fallback. Error: {:?}",
-            result.err()
-        );
-    }
-
-    #[test]
-    fn test_version_byte_1_normal_deserialization() {
-        let platform_version = PlatformVersion::latest();
-        let identity = Identity::random_identity(5, Some(100), platform_version)
-            .expect("expected a random identity");
-        let owner_id = identity.id();
-
-        let data_contract =
-            get_data_contract_fixture(Some(owner_id), 1, platform_version.protocol_version)
-                .data_contract_owned();
-
-        let document_type = data_contract
-            .document_type_for_name("niceDocument")
-            .expect("expected document type");
-
-        let documents = get_documents_fixture(&data_contract, platform_version.protocol_version)
-            .expect("expected documents");
-
-        let document = &documents[0];
-
-        let serialized = document
-            .serialize(document_type, &data_contract, platform_version)
-            .expect("expected to serialize");
-
-        // Normal deserialization should work without fallback
-        let result = DocumentV0::from_bytes(serialized.as_slice(), document_type, platform_version);
-
-        assert!(
-            result.is_ok(),
-            "Normal deserialization should succeed. Error: {:?}",
-            result.err()
-        );
-    }
-
-    #[test]
-    fn test_version_byte_0_unaffected() {
-        let platform_version = PlatformVersion::first();
-        let identity = Identity::random_identity(5, Some(100), platform_version)
-            .expect("expected a random identity");
-        let owner_id = identity.id();
-
-        let data_contract =
-            get_data_contract_fixture(Some(owner_id), 1, platform_version.protocol_version)
-                .data_contract_owned();
-
-        let document_type = data_contract
-            .document_type_for_name("niceDocument")
-            .expect("expected document type");
-
-        let documents = get_documents_fixture(&data_contract, platform_version.protocol_version)
-            .expect("expected documents");
-
-        let document = &documents[0];
-
-        let serialized = document
-            .serialize(document_type, &data_contract, platform_version)
-            .expect("expected to serialize");
-
-        // Version byte 0 docs should deserialize fine even with latest platform version
-        let latest = PlatformVersion::latest();
-        let result = DocumentV0::from_bytes(serialized.as_slice(), document_type, latest);
-
-        assert!(
-            result.is_ok(),
-            "Version byte 0 deserialization should work. Error: {:?}",
-            result.err()
-        );
     }
 }
