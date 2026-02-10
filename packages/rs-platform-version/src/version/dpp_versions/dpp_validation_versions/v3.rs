@@ -12,6 +12,7 @@ pub const DPP_VALIDATION_VERSIONS_V3: DPPValidationVersions = DPPValidationVersi
     },
     data_contract: DataContractValidationVersions {
         validate: 0,
+        // prevent sized_integer_types config downgrade on contract update
         validate_config_update: 1,
         validate_token_config_update: 0,
         validate_index_definitions: 0,

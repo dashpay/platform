@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_12: ProtocolVersion = 12;
 
-/// This version was for Platform release 3.1.0
+/// This version is for Platform release 3.1.0
 pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
     drive: DRIVE_VERSION_V6,
@@ -44,6 +44,7 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
+        // prevent sized_integer_types config downgrade on contract update
         validation: DPP_VALIDATION_VERSIONS_V3,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
