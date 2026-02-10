@@ -12,4 +12,3 @@ mod query;
 mod strategy;
 mod test_cases;
 mod verify_state_transitions;
-

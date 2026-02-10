@@ -152,8 +152,8 @@ impl Default for DapiConfig {
             core: CoreConfig::default(),
             platform_cache_bytes: 2 * 1024 * 1024,
             state_transition_wait_timeout: 30000, // 30 seconds default
-            platform_events_timeout: 600000, // 10 minutes default
-            core_stream_timeout: 600000,     // 10 minutes default
+            platform_events_timeout: 600000,      // 10 minutes default
+            core_stream_timeout: 600000,          // 10 minutes default
             logging: LoggingConfig::default(),
         }
     }

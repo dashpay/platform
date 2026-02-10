@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::sync::Arc;
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
 use dapi_grpc::core::v0::{
     BlockHeaders, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
@@ -9,6 +7,8 @@ use dashcore_rpc::dashcore::consensus::encode::{
     deserialize as deserialize_consensus, serialize as serialize_consensus,
 };
 use dashcore_rpc::dashcore::hashes::Hash;
+use std::collections::HashSet;
+use std::sync::Arc;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};

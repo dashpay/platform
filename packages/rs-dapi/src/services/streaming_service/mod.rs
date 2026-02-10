@@ -16,8 +16,8 @@ use crate::config::Config;
 use crate::sync::Workers;
 use dash_spv::Hash;
 use std::sync::Arc;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, trace};
 
