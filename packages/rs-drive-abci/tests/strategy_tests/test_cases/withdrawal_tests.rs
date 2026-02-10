@@ -3,6 +3,7 @@ mod tests {
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
+    use dash_platform_macros::stack_size;
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::transaction::TransactionPayload::AssetUnlockPayloadType;
@@ -45,6 +46,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_withdraw_from_identities() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)
@@ -739,6 +741,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_withdrawal_expired() {
         // TEST_PLATFORM_V3 is like v4, but without the single quorum can sign withdrawals restriction
         let platform_version = PlatformVersion::get(TEST_PLATFORM_V3.protocol_version)

@@ -994,6 +994,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
@@ -1130,6 +1131,7 @@ mod tests {
     }
 
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_nonce_gaps_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();

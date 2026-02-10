@@ -158,6 +158,7 @@ impl PlatformServiceImpl {
                     // Continue without proof
                 }
             }
+        }
 
         let body = WaitForStateTransitionResultResponse {
             version: Some(wait_for_state_transition_result_response::Version::V0(

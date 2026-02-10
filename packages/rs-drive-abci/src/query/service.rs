@@ -945,7 +945,6 @@ impl PlatformService for QueryService {
         )
         .await
     }
-}
 
     type subscribePlatformEventsStream =
         ReceiverStream<Result<PlatformSubscriptionResponse, Status>>;

@@ -4,6 +4,7 @@ mod chain_lock_update_tests;
 mod core_height_increase;
 mod core_update_tests;
 mod data_contract_history_tests;
+mod event_bus_tests;
 mod identity_and_document_tests;
 mod identity_transfer_tests;
 mod token_tests;
