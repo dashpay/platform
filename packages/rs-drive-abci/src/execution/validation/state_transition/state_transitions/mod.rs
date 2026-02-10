@@ -43,6 +43,8 @@ mod identity_top_up_from_addresses;
 
 /// Module for shield transition validation
 pub mod shield;
+/// Common validation logic shared by shielded transitions (proof verification)
+pub mod shielded_common;
 /// Module for shielded transfer transition validation
 pub mod shielded_transfer;
 /// Module for unshield transition validation

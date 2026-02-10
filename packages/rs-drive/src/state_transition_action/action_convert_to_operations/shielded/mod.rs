@@ -9,6 +9,7 @@ use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
 use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
 use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use crate::util::batch::drive_op_batch::AddressFundsOperationType;
+use crate::util::batch::drive_op_batch::finalize_task::DriveOperationFinalizeTask;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::shielded::ShieldedPoolParams;
@@ -95,7 +96,10 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
                     ),
                 ));
 
-                // TODO: Record anchor after batch is applied (needs post-batch semantics)
+                // Record anchor after batch is applied (finalization task)
+                ops.push(DriveOperation::FinalizeOperation(
+                    DriveOperationFinalizeTask::RecordShieldedAnchor,
+                ));
 
                 Ok(ops)
             }
@@ -186,7 +190,10 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                     ),
                 ));
 
-                // TODO: Record anchor after batch is applied (needs post-batch semantics)
+                // Record anchor after batch is applied (finalization task)
+                ops.push(DriveOperation::FinalizeOperation(
+                    DriveOperationFinalizeTask::RecordShieldedAnchor,
+                ));
 
                 Ok(ops)
             }
@@ -286,7 +293,10 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                     ),
                 ));
 
-                // TODO: Record anchor after batch is applied (needs post-batch semantics)
+                // Record anchor after batch is applied (finalization task)
+                ops.push(DriveOperation::FinalizeOperation(
+                    DriveOperationFinalizeTask::RecordShieldedAnchor,
+                ));
 
                 Ok(ops)
             }

@@ -2,7 +2,7 @@ mod address_funds;
 mod contract;
 mod document;
 mod drive_methods;
-mod finalize_task;
+pub(crate) mod finalize_task;
 mod group;
 mod identity;
 mod prefunded_specialized_balance;
@@ -94,6 +94,8 @@ pub enum DriveOperation<'a> {
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
     GroveDBOpBatch(GroveDbOpBatch),
+    /// An operation that only produces finalization tasks (no low-level ops)
+    FinalizeOperation(DriveOperationFinalizeTask),
 }
 
 impl DriveLowLevelOperationConverter for DriveOperation<'_> {
@@ -190,6 +192,7 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     platform_version,
                 )
             }
+            DriveOperation::FinalizeOperation(_) => Ok(vec![]),
         }
     }
 }
@@ -223,6 +226,7 @@ impl DriveOperation<'_> {
     ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
         match self {
             DriveOperation::DataContractOperation(o) => o.finalization_tasks(platform_version),
+            DriveOperation::FinalizeOperation(task) => Ok(Some(vec![task.clone()])),
             _ => Ok(None),
         }
     }

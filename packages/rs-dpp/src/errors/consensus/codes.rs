@@ -370,6 +370,11 @@ impl ErrorWithCode for StateError {
             Self::GroupActionAlreadyCompletedError(_) => 40802,
             Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
             Self::ModificationOfGroupActionMainParametersNotPermittedError(_) => 40804,
+
+            // Shielded errors: 40900-40999
+            Self::InvalidAnchorError(_) => 40900,
+            Self::NullifierAlreadySpentError(_) => 40901,
+            Self::InvalidShieldedProofError(_) => 40902,
         }
     }
 }

@@ -84,7 +84,7 @@ impl Drive {
 
         // Execute drive operation callbacks after updating state
         for task in finalize_tasks {
-            task.execute(self, platform_version);
+            task.execute(self, transaction, platform_version)?;
         }
 
         Drive::calculate_fee(

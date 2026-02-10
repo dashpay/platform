@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod tests;
 mod transform_into_action;
 
 use dpp::address_funds::PlatformAddress;
@@ -5,6 +7,7 @@ use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
 use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::validation::ConsensusValidationResult;
+use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -23,6 +26,7 @@ pub trait StateTransitionShieldTransitionActionTransformer {
         &self,
         platform: &PlatformRef<C>,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -31,6 +35,7 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
         &self,
         platform: &PlatformRef<C>,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -42,6 +47,8 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
             .transform_into_action
         {
             0 => self.transform_into_action_v0(
+                platform.drive,
+                tx,
                 inputs_with_remaining_balance,
                 platform_version,
             ),

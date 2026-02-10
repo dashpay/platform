@@ -4,6 +4,9 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
+use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
+use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
+use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
@@ -334,6 +337,15 @@ pub enum StateError {
 
     #[error(transparent)]
     AddressInvalidNonceError(AddressInvalidNonceError),
+
+    #[error(transparent)]
+    InvalidAnchorError(InvalidAnchorError),
+
+    #[error(transparent)]
+    NullifierAlreadySpentError(NullifierAlreadySpentError),
+
+    #[error(transparent)]
+    InvalidShieldedProofError(InvalidShieldedProofError),
 }
 
 impl From<StateError> for ConsensusError {

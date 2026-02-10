@@ -242,13 +242,14 @@ impl StateTransitionActionTransformer for StateTransition {
                 st.transform_into_action_for_shield_transition(
                     platform,
                     remaining_address_input_balances.clone(),
+                    tx,
                 )
             }
             StateTransition::ShieldedTransfer(st) => {
-                st.transform_into_action_for_shielded_transfer_transition(platform)
+                st.transform_into_action_for_shielded_transfer_transition(platform, tx)
             }
             StateTransition::Unshield(st) => {
-                st.transform_into_action_for_unshield_transition(platform)
+                st.transform_into_action_for_unshield_transition(platform, tx)
             }
         }
     }

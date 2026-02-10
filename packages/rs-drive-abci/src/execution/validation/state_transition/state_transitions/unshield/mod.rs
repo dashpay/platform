@@ -2,6 +2,7 @@ mod transform_into_action;
 
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::validation::ConsensusValidationResult;
+use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
@@ -18,6 +19,7 @@ pub trait StateTransitionUnshieldTransitionActionTransformer {
     fn transform_into_action_for_unshield_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -25,6 +27,7 @@ impl StateTransitionUnshieldTransitionActionTransformer for UnshieldTransition {
     fn transform_into_action_for_unshield_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
@@ -35,7 +38,7 @@ impl StateTransitionUnshieldTransitionActionTransformer for UnshieldTransition {
             .unshield_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform_version),
+            0 => self.transform_into_action_v0(platform.drive, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "unshield transition: transform_into_action".to_string(),
                 known_versions: vec![0],
