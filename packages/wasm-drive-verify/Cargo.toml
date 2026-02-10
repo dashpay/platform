@@ -26,6 +26,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "platform-value-json",
 ] }
 
+bincode = { version = "=2.0.1" }
 wasm-bindgen = { version = "=0.2.103" }
 serde = { version = "1.0.193", default-features = false, features = [
     "alloc",
@@ -44,7 +45,6 @@ ciborium = { version = "0.2.1" }
 base64 = { version = "0.22.0" }
 bs58 = { version = "0.5.1" }
 indexmap = { version = "2.11.4" }
-bincode = { version = "2.0.0-rc.3" }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.53"

@@ -2559,7 +2559,7 @@ mod tests {
                             verified.err()
                         );
 
-                        let (root_hash, verified_changes) = verified.unwrap();
+                        let (root_hash, _verified_changes) = verified.unwrap();
                         assert!(
                             !root_hash.is_empty(),
                             "root hash should not be empty"
@@ -3520,6 +3520,7 @@ mod tests {
     /// Funding operations create new addresses in "staged" state. After block commit,
     /// they become "committed" and available for transfers in subsequent blocks.
     #[test]
+    #[stack_size(4 * 1024 * 1024)]
     fn run_chain_high_throughput_address_operations() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 

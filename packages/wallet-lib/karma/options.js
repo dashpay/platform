@@ -1,4 +1,4 @@
-/* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable import-x/no-extraneous-dependencies */
 const webpack = require('webpack');
 const dotenvSafe = require('dotenv-safe');
 

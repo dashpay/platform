@@ -1,7 +1,7 @@
 use crate::balances::credits::TokenAmount;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
-use bincode_derive::{Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};

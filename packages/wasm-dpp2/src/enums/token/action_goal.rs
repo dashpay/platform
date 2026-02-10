@@ -3,6 +3,17 @@ use dpp::group::action_taker::ActionGoal;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+export type ActionGoalLike = ActionGoal | string | number;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ActionGoalLike")]
+    pub type ActionGoalLikeJs;
+}
+
 #[wasm_bindgen(js_name = "ActionGoal")]
 #[allow(non_camel_case_types)]
 #[derive(Default, Clone)]
@@ -30,10 +41,10 @@ impl From<ActionGoal> for ActionGoalWasm {
     }
 }
 
-impl TryFrom<JsValue> for ActionGoalWasm {
+impl TryFrom<&JsValue> for ActionGoalWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<ActionGoalWasm, Self::Error> {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "actioncompletion" => Ok(ActionGoalWasm::ActionCompletion),
@@ -53,6 +64,14 @@ impl TryFrom<JsValue> for ActionGoalWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from action goal enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for ActionGoalWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

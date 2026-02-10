@@ -1,13 +1,15 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
+use crate::utils::{IntoWasm, try_to_fixed_bytes};
 use dpp::dashcore::ProTxHash;
 use dpp::dashcore::hashes::{Hash, sha256d};
 use std::str::FromStr;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
 
 /// TypeScript type alias for flexible ProTxHash input
 #[wasm_bindgen(typescript_custom_section)]
-const PRO_TX_HASH_LIKE_TS: &'static str = r#"
+const PRO_TX_HASH_LIKE_TS: &str = r#"
 /**
  * Flexible ProTxHash type that accepts ProTxHash object, hex string, or Uint8Array.
  *
@@ -15,7 +17,57 @@ const PRO_TX_HASH_LIKE_TS: &'static str = r#"
  * - Uint8Array: 32 bytes in internal byte order
  */
 export type ProTxHashLike = ProTxHash | string | Uint8Array;
+export type ProTxHashLikeArray = Array<ProTxHashLike>;
 "#;
+
+/// Extern type for flexible ProTxHash input
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ProTxHashLike")]
+    pub type ProTxHashLikeJs;
+
+    #[wasm_bindgen(typescript_type = "ProTxHashLike | undefined")]
+    pub type ProTxHashLikeNullableJs;
+
+    #[wasm_bindgen(typescript_type = "ProTxHashLikeArray")]
+    pub type ProTxHashLikeArrayJs;
+}
+
+impl TryFrom<ProTxHashLikeJs> for ProTxHashWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: ProTxHashLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        ProTxHashWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<ProTxHashLikeJs> for ProTxHash {
+    type Error = WasmDppError;
+
+    fn try_from(value: ProTxHashLikeJs) -> Result<Self, Self::Error> {
+        let wasm: ProTxHashWasm = value.try_into()?;
+        Ok(ProTxHash::from(wasm))
+    }
+}
+
+impl TryFrom<ProTxHashLikeNullableJs> for Option<ProTxHash> {
+    type Error = WasmDppError;
+
+    fn try_from(value: ProTxHashLikeNullableJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        if js_value.is_null() || js_value.is_undefined() {
+            return Ok(None);
+        }
+        // Check for empty string
+        if let Some(s) = js_value.as_string()
+            && s.is_empty()
+        {
+            return Ok(None);
+        }
+        ProTxHashWasm::try_from(js_value).map(|w| Some(ProTxHash::from(w)))
+    }
+}
 
 #[wasm_bindgen(js_name = "ProTxHash")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,60 +105,18 @@ impl ProTxHashWasm {
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid ProTxHash hex: {}", e)))?;
         Ok(ProTxHashWasm(hash))
     }
-
-    /// Try to extract a ProTxHash from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a ProTxHashWasm. Accepts hex string, Uint8Array, or ProTxHash object.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let hash_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if hash_js.is_undefined() || hash_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        ProTxHashWasm::try_from(&hash_js)
-    }
-
-    /// Try to extract an optional ProTxHash from an options object field.
-    ///
-    /// Returns None if the field is undefined, null, or an empty string/array.
-    /// Otherwise attempts conversion.
-    pub fn try_from_options_optional(
-        options: &JsValue,
-        field_name: &str,
-    ) -> WasmDppResult<Option<Self>> {
-        let hash_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Failed to get '{}'", field_name))
-            })?;
-
-        if hash_js.is_undefined() || hash_js.is_null() {
-            return Ok(None);
-        }
-
-        // Check for empty string
-        if let Some(s) = hash_js.as_string()
-            && s.is_empty()
-        {
-            return Ok(None);
-        }
-
-        ProTxHashWasm::try_from(&hash_js).map(Some)
-    }
 }
 
 impl TryFrom<JsValue> for ProTxHashWasm {
     type Error = WasmDppError;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        // Try as string first (hex format)
+        // Try as ProTxHash object first
+        if let Ok(wasm) = value.to_wasm::<ProTxHashWasm>("ProTxHash") {
+            return Ok(*wasm);
+        }
+
+        // Try as string (hex format)
         if let Some(hex_str) = value.as_string() {
             let hash = ProTxHash::from_str(&hex_str).map_err(|e| {
                 WasmDppError::invalid_argument(format!("Invalid ProTxHash hex string: {}", e))
@@ -114,24 +124,15 @@ impl TryFrom<JsValue> for ProTxHashWasm {
             return Ok(ProTxHashWasm(hash));
         }
 
-        // Try as Uint8Array
-        if value.is_instance_of::<js_sys::Uint8Array>() {
-            let bytes = js_sys::Uint8Array::new(&value).to_vec();
-            if bytes.len() != 32 {
-                return Err(WasmDppError::invalid_argument(format!(
-                    "ProTxHash must be exactly 32 bytes, got {} bytes",
-                    bytes.len()
-                )));
-            }
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(&bytes);
+        // Try as Uint8Array (validates type and 32-byte length)
+        if let Ok(arr) = try_to_fixed_bytes::<32>(value.clone(), "proTxHash") {
             let raw = sha256d::Hash::from_byte_array(arr);
             let hash = ProTxHash::from_raw_hash(raw);
             return Ok(ProTxHashWasm(hash));
         }
 
         Err(WasmDppError::invalid_argument(
-            "ProTxHash must be a hex string or Uint8Array (32 bytes)",
+            "ProTxHash must be a ProTxHash object, hex string, or Uint8Array (32 bytes)",
         ))
     }
 }
@@ -155,3 +156,5 @@ impl From<ProTxHash> for ProTxHashWasm {
         ProTxHashWasm(hash)
     }
 }
+
+impl_wasm_type_info!(ProTxHashWasm, ProTxHash);

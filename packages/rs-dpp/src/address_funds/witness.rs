@@ -57,8 +57,8 @@ impl Encode for AddressWitness {
     }
 }
 
-impl Decode for AddressWitness {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl<C> Decode<C> for AddressWitness {
+    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let discriminant = u8::decode(decoder)?;
         match discriminant {
             0 => {
@@ -88,8 +88,10 @@ impl Decode for AddressWitness {
     }
 }
 
-impl<'de> bincode::BorrowDecode<'de> for AddressWitness {
-    fn borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl<'de, C> bincode::BorrowDecode<'de, C> for AddressWitness {
+    fn borrow_decode<D: BorrowDecoder<'de, Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, DecodeError> {
         let discriminant = u8::borrow_decode(decoder)?;
         match discriminant {
             0 => {

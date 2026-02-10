@@ -2,11 +2,12 @@ use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::dashcore::ProTxHash;
 use js_sys::Map;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::ProTxHashWasm;
+use wasm_dpp2::{ProTxHashLikeNullableJs, ProTxHashWasm};
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeState")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -16,7 +17,8 @@ pub struct ProtocolVersionUpgradeStateWasm {
     next_protocol_version: Option<u32>,
     activation_height: Option<u64>,
     vote_count: Option<u32>,
-    threshold_reached: bool,
+    #[serde(rename = "thresholdReached")]
+    is_threshold_reached: bool,
 }
 
 impl ProtocolVersionUpgradeStateWasm {
@@ -25,14 +27,14 @@ impl ProtocolVersionUpgradeStateWasm {
         next_protocol_version: Option<u32>,
         activation_height: Option<u64>,
         vote_count: Option<u32>,
-        threshold_reached: bool,
+        is_threshold_reached: bool,
     ) -> Self {
         Self {
             current_protocol_version,
             next_protocol_version,
             activation_height,
             vote_count,
-            threshold_reached,
+            is_threshold_reached,
         }
     }
 }
@@ -59,24 +61,23 @@ impl ProtocolVersionUpgradeStateWasm {
         self.vote_count
     }
 
-    #[wasm_bindgen(getter = "thresholdReached")]
-    pub fn threshold_reached(&self) -> bool {
-        self.threshold_reached
+    #[wasm_bindgen(getter = "isThresholdReached")]
+    pub fn is_threshold_reached(&self) -> bool {
+        self.is_threshold_reached
     }
 }
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct ProtocolVersionUpgradeVoteStatusWasm {
-    pro_tx_hash: String,
+    pro_tx_hash: ProTxHashWasm,
     version: u32,
 }
 
 impl ProtocolVersionUpgradeVoteStatusWasm {
-    fn new(pro_tx_hash: String, version: u32) -> Self {
+    pub(crate) fn new(pro_tx_hash: ProTxHash, version: u32) -> Self {
         Self {
-            pro_tx_hash,
+            pro_tx_hash: ProTxHashWasm::from(pro_tx_hash),
             version,
         }
     }
@@ -85,21 +86,17 @@ impl ProtocolVersionUpgradeVoteStatusWasm {
 #[wasm_bindgen(js_class = ProtocolVersionUpgradeVoteStatus)]
 impl ProtocolVersionUpgradeVoteStatusWasm {
     #[wasm_bindgen(getter = "proTxHash")]
-    pub fn pro_tx_hash(&self) -> String {
-        self.pro_tx_hash.clone()
+    pub fn pro_tx_hash(&self) -> ProTxHashWasm {
+        self.pro_tx_hash
     }
 
-    #[wasm_bindgen(getter = "version")]
+    #[wasm_bindgen(getter)]
     pub fn version(&self) -> u32 {
         self.version
     }
 }
 
 impl_wasm_serde_conversions!(ProtocolVersionUpgradeStateWasm, ProtocolVersionUpgradeState);
-impl_wasm_serde_conversions!(
-    ProtocolVersionUpgradeVoteStatusWasm,
-    ProtocolVersionUpgradeVoteStatus
-);
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -149,26 +146,14 @@ impl WasmSdk {
     )]
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
-        #[wasm_bindgen(js_name = "startProTxHash")]
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike | null")]
-        start_pro_tx_hash: JsValue,
+        #[wasm_bindgen(js_name = "startProTxHash")] start_pro_tx_hash: ProTxHashLikeNullableJs,
         count: u32,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
         use drive_proof_verifier::types::MasternodeProtocolVote;
 
-        // Parse the ProTxHash using centralized helper
-        let start_hash = if start_pro_tx_hash.is_null() || start_pro_tx_hash.is_undefined() {
-            None
-        } else if let Some(s) = start_pro_tx_hash.as_string() {
-            if s.is_empty() {
-                None
-            } else {
-                Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-            }
-        } else {
-            Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-        };
+        // Parse the ProTxHash using extern type
+        let start_hash: Option<ProTxHash> = start_pro_tx_hash.try_into()?;
 
         let votes_result =
             MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count)).await?;
@@ -179,7 +164,7 @@ impl WasmSdk {
             if let Some(vote) = vote_opt {
                 let key = JsValue::from_str(&pro_tx_hash.to_string());
                 let value = JsValue::from(ProtocolVersionUpgradeVoteStatusWasm::new(
-                    pro_tx_hash.to_string(),
+                    pro_tx_hash,
                     vote.voted_version,
                 ));
                 votes_map.set(&key, &value);
@@ -246,26 +231,14 @@ impl WasmSdk {
     )]
     pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "startProTxHash")]
-        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike | null")]
-        start_pro_tx_hash: JsValue,
+        #[wasm_bindgen(js_name = "startProTxHash")] start_pro_tx_hash: ProTxHashLikeNullableJs,
         count: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::{FetchMany, LimitQuery};
         use drive_proof_verifier::types::MasternodeProtocolVote;
 
-        // Parse the ProTxHash using centralized helper
-        let start_hash = if start_pro_tx_hash.is_null() || start_pro_tx_hash.is_undefined() {
-            None
-        } else if let Some(s) = start_pro_tx_hash.as_string() {
-            if s.is_empty() {
-                None
-            } else {
-                Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-            }
-        } else {
-            Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
-        };
+        // Parse the ProTxHash using extern type
+        let start_hash: Option<ProTxHash> = start_pro_tx_hash.try_into()?;
 
         // Create a LimitQuery with the start hash and count
         let query = LimitQuery {
@@ -284,7 +257,7 @@ impl WasmSdk {
             if let Some(vote) = vote_opt {
                 let key = JsValue::from_str(&pro_tx_hash.to_string());
                 let value = JsValue::from(ProtocolVersionUpgradeVoteStatusWasm::new(
-                    pro_tx_hash.to_string(),
+                    pro_tx_hash,
                     vote.voted_version,
                 ));
                 votes_map.set(&key, &value);

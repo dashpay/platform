@@ -50,5 +50,10 @@ pub mod query;
 /// Various utils
 pub mod utils;
 
+/// Replay captured ABCI requests against drive-abci
+#[cfg(feature = "replay")]
+pub mod replay;
 /// Drive server
 pub mod server;
+/// Verification helpers
+pub mod verify;

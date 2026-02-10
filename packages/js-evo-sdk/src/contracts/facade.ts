@@ -13,7 +13,8 @@ export class ContractsFacade {
     return w.getDataContract(contractId);
   }
 
-  async fetchWithProof(contractId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.DataContract>> {
+  async fetchWithProof(contractId: wasm.IdentifierLike):
+    Promise<wasm.ProofMetadataResponseTyped<wasm.DataContract>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractWithProofInfo(contractId);
   }
@@ -23,17 +24,23 @@ export class ContractsFacade {
     return w.getDataContractHistory(query);
   }
 
-  async getHistoryWithProof(query: wasm.DataContractHistoryQuery): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.DataContract>>> {
+  async getHistoryWithProof(
+    query: wasm.DataContractHistoryQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.DataContract>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractHistoryWithProofInfo(query);
   }
 
-  async getMany(contractIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, wasm.DataContract | undefined>> {
+  async getMany(contractIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.DataContract | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContracts(contractIds);
   }
 
-  async getManyWithProof(contractIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.DataContract | undefined>>> {
+  async getManyWithProof(
+    contractIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.DataContract | undefined>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractsWithProofInfo(contractIds);
   }

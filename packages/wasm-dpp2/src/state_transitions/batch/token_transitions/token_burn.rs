@@ -1,13 +1,32 @@
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::error::WasmDppResult;
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::utils::{try_from_options, try_from_options_optional_with, try_from_options_with, try_to_string, try_to_u64};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
 use dpp::state_transition::batch_transition::TokenBurnTransition;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_BURN_OPTIONS_TS: &str = r#"
+export interface TokenBurnTransitionOptions {
+    base: TokenBaseTransition;
+    burnAmount: bigint;
+    publicNote?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenBurnTransitionOptions")]
+    pub type TokenBurnTransitionOptionsJs;
+}
+
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenBurnTransition)]
+#[wasm_bindgen(js_name = "TokenBurnTransition")]
 pub struct TokenBurnTransitionWasm(TokenBurnTransition);
 
 impl From<TokenBurnTransition> for TokenBurnTransitionWasm {
@@ -24,25 +43,23 @@ impl From<TokenBurnTransitionWasm> for TokenBurnTransition {
 
 #[wasm_bindgen(js_class = TokenBurnTransition)]
 impl TokenBurnTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenBurnTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenBurnTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        base: &TokenBaseTransitionWasm,
-        burn_amount: u64,
-        public_note: Option<String>,
+    pub fn constructor(
+        options: TokenBurnTransitionOptionsJs,
     ) -> WasmDppResult<TokenBurnTransitionWasm> {
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let burn_amount =
+            try_from_options_with(&options, "burnAmount", |v| try_to_u64(v, "burnAmount"))?;
+
+        let public_note: Option<String> =
+            try_from_options_optional_with(&options, "publicNote", |v| {
+                try_to_string(v, "publicNote")
+            })?;
+
         Ok(TokenBurnTransitionWasm(TokenBurnTransition::V0(
             TokenBurnTransitionV0 {
-                base: base.clone().into(),
+                base: base.into(),
                 burn_amount,
                 public_note,
             },
@@ -50,23 +67,24 @@ impl TokenBurnTransitionWasm {
     }
 
     #[wasm_bindgen(getter = burnAmount)]
-    pub fn get_burn_amount(&self) -> u64 {
+    pub fn burn_amount(&self) -> u64 {
         self.0.burn_amount()
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = publicNote)]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 
     #[wasm_bindgen(setter = burnAmount)]
-    pub fn set_burn_amount(&mut self, amount: u64) {
-        self.0.set_burn_amount(amount)
+    pub fn set_burn_amount(&mut self, amount: JsValue) -> WasmDppResult<()> {
+        self.0.set_burn_amount(try_to_u64(&amount, "burnAmount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = base)]
@@ -79,3 +97,6 @@ impl TokenBurnTransitionWasm {
         self.0.set_public_note(note)
     }
 }
+
+impl_try_from_js_value!(TokenBurnTransitionWasm, "TokenBurnTransition");
+impl_wasm_type_info!(TokenBurnTransitionWasm, TokenBurnTransition);

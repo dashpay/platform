@@ -1,7 +1,36 @@
 use crate::group::token_event::TokenEventWasm;
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use dpp::group::action_event::GroupActionEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * GroupActionEvent serialized as a plain object.
+ */
+export interface GroupActionEventObject {
+    variant: GroupActionEventVariant;
+    tokenEvent?: TokenEventObject;
+}
+
+/**
+ * GroupActionEvent serialized as JSON.
+ */
+export interface GroupActionEventJSON {
+    variant: number;
+    tokenEvent?: TokenEventJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionEventObject")]
+    pub type GroupActionEventObjectJs;
+
+    #[wasm_bindgen(typescript_type = "GroupActionEventJSON")]
+    pub type GroupActionEventJSONJs;
+}
 
 /// TypeScript enum for GroupActionEvent variants
 #[wasm_bindgen]
@@ -28,16 +57,6 @@ impl From<GroupActionEventWasm> for GroupActionEvent {
 
 #[wasm_bindgen(js_class = GroupActionEvent)]
 impl GroupActionEventWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupActionEvent".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name(&self) -> String {
-        "GroupActionEvent".to_string()
-    }
-
     #[wasm_bindgen(getter = "variant")]
     pub fn variant(&self) -> GroupActionEventVariant {
         match &self.0 {
@@ -63,4 +82,10 @@ impl GroupActionEventWasm {
     }
 }
 
-impl_wasm_conversions!(GroupActionEventWasm, GroupActionEvent);
+impl_wasm_conversions!(
+    GroupActionEventWasm,
+    GroupActionEvent,
+    GroupActionEventObjectJs,
+    GroupActionEventJSONJs
+);
+impl_wasm_type_info!(GroupActionEventWasm, GroupActionEvent);

@@ -3,7 +3,6 @@ use crate::queries::utils::{
 };
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
-use crate::utils::js_value_to_platform_value;
 use crate::WasmSdkError;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::FetchMany;
@@ -14,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::serialization::conversions::js_value_to_platform_value;
 
 #[wasm_bindgen(typescript_custom_section)]
 const VOTE_POLLS_BY_DOCUMENT_TYPE_QUERY_TS: &'static str = r#"
@@ -122,7 +122,7 @@ fn create_vote_polls_by_document_type_query(
 
     let start_at_value = match start_at_value {
         Some(value) => {
-            let platform_value = js_value_to_platform_value(value).map_err(|err| {
+            let platform_value = js_value_to_platform_value(&value).map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid startAtValue: {}", err))
             })?;
             Some((platform_value, start_at_value_included.unwrap_or(true)))
@@ -169,16 +169,14 @@ fn contested_resources_into_wasm(
 fn parse_vote_polls_by_document_type_query(
     query: VotePollsByDocumentTypeQueryJs,
 ) -> Result<(VotePollsByDocumentTypeQueryInput, Option<JsValue>), WasmSdkError> {
-    let value: JsValue = query.into();
-
-    if value.is_null() || value.is_undefined() {
+    if query.is_null() || query.is_undefined() {
         return Err(WasmSdkError::invalid_argument(
             "Query object is required".to_string(),
         ));
     }
 
     let start_at_value =
-        Reflect::get(&value, &JsValue::from_str("startAtValue")).map_err(|err| {
+        Reflect::get(&query, &JsValue::from_str("startAtValue")).map_err(|err| {
             let message = err
                 .as_string()
                 .unwrap_or_else(|| "unable to access property".to_string());
@@ -196,7 +194,7 @@ fn parse_vote_polls_by_document_type_query(
     };
 
     let query_input = deserialize_required_query(
-        value,
+        query,
         "Query object is required",
         "vote polls by document type options",
     )?;

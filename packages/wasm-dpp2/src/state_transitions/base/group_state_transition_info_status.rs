@@ -3,14 +3,15 @@
 //! This module provides WASM bindings for the GroupStateTransitionInfoStatus enum,
 //! which represents group action context for state transitions.
 
-use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::error::WasmDppResult;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::base::GroupStateTransitionInfoWasm;
-use crate::utils::IntoWasm;
 use dpp::data_contract::GroupContractPosition;
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 use dpp::prelude::Identifier;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Wrapper for GroupStateTransitionInfoStatus enum.
@@ -19,7 +20,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// - Proposer: The identity proposing a new group action
 /// - OtherSigner: The identity signing/voting on an existing group action
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = GroupStateTransitionInfoStatus)]
+#[wasm_bindgen(js_name = "GroupStateTransitionInfoStatus")]
 pub struct GroupStateTransitionInfoStatusWasm(GroupStateTransitionInfoStatus);
 
 impl From<GroupStateTransitionInfoStatusWasm> for GroupStateTransitionInfoStatus {
@@ -36,16 +37,6 @@ impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfoStatusWasm
 
 #[wasm_bindgen(js_class = GroupStateTransitionInfoStatus)]
 impl GroupStateTransitionInfoStatusWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupStateTransitionInfoStatus".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "GroupStateTransitionInfoStatus".to_string()
-    }
-
     /// Create a new proposer status for initiating a group action.
     ///
     /// Use this when the identity is proposing a new group action.
@@ -53,7 +44,9 @@ impl GroupStateTransitionInfoStatusWasm {
     /// @param groupContractPosition - The position of the group in the contract
     /// @returns GroupStateTransitionInfoStatus for a proposer
     #[wasm_bindgen(js_name = "proposer")]
-    pub fn proposer(group_contract_position: u16) -> GroupStateTransitionInfoStatusWasm {
+    pub fn proposer(
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
+    ) -> GroupStateTransitionInfoStatusWasm {
         GroupStateTransitionInfoStatusWasm(
             GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                 group_contract_position,
@@ -70,11 +63,10 @@ impl GroupStateTransitionInfoStatusWasm {
     /// @returns GroupStateTransitionInfoStatus for an other signer
     #[wasm_bindgen(js_name = "otherSigner")]
     pub fn other_signer(
-        group_contract_position: u16,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        action_id: &JsValue,
+        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u16,
+        #[wasm_bindgen(js_name = "actionId")] action_id: IdentifierLikeJs,
     ) -> WasmDppResult<GroupStateTransitionInfoStatusWasm> {
-        let action_id: Identifier = IdentifierWasm::try_from(action_id)?.into();
+        let action_id: Identifier = action_id.try_into()?;
 
         Ok(GroupStateTransitionInfoStatusWasm(
             GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
@@ -127,39 +119,12 @@ impl GroupStateTransitionInfoStatusWasm {
     }
 }
 
-impl GroupStateTransitionInfoStatusWasm {
-    /// Try to extract a GroupStateTransitionInfoStatus from an options object field.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let field_value = js_sys::Reflect::get(options, &JsValue::from_str(field_name))
-            .map_err(|_| WasmDppError::invalid_argument(format!("{} is required", field_name)))?;
-
-        if field_value.is_undefined() || field_value.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        // Try to convert using the IntoWasm helper
-        field_value
-            .to_wasm::<GroupStateTransitionInfoStatusWasm>("GroupStateTransitionInfoStatus")
-            .map(|boxed| boxed.clone())
-    }
-
-    /// Try to extract an optional GroupStateTransitionInfoStatus from an options object field.
-    pub fn try_from_optional_options(
-        options: &JsValue,
-        field_name: &str,
-    ) -> WasmDppResult<Option<Self>> {
-        let field_value =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Failed to access {}", field_name))
-            })?;
-
-        if field_value.is_undefined() || field_value.is_null() {
-            return Ok(None);
-        }
-
-        Self::try_from_options(options, field_name).map(Some)
-    }
-}
+impl_try_from_js_value!(
+    GroupStateTransitionInfoStatusWasm,
+    "GroupStateTransitionInfoStatus"
+);
+impl_try_from_options!(GroupStateTransitionInfoStatusWasm);
+impl_wasm_type_info!(
+    GroupStateTransitionInfoStatusWasm,
+    GroupStateTransitionInfoStatus
+);

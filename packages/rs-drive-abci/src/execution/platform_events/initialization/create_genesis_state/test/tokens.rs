@@ -28,7 +28,7 @@ use dpp::group::group_action::GroupAction;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{Identity, KeyID};
+use dpp::identity::Identity;
 use dpp::prelude::*;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::status::v0::TokenStatusV0;

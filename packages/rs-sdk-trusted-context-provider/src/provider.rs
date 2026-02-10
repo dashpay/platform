@@ -810,6 +810,10 @@ impl ContextProvider for TrustedHttpContextProvider {
             )),
         }
     }
+
+    fn update_data_contract(&self, contract: Arc<DataContract>) {
+        self.add_known_contract((*contract).clone());
+    }
 }
 
 #[cfg(test)]

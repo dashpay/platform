@@ -24,6 +24,7 @@ mod generated_data;
 mod group_actions;
 mod identity;
 mod identity_contract_nonce;
+mod mock_document_contract_refresh;
 mod mock_fetch;
 mod mock_fetch_many;
 mod prefunded_specialized_balance;
