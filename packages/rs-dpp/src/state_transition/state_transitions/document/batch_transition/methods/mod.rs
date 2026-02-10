@@ -88,7 +88,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_creation_transition_from_document<S: Signer>(
+    fn new_document_creation_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef,
         entropy: [u8; 32],
@@ -145,7 +145,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_replacement_transition_from_document<S: Signer>(
+    fn new_document_replacement_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
@@ -201,7 +201,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_transfer_transition_from_document<S: Signer>(
+    fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef,
         recipient_owner_id: Identifier,
@@ -260,7 +260,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_deletion_transition_from_document<S: Signer>(
+    fn new_document_deletion_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
@@ -315,7 +315,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_update_price_transition_from_document<S: Signer>(
+    fn new_document_update_price_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef,
         price: Credits,
@@ -374,7 +374,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_purchase_transition_from_document<S: Signer>(
+    fn new_document_purchase_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
         document_type: DocumentTypeRef,
         new_owner_id: Identifier,
@@ -437,7 +437,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
 
 impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_mint_transition<S: Signer>(
+    fn new_token_mint_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -495,7 +495,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_burn_transition<S: Signer>(
+    fn new_token_burn_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -551,7 +551,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_transfer_transition<S: Signer>(
+    fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -612,7 +612,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_freeze_transition<S: Signer>(
+    fn new_token_freeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -669,7 +669,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_unfreeze_transition<S: Signer>(
+    fn new_token_unfreeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -726,7 +726,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_destroy_frozen_funds_transition<S: Signer>(
+    fn new_token_destroy_frozen_funds_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -784,7 +784,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_emergency_action_transition<S: Signer>(
+    fn new_token_emergency_action_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -842,7 +842,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_config_update_transition<S: Signer>(
+    fn new_token_config_update_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -899,7 +899,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_claim_transition<S: Signer>(
+    fn new_token_claim_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -955,7 +955,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_change_direct_purchase_price_transition<S: Signer>(
+    fn new_token_change_direct_purchase_price_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -1014,7 +1014,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_direct_purchase_transition<S: Signer>(
+    fn new_token_direct_purchase_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,

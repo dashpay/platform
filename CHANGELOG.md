@@ -1,3 +1,219 @@
+### [3.0.1](///compare/v3.0.1-hotfix.4...v3.0.1) (2026-02-06)
+
+### [3.0.1-hotfix.4](///compare/v3.0.1-hotfix.3...v3.0.1-hotfix.4) (2026-02-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update PlatformAddress encoding and HRP constants (#3059)
+* **platform:** 3.0 audit report fixes (#3053)
+
+### Features
+
+* **platform:** update PlatformAddress encoding and HRP constants ([#3059](undefined/undefined/undefined/issues/3059))
+
+
+### Bug Fixes
+
+* **platform:** 3.0 audit report fixes ([#3053](undefined/undefined/undefined/issues/3053))
+
+
+### Miscellaneous Chores
+
+* update all package versions to 3.0.1-hotfix.4 ([#3060](undefined/undefined/undefined/issues/3060))
+
+### [3.0.1-hotfix.3](///compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
+
+
+### Bug Fixes
+
+* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](undefined/undefined/undefined/issues/3018))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 23 ([#3054](undefined/undefined/undefined/issues/3054))
+* **release:** update changelog and bump version to 3.0.1-hotfix.3 ([#3055](undefined/undefined/undefined/issues/3055))
+
+### [3.0.1-hotfix.3](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
+
+
+### Bug Fixes
+
+* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](https://github.com/dashpay/platform/issues/3018))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 23 ([#3054](https://github.com/dashpay/platform/issues/3054))
+
+### [3.0.1-hotfix.2](https://github.com/dashpay/platform/compare/v3.0.1-hotfix.1...v3.0.1-hotfix.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* **dashmate:** pass --profile shortlived on letsencrypt renewal
+
+### [3.0.1-hotfix.1](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.1) (2026-01-26)
+
+
+### Bug Fixes
+
+* use single quotes and preserve ctx values in merge
+
+## [3.0.0-rc.3](///compare/v3.0.0-rc.2...v3.0.0-rc.3) (2026-01-20)
+
+
+### Features
+
+* **dashmate:** add Let's Encrypt SSL provider support ([#3000](undefined/undefined/undefined/issues/3000))
+* **drive:** improve error handling in merk proof extraction ([#3003](undefined/undefined/undefined/issues/3003))
+
+
+### Bug Fixes
+
+* **platform:** update grovedb dependency to allow for larger proof sizes ([#3005](undefined/undefined/undefined/issues/3005))
+
+## [3.0.0-rc.2](///compare/v3.0.0-rc.1...v3.0.0-rc.2) (2026-01-16)
+
+
+### Bug Fixes
+
+* **sdk:** toJSON returns empty object ([#2995](undefined/undefined/undefined/issues/2995))
+
+
+### Code Refactoring
+
+* **sdk:** introduce `ProRegTxLike` and `NetworkLike` types  ([#2990](undefined/undefined/undefined/issues/2990))
+
+## [3.0.0-rc.1](https://github.com/dashpay/platform/compare/v3.0.0-dev.11...v3.0.0-rc.1) (2026-01-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** typed params for state transition methods (#2932)
+* **sdk:** return last meaningful error on no available addresses (#2958)
+
+### Features
+
+* **dpp:** add Identity new_with_input_addresses_and_keys() ([#2971](https://github.com/dashpay/platform/issues/2971))
+* **drive:** add WalletUtils system data contract during initialization on devnets/local networks ([#2696](https://github.com/dashpay/platform/issues/2696))
+* **drive:** update verification logic for compacted address balance changes ([#2972](https://github.com/dashpay/platform/issues/2972))
+* **sdk:** add validation/tests for registerName publicKeyId parameter ([#2832](https://github.com/dashpay/platform/issues/2832))
+* **sdk:** return last meaningful error on no available addresses ([#2958](https://github.com/dashpay/platform/issues/2958))
+
+
+### Bug Fixes
+
+* **drive:** not setting `keeps_history` in proof verification for DataContractCreate and DataContractUpdate ([#2980](https://github.com/dashpay/platform/issues/2980))
+* **drive:** use historical path query for contracts with keeps_history=true ([#2976](https://github.com/dashpay/platform/issues/2976))
+* **wasm-sdk:** support ECDSA_SECP256K1 keys in contract create/update ([#2975](https://github.com/dashpay/platform/issues/2975))
+
+
+### Performance Improvements
+
+* **sdk:** cache contracts in JS SDK ([#2978](https://github.com/dashpay/platform/issues/2978))
+
+
+### Tests
+
+* **sdk:** test sync_address_balances ([#2957](https://github.com/dashpay/platform/issues/2957))
+* **wasm-sdk:** enable contract token and group check ([#2952](https://github.com/dashpay/platform/issues/2952))
+
+
+### Build System
+
+* **drive:** update rkyv  to 0.7.46 ([#2982](https://github.com/dashpay/platform/issues/2982))
+
+
+### Code Refactoring
+
+* **sdk:** dpns JS SDK methods
+* **sdk:** re-use sdk methods ([#2981](https://github.com/dashpay/platform/issues/2981))
+* **sdk:** typed params for state transition methods ([#2932](https://github.com/dashpay/platform/issues/2932))
+
+## [3.0.0-dev.11](https://github.com/dashpay/platform/compare/v3.0.0-dev.10...v3.0.0-dev.11) (2026-01-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** failed address sync on invalid proof  (#2967)
+* **platform:** add block-aware credit operations to manage address balance changes (#2968)
+* **platform:** enhanced fetching of compacted address balance changes (#2966)
+
+### Features
+
+* **platform:** add block-aware credit operations to manage address balance changes ([#2968](https://github.com/dashpay/platform/issues/2968))
+* **platform:** add tests for proof verification of recent address balance changes ([#2969](https://github.com/dashpay/platform/issues/2969))
+* **platform:** enhanced fetching of compacted address balance changes ([#2966](https://github.com/dashpay/platform/issues/2966))
+* **platform:** remove platform version patching and state migration logic ([#2961](https://github.com/dashpay/platform/issues/2961))
+* **platform:** update address expiration time from 1 day to 1 week ([#2964](https://github.com/dashpay/platform/issues/2964))
+* **sdk:** return checkpoint height with `AddressSyncResult` ([#2965](https://github.com/dashpay/platform/issues/2965))
+
+
+### Bug Fixes
+
+* **rs-sdk-ffi:** auto-increment document revision in replace function ([#2960](https://github.com/dashpay/platform/issues/2960))
+* **sdk:** adjust metadata freshness criteria for get_addresses_trunk_state and get_addresses_branch_state ([#2954](https://github.com/dashpay/platform/issues/2954))
+* **sdk:** clamp address sync branch query depth to platform limits ([#2955](https://github.com/dashpay/platform/issues/2955))
+* **sdk:** failed address sync on invalid proof  ([#2967](https://github.com/dashpay/platform/issues/2967))
+* **sdk:** match `ItemWithSumItem` in `extract_balance_from_element` ([#2956](https://github.com/dashpay/platform/issues/2956))
+
+## [3.0.0-dev.10](///compare/v3.0.0-dev.9...v3.0.0-dev.10) (2026-01-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** clean up expired compacted address balances (#2948)
+
+### Features
+
+* **platform:** clean up expired compacted address balances ([#2948](undefined/undefined/undefined/issues/2948))
+
+
+### Bug Fixes
+
+* **dpp:** broken chain lock proof deserialization ([#2950](undefined/undefined/undefined/issues/2950))
+* **wasm-sdk:** enable identity_update to add ECDSA_SECP256K1 and BLS12_381 keys ([#2947](undefined/undefined/undefined/issues/2947))
+
+## [3.0.0-dev.7](https://github.com/dashpay/platform/compare/v3.0.0-dev.6...v3.0.0-dev.7) (2025-12-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** add quroum list service (#2868)
+
+### Features
+
+* **dashmate:** add quroum list service ([#2868](https://github.com/dashpay/platform/issues/2868))
+* **platform:** sdk support for platform addresses and checkpoint fix ([#2933](https://github.com/dashpay/platform/issues/2933))
+* **sdk:** support platform address state transitions in JS SDK ([#2931](https://github.com/dashpay/platform/issues/2931))
+
+
+### Bug Fixes
+
+* **drive:** failing to prove absent platform addressess ([#2934](https://github.com/dashpay/platform/issues/2934))
+* **sdk:** non proved JS SDK methods ([#2871](https://github.com/dashpay/platform/issues/2871))
+
+## [3.0.0-dev.5](///compare/v3.0.0-dev.4...v3.0.0-dev.5) (2025-12-23)
+
+
+### Bug Fixes
+
+* **drive-abci:** verify apphash in finalize_block ([#2878](undefined/undefined/undefined/issues/2878))
+
+
+### Build System
+
+* upgrade yarn to latest version ([#2926](undefined/undefined/undefined/issues/2926))
+
+## [3.0.0-dev.4](///compare/v3.0.0-dev.3...v3.0.0-dev.4) (2025-12-23)
+
+
+### Continuous Integration
+
+* fix NPM publish in release ([#2923](undefined/undefined/undefined/issues/2923))
+
 ## [2.2.0-dev.2](https://github.com/dashpay/platform/compare/v2.1.2...v2.2.0-dev.2) (2025-11-28)
 
 

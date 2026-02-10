@@ -4,12 +4,12 @@ module.exports = (config) => {
   config.set({
     ...options,
     files: [
-      // Load bootstrap first to initialize chai and globals
-      '../bootstrap.cjs',
+      // Load functional bootstrap first (sets TLS override and initializes chai/globals)
+      '../functional-bootstrap.cjs',
       '../functional/**/*.spec.mjs',
     ],
     preprocessors: {
-      '../bootstrap.cjs': ['webpack'],
+      '../functional-bootstrap.cjs': ['webpack'],
       '../functional/**/*.spec.mjs': ['webpack'],
     },
   });

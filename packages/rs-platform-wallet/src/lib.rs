@@ -5,6 +5,7 @@
 
 use dashcore::Address as DashAddress;
 use dashcore::Transaction;
+use dpp::async_trait::async_trait;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use indexmap::IndexMap;
@@ -46,9 +47,9 @@ pub struct PlatformWalletInfo {
 
 impl PlatformWalletInfo {
     /// Create a new platform wallet info
-    pub fn new(wallet_id: [u8; 32], name: String) -> Self {
+    pub fn new(wallet_id: [u8; 32], name: String, network: Network) -> Self {
         Self {
-            wallet_info: ManagedWalletInfo::with_name(wallet_id, name),
+            wallet_info: ManagedWalletInfo::with_name(network, wallet_id, name),
             identity_manager: IdentityManager::new(),
         }
     }
@@ -96,17 +97,19 @@ impl PlatformWalletInfo {
 }
 
 /// Implement WalletTransactionChecker by delegating to ManagedWalletInfo
+#[async_trait]
 impl WalletTransactionChecker for PlatformWalletInfo {
-    fn check_transaction(
+    async fn check_transaction(
         &mut self,
         tx: &Transaction,
-        network: Network,
         context: TransactionContext,
-        update_state_with_wallet_if_found: Option<&Wallet>,
+        wallet: &mut Wallet,
+        update_state_with_wallet_if_found: bool,
     ) -> TransactionCheckResult {
         // Delegate to the underlying wallet info
         self.wallet_info
-            .check_transaction(tx, network, context, update_state_with_wallet_if_found)
+            .check_transaction(tx, context, wallet, update_state_with_wallet_if_found)
+            .await
     }
 }
 
@@ -116,35 +119,27 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         &mut self,
         wallet: &Wallet,
         account_type: AccountType,
-        network: Network,
     ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_account(wallet, account_type, network)
+        self.wallet_info.add_managed_account(wallet, account_type)
     }
 
     fn add_managed_account_with_passphrase(
         &mut self,
         wallet: &Wallet,
         account_type: AccountType,
-        network: Network,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_account_with_passphrase(
-            wallet,
-            account_type,
-            network,
-            passphrase,
-        )
+        self.wallet_info
+            .add_managed_account_with_passphrase(wallet, account_type, passphrase)
     }
 
     fn add_managed_account_from_xpub(
         &mut self,
         account_type: AccountType,
-        network: Network,
         account_xpub: ExtendedPubKey,
     ) -> key_wallet::Result<()> {
         self.wallet_info
-            .add_managed_account_from_xpub(account_type, network, account_xpub)
+            .add_managed_account_from_xpub(account_type, account_xpub)
     }
 
     #[cfg(feature = "bls")]
@@ -152,10 +147,9 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         &mut self,
         wallet: &Wallet,
         account_type: AccountType,
-        network: Network,
     ) -> key_wallet::Result<()> {
         self.wallet_info
-            .add_managed_bls_account(wallet, account_type, network)
+            .add_managed_bls_account(wallet, account_type)
     }
 
     #[cfg(feature = "bls")]
@@ -163,29 +157,20 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         &mut self,
         wallet: &Wallet,
         account_type: AccountType,
-        network: Network,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_bls_account_with_passphrase(
-            wallet,
-            account_type,
-            network,
-            passphrase,
-        )
+        self.wallet_info
+            .add_managed_bls_account_with_passphrase(wallet, account_type, passphrase)
     }
 
     #[cfg(feature = "bls")]
     fn add_managed_bls_account_from_public_key(
         &mut self,
         account_type: AccountType,
-        network: Network,
         bls_public_key: [u8; 48],
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_bls_account_from_public_key(
-            account_type,
-            network,
-            bls_public_key,
-        )
+        self.wallet_info
+            .add_managed_bls_account_from_public_key(account_type, bls_public_key)
     }
 
     #[cfg(feature = "eddsa")]
@@ -193,10 +178,9 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         &mut self,
         wallet: &Wallet,
         account_type: AccountType,
-        network: Network,
     ) -> key_wallet::Result<()> {
         self.wallet_info
-            .add_managed_eddsa_account(wallet, account_type, network)
+            .add_managed_eddsa_account(wallet, account_type)
     }
 
     #[cfg(feature = "eddsa")]
@@ -204,29 +188,20 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         &mut self,
         wallet: &Wallet,
         account_type: AccountType,
-        network: Network,
         passphrase: &str,
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_eddsa_account_with_passphrase(
-            wallet,
-            account_type,
-            network,
-            passphrase,
-        )
+        self.wallet_info
+            .add_managed_eddsa_account_with_passphrase(wallet, account_type, passphrase)
     }
 
     #[cfg(feature = "eddsa")]
     fn add_managed_eddsa_account_from_public_key(
         &mut self,
         account_type: AccountType,
-        network: Network,
         ed25519_public_key: [u8; 32],
     ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_eddsa_account_from_public_key(
-            account_type,
-            network,
-            ed25519_public_key,
-        )
+        self.wallet_info
+            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key)
     }
 }
 
@@ -266,11 +241,11 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.set_description(description)
     }
 
-    fn birth_height(&self) -> Option<u32> {
+    fn birth_height(&self) -> u32 {
         self.wallet_info.birth_height()
     }
 
-    fn set_birth_height(&mut self, height: Option<u32>) {
+    fn set_birth_height(&mut self, height: u32) {
         self.wallet_info.set_birth_height(height)
     }
 
@@ -286,8 +261,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.update_last_synced(timestamp)
     }
 
-    fn monitored_addresses(&self, network: Network) -> Vec<DashAddress> {
-        self.wallet_info.monitored_addresses(network)
+    fn monitored_addresses(&self) -> Vec<DashAddress> {
+        self.wallet_info.monitored_addresses()
     }
 
     fn utxos(&self) -> BTreeSet<&Utxo> {
@@ -314,39 +289,34 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.wallet_info.transaction_history()
     }
 
-    fn accounts_mut(&mut self, network: Network) -> Option<&mut ManagedAccountCollection> {
-        self.wallet_info.accounts_mut(network)
+    fn accounts_mut(&mut self) -> &mut ManagedAccountCollection {
+        self.wallet_info.accounts_mut()
     }
 
-    fn accounts(&self, network: Network) -> Option<&ManagedAccountCollection> {
-        self.wallet_info.accounts(network)
+    fn accounts(&self) -> &ManagedAccountCollection {
+        self.wallet_info.accounts()
     }
 
-    fn process_matured_transactions(
-        &mut self,
-        network: Network,
-        current_height: u32,
-    ) -> Vec<ImmatureTransaction> {
+    fn process_matured_transactions(&mut self, current_height: u32) -> Vec<ImmatureTransaction> {
         self.wallet_info
-            .process_matured_transactions(network, current_height)
+            .process_matured_transactions(current_height)
     }
 
-    fn add_immature_transaction(&mut self, network: Network, tx: ImmatureTransaction) {
-        self.wallet_info.add_immature_transaction(network, tx)
+    fn add_immature_transaction(&mut self, tx: ImmatureTransaction) {
+        self.wallet_info.add_immature_transaction(tx)
     }
 
-    fn immature_transactions(&self, network: Network) -> Option<&ImmatureTransactionCollection> {
-        self.wallet_info.immature_transactions(network)
+    fn immature_transactions(&self) -> &ImmatureTransactionCollection {
+        self.wallet_info.immature_transactions()
     }
 
-    fn network_immature_balance(&self, network: Network) -> u64 {
-        self.wallet_info.network_immature_balance(network)
+    fn immature_balance(&self) -> u64 {
+        self.wallet_info.immature_balance()
     }
 
     fn create_unsigned_payment_transaction(
         &mut self,
         wallet: &Wallet,
-        network: Network,
         account_index: u32,
         account_type_pref: Option<AccountTypePreference>,
         recipients: Vec<(Address, u64)>,
@@ -355,13 +325,19 @@ impl WalletInfoInterface for PlatformWalletInfo {
     ) -> Result<Transaction, TransactionError> {
         self.wallet_info.create_unsigned_payment_transaction(
             wallet,
-            network,
             account_index,
             account_type_pref,
             recipients,
             fee_level,
             current_block_height,
         )
+    }
+    fn update_chain_height(&mut self, current_height: u32) {
+        self.wallet_info.update_chain_height(current_height)
+    }
+
+    fn network(&self) -> Network {
+        self.wallet_info.network()
     }
 }
 
@@ -388,7 +364,9 @@ mod tests {
     #[test]
     fn test_platform_wallet_creation() {
         let wallet_id = [1u8; 32];
-        let wallet = PlatformWalletInfo::new(wallet_id, "Test Platform Wallet".to_string());
+        let network = Network::Testnet;
+        let wallet =
+            PlatformWalletInfo::new(wallet_id, "Test Platform Wallet".to_string(), network);
 
         assert_eq!(wallet.wallet_id(), wallet_id);
         assert_eq!(wallet.name(), Some("Test Platform Wallet"));

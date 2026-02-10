@@ -30,6 +30,33 @@ describe('Identity', () => {
       expect(identity.__wbg_ptr).to.not.equal(0);
       expect(newIdentity.__wbg_ptr).to.not.equal(0);
     });
+
+    it('should recreate identity from JSON output', () => {
+      const identity = new wasm.Identity(identifier);
+      const identityJson = identity.toJSON();
+
+      const restoredIdentity = wasm.Identity.fromJSON(identityJson);
+
+      expect(Array.from(restoredIdentity.toBytes())).to.deep.equal(Array.from(identity.toBytes()));
+    });
+
+    it('should recreate identity from object output', () => {
+      const identity = new wasm.Identity(identifier);
+      const identityObject = identity.toObject();
+
+      // toObject returns plain JS values (Uint8Array for id, not Identifier instance)
+      expect(identityObject.id.constructor.name).to.equal('Uint8Array');
+      expect(identityObject.id.length).to.equal(32);
+      expect(Array.isArray(identityObject.publicKeys)).to.equal(true);
+      expect(identityObject.balance).to.equal(BigInt(0));
+      expect(identityObject.revision).to.equal(BigInt(0));
+
+      const restoredIdentity = wasm.Identity.fromObject(identityObject);
+
+      expect(Array.from(restoredIdentity.toBytes())).to.deep.equal(Array.from(identity.toBytes()));
+      expect(restoredIdentity.id.toBytes()).to.deep.equal(identity.id.toBytes());
+      expect(restoredIdentity.getPublicKeys().length).to.equal(identity.getPublicKeys().length);
+    });
   });
 
   describe('getters', () => {

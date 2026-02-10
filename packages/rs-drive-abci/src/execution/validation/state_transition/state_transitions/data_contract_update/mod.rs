@@ -3,10 +3,14 @@ mod identity_contract_nonce;
 mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use std::collections::BTreeMap;
 
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -15,12 +19,12 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -53,11 +57,14 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
     }
 }
 
-impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
+impl StateTransitionActionTransformer for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -150,7 +157,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(master_key.clone(), master_private_key);
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
 
         let (critical_public_key, private_key) =
             IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
@@ -160,7 +167,7 @@ mod tests {
             )
             .expect("expected to get key pair");
 
-        signer.add_key(critical_public_key.clone(), private_key);
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
 
         let identity: Identity = IdentityV0 {
             id: Identifier::random_with_rng(&mut rng),
@@ -221,7 +228,6 @@ mod tests {
             },
             execution: ExecutionConfig {
                 verify_sum_trees: true,
-
                 ..Default::default()
             },
             block_spacing_ms: 300,
@@ -247,7 +253,7 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
-        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+        use crate::execution::validation::state_transition::processor::traits::state::StateTransitionStateValidation;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
@@ -696,11 +702,11 @@ mod tests {
 
         assert!(matches!(
             result,
-            StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(
-                    StateError::DocumentTypeUpdateError(error)
-                ), _
-            ) if error.data_contract_id() == &contract.id()
+            StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(ref error)
+                ), ..
+            } if error.data_contract_id() == &contract.id()
                 && error.document_type_name() == "card"
                 && error.additional_message() == "document type can not change creation restriction mode: changing from Owner Only to No Restrictions"
         ));
@@ -806,12 +812,13 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Extract the error and check the message
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
+            if let [StateTransitionExecutionResult::PaidConsensusError {
+                error:
+                    ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                        error,
+                    )),
+                ..
+            }] = processing_result.execution_results().as_slice()
             {
                 assert_eq!(
                     error.action(),
@@ -937,12 +944,13 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Extract the error and check the message
-            if let [StateTransitionExecutionResult::PaidConsensusError(
-                ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
-                    error,
-                )),
-                _,
-            )] = processing_result.execution_results().as_slice()
+            if let [StateTransitionExecutionResult::PaidConsensusError {
+                error:
+                    ConsensusError::StateError(StateError::DataContractUpdateActionNotAllowedError(
+                        error,
+                    )),
+                ..
+            }] = processing_result.execution_results().as_slice()
             {
                 assert_eq!(
                     error.action(),
@@ -1200,7 +1208,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1327,7 +1335,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1449,7 +1457,7 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -1549,12 +1557,12 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::IdentityInTokenConfigurationNotFoundError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
 
             platform
@@ -2219,12 +2227,12 @@ mod tests {
 
             assert_matches!(
                 result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
                         StateError::DataContractUpdateActionNotAllowedError(_)
                     ),
-                    _
-                )]
+                    ..
+                }]
             );
         }
     }
@@ -2316,7 +2324,7 @@ mod tests {
 
             assert_matches!(
                 res.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2407,7 +2415,7 @@ mod tests {
 
             if matches!(
                 outcome.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             ) {
                 platform
                     .drive
@@ -2505,10 +2513,10 @@ mod tests {
 
                     assert_matches!(
                         err.as_slice(),
-                        [StateTransitionExecutionResult::PaidConsensusError(
-                            ConsensusError::BasicError($error),
-                            _
-                        )]
+                        [StateTransitionExecutionResult::PaidConsensusError {
+                            error: ConsensusError::BasicError($error),
+                            ..
+                        }]
                     );
 
                     // original keyword docs must still be there
@@ -2697,7 +2705,7 @@ mod tests {
 
             assert_matches!(
                 res.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             platform
@@ -2783,7 +2791,7 @@ mod tests {
 
             if matches!(
                 outcome.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             ) {
                 platform
                     .drive
@@ -2888,10 +2896,10 @@ mod tests {
 
                     assert_matches!(
                         err.as_slice(),
-                        [StateTransitionExecutionResult::PaidConsensusError(
-                            ConsensusError::BasicError($error),
-                            _
-                        )]
+                        [StateTransitionExecutionResult::PaidConsensusError {
+                            error: ConsensusError::BasicError($error),
+                            ..
+                        }]
                     );
 
                     // original description docs must still be there

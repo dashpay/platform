@@ -160,6 +160,12 @@ impl MockDashPlatformSdk {
                 "GetIdentityBalanceAndRevisionRequest" => load_expectation::<
                     proto::GetIdentityBalanceAndRevisionRequest,
                 >(&mut dapi, filename)?,
+                "GetAddressInfoRequest" => {
+                    load_expectation::<proto::GetAddressInfoRequest>(&mut dapi, filename)?
+                }
+                "GetAddressesInfosRequest" => {
+                    load_expectation::<proto::GetAddressesInfosRequest>(&mut dapi, filename)?
+                }
                 "GetIdentityKeysRequest" => {
                     load_expectation::<proto::GetIdentityKeysRequest>(&mut dapi, filename)?
                 }
@@ -237,6 +243,9 @@ impl MockDashPlatformSdk {
                     load_expectation::<proto::GetTokenPerpetualDistributionLastClaimRequest>(
                         &mut dapi, filename,
                     )?
+                }
+                "GetAddressesTrunkStateRequest" => {
+                    load_expectation::<proto::GetAddressesTrunkStateRequest>(&mut dapi, filename)?
                 }
                 _ => {
                     return Err(Error::Config(format!(

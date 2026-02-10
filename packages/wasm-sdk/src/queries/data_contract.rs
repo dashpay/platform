@@ -133,10 +133,10 @@ impl WasmSdk {
 
         contract
             .map(|contract| {
-                ProofMetadataResponseWasm::from_parts(
-                    JsValue::from(DataContractWasm::from(contract)),
-                    metadata.into(),
-                    proof.into(),
+                ProofMetadataResponseWasm::from_sdk_parts(
+                    DataContractWasm::from(contract),
+                    metadata,
+                    proof,
                 )
             })
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))
@@ -235,10 +235,10 @@ impl WasmSdk {
             }
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(history_map),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            history_map,
+            metadata,
+            proof,
         ))
     }
 
@@ -279,10 +279,10 @@ impl WasmSdk {
             contracts_map.set(&key, &JsValue::from(value));
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(contracts_map),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            contracts_map,
+            metadata,
+            proof,
         ))
     }
 }

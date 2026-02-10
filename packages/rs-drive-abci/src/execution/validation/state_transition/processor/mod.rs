@@ -1,3 +1,5 @@
+/// Processor traits.
+pub mod traits;
 pub(crate) mod v0;
 
 use crate::error::execution::ExecutionError;
@@ -11,6 +13,7 @@ use dpp::state_transition::StateTransition;
 
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
+pub(crate) use traits::*;
 
 /// There are multiple stages in a state transition processing:
 ///     Basic Structure

@@ -7,13 +7,13 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_update::identity_contract_nonce::v0::DataContractUpdateStateTransitionIdentityContractNonceV0;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionNonceValidationV0};
+use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
 use crate::platform_types::platform::{PlatformStateRef};
 
 pub(crate) mod v0;
 
-impl StateTransitionNonceValidationV0 for DataContractUpdateTransition {
-    fn validate_nonces(
+impl StateTransitionIdentityNonceValidationV0 for DataContractUpdateTransition {
+    fn validate_identity_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,

@@ -1,51 +1,110 @@
-#![allow(clippy::result_large_err)]
-//! This library facilitates the creation and execution of comprehensive testing strategies for Dash Platform, leveraging the `Strategy` struct as its core.
-//! It is designed to simulate a wide range of blockchain activities, offering detailed control over the generation of state transitions, contract interactions, and identity management across blocks.
+//! Comprehensive testing framework for Dash Platform using configurable strategies.
 //!
-//! Utilizing this library, users can craft scenarios that encompass every conceivable state transition on Dash Platform, with precise timing control on a block-by-block basis.
-//! Strategies can be as simple or complex as needed, from initializing contracts and identities at the start of a simulation to conducting intricate operations like document submissions, credit transfers, and more throughout the lifespan of the blockchain.
+//! This library provides the [`Strategy`] struct and supporting types for simulating
+//! realistic blockchain activity on Dash Platform. It enables automated testing of
+//! state transitions, contract interactions, identity management, and fund operations
+//! across multiple blocks.
 //!
-//! This tool does not require any preliminary setup for the entities involved in the strategies; identities, contracts, and documents can be introduced at any point in the simulation.
-//! This flexibility ensures users can test against both new and existing blockchain states, adapting the scenarios as Dash Platform evolves.
+//! # Overview
 //!
-//! As of March 2024, the recommended approach to leverage this library's capabilities is through the `Strategies` module within Dash Platform's terminal user interface, located at `dashpay/rs-platform-explorer`.
-//! This interface provides an accessible and streamlined way to define, manage, and execute your testing strategies against Dash Platform.
+//! Strategy tests simulate real-world platform usage by executing randomized sequences
+//! of operations over configurable block ranges. A strategy defines:
+//!
+//! - **Initial state**: Identities, addresses, and contracts created at the start
+//! - **Operations**: Actions to perform each block (documents, transfers, votes, etc.)
+//! - **Frequency**: How often each operation type occurs
+//!
+//! # Block Execution Model
+//!
+//! Strategies execute over a sequence of blocks with specific timing:
+//!
+//! | Block | Activity |
+//! |-------|----------|
+//! | 1 (start) | Create start identities, fund start addresses |
+//! | 2 | Create initial contracts from `start_contracts` |
+//! | 3+ | Execute operations, insert new identities, apply contract updates |
+//!
+//! # Key Types
+//!
+//! - [`Strategy`]: The main configuration struct defining what to test
+//! - [`StrategyConfig`]: Runtime parameters (start block, number of blocks)
+//! - [`StartIdentities`]: Initial identities to create
+//! - [`StartAddresses`]: Initial platform addresses to fund
+//! - [`IdentityInsertInfo`]: Configuration for ongoing identity creation
+//! - [`Operation`](operations::Operation): Individual operations with frequency settings
+//!
+//! # Usage
+//!
+//! Strategies are used in two main contexts:
+//!
+//! 1. **Platform TUI** (`dashpay/platform-tui`): Interactive terminal UI for
+//!    defining, managing, and executing strategies
+//! 2. **Drive ABCI tests** (`rs-drive-abci/tests/strategy_tests`): Automated
+//!    integration tests that verify platform behavior under various conditions
+//!
+//! Programmatic usage via the [`Strategy`] struct:
+//!
+//! ```ignore
+//! let strategy = Strategy {
+//!     start_identities: StartIdentities { number_of_identities: 10, .. },
+//!     start_contracts: vec![(my_contract, None)],
+//!     operations: vec![document_insert_op, transfer_op],
+//!     identity_inserts: IdentityInsertInfo { frequency: ..., ... },
+//!     ..Default::default()
+//! };
+//!
+//! // Execute for each block
+//! let (transitions, finalize_ops, new_identities) = strategy.state_transitions_for_block(...);
+//! ```
+//!
+//! # Submodules
+//!
+//! - [`addresses_with_balance`]: Two-phase address balance tracking
+//! - [`frequency`]: Randomized event frequency configuration
+//! - [`operations`]: Operation type definitions
+//! - [`transitions`]: State transition factory functions
 
+#![allow(clippy::result_large_err)]
+
+use crate::addresses_with_balance::AddressesWithBalance;
 use crate::frequency::Frequency;
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
+use bincode::{Decode, Encode};
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::PrivateKey;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::created_data_contract::CreatedDataContract;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::document_type::v0::DocumentTypeV0;
+use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::{DataContract, DataContractFactory};
-
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
+use dpp::identifier::Identifier;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{BinaryData, Bytes32, Value};
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
-use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
-
-use bincode::{Decode, Encode};
-use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentType;
-use dpp::fee::Credits;
-use dpp::identifier::Identifier;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::platform_value::{BinaryData, Bytes32, Value};
+use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
+use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
+use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
@@ -58,9 +117,19 @@ use dpp::state_transition::batch_transition::document_create_transition::{
 };
 use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
+use dpp::withdrawal::Pooling;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::{dash_to_duffs, ProtocolError};
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use operations::{DataContractUpdateAction, DataContractUpdateOp};
 use platform_version::TryFromPlatformVersioned;
 use rand::prelude::StdRng;
@@ -71,58 +140,88 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use transitions::create_identity_credit_transfer_transition;
 
+pub mod addresses_with_balance;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
-pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
 
-/// Defines a detailed strategy for conducting simulations or tests on Dash Platform.
+/// The core configuration for a Dash Platform testing strategy.
 ///
-/// This struct serves as the core framework for designing and executing comprehensive simulations or automated testing scenarios on Dash Platform. It encompasses a wide array of operations, state transitions, and data contract manipulations, enabling users to craft intricate strategies that mimic real-world blockchain dynamics or test specific functionalities.
+/// A `Strategy` defines everything needed to simulate realistic platform activity
+/// over a sequence of blocks. It specifies initial conditions (identities, addresses,
+/// contracts) and ongoing operations (document actions, transfers, votes, etc.).
 ///
-/// The strategy allows for the specification of initial conditions, such as contracts to be created and identities to be registered, as well as dynamic actions that unfold over the simulation's lifespan, including contract updates and identity transactions. This versatile structure supports a broad spectrum of blockchain-related activities, from simple transfer operations to complex contract lifecycle management.
+/// # Execution Timing
+///
+/// - **Block 1** (`start_block_height`): Creates start identities and funds start addresses
+/// - **Block 2**: Deploys initial contracts from `start_contracts`
+/// - **Block 3+**: Executes operations, inserts new identities, applies contract updates
 ///
 /// # Fields
-/// - `start_identities`: Specifies identities to be established at the simulation's outset, including their initial attributes and balances. This setup allows for immediate participation of these identities in the blockchain's simulated activities.
 ///
-/// - `start_contracts`: Maps each created data contract to potential updates, enabling the simulation of contract evolution. Each tuple consists of a `CreatedDataContract` and an optional mapping of block heights to subsequent contract versions, facilitating time-sensitive contract transformations.
+/// - `start_identities`: Identities created on the first block
+/// - `start_addresses`: Platform addresses funded on the first block
+/// - `start_contracts`: Contracts deployed on the second block, with optional scheduled updates
+/// - `operations`: Actions to perform each block based on their frequency settings
+/// - `identity_inserts`: Configuration for ongoing identity creation (block 3+)
+/// - `identity_contract_nonce_gaps`: Optional nonce gaps for testing edge cases
+/// - `signer`: Key manager for signing state transitions
 ///
-/// - `operations`: Enumerates discrete operations to be executed within the strategy. These operations represent individual actions or sequences of actions, such as document manipulations, identity updates, or contract interactions, each contributing to the overarching simulation narrative.
+/// # Example
 ///
-/// - `identity_inserts`: Controls the stochastic introduction of new identities into the simulation, based on a defined frequency distribution. This field allows the strategy to dynamically expand the set of participants, reflecting organic growth or specific testing requirements.
-///
-/// - `identity_contract_nonce_gaps`: Optionally defines intervals at which nonce values for identities and contracts may be artificially incremented, introducing realistic entropy or testing specific edge cases.
-///
-/// - `signer`: Provides an optional `SimpleSigner` instance responsible for generating cryptographic signatures for various transactions within the strategy. While optional, a signer is critical for authenticating state transitions and operations that require verification.
-///
-/// # Usage Example
 /// ```ignore
 /// let strategy = Strategy {
-///     contracts_with_updates: vec![...], // Initial contracts and their planned updates
-///     operations: vec![...],             // Defined operations to simulate blockchain interactions
-///     start_identities: StartIdentities::new(...), // Identities to initialize
-///     identities_inserts: Frequency::new(...),     // Frequency of new identity introduction
-///     identity_contract_nonce_gaps: Some(Frequency::new(...)), // Optional nonce gaps
-///     signer: Some(SimpleSigner::new(...)),        // Optional signer for authenticating transactions
+///     start_identities: StartIdentities {
+///         number_of_identities: 10,
+///         keys_per_identity: 3,
+///         starting_balances: dash_to_duffs!(1),
+///         ..Default::default()
+///     },
+///     start_addresses: StartAddresses {
+///         number_of_addresses: 5,
+///         starting_balance: dash_to_credits!(0.5),
+///         ..Default::default()
+///     },
+///     operations: vec![document_op, transfer_op],
+///     ..Default::default()
 /// };
 /// ```
-///
-/// # Implementation Note
-/// It's imperative to maintain coherence among the specified operations, identities, and contracts within the `Strategy` to ensure the simulated scenarios accurately reflect intended behaviors or test conditions. Discrepancies or inconsistencies may result in unexpected outcomes or hinder the simulation's effectiveness in achieving its objectives.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Strategy {
+    /// Identities to create on the first block.
     pub start_identities: StartIdentities,
+
+    /// Platform addresses to fund on the first block.
+    pub start_addresses: StartAddresses,
+
+    /// Contracts to deploy on the second block, with optional scheduled updates.
+    /// Each tuple contains the initial contract and an optional map of
+    /// `block_offset -> updated_contract` for time-based contract evolution.
     pub start_contracts: Vec<(
         CreatedDataContract,
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
+
+    /// Operations to execute each block based on their frequency settings.
     pub operations: Vec<Operation>,
+
+    /// Configuration for ongoing identity creation (block 3+).
     pub identity_inserts: IdentityInsertInfo,
+
+    /// Optional nonce gaps to inject for testing edge cases.
+    /// When set, randomly increments nonces to simulate real-world entropy.
     pub identity_contract_nonce_gaps: Option<Frequency>,
+
+    /// Key manager for signing all state transitions.
+    /// Required for most operations; initialized with identity keys.
     pub signer: Option<SimpleSigner>,
 }
 
 impl Strategy {
+    /// Returns the maximum number of document operations that don't create new documents.
+    ///
+    /// Counts operations like delete, replace, and transfer (excluding insert operations).
+    /// Useful for capacity planning when existing documents are required.
     pub fn max_document_operation_count_without_inserts(&self) -> u16 {
         self.operations
             .iter()
@@ -138,29 +237,83 @@ impl Strategy {
     }
 }
 
-/// Config stuff for a Strategy
+/// Runtime configuration for strategy execution.
+///
+/// Specifies the block range over which the strategy runs. These values
+/// are provided at execution time, separate from the strategy definition.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyConfig {
+    /// The block height at which to begin executing the strategy.
     pub start_block_height: u64,
+    /// Total number of blocks to simulate.
     pub number_of_blocks: u64,
 }
 
-/// Identities to register on the first block of the strategy
+/// Maps key purposes to security levels to key types for identity key generation.
+///
+/// Used to specify additional keys when creating identities. The nested structure
+/// allows fine-grained control over which key types are created for each
+/// purpose/security-level combination.
+///
+/// Example: Create a HIGH-security ECDSA key for AUTHENTICATION:
+/// ```ignore
+/// let extra_keys: KeyMaps = BTreeMap::from([(
+///     Purpose::AUTHENTICATION,
+///     BTreeMap::from([(SecurityLevel::HIGH, vec![KeyType::ECDSA_SECP256K1])])
+/// )]);
+/// ```
+pub type KeyMaps = BTreeMap<Purpose, BTreeMap<SecurityLevel, Vec<KeyType>>>;
+
+/// Configuration for identities created at strategy start (block 1).
+///
+/// These identities are created via asset lock proofs and are available
+/// for all subsequent operations. They form the initial participant pool.
 #[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
 pub struct StartIdentities {
+    /// Number of random identities to generate and register.
     pub number_of_identities: u16,
+    /// Number of main keys per identity (authentication, etc.).
     pub keys_per_identity: u8,
-    pub starting_balances: u64, // starting balance in duffs
+    /// Initial credit balance for each identity (in duffs, 1 Dash = 100,000,000 duffs).
+    pub starting_balances: u64,
+    /// Additional keys to create beyond the main keys.
+    /// Allows specifying keys for specific purposes/security levels.
     pub extra_keys: KeyMaps,
+    /// Pre-defined identities with optional pre-signed state transitions.
+    /// Useful for testing with known identity IDs or specific key configurations.
     pub hard_coded: Vec<(Identity, Option<StateTransition>)>,
 }
 
-/// Identities to register on the first block of the strategy
+/// Configuration for platform addresses funded at strategy start (block 1).
+///
+/// Platform addresses can hold credits and participate in address-based
+/// operations like transfers and withdrawals. Unlike identities, addresses
+/// don't have keys or the ability to sign arbitrary state transitions.
+#[derive(Clone, Debug, PartialEq, Default, Encode, Decode)]
+pub struct StartAddresses {
+    /// Number of random addresses to create and fund.
+    pub number_of_addresses: u16,
+    /// Initial credit balance for each random address.
+    pub starting_balance: Credits,
+    /// Pre-defined addresses with specific balances.
+    /// The addresses are registered with their specified balances.
+    pub extra_addresses: BTreeMap<PlatformAddress, Credits>,
+}
+
+/// Configuration for ongoing identity creation during strategy execution.
+///
+/// Controls how new identities are introduced during blocks 3+, enabling
+/// simulation of growing participant pools and testing identity creation
+/// under various conditions.
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct IdentityInsertInfo {
+    /// How often to create new identities and how many per block.
     pub frequency: Frequency,
+    /// Number of main keys for each new identity.
     pub start_keys: u8,
+    /// Additional keys beyond the main keys.
     pub extra_keys: KeyMaps,
+    /// Credit balance range for new identities (randomly selected).
     pub start_balance_range: RangeInclusive<Credits>,
 }
 
@@ -175,14 +328,25 @@ impl Default for IdentityInsertInfo {
     }
 }
 
+/// Query specification for retrieving random documents from the platform.
+///
+/// Used with document query callbacks to fetch existing documents for
+/// operations like replace, delete, or transfer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RandomDocumentQuery<'a> {
+    /// The contract containing the document type.
     pub data_contract: &'a DataContract,
+    /// The document type to query.
     pub document_type: &'a DocumentType,
 }
 
+/// Query types supported by the document query callback.
+///
+/// Currently supports random document queries; may be extended with
+/// additional query types in the future.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LocalDocumentQuery<'a> {
+    /// Query for random documents matching a contract/type.
     RandomDocumentQuery(RandomDocumentQuery<'a>),
 }
 
@@ -193,6 +357,7 @@ struct StrategyInSerializationFormat {
     pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
     pub operations: Vec<Vec<u8>>,
     pub start_identities: StartIdentities,
+    pub start_addresses: StartAddresses,
     pub identities_inserts: IdentityInsertInfo,
     pub identity_contract_nonce_gaps: Option<Frequency>,
     pub signer: Option<SimpleSigner>,
@@ -217,6 +382,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             start_contracts: contracts_with_updates,
             operations,
             start_identities,
+            start_addresses,
             identity_inserts: identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -256,6 +422,7 @@ impl PlatformSerializableWithPlatformVersion for Strategy {
             contracts_with_updates: contract_with_updates_in_serialization_format,
             operations: operations_in_serialization_format,
             start_identities,
+            start_addresses,
             identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -292,6 +459,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             contracts_with_updates,
             operations,
             start_identities,
+            start_addresses,
             identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -345,6 +513,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
             start_contracts: contracts_with_updates,
             operations,
             start_identities,
+            start_addresses,
             identity_inserts: identities_inserts,
             identity_contract_nonce_gaps,
             signer,
@@ -352,8 +521,31 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Str
     }
 }
 
+/// Tracks document counts in the mempool per (identity, contract) pair.
+///
+/// The platform limits each identity to 24 pending documents per contract
+/// in the mempool at any time. This counter tracks current counts to avoid
+/// exceeding that limit when generating new document operations.
+///
+/// Key: `(identity_id, contract_id)` → Value: number of pending documents
 pub type MempoolDocumentCounter<'c> = BTreeMap<(Identifier, Identifier), u64>;
 
+/// Selects identities capable of submitting documents for a given contract.
+///
+/// Filters out identities that have reached the mempool limit (24 documents)
+/// for the specified contract. If more documents are needed than available
+/// identities, will reuse identities up to their remaining capacity.
+///
+/// # Parameters
+/// - `identities`: Pool of available identities
+/// - `contract`: The target contract for document submission
+/// - `mempool_document_counter`: Current pending document counts
+/// - `count`: Number of identities needed
+/// - `rng`: Random number generator for selection
+///
+/// # Returns
+/// A vector of identity references, potentially with duplicates if reuse
+/// is required to meet the requested count.
 fn choose_capable_identities<'i>(
     identities: &'i [Identity],
     contract: &DataContract,
@@ -484,7 +676,8 @@ impl Strategy {
         ) -> PartialIdentity,
         asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
-        current_identities: &mut [Identity],
+        current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -522,6 +715,78 @@ impl Strategy {
         let (identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
 
+        // Initialize start addresses on the first block by funding them from asset lock proofs
+        if block_info.height == config.start_block_height {
+            tracing::info!(
+                "Creating {} AddressFundingFromAssetLock transitions (block {})",
+                self.start_addresses.number_of_addresses,
+                block_info.height
+            );
+            // Fund random addresses from asset lock proofs
+            for i in 0..self.start_addresses.number_of_addresses {
+                // Get an asset lock proof from the pool
+                let Some((asset_lock_proof, private_key)) = asset_lock_proofs.pop() else {
+                    tracing::warn!(
+                        "No asset lock proofs available for start_addresses (funded {} of {})",
+                        i,
+                        self.start_addresses.number_of_addresses
+                    );
+                    break;
+                };
+
+                // Get the funded amount from the asset lock proof
+                let funded_amount = match &asset_lock_proof {
+                    AssetLockProof::Instant(proof) => {
+                        let output_index = proof.output_index() as usize;
+                        proof
+                            .transaction()
+                            .output
+                            .get(output_index)
+                            .map(|output| output.value * 1000) // Convert sats to credits
+                            .unwrap_or(self.start_addresses.starting_balance)
+                    }
+                    AssetLockProof::Chain(_) => self.start_addresses.starting_balance,
+                };
+
+                // Create a new address for the funding
+                let address = signer.add_random_address_key(rng);
+                current_addresses_with_balance.register_new_address(address, funded_amount);
+
+                let mut outputs = BTreeMap::new();
+                outputs.insert(address, None);
+
+                let funding_transition =
+                    AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                        asset_lock_proof,
+                        private_key.inner.secret_bytes().as_slice(),
+                        BTreeMap::new(), // no additional inputs
+                        outputs,
+                        vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                        signer,
+                        0,
+                        platform_version,
+                    );
+
+                match funding_transition {
+                    Ok(transition) => state_transitions.push(transition),
+                    Err(e) => {
+                        tracing::error!(
+                            "Error creating address funding transition for start_address: {:?}",
+                            e
+                        );
+                    }
+                }
+            }
+
+            // Add extra hard-coded addresses (these are assumed to already exist on platform)
+            for (address, balance) in &self.start_addresses.extra_addresses {
+                current_addresses_with_balance.register_new_address(*address, *balance);
+            }
+
+            // Commit the initial addresses immediately so they're available for operations
+            current_addresses_with_balance.commit();
+        }
+
         // Add initial contracts for contracts_with_updates on 2nd block of strategy
         #[allow(clippy::comparison_chain)]
         if block_info.height == config.start_block_height + 1 {
@@ -534,7 +799,6 @@ impl Strategy {
             );
             state_transitions.append(&mut contract_state_transitions);
         } else if block_info.height > config.start_block_height + 1 {
-            // Do operations and contract updates after the first two blocks
             let (mut operations_state_transitions, mut add_to_finalize_block_operations) = self
                 .operations_based_transitions(
                     document_query_callback,
@@ -542,6 +806,7 @@ impl Strategy {
                     asset_lock_proofs,
                     block_info,
                     current_identities,
+                    current_addresses_with_balance,
                     known_contracts,
                     signer,
                     identity_nonce_counter,
@@ -635,7 +900,8 @@ impl Strategy {
         ) -> PartialIdentity,
         asset_lock_proofs: &mut Vec<(AssetLockProof, PrivateKey)>,
         block_info: &BlockInfo,
-        current_identities: &mut [Identity],
+        current_identities: &mut Vec<Identity>,
+        current_addresses_with_balance: &mut AddressesWithBalance,
         known_contracts: &mut BTreeMap<String, DataContract>,
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -1201,6 +1467,37 @@ impl Strategy {
                             }
                         }
                     }
+                    // Generate state transition for identity top-up from addresses operation
+                    OperationType::IdentityTopUpFromAddresses(amount_range)
+                        if !current_identities.is_empty() =>
+                    {
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        let random_identities: Vec<&Identity> = indices
+                            .into_iter()
+                            .map(|index| &current_identities[index])
+                            .collect();
+
+                        for random_identity in random_identities {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            let state_transition = IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+                                random_identity,
+                                inputs,
+                                signer,
+                                0, // user_fee_increase
+                                platform_version,
+                                None,
+                            )
+                            .expect("expected to create top up from addresses transition");
+                            operations.push(state_transition);
+                        }
+                    }
 
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         match update_op {
@@ -1545,6 +1842,781 @@ impl Strategy {
                             }
                         }
                     }
+                    // Generate state transition for identity transfer to addresses operation
+                    OperationType::IdentityTransferToAddresses(
+                        amount_range,
+                        output_count_range,
+                        use_existing_outputs_chance,
+                        identity_transfer_info,
+                    ) if !current_identities.is_empty() => {
+                        for _ in 0..count {
+                            // Handle the case where specific sender and outputs are provided
+                            if let Some(transfer_info) = identity_transfer_info {
+                                let sender = current_identities
+                                    .iter()
+                                    .find(|identity| identity.id() == transfer_info.from)
+                                    .expect(
+                                        "Expected to find sender identity in hardcoded start identities",
+                                    );
+
+                                let (state_transition, _recipient_addresses) =
+                                    crate::transitions::create_identity_credit_transfer_to_addresses_transition(
+                                        sender,
+                                        identity_nonce_counter,
+                                        current_addresses_with_balance,
+                                        signer,
+                                        transfer_info.amount,
+                                        transfer_info.outputs.len(),
+                                        rng,
+                                        platform_version,
+                                    );
+                                operations.push(state_transition);
+                            } else {
+                                // Handle the case where no specific sender is provided
+                                let identities_count = current_identities.len();
+                                if identities_count == 0 {
+                                    break;
+                                }
+
+                                // Select a random identity from the current_identities for the sender
+                                let random_index = rng.gen_range(0..identities_count);
+                                let sender = &current_identities[random_index];
+
+                                // Get random amount within range
+                                let amount = rng.gen_range(amount_range.clone());
+
+                                // Get random output count within range
+                                let output_count =
+                                    rng.gen_range(output_count_range.clone()).max(1) as usize;
+
+                                // Calculate amount per output
+                                let amount_per_output = amount / output_count as u64;
+                                let mut recipient_addresses = BTreeMap::new();
+
+                                // Collect existing addresses that could be reused
+                                let mut available_existing_addresses: Vec<_> =
+                                    current_addresses_with_balance
+                                        .addresses_with_balance
+                                        .keys()
+                                        .cloned()
+                                        .collect();
+
+                                for _ in 0..output_count {
+                                    // Check if we should use an existing address as output
+                                    let use_existing = use_existing_outputs_chance
+                                        .map(|chance| {
+                                            rng.gen::<f64>() < chance
+                                                && !available_existing_addresses.is_empty()
+                                        })
+                                        .unwrap_or(false);
+
+                                    let address = if use_existing {
+                                        // Pick a random existing address and remove it from available pool
+                                        let idx =
+                                            rng.gen_range(0..available_existing_addresses.len());
+                                        let existing_address =
+                                            available_existing_addresses.swap_remove(idx);
+                                        // Update the balance for this existing address
+                                        if let Some((nonce, balance)) =
+                                            current_addresses_with_balance
+                                                .addresses_with_balance
+                                                .get(&existing_address)
+                                        {
+                                            current_addresses_with_balance
+                                                .addresses_in_block_with_new_balance
+                                                .insert(
+                                                    existing_address,
+                                                    (*nonce, balance + amount_per_output),
+                                                );
+                                        }
+                                        existing_address
+                                    } else {
+                                        // Create a new address
+                                        let new_address = signer.add_random_address_key(rng);
+                                        current_addresses_with_balance
+                                            .register_new_address(new_address, amount_per_output);
+                                        new_address
+                                    };
+
+                                    recipient_addresses.insert(address, amount_per_output);
+                                }
+
+                                let state_transition =
+                                    crate::transitions::create_identity_credit_transfer_to_addresses_transition_with_outputs(
+                                        sender,
+                                        identity_nonce_counter,
+                                        signer,
+                                        recipient_addresses,
+                                        platform_version,
+                                    );
+                                operations.push(state_transition);
+                            }
+                        }
+                    }
+
+                    // Generate state transition for identity create from addresses operation
+                    OperationType::IdentityCreateFromAddresses(
+                        amount_range,
+                        maybe_output_amount,
+                        fee_strategy,
+                        key_count,
+                        extra_keys,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            // Create a new identity with random keys
+                            let (mut identity, keys) = Identity::random_identity_with_main_keys_with_private_key::<
+                                Vec<_>,
+                            >(*key_count, rng, platform_version)
+                            .expect("Expected to create identity with keys");
+
+                            // Add extra keys to the identity
+                            for (purpose, security_to_key_type_map) in extra_keys.iter() {
+                                for (security_level, key_types) in security_to_key_type_map {
+                                    for key_type in key_types {
+                                        let (key, private_key) =
+                                            IdentityPublicKey::random_key_with_known_attributes(
+                                                (identity.public_keys().len() + 1) as KeyID,
+                                                rng,
+                                                *purpose,
+                                                *security_level,
+                                                *key_type,
+                                                None,
+                                                platform_version,
+                                            )
+                                            .expect("expected to create random key");
+                                        identity.add_public_key(key.clone());
+                                        signer.add_identity_public_key(key, private_key);
+                                    }
+                                }
+                            }
+
+                            // Add all keys to the signer
+                            signer.add_identity_public_keys(keys);
+
+                            // Determine fee strategy
+                            let fee_strategy = fee_strategy
+                                .clone()
+                                .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+
+                            // Calculate estimated fee for local balance tracking
+                            // Fee = identity_create_base_cost + identity_key_in_creation_cost * num_keys
+                            //     + address_funds_transfer_input_cost * num_inputs
+                            //     + address_funds_transfer_output_cost * num_outputs
+                            let total_key_count = identity.public_keys().len() as u64;
+                            let num_inputs = inputs.len() as u64;
+                            let has_output = maybe_output_amount.is_some();
+                            let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees
+                                .identity_create_base_cost
+                                .saturating_add(
+                                    min_fees
+                                        .identity_key_in_creation_cost
+                                        .saturating_mul(total_key_count),
+                                )
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_input_cost
+                                        .saturating_mul(num_inputs),
+                                )
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_output_cost
+                                        .saturating_mul(num_outputs),
+                                );
+
+                            // Track fee deductions for balance tracking
+                            let mut output_fee_deduction: Credits = 0;
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
+
+                            let input_addresses_in_order: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            let mut remaining_fee = estimated_fee;
+                            for step in &fee_strategy {
+                                if remaining_fee == 0 {
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        if *index == 0 && has_output {
+                                            output_fee_deduction =
+                                                output_fee_deduction.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        if (*index as usize) < inputs.len() {
+                                            let entry = input_fee_deductions
+                                                .entry(*index as usize)
+                                                .or_insert(0);
+                                            *entry = entry.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to input balances (beyond the amount already staged)
+                            for (idx, fee_deduction) in input_fee_deductions {
+                                if let Some(address) = input_addresses_in_order.get(idx) {
+                                    // Get the current staged balance and reduce it further by the fee
+                                    if let Some((_, staged_balance)) =
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .get_mut(address)
+                                    {
+                                        *staged_balance =
+                                            staged_balance.saturating_sub(fee_deduction);
+                                    }
+                                }
+                            }
+
+                            // Create output if maybe_output_amount is provided
+                            let output = maybe_output_amount.as_ref().map(|output_range| {
+                                let output_amount = rng.gen_range(output_range.clone());
+                                let output_address = signer.add_random_address_key(rng);
+                                // Register the output address with balance minus fee deduction
+                                let actual_output_amount =
+                                    output_amount.saturating_sub(output_fee_deduction);
+                                current_addresses_with_balance
+                                    .register_new_address(output_address, actual_output_amount);
+                                (output_address, output_amount)
+                            });
+
+                            let state_transition = IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
+                                &identity,
+                                inputs,
+                                output,
+                                fee_strategy,
+                                signer, // identity public key signer
+                                signer, // address signer
+                                0,      // user_fee_increase
+                                platform_version,
+                            )
+                            .expect("expected to create identity from addresses transition");
+
+                            operations.push(state_transition);
+                            // Add the newly created identity to the pool
+                            current_identities.push(identity);
+                        }
+                    }
+
+                    // Generate state transition for address funding from core asset lock operation
+                    // Note: amount_range is not used here because the actual funded amount comes from the asset lock proof
+                    OperationType::AddressFundingFromCoreAssetLock(_amount_range) => {
+                        for _i in 0..count {
+                            // Get an asset lock proof from the pool
+                            let Some((asset_lock_proof, private_key)) = asset_lock_proofs.pop()
+                            else {
+                                tracing::warn!(
+                                    "No asset lock proofs available for AddressFundingFromCoreAssetLock"
+                                );
+                                break;
+                            };
+
+                            // Get the funded amount from the asset lock proof
+                            let funded_amount = match &asset_lock_proof {
+                                AssetLockProof::Instant(proof) => {
+                                    let output_index = proof.output_index() as usize;
+                                    proof
+                                        .transaction()
+                                        .output
+                                        .get(output_index)
+                                        .map(|output| output.value)
+                                        .unwrap_or_default()
+                                }
+                                AssetLockProof::Chain(_chain) => 0,
+                            };
+
+                            // Calculate estimated fee for local balance tracking
+                            // For address funding from asset lock with no platform inputs and one output,
+                            // the fee is just the output cost. With ReduceOutput(0) strategy,
+                            // the fee is deducted from the output.
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees.address_funds_transfer_output_cost; // 1 output
+
+                            // Check if we have enough funds to cover the fee
+                            if funded_amount <= estimated_fee {
+                                tracing::warn!(
+                                    "Asset lock amount {} is too small to cover fee {}",
+                                    funded_amount,
+                                    estimated_fee
+                                );
+                                continue;
+                            }
+
+                            // Create a new address for the funding
+                            // Register with the actual amount after fee deduction (ReduceOutput(0))
+                            let address = signer.add_random_address_key(rng);
+                            let actual_funded_amount = funded_amount.saturating_sub(estimated_fee);
+                            current_addresses_with_balance
+                                .register_new_address(address, actual_funded_amount);
+
+                            let mut outputs = BTreeMap::new();
+                            outputs.insert(address, None);
+
+                            let funding_transition =
+                                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                                    asset_lock_proof,
+                                    private_key.inner.secret_bytes().as_slice(),
+                                    BTreeMap::new(), // no additional inputs
+                                    outputs,
+                                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                                    signer,
+                                    0,
+                                    platform_version,
+                                );
+
+                            match funding_transition {
+                                Ok(state_transition) => operations.push(state_transition),
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Error creating address funding transition: {:?}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    // Generate state transition for address transfer operation
+                    OperationType::AddressTransfer(
+                        amount_range,
+                        output_count_range,
+                        use_existing_outputs_chance,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                eprintln!("no funds left on block {}", block_info.height);
+                                // no funds left
+                                break;
+                            };
+
+                            let fee_strategy = fee_strategy
+                                .clone()
+                                .unwrap_or(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
+
+                            // Calculate total input amount (we'll distribute this among outputs)
+                            let total_input: Credits =
+                                inputs.values().map(|(_, credits)| credits).sum();
+
+                            // Generate random number of outputs within the specified range
+                            let output_count =
+                                rng.gen_range(output_count_range.clone()).max(1) as usize;
+
+                            // Calculate estimated fee for local balance tracking
+                            // The transition must have inputs == outputs (balanced), but the chain
+                            // will deduct fees according to fee_strategy. We need to track the
+                            // actual credited amounts locally.
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees
+                                .address_funds_transfer_input_cost
+                                .saturating_mul(inputs.len() as u64)
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_output_cost
+                                        .saturating_mul(output_count as u64),
+                                );
+
+                            // Check if we have enough funds to cover the fee
+                            // The check depends on the fee_strategy:
+                            // - DeductFromInput(i): input[i]'s REMAINING balance must cover the fee
+                            // - ReduceOutput(i): output[i]'s amount must cover the fee
+                            //
+                            // At this point, inputs have been staged with their remaining balances
+                            // (original - transfer_amount). We need to verify fee can be covered.
+
+                            let input_addresses_for_check: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            let mut fee_can_be_covered = false;
+                            let mut remaining_fee_to_check = estimated_fee;
+
+                            for step in &fee_strategy {
+                                if remaining_fee_to_check == 0 {
+                                    fee_can_be_covered = true;
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(_index) => {
+                                        // For ReduceOutput, the output amount must cover the fee
+                                        // Since we're distributing total_input evenly, check if
+                                        // the output amount is enough
+                                        let output_amount =
+                                            total_input / output_count.max(1) as Credits;
+                                        if output_amount >= remaining_fee_to_check {
+                                            remaining_fee_to_check = 0;
+                                            fee_can_be_covered = true;
+                                        } else {
+                                            remaining_fee_to_check -= output_amount;
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        // For DeductFromInput, the input's REMAINING balance
+                                        // (after transfer deduction) must cover the fee
+                                        if let Some(input_addr) =
+                                            input_addresses_for_check.get(*index as usize)
+                                        {
+                                            // Get the staged remaining balance
+                                            if let Some((_, remaining_balance)) =
+                                                current_addresses_with_balance
+                                                    .addresses_in_block_with_new_balance
+                                                    .get(input_addr)
+                                            {
+                                                if *remaining_balance >= remaining_fee_to_check {
+                                                    remaining_fee_to_check = 0;
+                                                    fee_can_be_covered = true;
+                                                } else {
+                                                    remaining_fee_to_check -= *remaining_balance;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if !fee_can_be_covered {
+                                tracing::warn!(
+                                    total_input = total_input,
+                                    estimated_fee = estimated_fee,
+                                    "AddressTransfer: insufficient remaining balance for fees, skipping"
+                                );
+                                // Rollback the staged changes from take_random_amounts_with_range
+                                for addr in input_addresses_for_check {
+                                    current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance
+                                        .remove(&addr);
+                                }
+                                continue;
+                            }
+
+                            // Create output addresses and distribute funds evenly
+                            // Account for remainder from integer division
+                            let amount_per_output = total_input / output_count as Credits;
+                            let remainder = total_input % output_count as Credits;
+                            let mut outputs = BTreeMap::new();
+                            let mut outputs_created = 0usize;
+
+                            // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
+                            let input_addresses: HashSet<_> = inputs.keys().cloned().collect();
+                            let mut available_existing_addresses: Vec<_> =
+                                current_addresses_with_balance
+                                    .addresses_with_balance
+                                    .keys()
+                                    .filter(|addr| !input_addresses.contains(*addr))
+                                    .cloned()
+                                    .collect();
+
+                            // Track output addresses in order for fee deduction
+                            let mut output_addresses_in_order: Vec<PlatformAddress> = Vec::new();
+                            // Track which addresses are existing vs new for balance updates
+                            let mut existing_output_addresses: HashSet<PlatformAddress> =
+                                HashSet::new();
+
+                            for _ in 0..output_count {
+                                // First output gets the remainder to ensure exact balance
+                                let this_output_amount = if outputs_created == 0 {
+                                    amount_per_output + remainder
+                                } else {
+                                    amount_per_output
+                                };
+                                outputs_created += 1;
+
+                                // Check if we should use an existing address as output
+                                let use_existing = use_existing_outputs_chance
+                                    .map(|chance| {
+                                        rng.gen::<f64>() < chance
+                                            && !available_existing_addresses.is_empty()
+                                    })
+                                    .unwrap_or(false);
+
+                                let address = if use_existing {
+                                    // Pick a random existing address and remove it from available pool
+                                    let idx = rng.gen_range(0..available_existing_addresses.len());
+                                    let existing_address =
+                                        available_existing_addresses.swap_remove(idx);
+                                    existing_output_addresses.insert(existing_address);
+                                    existing_address
+                                } else {
+                                    // Create a new address
+                                    signer.add_random_address_key(rng)
+                                };
+
+                                outputs.insert(address, this_output_amount);
+                                output_addresses_in_order.push(address);
+                            }
+
+                            // Calculate fee deductions based on fee_strategy
+                            // Track deductions for both outputs (ReduceOutput) and inputs (DeductFromInput)
+                            let mut output_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
+                            let mut remaining_fee = estimated_fee;
+
+                            // Get input addresses in order for DeductFromInput matching
+                            let input_addresses_in_order: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            for step in &fee_strategy {
+                                if remaining_fee == 0 {
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        let idx = *index as usize;
+                                        if idx < output_addresses_in_order.len() {
+                                            let output_addr = &output_addresses_in_order[idx];
+                                            let output_amount =
+                                                outputs.get(output_addr).copied().unwrap_or(0);
+                                            let deduction = remaining_fee.min(output_amount);
+                                            *output_fee_deductions.entry(idx).or_insert(0) +=
+                                                deduction;
+                                            remaining_fee = remaining_fee.saturating_sub(deduction);
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        let idx = *index as usize;
+                                        if idx < input_addresses_in_order.len() {
+                                            // The fee is deducted from the input on-chain
+                                            // We need to track this additional deduction
+                                            let deduction = remaining_fee;
+                                            *input_fee_deductions.entry(idx).or_insert(0) +=
+                                                deduction;
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to INPUT balance tracking
+                            // The transfer amount was already deducted by take_random_amounts_with_range,
+                            // but the fee is ALSO deducted from inputs when using DeductFromInput
+                            for (idx, fee_deduction) in input_fee_deductions {
+                                if let Some(input_addr) = input_addresses_in_order.get(idx) {
+                                    if let Some((nonce, current_balance)) =
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .get(input_addr)
+                                    {
+                                        // Further reduce the input's balance by the fee
+                                        let adjusted_balance =
+                                            current_balance.saturating_sub(fee_deduction);
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .insert(*input_addr, (*nonce, adjusted_balance));
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to OUTPUT balance tracking
+                            for (idx, address) in output_addresses_in_order.iter().enumerate() {
+                                let transition_amount = outputs.get(address).copied().unwrap_or(0);
+                                let fee_deduction =
+                                    output_fee_deductions.get(&idx).copied().unwrap_or(0);
+                                let actual_credited_amount =
+                                    transition_amount.saturating_sub(fee_deduction);
+
+                                if existing_output_addresses.contains(address) {
+                                    // Update balance for existing address
+                                    if let Some((nonce, balance)) = current_addresses_with_balance
+                                        .addresses_with_balance
+                                        .get(address)
+                                    {
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .insert(
+                                                *address,
+                                                (*nonce, balance + actual_credited_amount),
+                                            );
+                                    }
+                                } else {
+                                    // New address - track with fee-adjusted amount
+                                    current_addresses_with_balance
+                                        .addresses_in_block_with_new_balance
+                                        .insert(*address, (0, actual_credited_amount));
+                                }
+                            }
+
+                            // Verify input/output balance before creating transition
+                            let actual_input_sum: Credits = inputs.values().map(|(_, c)| c).sum();
+                            let actual_output_sum: Credits = outputs.values().sum();
+                            if actual_input_sum != actual_output_sum {
+                                tracing::error!(
+                                    "Balance mismatch BEFORE transition creation: input_sum={}, output_sum={}, diff={}, output_count={}, outputs.len()={}",
+                                    actual_input_sum,
+                                    actual_output_sum,
+                                    actual_input_sum as i128 - actual_output_sum as i128,
+                                    output_count,
+                                    outputs.len()
+                                );
+                            }
+
+                            // Log the inputs for debugging nonce issues
+                            for (addr, (nonce, amount)) in &inputs {
+                                tracing::debug!(
+                                    address = %addr,
+                                    nonce = nonce,
+                                    amount = amount,
+                                    "AddressTransfer: creating transition with input"
+                                );
+                            }
+
+                            let transfer_transition =
+                                AddressFundsTransferTransition::try_from_inputs_with_signer(
+                                    inputs,
+                                    outputs,
+                                    fee_strategy,
+                                    signer,
+                                    0,
+                                    platform_version,
+                                )
+                                .expect("expected to create address funds transfer transition");
+
+                            operations.push(transfer_transition);
+                        }
+                    }
+
+                    // Generate state transition for address withdrawal operation
+                    OperationType::AddressWithdrawal(
+                        amount_range,
+                        maybe_output_range,
+                        fee_strategy,
+                    ) => {
+                        for _i in 0..count {
+                            let Some(inputs) = current_addresses_with_balance
+                                .take_random_amounts_with_range(amount_range, rng)
+                            else {
+                                // no funds left
+                                break;
+                            };
+
+                            let fee_strategy = fee_strategy
+                                .clone()
+                                .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
+
+                            // Calculate estimated fee for local balance tracking
+                            // Fee = address_credit_withdrawal + input_cost * num_inputs + output_cost * num_outputs
+                            let num_inputs = inputs.len() as u64;
+                            let has_output = maybe_output_range.is_some();
+                            let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+                            let min_fees = &platform_version.fee_version.state_transition_min_fees;
+                            let estimated_fee = min_fees
+                                .address_credit_withdrawal
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_input_cost
+                                        .saturating_mul(num_inputs),
+                                )
+                                .saturating_add(
+                                    min_fees
+                                        .address_funds_transfer_output_cost
+                                        .saturating_mul(num_outputs),
+                                );
+
+                            // Track fee deductions for balance tracking
+                            let mut output_fee_deduction: Credits = 0;
+                            let mut input_fee_deductions: BTreeMap<usize, Credits> =
+                                BTreeMap::new();
+
+                            let input_addresses_in_order: Vec<PlatformAddress> =
+                                inputs.keys().cloned().collect();
+
+                            let mut remaining_fee = estimated_fee;
+                            for step in &fee_strategy {
+                                if remaining_fee == 0 {
+                                    break;
+                                }
+                                match step {
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        if *index == 0 && has_output {
+                                            output_fee_deduction =
+                                                output_fee_deduction.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                    AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                                        if (*index as usize) < inputs.len() {
+                                            let entry = input_fee_deductions
+                                                .entry(*index as usize)
+                                                .or_insert(0);
+                                            *entry = entry.saturating_add(remaining_fee);
+                                            remaining_fee = 0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Apply fee deductions to input balances (beyond the amount already staged)
+                            for (idx, fee_deduction) in input_fee_deductions {
+                                if let Some(address) = input_addresses_in_order.get(idx) {
+                                    // Get the current staged balance and reduce it further by the fee
+                                    if let Some((_, staged_balance)) =
+                                        current_addresses_with_balance
+                                            .addresses_in_block_with_new_balance
+                                            .get_mut(address)
+                                    {
+                                        *staged_balance =
+                                            staged_balance.saturating_sub(fee_deduction);
+                                    }
+                                }
+                            }
+
+                            // Determine if we have an output (change address) and its amount
+                            let output = if let Some(output_amount_range) = maybe_output_range {
+                                let output_amount = rng.gen_range(output_amount_range.clone());
+                                let output_address = signer.add_random_address_key(rng);
+                                // Register with actual amount after fee deduction
+                                let actual_output_amount =
+                                    output_amount.saturating_sub(output_fee_deduction);
+                                current_addresses_with_balance
+                                    .addresses_in_block_with_new_balance
+                                    .insert(output_address, (0, actual_output_amount));
+                                Some((output_address, output_amount))
+                            } else {
+                                None
+                            };
+
+                            // Generate a random output script for the withdrawal
+                            let output_script = if rng.gen_bool(0.5) {
+                                CoreScript::random_p2pkh(rng)
+                            } else {
+                                CoreScript::random_p2sh(rng)
+                            };
+
+                            let withdrawal_transition =
+                                AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+                                    inputs,
+                                    output,
+                                    fee_strategy,
+                                    1, // core_fee_per_byte
+                                    Pooling::Never,
+                                    output_script,
+                                    signer,
+                                    0,
+                                    platform_version,
+                                )
+                                .expect("expected to create address credit withdrawal transition");
+
+                            operations.push(withdrawal_transition);
+                        }
+                    }
+
                     _ => {}
                 }
             }
@@ -1879,7 +2951,10 @@ impl Strategy {
             .collect()
     }
 
-    /// Convenience method to get all contract ids that are in operations
+    /// Returns all contract IDs referenced by operations in this strategy.
+    ///
+    /// Collects IDs from document operations and contract update operations.
+    /// Useful for preloading contracts or validating strategy configuration.
     pub fn used_contract_ids(&self) -> BTreeSet<Identifier> {
         self.operations
             .iter()
@@ -1897,6 +2972,7 @@ mod tests {
     use crate::frequency::Frequency;
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use crate::transitions::create_state_transitions_for_identities;
+    use crate::StartAddresses;
     use crate::{StartIdentities, Strategy};
     use dpp::dash_to_duffs;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -1931,14 +3007,14 @@ mod tests {
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys);
+        simple_signer.add_identity_public_keys(keys);
 
         let (mut identity2, keys) = Identity::random_identity_with_main_keys_with_private_key::<
             Vec<_>,
         >(2, &mut rng, platform_version)
         .unwrap();
 
-        simple_signer.add_keys(keys);
+        simple_signer.add_identity_public_keys(keys);
 
         let start_identities = create_state_transitions_for_identities(
             vec![&mut identity1, &mut identity2],
@@ -2026,6 +3102,7 @@ mod tests {
                 extra_keys: BTreeMap::new(),
                 hard_coded: vec![],
             },
+            start_addresses: StartAddresses::default(),
             identity_inserts: Default::default(),
             identity_contract_nonce_gaps: None,
             signer: Some(simple_signer),

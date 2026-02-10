@@ -1,3 +1,4 @@
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
@@ -16,7 +17,7 @@ use rs_dapi_client::{DapiRequest, IntoInner};
 
 #[async_trait::async_trait]
 /// A trait for transferring a document on Platform
-pub trait TransferDocument<S: Signer>: Waitable {
+pub trait TransferDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Transfers a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +47,7 @@ pub trait TransferDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> TransferDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
     async fn transfer_document_to_identity(
         &self,
         recipient_id: Identifier,
@@ -80,6 +81,7 @@ impl<S: Signer> TransferDocument<S> for Document {
             sdk.version(),
             settings.state_transition_creation_options,
         )?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         let request = transition.broadcast_request_for_state_transition()?;
 

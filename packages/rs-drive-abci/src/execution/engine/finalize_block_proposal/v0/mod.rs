@@ -104,17 +104,20 @@ where
             block_header.core_chain_locked_height,
             block_header.proposer_pro_tx_hash,
             hash,
+            block_header.app_hash,
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, block hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, core height: {}",
+                "received a block for h: {} r: {}, block hash: {}, app_hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, app_hash: {}, core height: {}",
                 height,
                 round,
                 hex::encode(hash),
+                hex::encode(block_header.app_hash),
                 block_header.core_chain_locked_height,
                 block_state_info.height(),
                 block_state_info.round(),
                 block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string()),
+                hex::encode(block_state_info.app_hash().unwrap_or_default()),
                 block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
@@ -224,6 +227,10 @@ where
 
         self.update_drive_cache(&block_execution_context, platform_version)?;
 
+        // Check if we should create a checkpoint (must be done before consuming block_execution_context)
+        let checkpoint_needed =
+            self.should_checkpoint(&block_execution_context, platform_version)?;
+
         let block_platform_state = block_execution_context.block_platform_state_owned();
 
         self.update_state_cache(
@@ -238,6 +245,9 @@ where
         crate::metrics::abci_last_platform_height(height);
         crate::metrics::abci_last_finalized_round(round);
 
-        Ok(validation_result.into())
+        Ok(block_execution_outcome::v0::BlockFinalizationOutcome {
+            validation_result,
+            checkpoint_needed: checkpoint_needed.is_some(),
+        })
     }
 }

@@ -127,6 +127,24 @@ impl WasmTrustedContext {
         })
     }
 
+    pub fn new_local() -> Result<Self, ContextProviderError> {
+        Self::new_local_with_url("http://127.0.0.1:2444")
+    }
+
+    pub fn new_local_with_url(base_url: &str) -> Result<Self, ContextProviderError> {
+        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            dash_sdk::dpp::dashcore::Network::Regtest,
+            base_url.to_string(),
+            std::num::NonZeroUsize::new(100).unwrap(),
+        )
+        .map_err(|e| ContextProviderError::Generic(e.to_string()))?
+        .with_refetch_if_not_found(false);
+
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
+    }
+
     /// Pre-fetch quorum information to populate the cache
     pub async fn prefetch_quorums(&self) -> Result<(), ContextProviderError> {
         self.inner.update_quorum_caches().await.map_err(|e| {
@@ -161,5 +179,22 @@ impl WasmTrustedContext {
     /// Add a data contract to the known contracts cache
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
+    }
+
+    /// Get a data contract from the known contracts cache
+    /// Returns None if the contract is not in the cache
+    pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
+        self.inner.get_known_contract(id)
+    }
+
+    /// Remove a data contract from the known contracts cache
+    /// Returns true if the contract was present and removed, false otherwise
+    pub fn remove_known_contract(&self, id: &Identifier) -> bool {
+        self.inner.remove_known_contract(id)
+    }
+
+    /// Add a token configuration to the known token configurations cache
+    pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
+        self.inner.add_known_token_configuration(token_id, config);
     }
 }

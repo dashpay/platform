@@ -16,6 +16,14 @@
 
 @class BroadcastStateTransitionRequest;
 @class BroadcastStateTransitionResponse;
+@class GetAddressInfoRequest;
+@class GetAddressInfoResponse;
+@class GetAddressesBranchStateRequest;
+@class GetAddressesBranchStateResponse;
+@class GetAddressesInfosRequest;
+@class GetAddressesInfosResponse;
+@class GetAddressesTrunkStateRequest;
+@class GetAddressesTrunkStateResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
 @class GetContestedResourceIdentityVotesRequest;
@@ -87,6 +95,10 @@
 @class GetProtocolVersionUpgradeStateResponse;
 @class GetProtocolVersionUpgradeVoteStatusRequest;
 @class GetProtocolVersionUpgradeVoteStatusResponse;
+@class GetRecentAddressBalanceChangesRequest;
+@class GetRecentAddressBalanceChangesResponse;
+@class GetRecentCompactedAddressBalanceChangesRequest;
+@class GetRecentCompactedAddressBalanceChangesResponse;
 @class GetStatusRequest;
 @class GetStatusResponse;
 @class GetTokenContractInfoRequest;
@@ -339,6 +351,30 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse)
 
 - (GRPCUnaryProtoCall *)getGroupActionSignersWithMessage:(GetGroupActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse)
+
+- (GRPCUnaryProtoCall *)getAddressInfoWithMessage:(GetAddressInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse)
+
+- (GRPCUnaryProtoCall *)getAddressesInfosWithMessage:(GetAddressesInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAddressesTrunkState(GetAddressesTrunkStateRequest) returns (GetAddressesTrunkStateResponse)
+
+- (GRPCUnaryProtoCall *)getAddressesTrunkStateWithMessage:(GetAddressesTrunkStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getAddressesBranchState(GetAddressesBranchStateRequest) returns (GetAddressesBranchStateResponse)
+
+- (GRPCUnaryProtoCall *)getAddressesBranchStateWithMessage:(GetAddressesBranchStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest) returns (GetRecentAddressBalanceChangesResponse)
+
+- (GRPCUnaryProtoCall *)getRecentAddressBalanceChangesWithMessage:(GetRecentAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse)
+
+- (GRPCUnaryProtoCall *)getRecentCompactedAddressBalanceChangesWithMessage:(GetRecentCompactedAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -725,6 +761,48 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAddressInfo(GetAddressInfoRequest) returns (GetAddressInfoResponse)
+
+- (void)getAddressInfoWithRequest:(GetAddressInfoRequest *)request handler:(void(^)(GetAddressInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAddressInfoWithRequest:(GetAddressInfoRequest *)request handler:(void(^)(GetAddressInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse)
+
+- (void)getAddressesInfosWithRequest:(GetAddressesInfosRequest *)request handler:(void(^)(GetAddressesInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAddressesInfosWithRequest:(GetAddressesInfosRequest *)request handler:(void(^)(GetAddressesInfosResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAddressesTrunkState(GetAddressesTrunkStateRequest) returns (GetAddressesTrunkStateResponse)
+
+- (void)getAddressesTrunkStateWithRequest:(GetAddressesTrunkStateRequest *)request handler:(void(^)(GetAddressesTrunkStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAddressesTrunkStateWithRequest:(GetAddressesTrunkStateRequest *)request handler:(void(^)(GetAddressesTrunkStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getAddressesBranchState(GetAddressesBranchStateRequest) returns (GetAddressesBranchStateResponse)
+
+- (void)getAddressesBranchStateWithRequest:(GetAddressesBranchStateRequest *)request handler:(void(^)(GetAddressesBranchStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetAddressesBranchStateWithRequest:(GetAddressesBranchStateRequest *)request handler:(void(^)(GetAddressesBranchStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getRecentAddressBalanceChanges(GetRecentAddressBalanceChangesRequest) returns (GetRecentAddressBalanceChangesResponse)
+
+- (void)getRecentAddressBalanceChangesWithRequest:(GetRecentAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetRecentAddressBalanceChangesWithRequest:(GetRecentAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse)
+
+- (void)getRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

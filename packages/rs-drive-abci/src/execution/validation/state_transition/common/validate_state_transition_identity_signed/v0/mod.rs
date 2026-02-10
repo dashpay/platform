@@ -72,7 +72,12 @@ impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
                     "state_transition does not have a public key Id to verify".to_string(),
                 ))?;
 
-        let owner_id = self.owner_id();
+        let Some(owner_id) = self.owner_id() else {
+            return Err(ProtocolError::CorruptedCodeExecution(
+                "state_transition must have an owner id to be identity signed".to_string(),
+            )
+            .into());
+        };
 
         let allowed_purposes =
             self.purpose_requirement()
@@ -198,7 +203,8 @@ impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
         let operation = SignatureVerificationOperation::new(public_key.key_type());
         execution_context.add_operation(ValidationOperation::SignatureVerification(operation));
 
-        let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
+        let signature_is_valid =
+            self.verify_identity_signed_signature(public_key, &NativeBlsModule);
 
         if let Err(err) = signature_is_valid {
             let consensus_error = convert_to_consensus_signature_error(err)?;

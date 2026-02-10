@@ -268,6 +268,10 @@ impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::AddressInfo {
+    type Request = platform_proto::GetAddressInfoRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::TotalCreditsInPlatform {
     type Request = platform_proto::GetTotalCreditsInPlatformRequest;
 }
@@ -311,4 +315,16 @@ impl Fetch for IdentitiesContractKeys {
 
 impl Fetch for dpp::tokens::contract_info::TokenContractInfo {
     type Request = platform_proto::GetTokenContractInfoRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::RecentAddressBalanceChanges {
+    type Request = platform_proto::GetRecentAddressBalanceChangesRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::RecentCompactedAddressBalanceChanges {
+    type Request = platform_proto::GetRecentCompactedAddressBalanceChangesRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::PlatformAddressTrunkState {
+    type Request = platform_proto::GetAddressesTrunkStateRequest;
 }

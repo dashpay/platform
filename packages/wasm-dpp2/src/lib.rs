@@ -12,7 +12,7 @@
 pub mod asset_lock_proof;
 pub mod block;
 pub mod consensus_error;
-pub mod core_script;
+pub mod core;
 pub mod data_contract;
 pub mod enums;
 pub mod epoch;
@@ -21,12 +21,20 @@ pub mod group;
 pub mod identifier;
 pub mod identity;
 pub mod mock_bls;
-pub mod private_key;
+pub mod platform_address;
 pub mod public_key;
+pub mod serialization;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
 pub mod voting;
+
+pub use core::core_script::CoreScriptWasm;
+pub use core::network::NetworkWasm;
+pub use core::private_key::PrivateKeyWasm;
+pub use core::pro_tx_hash::ProTxHashWasm;
+pub use identity::signer::IdentitySignerWasm;
+pub use identity::transitions::pooling::PoolingWasm;
 
 pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
@@ -40,9 +48,14 @@ pub use identity::{
     IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
     MasternodeVoteTransitionWasm, PartialIdentityWasm,
 };
+pub use platform_address::{
+    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressOutputWasm,
+    PlatformAddressSignerWasm, PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
+};
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
 pub use voting::{
     ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
-    ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,
+    ResourceVoteChoiceWasm, ResourceVoteWasm, VotePollWasm, VoteWasm,
 };

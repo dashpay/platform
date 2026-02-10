@@ -1,5 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::prelude::Identifier;
 use wasm_bindgen::JsValue;
@@ -134,3 +135,5 @@ impl ContractBoundsWasm {
         }
     }
 }
+
+impl_wasm_conversions!(ContractBoundsWasm, ContractBounds);

@@ -15,7 +15,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType;
+use grovedb::element::reference_path::ReferencePathType;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 

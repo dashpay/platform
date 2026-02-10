@@ -1,9 +1,10 @@
+use super::pooling::PoolingWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
-use crate::core_script::CoreScriptWasm;
+use crate::core::core_script::CoreScriptWasm;
 use crate::enums::keys::purpose::PurposeWasm;
-use crate::enums::withdrawal::PoolingWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::IntoWasm;
 use dpp::identity::KeyID;
@@ -17,7 +18,10 @@ use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable}
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::state_transition::{
+    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
+    StateTransitionSingleSigned,
+};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -239,7 +243,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         Ok(encode(bytes.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
         Ok(encode(bytes.as_slice(), Base64))
@@ -274,3 +278,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         }
     }
 }
+
+impl_wasm_conversions!(
+    IdentityCreditWithdrawalTransitionWasm,
+    IdentityCreditWithdrawalTransition
+);

@@ -1,5 +1,6 @@
 import * as wasm from './wasm.js';
 import { ensureInitialized as initWasm } from './wasm.js';
+import { AddressesFacade } from './addresses/facade.js';
 import { DocumentsFacade } from './documents/facade.js';
 import { IdentitiesFacade } from './identities/facade.js';
 import { ContractsFacade } from './contracts/facade.js';
@@ -27,7 +28,7 @@ export interface ConnectionOptions {
 }
 
 export interface EvoSDKOptions extends ConnectionOptions {
-  network?: 'testnet' | 'mainnet';
+  network?: 'testnet' | 'mainnet' | 'local';
   trusted?: boolean;
   // Custom masternode addresses. When provided, network and trusted options are ignored.
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
@@ -38,6 +39,7 @@ export class EvoSDK {
   private wasmSdk?: wasm.WasmSdk;
   private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted'>> & ConnectionOptions & { addresses?: string[] };
 
+  public addresses!: AddressesFacade;
   public documents!: DocumentsFacade;
   public identities!: IdentitiesFacade;
   public contracts!: ContractsFacade;
@@ -53,6 +55,7 @@ export class EvoSDK {
     const { network = 'testnet', trusted = false, addresses, ...connection } = options;
     this.options = { network, trusted, addresses, ...connection };
 
+    this.addresses = new AddressesFacade(this);
     this.documents = new DocumentsFacade(this);
     this.identities = new IdentitiesFacade(this);
     this.contracts = new ContractsFacade(this);
@@ -94,6 +97,8 @@ export class EvoSDK {
         await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
       } else if (network === 'testnet') {
         await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
+      } else if (network === 'local') {
+        await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
       }
       builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
     } else if (network === 'mainnet') {
@@ -104,6 +109,11 @@ export class EvoSDK {
       await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
 
       builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
+    } else if (network === 'local') {
+      // Default local dashmate gateway and quorum list sidecar
+      await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
+
+      builder = trusted ? wasm.WasmSdkBuilder.localTrusted() : wasm.WasmSdkBuilder.local();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
@@ -144,6 +154,8 @@ export class EvoSDK {
   static mainnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', ...options }); }
   static testnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', trusted: true, ...options }); }
   static mainnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', trusted: true, ...options }); }
+  static local(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', ...options }); }
+  static localTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
 
   /**
    * Create an EvoSDK instance configured with specific masternode addresses.
@@ -159,11 +171,12 @@ export class EvoSDK {
    * await sdk.connect();
    * ```
    */
-  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
+  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' | 'local' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
     return new EvoSDK({ addresses, network, ...options });
   }
 }
 
+export { AddressesFacade } from './addresses/facade.js';
 export { DocumentsFacade } from './documents/facade.js';
 export { IdentitiesFacade } from './identities/facade.js';
 export { ContractsFacade } from './contracts/facade.js';

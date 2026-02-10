@@ -240,7 +240,7 @@ describe('TokenTransitions', () => {
       );
 
       expect(freezeTransition.base.constructor.name).to.equal('TokenBaseTransition');
-      expect(freezeTransition.frozenIdentityId.base58()).to.equal(ownerId);
+      expect(freezeTransition.frozenIdentityId.toBase58()).to.equal(ownerId);
       expect(freezeTransition.publicNote).to.equal('bbbb');
     });
 
@@ -252,7 +252,7 @@ describe('TokenTransitions', () => {
       );
 
       expect(unfreezeTransition.base.constructor.name).to.equal('TokenBaseTransition');
-      expect(unfreezeTransition.frozenIdentityId.base58()).to.equal(ownerId);
+      expect(unfreezeTransition.frozenIdentityId.toBase58()).to.equal(ownerId);
       expect(unfreezeTransition.publicNote).to.equal('bbbb');
     });
 
@@ -264,7 +264,7 @@ describe('TokenTransitions', () => {
       );
 
       expect(tokenDestroyFrozenFundsTransition.base.constructor.name).to.equal('TokenBaseTransition');
-      expect(tokenDestroyFrozenFundsTransition.frozenIdentityId.base58()).to.equal(ownerId);
+      expect(tokenDestroyFrozenFundsTransition.frozenIdentityId.toBase58()).to.equal(ownerId);
       expect(tokenDestroyFrozenFundsTransition.publicNote).to.equal('bbbb');
     });
 
@@ -397,7 +397,7 @@ describe('TokenTransitions', () => {
       freezeTransition.publicNote = 'aaaa';
 
       expect(freezeTransition.base.constructor.name).to.equal('TokenBaseTransition');
-      expect(freezeTransition.frozenIdentityId.base58()).to.equal(dataContractId);
+      expect(freezeTransition.frozenIdentityId.toBase58()).to.equal(dataContractId);
       expect(freezeTransition.publicNote).to.equal('aaaa');
     });
 
@@ -412,7 +412,7 @@ describe('TokenTransitions', () => {
       unfreezeTransition.publicNote = 'aaaa';
 
       expect(unfreezeTransition.base.constructor.name).to.equal('TokenBaseTransition');
-      expect(unfreezeTransition.frozenIdentityId.base58()).to.equal(dataContractId);
+      expect(unfreezeTransition.frozenIdentityId.toBase58()).to.equal(dataContractId);
       expect(unfreezeTransition.publicNote).to.equal('aaaa');
     });
 
@@ -427,7 +427,7 @@ describe('TokenTransitions', () => {
       tokenDestroyFrozenFundsTransition.publicNote = 'aaaa';
 
       expect(tokenDestroyFrozenFundsTransition.base.constructor.name).to.equal('TokenBaseTransition');
-      expect(tokenDestroyFrozenFundsTransition.frozenIdentityId.base58()).to.equal(dataContractId);
+      expect(tokenDestroyFrozenFundsTransition.frozenIdentityId.toBase58()).to.equal(dataContractId);
       expect(tokenDestroyFrozenFundsTransition.publicNote).to.equal('aaaa');
     });
 

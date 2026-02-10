@@ -1,13 +1,16 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_serde_conversions;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
-use dash_sdk::dpp::dashcore::hashes::{sha256d, Hash as _};
 use js_sys::Map;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::ProTxHashWasm;
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeState")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProtocolVersionUpgradeStateWasm {
     current_protocol_version: u32,
     next_protocol_version: Option<u32>,
@@ -63,7 +66,8 @@ impl ProtocolVersionUpgradeStateWasm {
 }
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProtocolVersionUpgradeVoteStatusWasm {
     pro_tx_hash: String,
     version: u32,
@@ -90,6 +94,12 @@ impl ProtocolVersionUpgradeVoteStatusWasm {
         self.version
     }
 }
+
+impl_wasm_serde_conversions!(ProtocolVersionUpgradeStateWasm, ProtocolVersionUpgradeState);
+impl_wasm_serde_conversions!(
+    ProtocolVersionUpgradeVoteStatusWasm,
+    ProtocolVersionUpgradeVoteStatus
+);
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -140,40 +150,26 @@ impl WasmSdk {
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
         #[wasm_bindgen(js_name = "startProTxHash")]
-        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike | null")]
         start_pro_tx_hash: JsValue,
         count: u32,
     ) -> Result<Map, WasmSdkError> {
-        use dash_sdk::dpp::dashcore::ProTxHash;
         use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
         use drive_proof_verifier::types::MasternodeProtocolVote;
-        use std::str::FromStr;
 
-        // Parse the ProTxHash
-        let start_hash = if let Some(s) = start_pro_tx_hash.as_string() {
+        // Parse the ProTxHash using centralized helper
+        let start_hash = if start_pro_tx_hash.is_null() || start_pro_tx_hash.is_undefined() {
+            None
+        } else if let Some(s) = start_pro_tx_hash.as_string() {
             if s.is_empty() {
                 None
             } else {
-                Some(ProTxHash::from_str(&s).map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid ProTxHash: {}", e))
-                })?)
+                Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
             }
         } else {
-            let bytes = js_sys::Uint8Array::new(&start_pro_tx_hash).to_vec();
-            if bytes.is_empty() {
-                None
-            } else {
-                if bytes.len() != 32 {
-                    return Err(WasmSdkError::invalid_argument(
-                        "ProTxHash must be 32 bytes or an empty value",
-                    ));
-                }
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&bytes);
-                let raw = sha256d::Hash::from_byte_array(arr);
-                Some(ProTxHash::from_raw_hash(raw))
-            }
+            Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
         };
+
         let votes_result =
             MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count)).await?;
 
@@ -244,19 +240,59 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, ProtocolVersionUpgradeVoteStatus>>"
+    )]
     pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "startProTxHash")]
-        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        #[wasm_bindgen(unchecked_param_type = "ProTxHashLike | null")]
         start_pro_tx_hash: JsValue,
         count: u32,
-    ) -> Result<JsValue, WasmSdkError> {
-        // TODO: Implement once a proper fetch_many_with_metadata_and_proof method is available for MasternodeProtocolVote
-        // The fetch_votes method has different parameters than fetch_many
-        let _ = (self, start_pro_tx_hash, count); // Parameters will be used when implemented
-        Err(WasmSdkError::generic(
-            "get_protocol_version_upgrade_vote_status_with_proof_info is not yet implemented",
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        use dash_sdk::platform::{FetchMany, LimitQuery};
+        use drive_proof_verifier::types::MasternodeProtocolVote;
+
+        // Parse the ProTxHash using centralized helper
+        let start_hash = if start_pro_tx_hash.is_null() || start_pro_tx_hash.is_undefined() {
+            None
+        } else if let Some(s) = start_pro_tx_hash.as_string() {
+            if s.is_empty() {
+                None
+            } else {
+                Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
+            }
+        } else {
+            Some(ProTxHashWasm::try_from(&start_pro_tx_hash)?.into())
+        };
+
+        // Create a LimitQuery with the start hash and count
+        let query = LimitQuery {
+            query: start_hash,
+            limit: Some(count),
+            start_info: None,
+        };
+
+        let (votes_result, metadata, proof) =
+            MasternodeProtocolVote::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
+
+        // Convert to our response format
+        let votes_map = Map::new();
+        for (pro_tx_hash, vote_opt) in votes_result {
+            if let Some(vote) = vote_opt {
+                let key = JsValue::from_str(&pro_tx_hash.to_string());
+                let value = JsValue::from(ProtocolVersionUpgradeVoteStatusWasm::new(
+                    pro_tx_hash.to_string(),
+                    vote.voted_version,
+                ));
+                votes_map.set(&key, &value);
+            }
+        }
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            votes_map, metadata, proof,
         ))
     }
 }

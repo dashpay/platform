@@ -41,7 +41,10 @@ export default class BaseCommand extends Command {
     let configFile;
     try {
       // Load config collection from config file
-      configFile = configFileRepository.read();
+      // Skip per-config validation when --force flag is passed (e.g., for reset command)
+      configFile = configFileRepository.read({
+        skipValidation: Boolean(this.parsedFlags.force),
+      });
     } catch (e) {
       // Create default config collection if config file is not present
       // on the first start for example

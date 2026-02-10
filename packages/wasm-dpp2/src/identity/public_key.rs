@@ -1,9 +1,11 @@
+use crate::core::network::NetworkWasm;
 use crate::data_contract::contract_bounds::ContractBoundsWasm;
 use crate::enums::keys::key_type::KeyTypeWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
-use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_options;
+use crate::serialization;
 use crate::utils::IntoWasm;
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -12,12 +14,17 @@ use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
+use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
+use dpp::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::version::PlatformVersion;
+use serde_json::Value as JsonValue;
+use serde_wasm_bindgen::from_value as serde_from_value;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -97,13 +104,13 @@ impl IdentityPublicKeyWasm {
     pub fn validate_private_key(
         &self,
         js_private_key_bytes: Vec<u8>,
-        js_network: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
     ) -> WasmDppResult<bool> {
         let mut private_key_bytes = [0u8; 32];
         let len = js_private_key_bytes.len().min(32);
         private_key_bytes[..len].copy_from_slice(&js_private_key_bytes[..len]);
 
-        let network = Network::from(NetworkWasm::try_from(js_network)?);
+        let network = Network::from(NetworkWasm::try_from(network)?);
 
         let is_valid = self
             .0
@@ -288,4 +295,58 @@ impl IdentityPublicKeyWasm {
 
         Ok(IdentityPublicKeyWasm(public_key))
     }
+
+    /// Serialize to JS object (non-human-readable).
+    ///
+    /// Uses platform_value conversion which properly handles the tagged enum
+    /// and removes None fields like disabledAt.
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
+        serialization::platform_value_to_object(&value)
+    }
+
+    /// Deserialize from JS object (non-human-readable).
+    ///
+    /// Uses platform_value conversion which properly handles the tagged enum.
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let platform_value = serialization::platform_value_from_object(js_value)?;
+        let platform_version = PlatformVersion::latest();
+        let key = IdentityPublicKey::from_object(platform_value, platform_version)
+            .map_err(WasmDppError::from)?;
+        Ok(IdentityPublicKeyWasm(key))
+    }
+
+    /// Serialize to JSON-compatible JS object (human-readable).
+    ///
+    /// Uses serde_json conversion which properly handles the tagged enum
+    /// and serializes binary data as base64 strings.
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
+        serialization::to_json(&json_value)
+    }
+
+    /// Deserialize from JSON-compatible JS object (human-readable).
+    ///
+    /// Uses serde_json conversion which properly handles the tagged enum
+    /// and deserializes base64 strings to binary data.
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let json_value: JsonValue = serde_from_value(js_value).map_err(|err| {
+            WasmDppError::serialization(format!(
+                "IdentityPublicKey.fromJSON: unable to parse JSON: {}",
+                err
+            ))
+        })?;
+
+        let platform_version = PlatformVersion::latest();
+        let key = IdentityPublicKey::from_json_object(json_value, platform_version)
+            .map_err(WasmDppError::from)?;
+
+        Ok(IdentityPublicKeyWasm(key))
+    }
 }
+
+impl_try_from_options!(IdentityPublicKeyWasm, "IdentityPublicKey");

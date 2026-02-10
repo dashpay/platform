@@ -519,4 +519,40 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetGroupActionSignersRequest,
         dapi_grpc::platform::v0::GetGroupActionSignersResponse
     );
+
+    drive_method!(
+        get_address_info,
+        dapi_grpc::platform::v0::GetAddressInfoRequest,
+        dapi_grpc::platform::v0::GetAddressInfoResponse
+    );
+
+    drive_method!(
+        get_addresses_infos,
+        dapi_grpc::platform::v0::GetAddressesInfosRequest,
+        dapi_grpc::platform::v0::GetAddressesInfosResponse
+    );
+
+    drive_method!(
+        get_addresses_trunk_state,
+        dapi_grpc::platform::v0::GetAddressesTrunkStateRequest,
+        dapi_grpc::platform::v0::GetAddressesTrunkStateResponse
+    );
+
+    drive_method!(
+        get_addresses_branch_state,
+        dapi_grpc::platform::v0::GetAddressesBranchStateRequest,
+        dapi_grpc::platform::v0::GetAddressesBranchStateResponse
+    );
+
+    drive_method!(
+        get_recent_address_balance_changes,
+        dapi_grpc::platform::v0::GetRecentAddressBalanceChangesRequest,
+        dapi_grpc::platform::v0::GetRecentAddressBalanceChangesResponse
+    );
+
+    drive_method!(
+        get_recent_compacted_address_balance_changes,
+        dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesRequest,
+        dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesResponse
+    );
 }

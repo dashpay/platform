@@ -1,5 +1,7 @@
 import getWasm from './helpers/wasm.js';
-import { value, id, ownerId } from './mocks/DataContract/index.js';
+import {
+  json, object, id, ownerId
+} from './mocks/DataContract/index.js';
 import { fromHexString } from './utils/hex.js';
 
 let wasm;
@@ -19,23 +21,25 @@ describe('DataContract', () => {
 
   describe('serialization / deserialization', () => {
     it('should allows to create DataContract from schema without full validation', () => {
-      const identifier = new wasm.Identifier(value.ownerId);
+      const identifier = new wasm.Identifier(object.ownerId);
 
-      const dataContract = new wasm.DataContract(identifier, BigInt(2), value.documentSchemas, null, false);
+      // Constructor accepts object format (with BigInt for integers)
+      const dataContract = new wasm.DataContract(identifier, BigInt(2), object.documentSchemas, null, false);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allows to create DataContract from schema with full validation', () => {
-      const identifier = new wasm.Identifier(value.ownerId);
+      const identifier = new wasm.Identifier(object.ownerId);
 
-      const dataContract = new wasm.DataContract(identifier, BigInt(2), value.documentSchemas, null, true);
+      // Constructor accepts object format (with BigInt for integers)
+      const dataContract = new wasm.DataContract(identifier, BigInt(2), object.documentSchemas, null, true);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allows to create DataContract from value with full validation and without platform version', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
@@ -43,7 +47,7 @@ describe('DataContract', () => {
     it('should allows to convert DataContract to bytes and from bytes', () => {
       const [dataContractBytes] = dataContractsBytes;
 
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
       expect(dataContract.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
 
@@ -58,78 +62,111 @@ describe('DataContract', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), false, PlatformVersion.PLATFORM_V1);
-      const dataContractFromValue = wasm.DataContract.fromValue(value, true);
+      const dataContractFromValue = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
+      expect(dataContractFromBytes.toObject()).to.deep.equal(dataContractFromValue.toObject());
     });
 
     it('should allows to create DataContract from bytes with full validation and without version', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), true);
-      const dataContractFromValue = wasm.DataContract.fromValue(value, true);
+      const dataContractFromValue = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
+      expect(dataContractFromBytes.toObject()).to.deep.equal(dataContractFromValue.toObject());
+    });
+
+    it('should allow to create DataContract from object produced by toObject', () => {
+      const originalContract = wasm.DataContract.fromJSON(json, true);
+      const objectRepresentation = originalContract.toObject(PlatformVersion.PLATFORM_V1);
+
+      const reconstructedContract = wasm.DataContract.fromObject(
+        objectRepresentation,
+        true,
+        PlatformVersion.PLATFORM_V1,
+      );
+
+      expect(reconstructedContract.toObject(PlatformVersion.PLATFORM_V1)).to.deep.equal(objectRepresentation);
+    });
+
+    it('should allow to convert DataContract to base64 and from base64', () => {
+      const [dataContractBytes] = dataContractsBytes;
+
+      const dataContract = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), true, PlatformVersion.PLATFORM_V1);
+
+      const base64 = dataContract.toBase64(PlatformVersion.PLATFORM_V1);
+      const bytes = dataContract.toBytes(PlatformVersion.PLATFORM_V1);
+      const bytesFromBase64 = Buffer.from(base64, 'base64');
+
+      expect(bytesFromBase64).to.deep.equal(Buffer.from(bytes));
+
+      const dataContractFromBase64 = wasm.DataContract.fromBase64(base64, true, PlatformVersion.PLATFORM_V1);
+
+      expect(Buffer.from(dataContractFromBase64.toBytes(PlatformVersion.PLATFORM_V1))).to.deep.equal(Buffer.from(bytes));
     });
 
     it('should allow to get json', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.toJSON()).to.deep.equal(value);
+      expect(dataContract.toJSON()).to.deep.equal(json);
     });
   });
 
   describe('getters', () => {
     it('should allow to get schemas', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.getSchemas()).to.deep.equal(value.documentSchemas);
+      const schemas = dataContract.getSchemas();
+
+      expect(schemas).to.deep.equal(object.documentSchemas);
     });
 
     it('should allow to get version', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.version).to.deep.equal(value.version);
+      expect(dataContract.version).to.deep.equal(json.version);
     });
 
     it('should allow to get id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.id.base58()).to.deep.equal(id);
+      expect(dataContract.id.toBase58()).to.deep.equal(id);
     });
 
     it('should allow to get owner id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.ownerId.base58()).to.deep.equal(ownerId);
+      expect(dataContract.ownerId.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should allow to get config', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      expect(dataContract.getConfig()).to.deep.equal(value.config);
+      const config = dataContract.getConfig();
+
+      expect(config).to.deep.equal(object.config);
     });
   });
 
   describe('setters', () => {
     it('should allow to set id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
       dataContract.id = new wasm.Identifier('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
 
-      expect(dataContract.id.base58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
+      expect(dataContract.id.toBase58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
     });
 
     it('should allow to set owner id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
       dataContract.ownerId = new wasm.Identifier('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
 
-      expect(dataContract.ownerId.base58()).to.deep.equal('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
+      expect(dataContract.ownerId.toBase58()).to.deep.equal('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
     });
 
     it('should allow to set version', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
       dataContract.version = 20;
 
@@ -137,7 +174,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set config', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
       const oldConfig = dataContract.getConfig();
 
@@ -149,17 +186,23 @@ describe('DataContract', () => {
     });
 
     it('should allow to set schema', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(json, true);
 
-      const oldSchema = dataContract.getSchemas();
-
+      // Use JSON fixture for setting (numbers, not BigInt)
       const newSchema = {
-        pupup: oldSchema.withdrawal,
+        pupup: json.documentSchemas.withdrawal,
       };
 
       dataContract.setSchemas(newSchema);
 
-      expect(dataContract.getSchemas()).to.deep.equal(newSchema);
+      const schemas = dataContract.getSchemas();
+
+      // getSchemas returns object format (BigInt), so compare with object fixture
+      const expectedSchema = {
+        pupup: object.documentSchemas.withdrawal,
+      };
+
+      expect(schemas).to.deep.equal(expectedSchema);
     });
   });
 
@@ -169,7 +212,7 @@ describe('DataContract', () => {
 
       const generatedId = wasm.DataContract.generateId(identifier, BigInt(4));
 
-      expect(generatedId.base58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
+      expect(generatedId.toBase58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
     });
   });
 });

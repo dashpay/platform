@@ -1,6 +1,7 @@
 use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_conversions;
 use crate::state_transitions::StateTransitionWasm;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -88,7 +89,7 @@ impl DataContractUpdateTransitionWasm {
         Ok(encode(self.to_bytes()?.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         Ok(encode(self.to_bytes()?.as_slice(), Base64))
     }
@@ -181,3 +182,8 @@ impl DataContractUpdateTransitionWasm {
         }
     }
 }
+
+impl_wasm_conversions!(
+    DataContractUpdateTransitionWasm,
+    DataContractUpdateTransition
+);

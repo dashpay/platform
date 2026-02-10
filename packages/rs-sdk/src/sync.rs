@@ -4,18 +4,14 @@
 //! inside a tokio runtime. This module spawns async futures in active tokio runtime, and retrieves the result
 //! using a channel.
 
-use arc_swap::ArcSwap;
+use crate::error::Error;
 use dash_context_provider::ContextProviderError;
 use rs_dapi_client::{
-    update_address_ban_status, AddressList, CanRetry, ExecutionResult, RequestSettings,
+    transport::sleep, update_address_ban_status, AddressList, CanRetry, ExecutionResult,
+    RequestSettings,
 };
-use std::fmt::Display;
-use std::{
-    fmt::Debug,
-    future::Future,
-    sync::{mpsc::SendError, Arc},
-};
-use tokio::sync::Mutex;
+use std::time::Duration;
+use std::{fmt::Debug, future::Future, sync::mpsc::SendError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AsyncError {
@@ -166,101 +162,112 @@ async fn worker<F: Future>(
 /// Compiler error: `no method named retry found for closure`:
 /// - ensure returned value is [`ExecutionResult`].,
 /// - consider adding `.await` at the end of the closure.
-///
-///
-/// ## See also
-///
-/// - [`::backon`] crate that is used by this function.
-pub async fn retry<Fut, FutureFactoryFn, R, E>(
+pub async fn retry<Fut, FutureFactoryFn, R>(
     address_list: &AddressList,
     settings: RequestSettings,
-    future_factory_fn: FutureFactoryFn,
-) -> ExecutionResult<R, E>
+    mut future_factory_fn: FutureFactoryFn,
+) -> ExecutionResult<R, Error>
 where
-    Fut: Future<Output = ExecutionResult<R, E>>,
+    Fut: Future<Output = ExecutionResult<R, Error>>,
     FutureFactoryFn: FnMut(RequestSettings) -> Fut,
-    E: CanRetry + Display + Debug,
+    R: Send,
 {
     let max_retries = settings.retries.unwrap_or_default();
+    let mut total_retries: usize = 0;
+    let mut current_settings = settings;
 
-    let backoff_strategy = backon::ConstantBuilder::default()
-        .with_delay(std::time::Duration::from_millis(10)) // we use different server, so no real delay needed, just to avoid spamming
-        .with_max_times(max_retries);
+    // Store the last meaningful error (not "no available addresses")
+    // so we can return it if we exhaust all addresses
+    let mut last_meaningful_error: Option<rs_dapi_client::ExecutionError<Error>> = None;
 
-    let mut retries: usize = 0;
+    loop {
+        let result = future_factory_fn(current_settings).await;
 
-    // Settings must be modified inside `when()` closure, so we need to use `ArcSwap` to allow mutable access to settings.
-    let settings = ArcSwap::new(Arc::new(settings));
+        // Ban or unban the address based on the result
+        update_address_ban_status(address_list, &result, &current_settings.finalize());
 
-    // Closure below needs to be FnMut, so we need mutable future_factory_fn. In order to achieve that,
-    // we use Arc<Mutex<.>>> pattern, to NOT move `future_factory_fn` directly into closure (as this breaks FnMut),
-    // while still allowing mutable access to it.
-    let inner_fn = Arc::new(Mutex::new(future_factory_fn));
-
-    let closure_settings = &settings;
-    // backon also support [backon::RetryableWithContext], but it doesn't pass the context to `when()` call.
-    // As we need to modify the settings inside `when()`, context doesn't solve our problem and we have to implement
-    // our own "context-like" logic using the closure below and `ArcSwap` for settings.
-    let closure = move || {
-        let inner_fn = inner_fn.clone();
-        async move {
-            let settings = closure_settings.load_full().clone();
-            let mut func = inner_fn.lock().await;
-            let result = (*func)(*settings).await;
-
-            // Ban or unban the address based on the result
-            update_address_ban_status(address_list, &result, &settings.finalize());
-
-            result
-        }
-    };
-
-    let result = ::backon::Retryable::retry(closure, backoff_strategy)
-        .when(|e| {
-            if e.can_retry() {
-                // requests sent for current execution attempt;
-                let requests_sent = e.retries + 1;
-
-                // requests sent in all preceeding attempts; user expects `settings.retries +1`
-                retries += requests_sent;
-                let all_requests_sent = retries;
-
-                if all_requests_sent <= max_retries { // we account for initial request
-                    tracing::warn!(retry = all_requests_sent, max_retries, error=?e, "retrying request");
-                    let new_settings = RequestSettings {
-                        retries: Some(max_retries - all_requests_sent), // limit num of retries for lower layer
-                        ..**settings.load()
-                    };
-                    settings.store(Arc::new(new_settings));
-                    true
-                } else {
-                    tracing::error!(retry = all_requests_sent, max_retries, error=?e, "no more retries left, giving up");
-                    false
+        match result {
+            Ok(response) => return Ok(response),
+            Err(error) => {
+                // Check if this is a "no available addresses" error and we have a previous meaningful error
+                if error.is_no_available_addresses() {
+                    if let Some(prev_error) = last_meaningful_error.take() {
+                        tracing::error!(
+                            retry = total_retries,
+                            max_retries,
+                            error = ?prev_error,
+                            "no addresses available to retry"
+                        );
+                        // Wrap the last meaningful error in NoAvailableAddresses
+                        return Err(rs_dapi_client::ExecutionError {
+                            inner: Error::NoAvailableAddressesToRetry(Box::new(prev_error.inner)),
+                            retries: total_retries,
+                            address: prev_error.address,
+                        });
+                    }
+                    // No previous error, return the "no available addresses" error as-is
+                    return Err(error);
                 }
-            } else {
-                false
-            }
-        })
-        .sleep(rs_dapi_client::transport::BackonSleeper::default())
-        .notify(|error, duration| {
-            tracing::warn!(?duration, ?error, "request failed, retrying");
-        })
-        .await;
 
-    result.map_err(|mut e| {
-        e.retries = retries;
-        e
-    })
+                // Count requests sent in this attempt
+                let requests_sent = error.retries + 1;
+                total_retries += requests_sent;
+
+                if !error.can_retry() {
+                    // Non-retryable error, return immediately
+                    let mut final_error = error;
+                    final_error.retries = total_retries;
+                    return Err(final_error);
+                }
+
+                if total_retries > max_retries {
+                    // Exceeded max retries
+                    tracing::error!(
+                        retry = total_retries,
+                        max_retries,
+                        error = ?error,
+                        "no more retries left, giving up"
+                    );
+                    let mut final_error = error;
+                    final_error.retries = total_retries;
+                    return Err(final_error);
+                }
+
+                // Log retry decision (matches original `when()` callback)
+                tracing::warn!(
+                    retry = total_retries,
+                    max_retries,
+                    error = ?error,
+                    "retrying request"
+                );
+
+                // Update settings for next retry - limit retries for lower layer
+                current_settings.retries = Some(max_retries.saturating_sub(total_retries));
+
+                // Small delay to avoid spamming (we use different server, so no real delay needed)
+                // Log before sleep (matches original `notify()` callback)
+                let delay = Duration::from_millis(10);
+                tracing::warn!(duration = ?delay, error = ?error, "request failed, retrying");
+
+                // Store this as the last meaningful error before retrying
+                last_meaningful_error = Some(error);
+
+                sleep(delay).await;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use derive_more::Display;
     use rs_dapi_client::ExecutionError;
     use std::{
         future::Future,
-        sync::atomic::{AtomicUsize, Ordering},
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     };
     use tokio::{
         runtime::Builder,
@@ -339,20 +346,13 @@ mod test {
         }
     }
 
-    #[derive(Debug, Display)]
-    enum MockError {
-        Generic,
-    }
-    impl CanRetry for MockError {
-        fn can_retry(&self) -> bool {
-            true
-        }
-    }
+    use crate::error::StaleNodeError;
+    use rs_dapi_client::DapiClientError;
 
     async fn retry_test_function(
         settings: RequestSettings,
         counter: Arc<AtomicUsize>,
-    ) -> ExecutionResult<(), MockError> {
+    ) -> ExecutionResult<(), Error> {
         // num or retries increases with each call
         let retries = counter.load(Ordering::Relaxed);
         let retries = if settings.retries.unwrap_or_default() < retries {
@@ -365,7 +365,11 @@ mod test {
         counter.fetch_add(1 + retries, Ordering::Relaxed);
 
         Err(ExecutionError {
-            inner: MockError::Generic,
+            inner: Error::StaleNode(StaleNodeError::Height {
+                expected_height: 100,
+                received_height: 50,
+                tolerance_blocks: 1,
+            }),
             retries,
             address: Some("http://localhost".parse().expect("valid address")),
         })
@@ -399,5 +403,102 @@ mod test {
                 expected_requests
             );
         }
+    }
+
+    /// Test that when we get "no available addresses" error, we return the last meaningful error
+    /// wrapped in NoAvailableAddresses.
+    ///
+    /// This simulates the scenario where:
+    /// 1. First request fails with a meaningful error (e.g., stale node)
+    /// 2. The address gets banned
+    /// 3. On retry, there are no available addresses left
+    /// 4. We should return NoAvailableAddresses wrapping the original meaningful error
+    #[tokio::test]
+    async fn test_retry_returns_last_meaningful_error_on_no_addresses() {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let address_list = AddressList::default();
+
+        let mut settings = RequestSettings::default();
+        settings.retries = Some(5);
+
+        let call_count_clone = call_count.clone();
+        let closure = move |_settings: RequestSettings| {
+            let count = call_count_clone.fetch_add(1, Ordering::Relaxed);
+            async move {
+                if count == 0 {
+                    // First call: return a meaningful retryable error (stale node)
+                    Err(ExecutionError {
+                        inner: Error::StaleNode(StaleNodeError::Height {
+                            expected_height: 100,
+                            received_height: 50,
+                            tolerance_blocks: 1,
+                        }),
+                        retries: 0,
+                        address: Some("http://localhost:1".parse().unwrap()),
+                    })
+                } else {
+                    // Subsequent calls: simulate no addresses available (all banned)
+                    Err(ExecutionError {
+                        inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+                        retries: 0,
+                        address: None,
+                    })
+                }
+            }
+        };
+
+        let result: ExecutionResult<(), Error> = retry(&address_list, settings, closure).await;
+
+        // We should get NoAvailableAddresses wrapping the stale node error
+        let error = result.expect_err("should fail");
+        match &error.inner {
+            Error::NoAvailableAddressesToRetry(inner) => {
+                assert!(
+                    matches!(**inner, Error::StaleNode(_)),
+                    "inner error should be StaleNode, got: {:?}",
+                    inner
+                );
+            }
+            _ => panic!(
+                "expected NoAvailableAddresses error, got: {:?}",
+                error.inner
+            ),
+        }
+        assert_eq!(
+            call_count.load(Ordering::Relaxed),
+            2,
+            "should have called twice"
+        );
+    }
+
+    /// Test that if we get "no available addresses" on the first call (no previous error),
+    /// we still return it as-is (not wrapped).
+    #[tokio::test]
+    async fn test_retry_returns_no_addresses_if_no_previous_error() {
+        let address_list = AddressList::default();
+
+        let mut settings = RequestSettings::default();
+        settings.retries = Some(5);
+
+        let closure = move |_settings: RequestSettings| async move {
+            // First and only call returns "no available addresses"
+            Err(ExecutionError {
+                inner: Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+                retries: 0,
+                address: None,
+            })
+        };
+
+        let result: ExecutionResult<(), Error> = retry(&address_list, settings, closure).await;
+
+        let error = result.expect_err("should fail");
+        assert!(
+            matches!(
+                error.inner,
+                Error::DapiClientError(DapiClientError::NoAvailableAddresses)
+            ),
+            "should return 'no available addresses' when there's no previous meaningful error, got: {:?}",
+            error.inner
+        );
     }
 }

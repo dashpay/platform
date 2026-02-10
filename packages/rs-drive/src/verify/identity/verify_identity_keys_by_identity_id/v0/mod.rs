@@ -105,9 +105,9 @@ impl Drive {
                     let item_bytes = element.into_item_bytes().map_err(Error::from)?;
                     revision = Some(Revision::from_be_bytes(
                         item_bytes.as_slice().try_into().map_err(|_| {
-                            Error::GroveDB(Box::new(grovedb::Error::WrongElementType(
+                            Error::Proof(ProofError::IncorrectValueSize(
                                 "expecting 8 bytes of data for revision",
-                            )))
+                            ))
                         })?,
                     ));
                 } else {

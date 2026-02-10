@@ -27,9 +27,36 @@
 // Forward declarations of Objective C classes that we can use as
 // static values in struct initializers.
 // We don't use [Foo class] because it is not a static value.
+GPBObjCClassDeclaration(AddToCreditsOperations);
+GPBObjCClassDeclaration(AddressBalanceChange);
+GPBObjCClassDeclaration(AddressBalanceUpdateEntries);
+GPBObjCClassDeclaration(AddressInfoEntries);
+GPBObjCClassDeclaration(AddressInfoEntry);
 GPBObjCClassDeclaration(AllKeys);
+GPBObjCClassDeclaration(BalanceAndNonce);
+GPBObjCClassDeclaration(BlockAddressBalanceChanges);
+GPBObjCClassDeclaration(BlockHeightCreditEntry);
+GPBObjCClassDeclaration(CompactedAddressBalanceChange);
+GPBObjCClassDeclaration(CompactedAddressBalanceUpdateEntries);
+GPBObjCClassDeclaration(CompactedBlockAddressBalanceChanges);
 GPBObjCClassDeclaration(GPBBytesValue);
 GPBObjCClassDeclaration(GPBUInt32Value);
+GPBObjCClassDeclaration(GetAddressInfoRequest);
+GPBObjCClassDeclaration(GetAddressInfoRequest_GetAddressInfoRequestV0);
+GPBObjCClassDeclaration(GetAddressInfoResponse);
+GPBObjCClassDeclaration(GetAddressInfoResponse_GetAddressInfoResponseV0);
+GPBObjCClassDeclaration(GetAddressesBranchStateRequest);
+GPBObjCClassDeclaration(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0);
+GPBObjCClassDeclaration(GetAddressesBranchStateResponse);
+GPBObjCClassDeclaration(GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0);
+GPBObjCClassDeclaration(GetAddressesInfosRequest);
+GPBObjCClassDeclaration(GetAddressesInfosRequest_GetAddressesInfosRequestV0);
+GPBObjCClassDeclaration(GetAddressesInfosResponse);
+GPBObjCClassDeclaration(GetAddressesInfosResponse_GetAddressesInfosResponseV0);
+GPBObjCClassDeclaration(GetAddressesTrunkStateRequest);
+GPBObjCClassDeclaration(GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0);
+GPBObjCClassDeclaration(GetAddressesTrunkStateResponse);
+GPBObjCClassDeclaration(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0);
 GPBObjCClassDeclaration(GetConsensusParamsRequest);
 GPBObjCClassDeclaration(GetConsensusParamsRequest_GetConsensusParamsRequestV0);
 GPBObjCClassDeclaration(GetConsensusParamsResponse);
@@ -252,6 +279,14 @@ GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal);
 GPBObjCClassDeclaration(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals);
+GPBObjCClassDeclaration(GetRecentAddressBalanceChangesRequest);
+GPBObjCClassDeclaration(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0);
+GPBObjCClassDeclaration(GetRecentAddressBalanceChangesResponse);
+GPBObjCClassDeclaration(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0);
+GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesRequest);
+GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0);
+GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesResponse);
+GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0);
 GPBObjCClassDeclaration(GetStatusRequest);
 GPBObjCClassDeclaration(GetStatusRequest_GetStatusRequestV0);
 GPBObjCClassDeclaration(GetStatusResponse);
@@ -20168,6 +20203,2067 @@ typedef struct GetGroupActionSignersResponse_GetGroupActionSignersResponseV0_Gro
 
 @end
 
+#pragma mark - GetAddressInfoRequest
+
+@implementation GetAddressInfoRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressInfoRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressInfoRequest_GetAddressInfoRequestV0 *v0;
+} GetAddressInfoRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressInfoRequest_GetAddressInfoRequestV0),
+        .number = GetAddressInfoRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressInfoRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressInfoRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressInfoRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressInfoRequest_ClearVersionOneOfCase(GetAddressInfoRequest *message) {
+  GPBDescriptor *descriptor = [GetAddressInfoRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressInfoRequest_GetAddressInfoRequestV0
+
+@implementation GetAddressInfoRequest_GetAddressInfoRequestV0
+
+@dynamic address;
+@dynamic prove;
+
+typedef struct GetAddressInfoRequest_GetAddressInfoRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *address;
+} GetAddressInfoRequest_GetAddressInfoRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "address",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressInfoRequest_GetAddressInfoRequestV0_FieldNumber_Address,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAddressInfoRequest_GetAddressInfoRequestV0__storage_, address),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressInfoRequest_GetAddressInfoRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressInfoRequest_GetAddressInfoRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressInfoRequest_GetAddressInfoRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressInfoRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - AddressInfoEntry
+
+@implementation AddressInfoEntry
+
+@dynamic address;
+@dynamic hasBalanceAndNonce, balanceAndNonce;
+
+typedef struct AddressInfoEntry__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *address;
+  BalanceAndNonce *balanceAndNonce;
+} AddressInfoEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "address",
+        .dataTypeSpecific.clazz = Nil,
+        .number = AddressInfoEntry_FieldNumber_Address,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(AddressInfoEntry__storage_, address),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "balanceAndNonce",
+        .dataTypeSpecific.clazz = GPBObjCClass(BalanceAndNonce),
+        .number = AddressInfoEntry_FieldNumber_BalanceAndNonce,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(AddressInfoEntry__storage_, balanceAndNonce),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[AddressInfoEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(AddressInfoEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - BalanceAndNonce
+
+@implementation BalanceAndNonce
+
+@dynamic balance;
+@dynamic nonce;
+
+typedef struct BalanceAndNonce__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t nonce;
+  uint64_t balance;
+} BalanceAndNonce__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "balance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BalanceAndNonce_FieldNumber_Balance,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(BalanceAndNonce__storage_, balance),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "nonce",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BalanceAndNonce_FieldNumber_Nonce,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(BalanceAndNonce__storage_, nonce),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[BalanceAndNonce class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(BalanceAndNonce__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - AddressInfoEntries
+
+@implementation AddressInfoEntries
+
+@dynamic addressInfoEntriesArray, addressInfoEntriesArray_Count;
+
+typedef struct AddressInfoEntries__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *addressInfoEntriesArray;
+} AddressInfoEntries__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "addressInfoEntriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddressInfoEntry),
+        .number = AddressInfoEntries_FieldNumber_AddressInfoEntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(AddressInfoEntries__storage_, addressInfoEntriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[AddressInfoEntries class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(AddressInfoEntries__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - AddressBalanceChange
+
+@implementation AddressBalanceChange
+
+@dynamic operationOneOfCase;
+@dynamic address;
+@dynamic setBalance;
+@dynamic addToBalance;
+
+typedef struct AddressBalanceChange__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *address;
+  uint64_t setBalance;
+  uint64_t addToBalance;
+} AddressBalanceChange__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "address",
+        .dataTypeSpecific.clazz = Nil,
+        .number = AddressBalanceChange_FieldNumber_Address,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(AddressBalanceChange__storage_, address),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "setBalance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = AddressBalanceChange_FieldNumber_SetBalance,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(AddressBalanceChange__storage_, setBalance),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "addToBalance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = AddressBalanceChange_FieldNumber_AddToBalance,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(AddressBalanceChange__storage_, addToBalance),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[AddressBalanceChange class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(AddressBalanceChange__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "operation",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void AddressBalanceChange_ClearOperationOneOfCase(AddressBalanceChange *message) {
+  GPBDescriptor *descriptor = [AddressBalanceChange descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - BlockAddressBalanceChanges
+
+@implementation BlockAddressBalanceChanges
+
+@dynamic blockHeight;
+@dynamic changesArray, changesArray_Count;
+
+typedef struct BlockAddressBalanceChanges__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *changesArray;
+  uint64_t blockHeight;
+} BlockAddressBalanceChanges__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BlockAddressBalanceChanges_FieldNumber_BlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(BlockAddressBalanceChanges__storage_, blockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "changesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddressBalanceChange),
+        .number = BlockAddressBalanceChanges_FieldNumber_ChangesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(BlockAddressBalanceChanges__storage_, changesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[BlockAddressBalanceChanges class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(BlockAddressBalanceChanges__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - AddressBalanceUpdateEntries
+
+@implementation AddressBalanceUpdateEntries
+
+@dynamic blockChangesArray, blockChangesArray_Count;
+
+typedef struct AddressBalanceUpdateEntries__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *blockChangesArray;
+} AddressBalanceUpdateEntries__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockChangesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(BlockAddressBalanceChanges),
+        .number = AddressBalanceUpdateEntries_FieldNumber_BlockChangesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(AddressBalanceUpdateEntries__storage_, blockChangesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[AddressBalanceUpdateEntries class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(AddressBalanceUpdateEntries__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetAddressInfoResponse
+
+@implementation GetAddressInfoResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressInfoResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressInfoResponse_GetAddressInfoResponseV0 *v0;
+} GetAddressInfoResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressInfoResponse_GetAddressInfoResponseV0),
+        .number = GetAddressInfoResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressInfoResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressInfoResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressInfoResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressInfoResponse_ClearVersionOneOfCase(GetAddressInfoResponse *message) {
+  GPBDescriptor *descriptor = [GetAddressInfoResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressInfoResponse_GetAddressInfoResponseV0
+
+@implementation GetAddressInfoResponse_GetAddressInfoResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic addressInfoEntry;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetAddressInfoResponse_GetAddressInfoResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  AddressInfoEntry *addressInfoEntry;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetAddressInfoResponse_GetAddressInfoResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "addressInfoEntry",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddressInfoEntry),
+        .number = GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber_AddressInfoEntry,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressInfoResponse_GetAddressInfoResponseV0__storage_, addressInfoEntry),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressInfoResponse_GetAddressInfoResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetAddressInfoResponse_GetAddressInfoResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAddressInfoResponse_GetAddressInfoResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressInfoResponse_GetAddressInfoResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressInfoResponse_GetAddressInfoResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressInfoResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressInfoResponse_GetAddressInfoResponseV0_ClearResultOneOfCase(GetAddressInfoResponse_GetAddressInfoResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetAddressInfoResponse_GetAddressInfoResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesInfosRequest
+
+@implementation GetAddressesInfosRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressesInfosRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressesInfosRequest_GetAddressesInfosRequestV0 *v0;
+} GetAddressesInfosRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressesInfosRequest_GetAddressesInfosRequestV0),
+        .number = GetAddressesInfosRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesInfosRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesInfosRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesInfosRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesInfosRequest_ClearVersionOneOfCase(GetAddressesInfosRequest *message) {
+  GPBDescriptor *descriptor = [GetAddressesInfosRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesInfosRequest_GetAddressesInfosRequestV0
+
+@implementation GetAddressesInfosRequest_GetAddressesInfosRequestV0
+
+@dynamic addressesArray, addressesArray_Count;
+@dynamic prove;
+
+typedef struct GetAddressesInfosRequest_GetAddressesInfosRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *addressesArray;
+} GetAddressesInfosRequest_GetAddressesInfosRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "addressesArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressesInfosRequest_GetAddressesInfosRequestV0_FieldNumber_AddressesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetAddressesInfosRequest_GetAddressesInfosRequestV0__storage_, addressesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressesInfosRequest_GetAddressesInfosRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesInfosRequest_GetAddressesInfosRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesInfosRequest_GetAddressesInfosRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressesInfosRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetAddressesInfosResponse
+
+@implementation GetAddressesInfosResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressesInfosResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressesInfosResponse_GetAddressesInfosResponseV0 *v0;
+} GetAddressesInfosResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressesInfosResponse_GetAddressesInfosResponseV0),
+        .number = GetAddressesInfosResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesInfosResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesInfosResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesInfosResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesInfosResponse_ClearVersionOneOfCase(GetAddressesInfosResponse *message) {
+  GPBDescriptor *descriptor = [GetAddressesInfosResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesInfosResponse_GetAddressesInfosResponseV0
+
+@implementation GetAddressesInfosResponse_GetAddressesInfosResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic addressInfoEntries;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetAddressesInfosResponse_GetAddressesInfosResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  AddressInfoEntries *addressInfoEntries;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetAddressesInfosResponse_GetAddressesInfosResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "addressInfoEntries",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddressInfoEntries),
+        .number = GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber_AddressInfoEntries,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesInfosResponse_GetAddressesInfosResponseV0__storage_, addressInfoEntries),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesInfosResponse_GetAddressesInfosResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetAddressesInfosResponse_GetAddressesInfosResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAddressesInfosResponse_GetAddressesInfosResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesInfosResponse_GetAddressesInfosResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesInfosResponse_GetAddressesInfosResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressesInfosResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesInfosResponse_GetAddressesInfosResponseV0_ClearResultOneOfCase(GetAddressesInfosResponse_GetAddressesInfosResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetAddressesInfosResponse_GetAddressesInfosResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesTrunkStateRequest
+
+@implementation GetAddressesTrunkStateRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressesTrunkStateRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0 *v0;
+} GetAddressesTrunkStateRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0),
+        .number = GetAddressesTrunkStateRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesTrunkStateRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesTrunkStateRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesTrunkStateRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesTrunkStateRequest_ClearVersionOneOfCase(GetAddressesTrunkStateRequest *message) {
+  GPBDescriptor *descriptor = [GetAddressesTrunkStateRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0
+
+@implementation GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0
+
+
+typedef struct GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+} GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(GetAddressesTrunkStateRequest_GetAddressesTrunkStateRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressesTrunkStateRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetAddressesTrunkStateResponse
+
+@implementation GetAddressesTrunkStateResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressesTrunkStateResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0 *v0;
+} GetAddressesTrunkStateResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0),
+        .number = GetAddressesTrunkStateResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesTrunkStateResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesTrunkStateResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesTrunkStateResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesTrunkStateResponse_ClearVersionOneOfCase(GetAddressesTrunkStateResponse *message) {
+  GPBDescriptor *descriptor = [GetAddressesTrunkStateResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0
+
+@implementation GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0
+
+@dynamic hasProof, proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0__storage_ {
+  uint32_t _has_storage_[1];
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0_FieldNumber_Metadata,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesTrunkStateResponse_GetAddressesTrunkStateResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressesTrunkStateResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetAddressesBranchStateRequest
+
+@implementation GetAddressesBranchStateRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressesBranchStateRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0 *v0;
+} GetAddressesBranchStateRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0),
+        .number = GetAddressesBranchStateRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesBranchStateRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesBranchStateRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesBranchStateRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesBranchStateRequest_ClearVersionOneOfCase(GetAddressesBranchStateRequest *message) {
+  GPBDescriptor *descriptor = [GetAddressesBranchStateRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0
+
+@implementation GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0
+
+@dynamic key;
+@dynamic depth;
+@dynamic checkpointHeight;
+
+typedef struct GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t depth;
+  NSData *key;
+  uint64_t checkpointHeight;
+} GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "key",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_Key,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0__storage_, key),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "depth",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_Depth,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0__storage_, depth),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "checkpointHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0_FieldNumber_CheckpointHeight,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0__storage_, checkpointHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesBranchStateRequest_GetAddressesBranchStateRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressesBranchStateRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetAddressesBranchStateResponse
+
+@implementation GetAddressesBranchStateResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetAddressesBranchStateResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0 *v0;
+} GetAddressesBranchStateResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0),
+        .number = GetAddressesBranchStateResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetAddressesBranchStateResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesBranchStateResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesBranchStateResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetAddressesBranchStateResponse_ClearVersionOneOfCase(GetAddressesBranchStateResponse *message) {
+  GPBDescriptor *descriptor = [GetAddressesBranchStateResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0
+
+@implementation GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0
+
+@dynamic merkProof;
+
+typedef struct GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *merkProof;
+} GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "merkProof",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0_FieldNumber_MerkProof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0__storage_, merkProof),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetAddressesBranchStateResponse_GetAddressesBranchStateResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetAddressesBranchStateResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentAddressBalanceChangesRequest
+
+@implementation GetRecentAddressBalanceChangesRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetRecentAddressBalanceChangesRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0 *v0;
+} GetRecentAddressBalanceChangesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0),
+        .number = GetRecentAddressBalanceChangesRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentAddressBalanceChangesRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentAddressBalanceChangesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentAddressBalanceChangesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentAddressBalanceChangesRequest *message) {
+  GPBDescriptor *descriptor = [GetRecentAddressBalanceChangesRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0
+
+@implementation GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0
+
+@dynamic startHeight;
+@dynamic prove;
+
+typedef struct GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t startHeight;
+} GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0__storage_, startHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentAddressBalanceChangesRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentAddressBalanceChangesResponse
+
+@implementation GetRecentAddressBalanceChangesResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetRecentAddressBalanceChangesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 *v0;
+} GetRecentAddressBalanceChangesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0),
+        .number = GetRecentAddressBalanceChangesResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentAddressBalanceChangesResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentAddressBalanceChangesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentAddressBalanceChangesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentAddressBalanceChangesResponse_ClearVersionOneOfCase(GetRecentAddressBalanceChangesResponse *message) {
+  GPBDescriptor *descriptor = [GetRecentAddressBalanceChangesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0
+
+@implementation GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic addressBalanceUpdateEntries;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  AddressBalanceUpdateEntries *addressBalanceUpdateEntries;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "addressBalanceUpdateEntries",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddressBalanceUpdateEntries),
+        .number = GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber_AddressBalanceUpdateEntries,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0__storage_, addressBalanceUpdateEntries),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentAddressBalanceChangesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0_ClearResultOneOfCase(GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - BlockHeightCreditEntry
+
+@implementation BlockHeightCreditEntry
+
+@dynamic blockHeight;
+@dynamic credits;
+
+typedef struct BlockHeightCreditEntry__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t blockHeight;
+  uint64_t credits;
+} BlockHeightCreditEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "blockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BlockHeightCreditEntry_FieldNumber_BlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(BlockHeightCreditEntry__storage_, blockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "credits",
+        .dataTypeSpecific.clazz = Nil,
+        .number = BlockHeightCreditEntry_FieldNumber_Credits,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(BlockHeightCreditEntry__storage_, credits),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[BlockHeightCreditEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(BlockHeightCreditEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - CompactedAddressBalanceChange
+
+@implementation CompactedAddressBalanceChange
+
+@dynamic operationOneOfCase;
+@dynamic address;
+@dynamic setCredits;
+@dynamic addToCreditsOperations;
+
+typedef struct CompactedAddressBalanceChange__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *address;
+  AddToCreditsOperations *addToCreditsOperations;
+  uint64_t setCredits;
+} CompactedAddressBalanceChange__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "address",
+        .dataTypeSpecific.clazz = Nil,
+        .number = CompactedAddressBalanceChange_FieldNumber_Address,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceChange__storage_, address),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "setCredits",
+        .dataTypeSpecific.clazz = Nil,
+        .number = CompactedAddressBalanceChange_FieldNumber_SetCredits,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceChange__storage_, setCredits),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "addToCreditsOperations",
+        .dataTypeSpecific.clazz = GPBObjCClass(AddToCreditsOperations),
+        .number = CompactedAddressBalanceChange_FieldNumber_AddToCreditsOperations,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceChange__storage_, addToCreditsOperations),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[CompactedAddressBalanceChange class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(CompactedAddressBalanceChange__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "operation",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void CompactedAddressBalanceChange_ClearOperationOneOfCase(CompactedAddressBalanceChange *message) {
+  GPBDescriptor *descriptor = [CompactedAddressBalanceChange descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - AddToCreditsOperations
+
+@implementation AddToCreditsOperations
+
+@dynamic entriesArray, entriesArray_Count;
+
+typedef struct AddToCreditsOperations__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+} AddToCreditsOperations__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(BlockHeightCreditEntry),
+        .number = AddToCreditsOperations_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(AddToCreditsOperations__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[AddToCreditsOperations class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(AddToCreditsOperations__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - CompactedBlockAddressBalanceChanges
+
+@implementation CompactedBlockAddressBalanceChanges
+
+@dynamic startBlockHeight;
+@dynamic endBlockHeight;
+@dynamic changesArray, changesArray_Count;
+
+typedef struct CompactedBlockAddressBalanceChanges__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *changesArray;
+  uint64_t startBlockHeight;
+  uint64_t endBlockHeight;
+} CompactedBlockAddressBalanceChanges__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = CompactedBlockAddressBalanceChanges_FieldNumber_StartBlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(CompactedBlockAddressBalanceChanges__storage_, startBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "endBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = CompactedBlockAddressBalanceChanges_FieldNumber_EndBlockHeight,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(CompactedBlockAddressBalanceChanges__storage_, endBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "changesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(CompactedAddressBalanceChange),
+        .number = CompactedBlockAddressBalanceChanges_FieldNumber_ChangesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(CompactedBlockAddressBalanceChanges__storage_, changesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[CompactedBlockAddressBalanceChanges class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(CompactedBlockAddressBalanceChanges__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - CompactedAddressBalanceUpdateEntries
+
+@implementation CompactedAddressBalanceUpdateEntries
+
+@dynamic compactedBlockChangesArray, compactedBlockChangesArray_Count;
+
+typedef struct CompactedAddressBalanceUpdateEntries__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *compactedBlockChangesArray;
+} CompactedAddressBalanceUpdateEntries__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "compactedBlockChangesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(CompactedBlockAddressBalanceChanges),
+        .number = CompactedAddressBalanceUpdateEntries_FieldNumber_CompactedBlockChangesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(CompactedAddressBalanceUpdateEntries__storage_, compactedBlockChangesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[CompactedAddressBalanceUpdateEntries class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(CompactedAddressBalanceUpdateEntries__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentCompactedAddressBalanceChangesRequest
+
+@implementation GetRecentCompactedAddressBalanceChangesRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetRecentCompactedAddressBalanceChangesRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0 *v0;
+} GetRecentCompactedAddressBalanceChangesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0),
+        .number = GetRecentCompactedAddressBalanceChangesRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentCompactedAddressBalanceChangesRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentCompactedAddressBalanceChangesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentCompactedAddressBalanceChangesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentCompactedAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentCompactedAddressBalanceChangesRequest *message) {
+  GPBDescriptor *descriptor = [GetRecentCompactedAddressBalanceChangesRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0
+
+@implementation GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0
+
+@dynamic startBlockHeight;
+@dynamic prove;
+
+typedef struct GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t startBlockHeight;
+} GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0_FieldNumber_StartBlockHeight,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0__storage_, startBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentCompactedAddressBalanceChangesRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetRecentCompactedAddressBalanceChangesResponse
+
+@implementation GetRecentCompactedAddressBalanceChangesResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetRecentCompactedAddressBalanceChangesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 *v0;
+} GetRecentCompactedAddressBalanceChangesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0),
+        .number = GetRecentCompactedAddressBalanceChangesResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentCompactedAddressBalanceChangesResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentCompactedAddressBalanceChangesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentCompactedAddressBalanceChangesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentCompactedAddressBalanceChangesResponse_ClearVersionOneOfCase(GetRecentCompactedAddressBalanceChangesResponse *message) {
+  GPBDescriptor *descriptor = [GetRecentCompactedAddressBalanceChangesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0
+
+@implementation GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic compactedAddressBalanceUpdateEntries;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  CompactedAddressBalanceUpdateEntries *compactedAddressBalanceUpdateEntries;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "compactedAddressBalanceUpdateEntries",
+        .dataTypeSpecific.clazz = GPBObjCClass(CompactedAddressBalanceUpdateEntries),
+        .number = GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber_CompactedAddressBalanceUpdateEntries,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0__storage_, compactedAddressBalanceUpdateEntries),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetRecentCompactedAddressBalanceChangesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_ClearResultOneOfCase(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 
 #pragma clang diagnostic pop
 

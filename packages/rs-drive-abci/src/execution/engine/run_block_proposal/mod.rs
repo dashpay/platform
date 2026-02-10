@@ -138,21 +138,6 @@ Your software version: {}, latest supported protocol version: {}."#,
             last_committed_platform_version
         };
 
-        // Patch platform version and run migrations if we have patches and/or
-        // migrations defined for this height.
-        // It modifies the protocol version to function version mapping to apply hotfixes
-        // Also it performs migrations to fix corrupted state or prepare it for new features
-        let block_platform_version = if let Some(patched_platform_version) = self
-            .apply_platform_version_patch_and_migrate_state_for_height(
-                block_proposal.height,
-                &mut block_platform_state,
-                transaction,
-            )? {
-            patched_platform_version
-        } else {
-            block_platform_version
-        };
-
         match block_platform_version
             .drive_abci
             .methods

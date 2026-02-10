@@ -1,4 +1,8 @@
 use dash_sdk::platform::Identifier;
+use dpp::address_funds::PlatformAddress;
+use dpp::data_contracts::dpns_contract;
+use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::tokens::calculate_token_id;
 use std::sync::LazyLock;
 
@@ -6,10 +10,7 @@ use std::sync::LazyLock;
 ///
 // TODO: this is copy-paste from drive-abci `packages/rs-sdk/tests/fetch/main.rs` where it's private,
 // consider defining it in `data-contracts` crate
-pub const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = [
-    215, 242, 197, 63, 70, 169, 23, 171, 110, 91, 57, 162, 215, 188, 38, 11, 100, 146, 137, 69, 55,
-    68, 209, 224, 212, 242, 106, 141, 142, 255, 55, 207,
-];
+pub const DPNS_DASH_TLD_DOCUMENT_ID: [u8; 32] = dpns_contract::DPNS_DASH_TLD_DOCUMENT_ID;
 
 /// Data contract with groups and tokens created by init chain for testing
 /// See `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`
@@ -43,3 +44,18 @@ pub static TOKEN_ID_1: LazyLock<Identifier> =
 /// See `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`
 pub static TOKEN_ID_2: LazyLock<Identifier> =
     LazyLock::new(|| Identifier::new(calculate_token_id(&DATA_CONTRACT_ID.to_buffer(), 2)));
+
+/// Platform address with known balance/nonce created for SDK tests.
+pub const PLATFORM_ADDRESS_1: PlatformAddress = PlatformAddress::P2pkh([10; 20]);
+/// Second platform address with known balance/nonce created for SDK tests.
+pub const PLATFORM_ADDRESS_2: PlatformAddress = PlatformAddress::P2sh([11; 20]);
+/// Platform address that does not exist in state.
+pub const UNKNOWN_PLATFORM_ADDRESS: PlatformAddress = PlatformAddress::P2pkh([200; 20]);
+/// Nonce configured for [`PLATFORM_ADDRESS_1`]
+pub const PLATFORM_ADDRESS_1_NONCE: AddressNonce = 5;
+/// Balance configured for [`PLATFORM_ADDRESS_1`]
+pub const PLATFORM_ADDRESS_1_BALANCE: Credits = 1_000_000;
+/// Nonce configured for [`PLATFORM_ADDRESS_2`]
+pub const PLATFORM_ADDRESS_2_NONCE: AddressNonce = 7;
+/// Balance configured for [`PLATFORM_ADDRESS_2`]
+pub const PLATFORM_ADDRESS_2_BALANCE: Credits = 2_000_000;

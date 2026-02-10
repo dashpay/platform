@@ -8,7 +8,7 @@ use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, S
 use crate::data_contract::accessors::v0::DataContractV0Setters;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
-use crate::identity::PartialIdentity;
+use crate::identity::{IdentityPublicKey, PartialIdentity};
 use crate::prelude::IdentityNonce;
 use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -19,7 +19,7 @@ use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
-    fn new_from_data_contract<S: Signer>(
+    fn new_from_data_contract<S: Signer<IdentityPublicKey>>(
         mut data_contract: DataContract,
         identity_nonce: IdentityNonce,
         identity: &PartialIdentity,

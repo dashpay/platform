@@ -2,6 +2,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_dpp2::error::WasmDppError;
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -24,6 +25,7 @@ pub enum WasmSdkErrorKind {
     EpochNotFound,
     TimeoutReached,
     AlreadyExists,
+    InvalidCreditTransfer,
     Generic,
     ContextProviderError,
     Cancelled,
@@ -137,6 +139,12 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
+            InvalidCreditTransfer(msg) => Self::new(
+                WasmSdkErrorKind::InvalidCreditTransfer,
+                msg,
+                None,
+                retriable,
+            ),
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),
@@ -169,6 +177,12 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            NoAvailableAddressesToRetry(inner) => Self::new(
+                WasmSdkErrorKind::DapiClientError,
+                format!("no available addresses to retry, last error: {}", inner),
+                None,
+                retriable,
+            ),
         }
     }
 }
@@ -186,6 +200,21 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
             Some(err.code as i32),
             false,
         )
+    }
+}
+
+impl From<WasmDppError> for WasmSdkError {
+    fn from(err: WasmDppError) -> Self {
+        use wasm_dpp2::error::WasmDppErrorKind;
+        // Map WasmDppError kind to appropriate WasmSdkError kind
+        let kind = match err.kind() {
+            WasmDppErrorKind::Protocol => WasmSdkErrorKind::Protocol,
+            WasmDppErrorKind::InvalidArgument => WasmSdkErrorKind::InvalidArgument,
+            WasmDppErrorKind::Serialization => WasmSdkErrorKind::SerializationError,
+            WasmDppErrorKind::Conversion => WasmSdkErrorKind::SerializationError,
+            WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
+        };
+        Self::new(kind, err.to_string(), None, false)
     }
 }
 
@@ -218,6 +247,7 @@ impl WasmSdkError {
             K::EpochNotFound => "EpochNotFound",
             K::TimeoutReached => "TimeoutReached",
             K::AlreadyExists => "AlreadyExists",
+            K::InvalidCreditTransfer => "InvalidCreditTransfer",
             K::Generic => "Generic",
             K::ContextProviderError => "ContextProviderError",
             K::Cancelled => "Cancelled",

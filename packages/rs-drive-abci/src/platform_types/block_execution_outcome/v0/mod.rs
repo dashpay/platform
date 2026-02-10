@@ -28,10 +28,15 @@ pub struct BlockFinalizationOutcome {
     /// Errors here can happen if the block that we receive to be finalized isn't actually
     /// the one we expect, this could be a replay attack or some other kind of attack.
     pub validation_result: SimpleValidationResult<AbciError>,
+    /// Whether a checkpoint should be created after the transaction is committed
+    pub checkpoint_needed: bool,
 }
 
 impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
     fn from(validation_result: SimpleValidationResult<AbciError>) -> Self {
-        BlockFinalizationOutcome { validation_result }
+        BlockFinalizationOutcome {
+            validation_result,
+            checkpoint_needed: false,
+        }
     }
 }

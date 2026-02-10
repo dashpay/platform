@@ -1,6 +1,7 @@
 use crate::platform::query::VoteQuery;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dpp::identifier::MasternodeIdentifiers;
@@ -18,7 +19,7 @@ use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
-pub trait PutVote<S: Signer>: Waitable {
+pub trait PutVote<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts an identity on platform
     async fn put_to_platform(
         &self,
@@ -40,7 +41,7 @@ pub trait PutVote<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PutVote<S> for Vote {
+impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
     async fn put_to_platform(
         &self,
         voter_pro_tx_hash: Identifier,
@@ -66,6 +67,7 @@ impl<S: Signer> PutVote<S> for Vote {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
         request
@@ -104,6 +106,7 @@ impl<S: Signer> PutVote<S> for Vote {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
         // TODO: Implement retry logic
         let response_result = request

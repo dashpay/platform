@@ -1266,10 +1266,35 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '2.2.0-dev.0': (configFile) => {
+      '3.0.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
+            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
+
+            // --- ZMQ configuration ---
+            if (!options.core.zmq) {
+              options.core.zmq = lodash.cloneDeep(defaultConfig.get('core.zmq'));
+            } else {
+              options.core.zmq = lodash.cloneDeep(options.core.zmq);
+            }
+
+            if (typeof options.core.zmq.port === 'undefined') {
+              options.core.zmq.port = defaultConfig.get('core.zmq.port');
+            }
+
+            const configuredZmqPort = Number(options.core.zmq.port);
+            if (isLocal && configuredZmqPort === 29998) {
+              options.core.zmq.port = 49998;
+            } else if (isTestnet && configuredZmqPort === 29998) {
+              options.core.zmq.port = 39998;
+            }
+
+            if (!options.platform?.dapi) {
+              return;
+            }
+
             if (!options.platform.dapi.rsDapi) {
               options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
             }
@@ -1284,49 +1309,37 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.dapi.rsDapi.metrics.enabled = defaultMetrics.enabled;
             }
 
-            if (!options.core.zmq) {
-              options.core.zmq = lodash.cloneDeep(defaultConfig.get('core.zmq'));
-            } else {
-              options.core.zmq = lodash.cloneDeep(options.core.zmq);
-            }
-
-            if (typeof options.core.zmq.port === 'undefined') {
-              options.core.zmq.port = defaultConfig.get('core.zmq.port');
-            }
-
             if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
               options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
             }
 
             const configuredMetricsPort = Number(options.platform.dapi.rsDapi.metrics.port);
-            const configuredZmqPort = Number(options.core.zmq.port);
-            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
-            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
-
             if (isLocal && configuredMetricsPort === 9091) {
               options.platform.dapi.rsDapi.metrics.port = 29091;
             } else if (isTestnet && configuredMetricsPort === 9091) {
               options.platform.dapi.rsDapi.metrics.port = 19091;
             }
 
-            if (isLocal && configuredZmqPort === 29998) {
-              options.core.zmq.port = 49998;
-            } else if (isTestnet && configuredZmqPort === 29998) {
-              options.core.zmq.port = 39998;
-            }
-          });
+            if (options.platform.dapi.api) {
+              const { waitForStResultTimeout } = options.platform.dapi.api;
 
-        return configFile;
-      },
-      '2.2.0-dev.1': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
-            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+              if (typeof waitForStResultTimeout === 'number'
+                && typeof options.platform.dapi.rsDapi.waitForStResultTimeout === 'undefined') {
+                options.platform.dapi.rsDapi.waitForStResultTimeout = waitForStResultTimeout;
+              }
+
+              delete options.platform.dapi.api;
+            }
+
+            if (typeof options.platform.dapi.rsDapi.waitForStResultTimeout === 'undefined') {
+              options.platform.dapi.rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
+            }
 
             if (options.platform?.dapi?.deprecated) {
               delete options.platform.dapi.deprecated;
             }
 
+            // --- Gateway upstreams migration ---
             if (options.platform?.gateway?.upstreams) {
               const { upstreams } = options.platform.gateway;
               const defaultUpstreams = defaultConfig.get('platform.gateway.upstreams');
@@ -1354,31 +1367,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete upstreams.dapiCoreStreams;
             }
 
-            if (!options.platform?.dapi) {
-              return;
-            }
-
-            if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
-            }
-
-            const { rsDapi } = options.platform.dapi;
-
-            if (options.platform.dapi.api) {
-              const { waitForStResultTimeout } = options.platform.dapi.api;
-
-              if (typeof waitForStResultTimeout === 'number'
-                && typeof rsDapi.waitForStResultTimeout === 'undefined') {
-                rsDapi.waitForStResultTimeout = waitForStResultTimeout;
-              }
-
-              delete options.platform.dapi.api;
-            }
-
-            if (typeof rsDapi.waitForStResultTimeout === 'undefined') {
-              rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
-            }
-
             if (options.platform?.drive?.abci?.docker
               && defaultConfig.has('platform.drive.abci.docker.image')) {
               options.platform.drive.abci.docker.image = defaultConfig.get('platform.drive.abci.docker.image');
@@ -1388,8 +1376,33 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
               options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
+
+            if (!options.platform.quorumList) {
+              options.platform.quorumList = lodash.cloneDeep(defaultConfig.get('platform.quorumList'));
+            }
+
+            if (!options.core.rpc.users.quorum_list) {
+              options.core.rpc.users.quorum_list = lodash.cloneDeep(
+                defaultConfig.get('core.rpc.users.quorum_list'),
+              );
+            }
+
+            // --- Letsencrypt provider config ---
+            if (options.platform?.gateway?.ssl?.providerConfigs
+              && !options.platform.gateway.ssl.providerConfigs.letsencrypt) {
+              options.platform.gateway.ssl.providerConfigs.letsencrypt = {
+                email: null,
+              };
+            }
           });
 
+        return configFile;
+      },
+      '3.0.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = 'dashpay/dashd:23';
+          });
         return configFile;
       },
     };
