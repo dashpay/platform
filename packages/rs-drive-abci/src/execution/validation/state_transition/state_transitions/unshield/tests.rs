@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
@@ -665,7 +666,15 @@ mod tests {
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
-            let sighash = unauthorized.commitment().into();
+
+            // Compute platform sighash binding transparent fields (output_address, amount)
+            let output_address = create_output_address();
+            let amount = 5_000u64; // = value_balance (no fee difference)
+            let mut extra_sighash_data = output_address.to_bytes();
+            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
@@ -686,8 +695,8 @@ mod tests {
             // --- Create and process transition ---
             // amount = value_balance (no fee difference)
             let transition = create_unshield_transition(
-                create_output_address(),
-                value_balance as u64, // amount = 5000
+                output_address,
+                amount, // amount = 5000
                 actions,
                 flags,
                 value_balance,
@@ -795,8 +804,10 @@ mod tests {
         }
 
         /// Build a valid Orchard bundle for unshield tests (spend > output).
+        /// The `output_address` and `amount` are bound to the sighash so that
+        /// the resulting bundle can only be used with those specific transparent fields.
         /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
-        fn build_valid_unshield_bundle() -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+        fn build_valid_unshield_bundle(output_address: &PlatformAddress, amount: u64) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -835,7 +846,13 @@ mod tests {
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
-            let sighash = unauthorized.commitment().into();
+
+            // Bind transparent fields (output_address, amount) to the sighash
+            let mut extra_sighash_data = output_address.to_bytes();
+            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
@@ -856,8 +873,11 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
+            // Bundle is signed for create_output_address() with amount = 5000
+            let output_address = create_output_address();
+            let signed_amount = 5_000u64;
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_unshield_bundle();
+                build_valid_unshield_bundle(&output_address, signed_amount);
             assert_eq!(value_balance, 5_000);
 
             // ATTACK: Inflate value_balance from 5000 to 9000
@@ -868,7 +888,7 @@ mod tests {
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             let transition = create_unshield_transition(
-                create_output_address(),
+                output_address,
                 mutated_value_balance as u64, // amount = 9000 (inflated)
                 actions,
                 flags,
@@ -890,31 +910,25 @@ mod tests {
             );
         }
 
-        /// AUDIT FINDING (STILL OPEN): Transparent fields (output_address, amount)
-        /// are not bound to the Orchard bundle via sighash.
+        /// AUDIT REGRESSION: Different output_address is now caught by platform sighash.
         ///
-        /// An attacker who observes a valid unshield bundle can create a new
-        /// unshield transition with a different output_address, redirecting
-        /// funds to their own address. The nullifiers prevent double-spending,
-        /// but this enables front-running: the attacker's transaction (with
-        /// their address) could be included before the victim's.
+        /// Previously, the output_address was not bound to the Orchard bundle via
+        /// sighash, allowing an attacker to substitute a different address while
+        /// reusing a valid bundle. Now `compute_platform_sighash()` includes the
+        /// output_address and amount in the sighash, so changing the address causes
+        /// signature verification to fail.
         ///
-        /// Note: The binding and spend auth signature fixes (BatchValidator) do
-        /// NOT fix this — the output_address is outside the Orchard bundle, so
-        /// changing it does not affect the sighash or any signatures. The bundle
-        /// remains cryptographically valid with a different output_address.
-        ///
-        /// Mitigation requires binding transparent fields to the sighash
-        /// (e.g., including them in the bundle commitment computation).
-        ///
-        /// Severity: HIGH (requires separate fix)
+        /// Original severity: HIGH — now FIXED.
         #[test]
-        fn test_different_output_address_with_same_valid_bundle_is_accepted() {
+        fn test_different_output_address_with_same_valid_bundle_is_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
+            // Bundle is signed for the ORIGINAL address with amount = 5000
+            let original_address = create_output_address();
+            let amount = 5_000u64;
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_unshield_bundle();
+                build_valid_unshield_bundle(&original_address, amount);
             assert_eq!(value_balance, 5_000);
 
             set_pool_total_balance(&platform, 20_000);
@@ -925,7 +939,7 @@ mod tests {
 
             let transition = create_unshield_transition(
                 attacker_address, // ATTACKER's address, not the original recipient
-                value_balance as u64,
+                amount,
                 actions,
                 flags,
                 value_balance,
@@ -937,12 +951,14 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // VULNERABILITY: Succeeds because the output_address is not bound
-            // to the Orchard bundle via sighash or any other mechanism.
-            // The attacker redirects the unshielded funds to their own address.
+            // FIXED: Platform sighash includes output_address, so changing it
+            // causes the sighash to differ from the one used during signing,
+            // and signature verification fails.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
             );
         }
 

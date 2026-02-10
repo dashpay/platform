@@ -107,16 +107,24 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             }
         }
 
-        // Verify the ZK proof
-        let (st_actions, st_flags, st_value_balance, st_proof, st_binding_sig) = match self {
+        // Verify the ZK proof, binding transparent fields to the sighash
+        let (st_actions, st_flags, st_value_balance, st_proof, st_binding_sig, output_address, amount) = match self {
             UnshieldTransition::V0(v0) => (
                 &v0.actions,
                 v0.flags,
                 v0.value_balance,
                 v0.proof.as_slice(),
                 v0.binding_signature.as_slice(),
+                v0.output_address,
+                v0.amount,
             ),
         };
+
+        // Serialize transparent fields to bind them to the Orchard sighash.
+        // This prevents an attacker from substituting a different output_address
+        // or amount while reusing a valid Orchard bundle.
+        let mut extra_sighash_data = output_address.to_bytes();
+        extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
 
         if let Err(e) = reconstruct_and_verify_bundle(
             st_actions,
@@ -125,6 +133,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             &anchor,
             st_proof,
             st_binding_sig,
+            &extra_sighash_data,
         ) {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidShieldedProofError(e).into(),

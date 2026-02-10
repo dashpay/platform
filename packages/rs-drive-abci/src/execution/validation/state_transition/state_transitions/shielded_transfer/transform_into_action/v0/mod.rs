@@ -131,6 +131,7 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
             &anchor,
             st_proof,
             st_binding_sig,
+            &[], // No transparent fields to bind for shielded transfer
         ) {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidShieldedProofError(e).into(),

@@ -111,6 +111,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             anchor,
             proof,
             binding_signature,
+            &[], // No transparent fields to bind for shield
         ) {
             let penalty = platform_version
                 .drive_abci

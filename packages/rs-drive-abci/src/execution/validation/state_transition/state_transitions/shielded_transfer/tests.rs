@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
@@ -559,7 +560,8 @@ mod tests {
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
-            let sighash = unauthorized.commitment().into();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
@@ -724,7 +726,8 @@ mod tests {
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
-            let sighash = unauthorized.commitment().into();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 

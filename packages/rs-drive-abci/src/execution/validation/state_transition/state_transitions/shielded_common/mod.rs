@@ -7,6 +7,7 @@ use grovedb_commitment_tree::{
 use orchard::note::TransmittedNoteCiphertext;
 use orchard::primitives::redpallas;
 use orchard::value::ValueCommitment;
+use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 
 /// Cached verifying key for shielded proof verification.
@@ -24,6 +25,30 @@ const ENC_CIPHERTEXT_SIZE: usize = 580;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
 const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 692
 
+/// Domain separator for Platform sighash computation.
+const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
+
+/// Computes the platform sighash from an Orchard bundle commitment and optional
+/// transparent field data.
+///
+/// The sighash is computed as:
+///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
+///
+/// This binds transparent state transition fields (like `output_address` and `amount`
+/// in unshield transitions) to the Orchard signatures, preventing replay attacks
+/// where an attacker substitutes transparent fields while reusing a valid Orchard bundle.
+///
+/// The same computation must be used on both the signing (client) and verification
+/// (platform) sides. For transitions without transparent fields (shield and
+/// shielded_transfer), `extra_data` is empty.
+pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SIGHASH_DOMAIN);
+    hasher.update(bundle_commitment);
+    hasher.update(extra_data);
+    hasher.finalize().into()
+}
+
 /// Reconstructs an orchard `Bundle<Authorized, i64>` from the serialized fields
 /// of a shielded state transition and verifies the Halo 2 ZK proof along with
 /// all RedPallas signatures (spend auth + binding).
@@ -33,9 +58,14 @@ const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTE
 /// 2. Spend authorization signatures (proves the spender controls the spending key)
 /// 3. The binding signature (binds value_balance to value commitments, preventing manipulation)
 ///
-/// The sighash used for signature verification is derived from `bundle.commitment()`,
-/// which is the Orchard bundle commitment (BLAKE2b-256 hash of the bundle's non-authorization
-/// data per ZIP-244). This same value must be used when signing the bundle on the client side.
+/// The sighash is computed via `compute_platform_sighash()`, which hashes the
+/// Orchard bundle commitment together with `extra_sighash_data` (transparent fields).
+/// The same computation must be used when signing the bundle on the client side.
+///
+/// `extra_sighash_data` binds transparent fields to the Orchard signatures:
+/// - Shield: empty (no transparent outputs)
+/// - Shielded transfer: empty (no transparent fields)
+/// - Unshield: `output_address.to_bytes() || amount.to_le_bytes()`
 ///
 /// Returns `Ok(())` if all verification passes, or an `InvalidShieldedProofError`
 /// if reconstruction or any verification step fails.
@@ -46,6 +76,7 @@ pub fn reconstruct_and_verify_bundle(
     anchor: &[u8; 32],
     proof: &[u8],
     binding_signature: &[u8],
+    extra_sighash_data: &[u8],
 ) -> Result<(), InvalidShieldedProofError> {
     let vk = get_verifying_key();
 
@@ -141,11 +172,13 @@ pub fn reconstruct_and_verify_bundle(
         authorized,
     );
 
-    // Compute the sighash from the bundle's non-authorization data.
-    // This uses the Orchard BundleCommitment (BLAKE2b-256 per ZIP-244),
+    // Compute the platform sighash: SHA-256(domain || bundle_commitment || extra_data).
+    // The bundle commitment is the Orchard BundleCommitment (BLAKE2b-256 per ZIP-244),
     // covering: flags, value_balance, anchor, and all action fields
     // (nullifier, rk, cmx, cv_net, encrypted_note) — but NOT the signatures or proof.
-    let sighash: [u8; 32] = bundle.commitment().into();
+    // The extra_sighash_data binds transparent fields (e.g., output_address for unshield).
+    let bundle_commitment: [u8; 32] = bundle.commitment().into();
+    let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
 
     // Verify the Halo 2 proof AND all RedPallas signatures (spend auth + binding)
     // using BatchValidator. This is the correct Orchard verification flow, ensuring:

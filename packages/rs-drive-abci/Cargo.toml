@@ -84,6 +84,7 @@ console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
 grovedb-commitment-tree = { path = "../../../grovedb/grovedb-commitment-tree" }
 orchard = "0.12"
+sha2 = "0.10"
 nonempty = "0.11"
 
 [dev-dependencies]
