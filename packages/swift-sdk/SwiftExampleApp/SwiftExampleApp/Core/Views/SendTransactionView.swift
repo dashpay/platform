@@ -22,7 +22,7 @@ struct SendTransactionView: View {
         !recipientAddress.isEmpty &&
         amount != nil &&
         amount! > 0 &&
-        amount! <= wallet.confirmedBalance
+        amount! <= 99999
     }
 
     var body: some View {
@@ -48,14 +48,14 @@ struct SendTransactionView: View {
                     HStack {
                         Text("Available:")
                         Spacer()
-                        Text(formatBalance(wallet.confirmedBalance))
+                        Text(formatBalance(99999))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 } header: {
                     Text("Amount")
                 } footer: {
-                    if let amount = amount, amount > wallet.confirmedBalance {
+                    if let amount = amount, amount > 99999 {
                         Text("Insufficient balance")
                             .foregroundColor(.red)
                     }

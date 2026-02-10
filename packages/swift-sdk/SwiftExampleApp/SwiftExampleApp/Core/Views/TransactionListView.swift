@@ -82,18 +82,11 @@ struct TransactionListView: View {
         isLoading = true
         defer { isLoading = false }
 
-        do {
-            // Get transactions from the wallet manager
-            let fetchedTransactions = try await walletService.walletManager.getTransactions(for: wallet)
+        // Get transactions from the wallet manager
+        let fetchedTransactions = walletService.walletManager.getTransactions(for: wallet)
 
-            await MainActor.run {
-                self.transactions = fetchedTransactions
-            }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = error.localizedDescription
-                self.showError = true
-            }
+        await MainActor.run {
+            self.transactions = fetchedTransactions
         }
     }
 }
