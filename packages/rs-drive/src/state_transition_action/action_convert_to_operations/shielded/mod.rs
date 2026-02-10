@@ -1,15 +1,15 @@
 use crate::drive::shielded::paths::{
     shielded_credit_pool_commitments_path_vec, shielded_credit_pool_encrypted_notes_path_vec,
-    shielded_credit_pool_nullifiers_path_vec, shielded_credit_pool_path_vec,
-    SHIELDED_PARAMS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_nullifiers_path_vec, shielded_credit_pool_path_vec, SHIELDED_PARAMS_KEY,
+    SHIELDED_TOTAL_BALANCE_KEY,
 };
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
 use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
 use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
-use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use crate::util::batch::drive_op_batch::finalize_task::DriveOperationFinalizeTask;
+use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::shielded::ShieldedPoolParams;

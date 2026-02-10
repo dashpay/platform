@@ -59,10 +59,8 @@ pub fn reconstruct_and_verify_bundle(
             .try_into()
             .unwrap();
 
-        let nullifier: Nullifier =
-            Option::from(Nullifier::from_bytes(&a.nullifier)).ok_or_else(|| {
-                InvalidShieldedProofError::new("invalid nullifier bytes".to_string())
-            })?;
+        let nullifier: Nullifier = Option::from(Nullifier::from_bytes(&a.nullifier))
+            .ok_or_else(|| InvalidShieldedProofError::new("invalid nullifier bytes".to_string()))?;
 
         let rk = redpallas::VerificationKey::try_from(a.rk).map_err(|e| {
             InvalidShieldedProofError::new(format!("invalid spend validating key: {e}"))
@@ -73,8 +71,8 @@ pub fn reconstruct_and_verify_bundle(
                 InvalidShieldedProofError::new("invalid note commitment bytes".to_string())
             })?;
 
-        let cv_net: ValueCommitment =
-            Option::from(ValueCommitment::from_bytes(&a.cv_net)).ok_or_else(|| {
+        let cv_net: ValueCommitment = Option::from(ValueCommitment::from_bytes(&a.cv_net))
+            .ok_or_else(|| {
                 InvalidShieldedProofError::new("invalid value commitment bytes".to_string())
             })?;
 
@@ -119,13 +117,11 @@ pub fn reconstruct_and_verify_bundle(
         InvalidShieldedProofError::new(format!("invalid bundle flags byte: {flags:#04x}"))
     })?;
 
-    let orchard_anchor = Option::from(Anchor::from_bytes(*anchor)).ok_or_else(|| {
-        InvalidShieldedProofError::new("invalid anchor bytes".to_string())
-    })?;
+    let orchard_anchor = Option::from(Anchor::from_bytes(*anchor))
+        .ok_or_else(|| InvalidShieldedProofError::new("invalid anchor bytes".to_string()))?;
 
-    let actions_nonempty = nonempty::NonEmpty::from_vec(orchard_actions).ok_or_else(|| {
-        InvalidShieldedProofError::new("bundle has no actions".to_string())
-    })?;
+    let actions_nonempty = nonempty::NonEmpty::from_vec(orchard_actions)
+        .ok_or_else(|| InvalidShieldedProofError::new("bundle has no actions".to_string()))?;
 
     let bundle = Bundle::from_parts(
         actions_nonempty,
@@ -136,9 +132,9 @@ pub fn reconstruct_and_verify_bundle(
     );
 
     // Verify the Halo 2 proof
-    bundle.verify_proof(vk).map_err(|e| {
-        InvalidShieldedProofError::new(format!("proof verification failed: {e}"))
-    })?;
+    bundle
+        .verify_proof(vk)
+        .map_err(|e| InvalidShieldedProofError::new(format!("proof verification failed: {e}")))?;
 
     Ok(())
 }

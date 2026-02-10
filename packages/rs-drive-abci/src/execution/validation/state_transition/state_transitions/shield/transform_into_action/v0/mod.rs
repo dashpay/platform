@@ -42,9 +42,11 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             ShieldTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
         };
         let encrypted_notes: Vec<Vec<u8>> = match self {
-            ShieldTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.encrypted_note.clone()).collect()
-            }
+            ShieldTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .map(|a| a.encrypted_note.clone())
+                .collect(),
         };
 
         // The value_balance is negative for shield (funds flowing into the pool)
@@ -65,14 +67,13 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             &platform_version.drive,
         )?;
         let (params, _): (ShieldedPoolParams, _) =
-            bincode::decode_from_slice(&params_bytes, bincode::config::standard())
-                .map_err(|e| {
-                    Error::Protocol(
-                        dpp::ProtocolError::DecodingError(format!(
-                            "could not decode shielded pool params: {e}"
-                        )),
-                    )
-                })?;
+            bincode::decode_from_slice(&params_bytes, bincode::config::standard()).map_err(
+                |e| {
+                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                        "could not decode shielded pool params: {e}"
+                    )))
+                },
+            )?;
         let current_checkpoint_id = params.checkpoint_id_counter;
 
         let current_total_balance = drive

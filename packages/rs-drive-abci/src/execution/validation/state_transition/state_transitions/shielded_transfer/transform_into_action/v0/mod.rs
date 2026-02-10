@@ -28,9 +28,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl ShieldedTransferStateTransitionTransformIntoActionValidationV0
-    for ShieldedTransferTransition
-{
+impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for ShieldedTransferTransition {
     fn transform_into_action_v0(
         &self,
         drive: &Drive,
@@ -39,17 +37,17 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // Extract nullifiers, note commitments, and encrypted notes from serialized actions
         let nullifiers: Vec<[u8; 32]> = match self {
-            ShieldedTransferTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.nullifier).collect()
-            }
+            ShieldedTransferTransition::V0(v0) => v0.actions.iter().map(|a| a.nullifier).collect(),
         };
         let note_commitments: Vec<[u8; 32]> = match self {
             ShieldedTransferTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
         };
         let encrypted_notes: Vec<Vec<u8>> = match self {
-            ShieldedTransferTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.encrypted_note.clone()).collect()
-            }
+            ShieldedTransferTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .map(|a| a.encrypted_note.clone())
+                .collect(),
         };
 
         // The anchor from the transition (Merkle root of commitment tree)
@@ -75,14 +73,13 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0
             &platform_version.drive,
         )?;
         let (params, _): (ShieldedPoolParams, _) =
-            bincode::decode_from_slice(&params_bytes, bincode::config::standard())
-                .map_err(|e| {
-                    Error::Protocol(
-                        dpp::ProtocolError::DecodingError(format!(
-                            "could not decode shielded pool params: {e}"
-                        )),
-                    )
-                })?;
+            bincode::decode_from_slice(&params_bytes, bincode::config::standard()).map_err(
+                |e| {
+                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                        "could not decode shielded pool params: {e}"
+                    )))
+                },
+            )?;
         let current_checkpoint_id = params.checkpoint_id_counter;
 
         let current_total_balance = drive
@@ -127,9 +124,9 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0
 
             if exists {
                 return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::NullifierAlreadySpentError(
-                        NullifierAlreadySpentError::new(*nullifier),
-                    )
+                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
+                        *nullifier,
+                    ))
                     .into(),
                 ));
             }

@@ -9,7 +9,9 @@ use grovedb::{Element, TransactionArg};
 
 #[derive(Clone, Debug)]
 pub enum DriveOperationFinalizeTask {
-    RemoveDataContractFromCache { contract_id: Identifier },
+    RemoveDataContractFromCache {
+        contract_id: Identifier,
+    },
     /// Record the current commitment tree root hash as a new anchor
     RecordShieldedAnchor,
 }

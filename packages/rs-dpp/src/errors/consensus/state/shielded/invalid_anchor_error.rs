@@ -9,7 +9,10 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
-#[error("Anchor not found in the recorded anchors tree: {}", hex::encode(anchor))]
+#[error(
+    "Anchor not found in the recorded anchors tree: {}",
+    hex::encode(anchor)
+)]
 pub struct InvalidAnchorError {
     /*
 

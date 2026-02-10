@@ -42,9 +42,11 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             UnshieldTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
         };
         let encrypted_notes: Vec<Vec<u8>> = match self {
-            UnshieldTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.encrypted_note.clone()).collect()
-            }
+            UnshieldTransition::V0(v0) => v0
+                .actions
+                .iter()
+                .map(|a| a.encrypted_note.clone())
+                .collect(),
         };
 
         // The anchor from the transition (Merkle root of commitment tree)
@@ -65,14 +67,13 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             &platform_version.drive,
         )?;
         let (params, _): (ShieldedPoolParams, _) =
-            bincode::decode_from_slice(&params_bytes, bincode::config::standard())
-                .map_err(|e| {
-                    Error::Protocol(
-                        dpp::ProtocolError::DecodingError(format!(
-                            "could not decode shielded pool params: {e}"
-                        )),
-                    )
-                })?;
+            bincode::decode_from_slice(&params_bytes, bincode::config::standard()).map_err(
+                |e| {
+                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                        "could not decode shielded pool params: {e}"
+                    )))
+                },
+            )?;
         let current_checkpoint_id = params.checkpoint_id_counter;
 
         let current_total_balance = drive
@@ -117,9 +118,9 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
 
             if exists {
                 return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::NullifierAlreadySpentError(
-                        NullifierAlreadySpentError::new(*nullifier),
-                    )
+                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
+                        *nullifier,
+                    ))
                     .into(),
                 ));
             }

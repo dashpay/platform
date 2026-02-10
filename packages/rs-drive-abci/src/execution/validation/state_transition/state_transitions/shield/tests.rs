@@ -18,12 +18,12 @@ mod tests {
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::fee::Credits;
-    use dpp::prelude::AddressNonce;
     use dpp::identity::signer::Signer;
+    use dpp::prelude::AddressNonce;
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::shielded::SerializedAction;
-    use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+    use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
@@ -58,9 +58,8 @@ mod tests {
         fee_strategy: AddressFundsFeeStrategy,
         witness_count: usize,
     ) -> StateTransition {
-        let witnesses: Vec<AddressWitness> = (0..witness_count)
-            .map(|_| create_dummy_witness())
-            .collect();
+        let witnesses: Vec<AddressWitness> =
+            (0..witness_count).map(|_| create_dummy_witness()).collect();
         StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
             inputs,
             actions,
@@ -205,12 +204,7 @@ mod tests {
             // witness and address validation
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -223,9 +217,9 @@ mod tests {
                 -1000,
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -251,9 +245,9 @@ mod tests {
                 -1000,
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
                 0, // 0 witnesses to match 0 inputs
             );
 
@@ -274,12 +268,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // Create a properly signed transition (1 input, 1 valid witness)
             let mut transition = create_default_signed_shield_transition(
@@ -315,12 +304,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, 1)); // 1 credit — below minimum
@@ -333,9 +317,9 @@ mod tests {
                 -1,
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -355,12 +339,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -373,9 +352,9 @@ mod tests {
                 1000, // Positive — invalid for shield (must be negative)
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -395,12 +374,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -413,9 +387,9 @@ mod tests {
                 0, // Zero — invalid for shield (must be negative)
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -435,12 +409,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -453,9 +422,9 @@ mod tests {
                 -1000,
                 vec![], // Empty proof — invalid
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -475,12 +444,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -493,9 +457,9 @@ mod tests {
                 -1000,
                 vec![0u8; 100],
                 vec![0u8; 32], // 32 bytes instead of 64 — invalid
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -515,12 +479,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -536,9 +495,9 @@ mod tests {
                 -1000,
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -558,12 +517,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -596,12 +550,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -641,12 +590,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -690,12 +634,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // Create properly signed transition, then tamper with the witness
             let mut transition = create_default_signed_shield_transition(
@@ -736,12 +675,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // Create a second signer with different key
             let mut wrong_signer = TestAddressSigner::new();
@@ -760,9 +694,9 @@ mod tests {
                 -1000,
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             // Replace the valid witness with one signed by a different key
@@ -831,12 +765,7 @@ mod tests {
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
             // Set up address with nonce 0
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // Create transition with nonce 5 (expected nonce is 1)
             let transition = create_default_signed_shield_transition(
@@ -899,12 +828,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // This transition is structurally valid but has random ZK proof data.
             // It should pass structure validation, witness validation, and address validation
@@ -938,12 +862,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // Create action with wrong encrypted_note size
             let mut bad_action = create_dummy_serialized_action();
@@ -960,9 +879,9 @@ mod tests {
                 -1000,
                 vec![0u8; 100],
                 vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![
-                    AddressFundsFeeStrategyStep::DeductFromInput(0),
-                ]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
